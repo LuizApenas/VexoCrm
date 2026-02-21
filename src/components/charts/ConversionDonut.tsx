@@ -1,9 +1,9 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 const data = [
-  { name: "Convertidos", value: 31, color: "hsl(187, 80%, 48%)" },
-  { name: "Em andamento", value: 45, color: "hsl(270, 60%, 55%)" },
-  { name: "Perdidos", value: 24, color: "hsl(215, 20%, 35%)" },
+  { name: "Quente", value: 4, color: "hsl(0, 72%, 51%)" },
+  { name: "Morno", value: 3, color: "hsl(32, 95%, 55%)" },
+  { name: "Frio", value: 1, color: "hsl(217, 91%, 60%)" },
 ];
 
 export function ConversionDonut() {
@@ -17,17 +17,15 @@ export function ConversionDonut() {
             ))}
           </Pie>
           <Tooltip
-            contentStyle={{ background: "hsl(222, 47%, 14%)", border: "1px solid hsl(222, 30%, 20%)", borderRadius: 8, color: "hsl(210, 40%, 98%)" }}
-            formatter={(value: number) => [`${value}%`, ""]}
+            contentStyle={{ background: "hsl(230, 22%, 13%)", border: "1px solid hsl(230, 18%, 18%)", borderRadius: 8, color: "hsl(220, 20%, 92%)" }}
           />
         </PieChart>
       </ResponsiveContainer>
       <div className="flex gap-4 mt-2">
         {data.map((item) => (
           <div key={item.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+            <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
             <span>{item.name}</span>
-            <span className="font-medium text-foreground">{item.value}%</span>
           </div>
         ))}
       </div>

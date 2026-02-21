@@ -1,30 +1,29 @@
-import { cn } from "@/lib/utils";
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
 
-const stages = [
-  { name: "Prospecção", count: 142, value: "R$ 284k", percent: 100, color: "bg-primary" },
-  { name: "Qualificação", count: 87, value: "R$ 521k", percent: 61, color: "bg-info" },
-  { name: "Proposta", count: 53, value: "R$ 795k", percent: 37, color: "bg-success" },
-  { name: "Negociação", count: 28, value: "R$ 672k", percent: 20, color: "bg-warning" },
-  { name: "Fechamento", count: 12, value: "R$ 348k", percent: 8, color: "bg-destructive" },
+const data = [
+  { name: "Recebidos", value: 120, color: "hsl(220, 12%, 60%)" },
+  { name: "Filtrados", value: 98, color: "hsl(217, 91%, 60%)" },
+  { name: "Em Qualificação", value: 82, color: "hsl(45, 93%, 58%)" },
+  { name: "Qualificados", value: 45, color: "hsl(32, 95%, 55%)" },
+  { name: "Contatados", value: 32, color: "hsl(142, 71%, 45%)" },
+  { name: "Convertidos", value: 18, color: "hsl(160, 80%, 50%)" },
 ];
 
 export function PipelineChart() {
   return (
-    <div className="space-y-3">
-      {stages.map((stage) => (
-        <div key={stage.name} className="space-y-1">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">{stage.name}</span>
-            <span className="text-foreground font-medium">{stage.count} · {stage.value}</span>
-          </div>
-          <div className="h-2 rounded-full bg-secondary overflow-hidden">
-            <div
-              className={cn("h-full rounded-full transition-all", stage.color)}
-              style={{ width: `${stage.percent}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={data} layout="vertical" margin={{ left: 10 }}>
+        <XAxis type="number" tick={{ fill: "hsl(220, 12%, 50%)", fontSize: 11 }} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="name" tick={{ fill: "hsl(220, 12%, 50%)", fontSize: 11 }} axisLine={false} tickLine={false} width={100} />
+        <Tooltip
+          contentStyle={{ background: "hsl(230, 22%, 13%)", border: "1px solid hsl(230, 18%, 18%)", borderRadius: 8, color: "hsl(220, 20%, 92%)" }}
+        />
+        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+          {data.map((entry, index) => (
+            <Cell key={index} fill={entry.color} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
   );
 }
