@@ -14,7 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      n8n_error_logs: {
+        Row: {
+          created_at: string
+          execution_id: string
+          execution_url: string | null
+          id: string
+          message: string
+          node: string | null
+          workflow_name: string
+        }
+        Insert: {
+          created_at?: string
+          execution_id: string
+          execution_url?: string | null
+          id?: string
+          message: string
+          node?: string | null
+          workflow_name: string
+        }
+        Update: {
+          created_at?: string
+          execution_id?: string
+          execution_url?: string | null
+          id?: string
+          message?: string
+          node?: string | null
+          workflow_name?: string
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          link: string | null
+          read: boolean
+          title: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          link?: string | null
+          read?: boolean
+          title: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          link?: string | null
+          read?: boolean
+          title?: string
+          type?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
