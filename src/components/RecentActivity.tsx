@@ -1,12 +1,11 @@
-import { CheckCircle, Send, Clock, Zap, Calendar, UserPlus } from "lucide-react";
+import { Bot, Clock } from "lucide-react";
 
 const activities = [
-  { icon: CheckCircle, text: "Lead qualificado", detail: "Tech Solutions SA", time: "há 12min", color: "text-success" },
-  { icon: Send, text: "Proposta enviada", detail: "Grupo Meridian", time: "há 28min", color: "text-primary" },
-  { icon: Clock, text: "Follow-up pendente", detail: "Alfa Varejo", time: "há 1h", color: "text-warning" },
-  { icon: Zap, text: "Automação disparada", detail: "Nutrição Campanha Q1", time: "há 2h", color: "text-primary" },
-  { icon: Calendar, text: "Reunião agendada", detail: "Pedro Carvalho", time: "há 2h", color: "text-info" },
-  { icon: UserPlus, text: "Novo lead importado", detail: "Lista MQL Fev", time: "há 3h", color: "text-success" },
+  { text: "Lead qualificado pelo agente", detail: "João Silva - Residencial", time: "há 12min" },
+  { text: "Workflow n8n executado", detail: "Nutrição automática", time: "há 28min" },
+  { text: "Novo lead recebido", detail: "Maria Oliveira - Empresarial", time: "há 1h" },
+  { text: "Agente respondeu WhatsApp", detail: "Carlos Souza", time: "há 2h" },
+  { text: "Lead movido para SDR", detail: "Ana Costa - Rural", time: "há 3h" },
 ];
 
 export function RecentActivity() {
@@ -14,12 +13,12 @@ export function RecentActivity() {
     <div>
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-foreground">Atividade Recente</h2>
-        <p className="text-xs text-muted-foreground">Últimas ações</p>
+        <p className="text-xs text-muted-foreground">Últimas ações do agente</p>
       </div>
       <div className="space-y-3">
         {activities.map((a, i) => (
           <div key={i} className="flex items-start gap-2.5">
-            <a.icon className={`h-4 w-4 mt-0.5 shrink-0 ${a.color}`} />
+            <Bot className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
             <div className="flex-1 min-w-0">
               <p className="text-sm text-foreground">{a.text}</p>
               <p className="text-xs text-muted-foreground truncate">{a.detail}</p>

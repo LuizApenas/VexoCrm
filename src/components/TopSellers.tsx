@@ -1,34 +1,29 @@
-const sellers = [
-  { initials: "AL", name: "Ana Lima", deals: 28, value: "R$ 312k", score: 78, color: "bg-primary" },
-  { initials: "CM", name: "Carlos Mendes", deals: 22, value: "R$ 245k", score: 71, color: "bg-info" },
-  { initials: "JR", name: "Juliana Rocha", deals: 19, value: "R$ 198k", score: 65, color: "bg-success" },
-  { initials: "RT", name: "Rafael Torres", deals: 17, value: "R$ 176k", score: 63, color: "bg-warning" },
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
+
+const data = [
+  { tipo: "Residencial", leads: 3 },
+  { tipo: "Empresarial", leads: 2 },
+  { tipo: "Rural", leads: 1 },
+  { tipo: "Industrial", leads: 1 },
+  { tipo: "Condomínio", leads: 1 },
 ];
 
 export function TopSellers() {
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">Top Vendedores</h2>
-          <p className="text-xs text-muted-foreground">Mês atual</p>
-        </div>
-        <button className="text-xs text-primary hover:underline">Ver todos</button>
+      <div className="mb-4">
+        <h2 className="text-sm font-semibold text-foreground">Leads por Tipo de Imóvel</h2>
       </div>
-      <div className="space-y-3">
-        {sellers.map((s) => (
-          <div key={s.initials} className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-full ${s.color} flex items-center justify-center text-xs font-bold text-primary-foreground`}>
-              {s.initials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
-              <p className="text-xs text-muted-foreground">{s.deals} deals · {s.value}</p>
-            </div>
-            <span className="text-sm font-semibold text-primary">{s.score}%</span>
-          </div>
-        ))}
-      </div>
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={data}>
+          <XAxis dataKey="tipo" tick={{ fill: "hsl(220, 12%, 50%)", fontSize: 11 }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: "hsl(220, 12%, 50%)", fontSize: 11 }} axisLine={false} tickLine={false} />
+          <Tooltip
+            contentStyle={{ background: "hsl(230, 22%, 13%)", border: "1px solid hsl(230, 18%, 18%)", borderRadius: 8, color: "hsl(220, 20%, 92%)" }}
+          />
+          <Bar dataKey="leads" fill="hsl(32, 95%, 55%)" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }

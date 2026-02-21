@@ -1,44 +1,25 @@
-import { TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface KpiCardProps {
   title: string;
   value: string;
-  subtitle?: string;
-  change?: { value: string; positive: boolean };
   icon: React.ReactNode;
+  indicator?: { color: string; label: string };
 }
 
-export function KpiCard({ title, value, subtitle, change, icon }: KpiCardProps) {
+export function KpiCard({ title, value, icon, indicator }: KpiCardProps) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4 flex flex-col gap-2">
+    <div className="rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center text-primary">
-          {icon}
+        <span className="text-sm text-muted-foreground">{title}</span>
+        <div className="flex items-center gap-2">
+          {indicator && (
+            <span className={cn("w-2.5 h-2.5 rounded-full", indicator.color)} title={indicator.label} />
+          )}
+          <span className="text-muted-foreground">{icon}</span>
         </div>
-        {change && (
-          <span
-            className={cn(
-              "flex items-center gap-1 text-xs font-medium rounded-full px-2 py-0.5",
-              change.positive
-                ? "text-success bg-success/10"
-                : "text-destructive bg-destructive/10"
-            )}
-          >
-            {change.positive ? (
-              <TrendingUp className="h-3 w-3" />
-            ) : (
-              <TrendingDown className="h-3 w-3" />
-            )}
-            {change.value}
-          </span>
-        )}
       </div>
-      <div>
-        <p className="text-2xl font-bold text-foreground">{value}</p>
-        <p className="text-xs text-muted-foreground">{title}</p>
-        {subtitle && <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>}
-      </div>
+      <p className="text-3xl font-bold text-foreground">{value}</p>
     </div>
   );
 }
