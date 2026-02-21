@@ -6,11 +6,11 @@ import {
   BarChart3,
   Bot,
   Settings,
-  Bell,
   PanelLeftClose,
   PanelLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -67,21 +67,7 @@ export function AppSidebar() {
 
       {/* Bottom */}
       <div className="border-t border-sidebar-border p-2 space-y-0.5 shrink-0">
-        <NavLink
-          to="/notificacoes"
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors relative",
-              isActive
-                ? "bg-primary/15 text-primary font-medium"
-                : "text-sidebar-foreground hover:bg-sidebar-accent/10 hover:text-sidebar-accent-foreground"
-            )
-          }
-        >
-          <Bell className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Notificações</span>}
-          <span className="absolute right-2 top-2 w-2 h-2 rounded-full bg-destructive" />
-        </NavLink>
+        <NotificationBell collapsed={collapsed} />
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="flex items-center gap-2 w-full rounded-md px-2.5 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/10 hover:text-sidebar-accent-foreground transition-colors"

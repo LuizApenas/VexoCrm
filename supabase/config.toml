@@ -1,1 +1,7 @@
 project_id = "yfhdzkjuhxsbxklfgdut"
+
+[functions.n8n-error-webhook]
+verify_jwt = false
+
+[functions.notifications-api]
+verify_jwt = false
