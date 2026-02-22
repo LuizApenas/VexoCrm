@@ -6,11 +6,12 @@ import { Label } from "@/components/ui/label";
 import { useState } from "react";
 
 export default function Login() {
-  const { user, loading, signIn } = useAuth();
+  const { user, loading, signIn, signUp } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
 
   if (loading) {
     return (
@@ -29,9 +30,17 @@ export default function Login() {
     setError("");
     setSubmitting(true);
     try {
-      await signIn(email, password);
+      if (isSignUp) {
+        await signUp(email, password);
+      } else {
+        await signIn(email, password);
+      }
     } catch (err: any) {
-      setError("E-mail ou senha inválidos.");
+      setError(
+        isSignUp
+          ? "Erro ao criar conta. Verifique os dados e tente novamente."
+          : "E-mail ou senha inválidos."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -81,8 +90,16 @@ export default function Login() {
         )}
 
         <Button type="submit" className="w-full" size="lg" disabled={submitting}>
-          {submitting ? "Entrando..." : "Entrar"}
+          {submitting ? (isSignUp ? "Criando conta..." : "Entrando...") : (isSignUp ? "Criar conta" : "Entrar")}
         </Button>
+
+        <button
+          type="button"
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => { setIsSignUp(!isSignUp); setError(""); }}
+        >
+          {isSignUp ? "Já tem conta? Entrar" : "Não tem conta? Criar uma"}
+        </button>
       </form>
     </div>
   );
