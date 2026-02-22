@@ -17,20 +17,17 @@ const POLL_INTERVAL = 15000;
 const LAST_SEEN_KEY = "notifications_lastSeenCreatedAt";
 
 export function useNotifications() {
-  const { getIdToken, user } = useAuth();
+  const { session, user } = useAuth();
   const [items, setItems] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const lastSeenRef = useRef(localStorage.getItem(LAST_SEEN_KEY) || "");
 
   const fetchNotifications = useCallback(async () => {
-    if (!user) return;
+    if (!user || !session?.access_token) return;
     try {
-      const token = await getIdToken();
-      if (!token) return;
-
       const res = await fetch(`${API_URL}?limit=20`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (!res.ok) return;
@@ -58,7 +55,7 @@ export function useNotifications() {
     } catch (err) {
       console.error("Failed to fetch notifications:", err);
     }
-  }, [getIdToken, user]);
+  }, [session, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -70,34 +67,32 @@ export function useNotifications() {
 
   const markAsRead = useCallback(
     async (id: string) => {
-      const token = await getIdToken();
-      if (!token) return;
+      if (!session?.access_token) return;
       await fetch(API_URL, {
         method: "PATCH",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ id, read: true }),
       });
       await fetchNotifications();
     },
-    [getIdToken, fetchNotifications]
+    [session, fetchNotifications]
   );
 
   const markAllRead = useCallback(async () => {
-    const token = await getIdToken();
-    if (!token) return;
+    if (!session?.access_token) return;
     await fetch(API_URL, {
       method: "PATCH",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${session.access_token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ markAllRead: true }),
     });
     await fetchNotifications();
-  }, [getIdToken, fetchNotifications]);
+  }, [session, fetchNotifications]);
 
   return { items, unreadCount, loading, markAsRead, markAllRead };
 }
