@@ -6,6 +6,21 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const getEnv = (primary: string, fallback?: string): string | null => {
+  const value = Deno.env.get(primary);
+  if (value) return value;
+  if (!fallback) return null;
+  return Deno.env.get(fallback);
+};
+
+const normalizeString = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  // n8n can send literal "=value" when expression mode is misconfigured.
+  return str.startsWith("=") ? str.slice(1).trim() : str;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -29,11 +44,11 @@ Deno.serve(async (req) => {
     const body = await req.json();
 
     // Extract fields from n8n error trigger payload
-    const workflowName = body.workflow?.name;
-    const executionId = body.execution?.id;
-    const executionUrl = body.execution?.url || null;
-    const errorMessage = body.error?.message;
-    const lastNode = body.error?.lastNodeExecuted || null;
+    const workflowName = normalizeString(body.workflow?.name);
+    const executionId = normalizeString(body.execution?.id);
+    const executionUrl = normalizeString(body.execution?.url);
+    const errorMessage = normalizeString(body.error?.message);
+    const lastNode = normalizeString(body.error?.lastNodeExecuted);
 
     if (!workflowName || !executionId || !errorMessage) {
       return new Response(
@@ -51,10 +66,22 @@ Deno.serve(async (req) => {
     const truncatedMessage = errorMessage.substring(0, 1000);
     const truncatedNode = lastNode ? lastNode.substring(0, 200) : null;
 
-    const supabase = createClient(
-      Deno.env.get("URL")!,
-      Deno.env.get("SERVICE_ROLE_KEY")!
-    );
+    const supabaseUrl = getEnv("SUPABASE_URL", "URL");
+    const serviceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY", "SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(
+        JSON.stringify({
+          error: "Missing Supabase secrets",
+          details: "Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY",
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Upsert error log
     const { error: logError } = await supabase
@@ -72,10 +99,17 @@ Deno.serve(async (req) => {
 
     if (logError) {
       console.error("Error upserting log:", logError);
-      return new Response(JSON.stringify({ error: "Failed to save error log" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          error: "Failed to save error log",
+          details: logError.message,
+          code: logError.code ?? null,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Insert notification

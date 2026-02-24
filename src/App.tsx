@@ -7,8 +7,10 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { AppSidebar } from "@/components/AppSidebar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
+import Agente from "./pages/Agente";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import SetPassword from "./pages/SetPassword";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +24,14 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route
+              path="/set-password"
+              element={
+                <ProtectedRoute>
+                  <SetPassword />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/*"
               element={
                 <ProtectedRoute>
@@ -29,6 +39,7 @@ const App = () => (
                     <AppSidebar />
                     <Routes>
                       <Route path="/" element={<Index />} />
+                      <Route path="/agente" element={<Agente />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </div>
