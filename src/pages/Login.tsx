@@ -4,25 +4,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
 export default function Login() {
-  const { user, loading, signIn, signUp } = useAuth();
+  const { isAuthenticated, mustChangePassword, loading, login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen w-full bg-background">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }
 
-  if (user) {
-    return <Navigate to="/" replace />;
+  if (isAuthenticated) {
+    return <Navigate to={mustChangePassword ? "/set-password" : "/"} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -30,17 +30,23 @@ export default function Login() {
     setError("");
     setSubmitting(true);
     try {
-      if (isSignUp) {
-        await signUp(email, password);
-      } else {
-        await signIn(email, password);
-      }
-    } catch (err: any) {
-      setError(
-        isSignUp
-          ? "Erro ao criar conta. Verifique os dados e tente novamente."
-          : "E-mail ou senha inválidos."
-      );
+      await login(email.trim(), password);
+    } catch (err: unknown) {
+      const errorMessages: Record<string, string> = {
+        "auth/user-not-found": "Usuário não encontrado.",
+        "auth/wrong-password": "Senha incorreta.",
+        "auth/invalid-email": "E-mail inválido.",
+        "auth/user-disabled": "Usuário desativado.",
+        "auth/too-many-requests": "Muitas tentativas. Tente novamente mais tarde.",
+        "auth/invalid-credential": "Credenciais inválidas.",
+      };
+
+      const firebaseCode =
+        typeof err === "object" && err !== null && "code" in err
+          ? String((err as { code?: string }).code || "")
+          : "";
+
+      setError(errorMessages[firebaseCode] || "E-mail ou senha inválidos.");
     } finally {
       setSubmitting(false);
     }
@@ -90,16 +96,8 @@ export default function Login() {
         )}
 
         <Button type="submit" className="w-full" size="lg" disabled={submitting}>
-          {submitting ? (isSignUp ? "Criando conta..." : "Entrando...") : (isSignUp ? "Criar conta" : "Entrar")}
+          {submitting ? "Entrando..." : "Entrar"}
         </Button>
-
-        <button
-          type="button"
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          onClick={() => { setIsSignUp(!isSignUp); setError(""); }}
-        >
-          {isSignUp ? "Já tem conta? Entrar" : "Não tem conta? Criar uma"}
-        </button>
       </form>
     </div>
   );
