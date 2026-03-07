@@ -1,4 +1,4 @@
-# VexoApi/Dockerfile
+# VexoCrm/backend/Dockerfile
 FROM node:20-alpine
 
 WORKDIR /app

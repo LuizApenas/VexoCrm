@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # VexoCrm/backend/deploy.sh
-# Quick deploy/update script for VPS.
+# Manual deploy script for VPS (optional).
+# On EasyPanel: deploy is automatic via Git; configure build context as backend/.
 # Run from repo root or backend directory.
 
 set -euo pipefail
@@ -24,7 +25,7 @@ if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
     echo "==> Health check passed!"
     docker compose -f docker-compose.prod.yml ps
 else
-    echo "==> Health check FAILED. Rolling back..."
+    echo "==> Health check FAILED. Check logs:"
     docker compose -f docker-compose.prod.yml logs --tail=50
     exit 1
 fi
