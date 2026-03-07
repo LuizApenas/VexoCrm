@@ -34,7 +34,7 @@ docker build -t vexo-api .
 docker run --env-file .env -p 3001:3001 vexo-api
 ```
 
-### Production (with Caddy reverse proxy)
+### Production (EasyPanel or manual)
 
 ```sh
 docker compose -f docker-compose.prod.yml up -d
@@ -58,4 +58,4 @@ See [`.env.example`](.env.example) for the full list of required variables.
 
 ## Deploy
 
-See [`docs/context/topics/deploy.md`](../docs/context/topics/deploy.md) for the full deploy guide.
+See `.cursor/context/topics/deploy.md` for the full deploy guide (local, when using Cursor).

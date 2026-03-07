@@ -148,4 +148,4 @@ For batch: `{ "leads": [{ ... }, { ... }] }`. Upsert by `(client_id, telefone)` 
 ## Related
 
 - Backend: [../backend](../backend)
-- Context and decisions: [../docs/context](../docs/context/)
+- Context and decisions: `.cursor/context/` (local, when using Cursor)

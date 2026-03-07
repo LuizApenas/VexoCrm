@@ -15,8 +15,6 @@ VexoCrm/
 │   ├── src/
 │   ├── vercel.json
 │   └── ...
-├── docs/          # Context, decisions, topics
-│   └── context/
 └── README.md
 ```
 
@@ -64,12 +62,11 @@ npm run dev
 - **Frontend**: Vercel — set Root Directory to `frontend` (or `VexoCrm/frontend`)
 - **Backend**: VPS (Docker) or EasyPanel — build from `backend/`
 
-See [docs/context/topics/deploy.md](docs/context/topics/deploy.md) for details.
+Deploy details: `.cursor/context/topics/deploy.md` (local, when using Cursor).
 
 ## Related
 
 - [Backend README](backend/README.md)
 - [Frontend README](frontend/README.md)
-- [Cutover checklist](docs/context/topics/cutover-checklist.md)
 
 > **Note:** If the old `VexoApi/` folder exists at repo root, remove it manually. All backend code is in `backend/`.
