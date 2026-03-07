@@ -1,0 +1,18 @@
+{
+  "name": "vexoapi",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "import-leads": "node scripts/import-leads.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.5.0"
+  }
+}

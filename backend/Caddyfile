@@ -1,0 +1,19 @@
+# VexoCrm/backend/Caddyfile
+# Replace api.seudominio.com with the actual domain.
+# Caddy automatically provisions HTTPS via Let's Encrypt.
+
+api.seudominio.com {
+    reverse_proxy api:3001
+
+    header {
+        -Server
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}

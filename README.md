@@ -1,73 +1,75 @@
-# Welcome to your Lovable project
+# VexoCrm
 
-## Project info
+CRM for workflows, notifications, and agent interactions. Monorepo with backend (API) and frontend.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Structure
 
-## How can I edit this code?
+```
+VexoCrm/
+├── backend/       # Node/Express API (VPS + Docker)
+│   ├── src/
+│   ├── Dockerfile
+│   ├── docker-compose.prod.yml
+│   └── ...
+├── frontend/      # React/Vite app (Vercel)
+│   ├── src/
+│   ├── vercel.json
+│   └── ...
+├── docs/          # Context, decisions, topics
+│   └── context/
+└── README.md
+```
 
-There are several ways of editing your application.
+## Quick Start (Local)
 
-**Use Lovable**
+### Option 1: Use root script (recommended)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+From `Vexo/` root:
 
-Changes made via Lovable will be committed automatically to this repo.
+```powershell
+.\start.ps1              # Frontend only
+.\start.ps1 -All         # Backend + frontend
+.\start.ps1 -Backend     # Backend only
+```
 
-**Use your preferred IDE**
+### Option 2: Manual
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
+**Backend:**
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+cd backend
+npm install
+cp .env.example .env
+# Fill .env with Supabase, Firebase, webhook secrets
+npm run start
+```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+**Frontend:**
+```sh
+cd frontend
+npm install
+cp .env.example .env
+# Set VITE_API_BASE_URL=http://localhost:3001
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Environment
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+| Location | Key vars |
+|----------|----------|
+| `backend/.env` | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, FIREBASE_*, LEADS_WEBHOOK_SECRET, N8N_WEBHOOK_SECRET |
+| `frontend/.env` | VITE_API_BASE_URL, VITE_FIREBASE_* |
 
-**Use GitHub Codespaces**
+## Deploy
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+- **Frontend**: Vercel — set Root Directory to `frontend` (or `VexoCrm/frontend`)
+- **Backend**: VPS (Docker) or EasyPanel — build from `backend/`
 
-## What technologies are used for this project?
+See [docs/context/topics/deploy.md](docs/context/topics/deploy.md) for details.
 
-This project is built with:
+## Related
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- [Backend README](backend/README.md)
+- [Frontend README](frontend/README.md)
+- [Cutover checklist](docs/context/topics/cutover-checklist.md)
 
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+> **Note:** If the old `VexoApi/` folder exists at repo root, remove it manually. All backend code is in `backend/`.
