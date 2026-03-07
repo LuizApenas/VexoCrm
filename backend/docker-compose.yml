@@ -1,0 +1,9 @@
+services:
+  vexo-api:
+    build: .
+    container_name: vexo-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "3001:3001"
