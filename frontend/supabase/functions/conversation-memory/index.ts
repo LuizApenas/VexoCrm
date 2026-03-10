@@ -30,6 +30,18 @@ const sanitizePhone = (value: unknown): string | null => {
   return digits || null;
 };
 
+const normalizeInteger = (value: unknown): number | null => {
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? value : null;
+  }
+
+  const normalized = normalizeString(value);
+  if (!normalized || !/^\d+$/.test(normalized)) return null;
+
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isInteger(parsed) ? parsed : null;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -47,10 +59,10 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const telefone = sanitizePhone(body.telefone);
     const conversationCompressed = normalizeString(body.conversation_compressed);
-    const tamanhoOriginal = body.tamanho_original;
+    const tamanhoOriginal = normalizeInteger(body.tamanho_original);
     const timestamp = normalizeString(body.timestamp);
 
-    if (!telefone || !conversationCompressed || tamanhoOriginal === undefined || !timestamp) {
+    if (!telefone || !conversationCompressed || tamanhoOriginal === null || !timestamp) {
       return new Response(
         JSON.stringify({
           error: "Missing required fields: telefone, conversation_compressed, tamanho_original, timestamp",
@@ -62,7 +74,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!Number.isInteger(tamanhoOriginal) || tamanhoOriginal < 0) {
+    if (tamanhoOriginal < 0) {
       return new Response(
         JSON.stringify({ error: "tamanho_original must be an integer greater than or equal to 0" }),
         {
