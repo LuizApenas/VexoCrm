@@ -4,11 +4,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { AppSidebar } from "@/components/AppSidebar";
+import { MainLayout } from "@/components/MainLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import Index from "./pages/Index";
+import Dashboard from "./pages/Dashboard";
 import Agente from "./pages/Agente";
 import Leads from "./pages/Leads";
+import Index from "./pages/Index";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import SetPassword from "./pages/SetPassword";
@@ -36,15 +37,15 @@ const App = () => (
               path="/*"
               element={
                 <ProtectedRoute>
-                  <div className="flex min-h-screen w-full">
-                    <AppSidebar />
+                  <MainLayout>
                     <Routes>
                       <Route path="/" element={<Index />} />
+                      <Route path="/dashboard" element={<Dashboard />} />
                       <Route path="/leads" element={<Leads />} />
                       <Route path="/agente" element={<Agente />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
-                  </div>
+                  </MainLayout>
                 </ProtectedRoute>
               }
             />

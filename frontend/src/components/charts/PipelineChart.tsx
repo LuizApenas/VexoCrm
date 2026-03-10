@@ -1,15 +1,22 @@
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
 
-const data = [
-  { name: "Recebidos", value: 120, color: "hsl(220, 12%, 60%)" },
-  { name: "Filtrados", value: 98, color: "hsl(217, 91%, 60%)" },
-  { name: "Em Qualificação", value: 82, color: "hsl(45, 93%, 58%)" },
-  { name: "Qualificados", value: 45, color: "hsl(32, 95%, 55%)" },
-  { name: "Contatados", value: 32, color: "hsl(142, 71%, 45%)" },
-  { name: "Convertidos", value: 18, color: "hsl(160, 80%, 50%)" },
+const colors = [
+  "hsl(32, 95%, 55%)",
+  "hsl(217, 91%, 60%)",
+  "hsl(45, 93%, 58%)",
+  "hsl(142, 71%, 45%)",
+  "hsl(160, 80%, 50%)",
+  "hsl(220, 12%, 60%)",
 ];
 
-export function PipelineChart() {
+interface PipelineChartProps {
+  data: Array<{
+    name: string;
+    value: number;
+  }>;
+}
+
+export function PipelineChart({ data }: PipelineChartProps) {
   return (
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={data} layout="vertical" margin={{ left: 10 }}>
@@ -20,7 +27,7 @@ export function PipelineChart() {
         />
         <Bar dataKey="value" radius={[0, 4, 4, 0]}>
           {data.map((entry, index) => (
-            <Cell key={index} fill={entry.color} />
+            <Cell key={index} fill={colors[index % colors.length]} />
           ))}
         </Bar>
       </BarChart>

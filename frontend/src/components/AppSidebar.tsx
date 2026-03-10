@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
+  House,
   LayoutDashboard,
   Users,
-  BarChart3,
   Bot,
-  Settings,
   PanelLeftClose,
   PanelLeft,
 } from "lucide-react";
@@ -13,11 +12,10 @@ import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/NotificationBell";
 
 const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Home", url: "/", icon: House },
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Leads", url: "/leads", icon: Users },
-  { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
-  { title: "Agente Fin", url: "/agente", icon: Bot },
-  { title: "Configurações", url: "/configuracoes", icon: Settings },
+  { title: "Agente", url: "/agente", icon: Bot },
 ];
 
 export function AppSidebar() {
