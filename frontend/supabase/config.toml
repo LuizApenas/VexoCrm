@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.leads-webhook]
 verify_jwt = false
+
+[functions.conversation-memory]
+verify_jwt = false
