@@ -1,12 +1,14 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
-const data = [
-  { name: "Quente", value: 4, color: "hsl(0, 72%, 51%)" },
-  { name: "Morno", value: 3, color: "hsl(32, 95%, 55%)" },
-  { name: "Frio", value: 1, color: "hsl(217, 91%, 60%)" },
-];
+interface ConversionDonutProps {
+  data: Array<{
+    name: string;
+    value: number;
+    color: string;
+  }>;
+}
 
-export function ConversionDonut() {
+export function ConversionDonut({ data }: ConversionDonutProps) {
   return (
     <div className="flex flex-col items-center">
       <ResponsiveContainer width="100%" height={180}>

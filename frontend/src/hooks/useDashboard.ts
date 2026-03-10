@@ -1,0 +1,64 @@
+import { useQuery } from "@tanstack/react-query";
+import { API_BASE_URL } from "@/lib/api";
+
+export interface DashboardSummary {
+  totalLeads: number;
+  leadsToday: number;
+  emQualificacao: number;
+  qualificationRate: number;
+  botAtivo: number;
+  hotLeads: number;
+  warmLeads: number;
+  coldLeads: number;
+}
+
+export interface DashboardChartPoint {
+  day: string;
+  leads: number;
+  emQualificacao: number;
+}
+
+export interface DashboardBreakdownItem {
+  name: string;
+  value: number;
+  color?: string;
+}
+
+export interface DashboardRecentLead {
+  id: string;
+  nome: string;
+  tipo_cliente: string | null;
+  status: string;
+  temperature: string;
+  data_hora: string;
+}
+
+export interface DashboardPayload {
+  client: {
+    id: string;
+    name: string;
+  };
+  summary: DashboardSummary;
+  leadsByDay: DashboardChartPoint[];
+  temperatureBreakdown: DashboardBreakdownItem[];
+  statusBreakdown: DashboardBreakdownItem[];
+  typeBreakdown: DashboardBreakdownItem[];
+  recentLeads: DashboardRecentLead[];
+}
+
+export function useDashboard(clientId: string) {
+  return useQuery({
+    queryKey: ["dashboard", clientId],
+    enabled: !!clientId,
+    queryFn: async (): Promise<DashboardPayload> => {
+      const res = await fetch(`${API_BASE_URL}/api/dashboard?clientId=${encodeURIComponent(clientId)}`);
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Dashboard fetch failed: ${res.status} ${errText}`);
+      }
+
+      return res.json();
+    },
+    staleTime: 30 * 1000,
+  });
+}

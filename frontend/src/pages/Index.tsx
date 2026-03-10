@@ -1,69 +1,64 @@
-import { Users, Target, TrendingUp, Bot, Snowflake, Flame, Clock } from "lucide-react";
-import { KpiCard } from "@/components/KpiCard";
-import { RevenueChart } from "@/components/charts/RevenueChart";
-import { ConversionDonut } from "@/components/charts/ConversionDonut";
-import { PipelineChart } from "@/components/charts/PipelineChart";
-import { TopSellers } from "@/components/TopSellers";
-import { RecentActivity } from "@/components/RecentActivity";
+// VexoCrm/frontend/src/pages/Index.tsx
+import { ArrowRight, Bot, LayoutDashboard, Users } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageShell } from "@/components/PageShell";
+import { PageBanner } from "@/components/PageBanner";
 
-const Dashboard = () => {
+const shortcuts = [
+  {
+    title: "Dashboard",
+    description: "Visualize indicadores, funil, temperatura dos leads e atividade recente.",
+    to: "/dashboard",
+    icon: LayoutDashboard,
+  },
+  {
+    title: "Leads",
+    description: "Abra a tabela principal para consultar os leads sincronizados pelo n8n.",
+    to: "/leads",
+    icon: Users,
+  },
+  {
+    title: "Agente",
+    description: "Acompanhe notificações, erros do n8n e ações pendentes da operação.",
+    to: "/agente",
+    icon: Bot,
+  },
+];
+
+export default function Index() {
   return (
-    <div className="flex-1 overflow-auto">
-      <header className="h-14 border-b border-border flex items-center px-6 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <h1 className="text-lg font-semibold text-foreground">Dashboard</h1>
-      </header>
+    <PageShell title="Home" spacing="space-y-6">
+      <PageBanner
+        label="Menu principal"
+        title="Escolha para onde deseja ir"
+        description="Esta home concentra os acessos do CRM. Use os atalhos abaixo para abrir o dashboard, consultar leads ou acompanhar o agente operacional."
+      />
 
-      <div className="p-6 space-y-5">
-        {/* KPI Row 1 */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard title="Leads Hoje" value="8" icon={<Users className="h-4 w-4" />} />
-          <KpiCard title="Qualificados" value="3" icon={<Target className="h-4 w-4" />} />
-          <KpiCard title="Taxa Qualificação" value="38%" icon={<TrendingUp className="h-4 w-4" />} />
-          <KpiCard title="Quentes" value="4" icon={<Flame className="h-4 w-4" />} indicator={{ color: "bg-primary", label: "Quentes" }} />
-        </div>
-
-        {/* KPI Row 2 */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard title="Mornos" value="3" icon={<Clock className="h-4 w-4" />} indicator={{ color: "bg-warning", label: "Mornos" }} />
-          <KpiCard title="Frios" value="1" icon={<Snowflake className="h-4 w-4" />} indicator={{ color: "bg-success", label: "Frios" }} />
-          <KpiCard title="Bot Ativo" value="2" icon={<Bot className="h-4 w-4" />} />
-          <KpiCard title="Aguardando SDR" value="3" icon={<Clock className="h-4 w-4" />} />
-        </div>
-
-        {/* Charts Row 1 */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <div className="lg:col-span-3 rounded-lg border border-border bg-card p-5">
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-foreground">Leads por Dia</h2>
-            </div>
-            <RevenueChart />
-          </div>
-          <div className="lg:col-span-2 rounded-lg border border-border bg-card p-5">
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-foreground">Temperatura dos Leads</h2>
-            </div>
-            <ConversionDonut />
-          </div>
-        </div>
-
-        {/* Charts Row 2 */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="rounded-lg border border-border bg-card p-5">
-            <TopSellers />
-          </div>
-          <div className="rounded-lg border border-border bg-card p-5">
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-foreground">Funil de Conversão</h2>
-            </div>
-            <PipelineChart />
-          </div>
-          <div className="rounded-lg border border-border bg-card p-5">
-            <RecentActivity />
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {shortcuts.map((shortcut) => (
+          <Card key={shortcut.to} className="border-border/80 bg-card/80">
+            <CardHeader className="space-y-4">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <shortcut.icon className="h-5 w-5" />
+              </div>
+              <div className="space-y-1">
+                <CardTitle className="text-xl">{shortcut.title}</CardTitle>
+                <CardDescription>{shortcut.description}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Button asChild className="w-full justify-between">
+                <Link to={shortcut.to}>
+                  Acessar
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
       </div>
-    </div>
+    </PageShell>
   );
-};
-
-export default Dashboard;
+}

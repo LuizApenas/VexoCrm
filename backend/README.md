@@ -82,8 +82,17 @@ flowchart TB
         N6[Retorna sucesso]
     end
 
+    subgraph conversationMemory [POST /api/conversation-memory]
+        C1[Valida Bearer N8N_WEBHOOK_SECRET]
+        C2[Valida telefone, gzip base64, tamanho_original e timestamp]
+        C3[Consulta leads por telefone]
+        C4[Insere em lead_conversations com unknown_lead]
+        C5[Retorna sucesso]
+    end
+
     L1 --> L2 --> L3 --> L4 --> L5 --> L6
     N1 --> N2 --> N3 --> N4 --> N5 --> N6
+    C1 --> C2 --> C3 --> C4 --> C5
 ```
 
 ## Referência de Funções
@@ -99,6 +108,9 @@ Todas as funções estão definidas em `src/server.js`.
 | `normalizeBool` | `(value) => boolean` | Converte para boolean: `true`, `"true"`, `"TRUE"`, `"1"` → true. |
 | `parseCsvLine` | `(line) => string[]` | Parses uma linha CSV com tratamento de aspas. Lida com aspas escapadas. |
 | `parseCsvToRows` | `(csv) => object[]` | Parses CSV completo para array de objetos. Primeira linha = headers. |
+| `sanitizePhone` | `(value) => string \| null` | Remove caracteres não numéricos do telefone. |
+| `requireN8nWebhookSecret` | `(req, res, next)` | Middleware Express. Valida `Authorization: Bearer <N8N_WEBHOOK_SECRET>`. |
+| `validateConversationMemoryPayload` | `(req, res, next)` | Middleware Express. Valida e sanitiza o payload de memória comprimida. |
 
 ## Endpoints da API (Detalhado)
 
@@ -186,6 +198,54 @@ Chave de upsert: `(client_id, telefone)`.
 
 Cria linha em `n8n_error_logs` e `notifications`.
 
+---
+
+### POST /api/conversation-memory
+
+**Auth:** `Authorization: Bearer <N8N_WEBHOOK_SECRET>`
+
+**Body:**
+
+```json
+{
+  "telefone": "553499999999",
+  "conversation_compressed": "H4sIAAAAA...",
+  "tamanho_original": 8234,
+  "timestamp": "2026-03-10T13:20:00Z"
+}
+```
+
+**Resposta:**
+
+```json
+{
+  "success": true,
+  "message": "Conversation stored",
+  "telefone": "553499999999"
+}
+```
+
+**Comportamento:**
+- sanitiza telefone
+- valida base64 + gzip
+- rejeita payload descomprimido acima de 1MB
+- salva em `lead_conversations`
+- marca `unknown_lead = true` quando não encontrar telefone em `leads`
+
+**curl de teste:**
+
+```bash
+curl -X POST http://localhost:3001/api/conversation-memory \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer [REDACTED]" \
+  -d '{
+    "telefone": "553499999999",
+    "conversation_compressed": "H4sIAIp9r2kC/8tIzcnJVyjPL8pJUQQAbcK0AwwAAAA=",
+    "tamanho_original": 12,
+    "timestamp": "2026-03-10T13:20:00Z"
+  }'
+```
+
 ## Códigos de Erro
 
 | Código                    | HTTP | Descrição                                      |
@@ -201,6 +261,8 @@ Cria linha em `n8n_error_logs` e `notifications`.
 | `LEADS_QUERY_FAILED`    | 500  | Erro na query de leads no Supabase            |
 | `LEADS_SAVE_FAILED`     | 500  | Falha no upsert de leads                      |
 | `N8N_LOG_SAVE_FAILED`  | 500  | Falha no upsert de n8n_error_logs             |
+| `CONVERSATION_MEMORY_SAVE_FAILED` | 500 | Falha ao salvar memória de conversa        |
+| `PAYLOAD_TOO_LARGE`    | 413  | Payload JSON ou conteúdo descomprimido acima do limite |
 | `CORS_FORBIDDEN_ORIGIN` | 403  | Origem da requisição não está em CORS_ORIGINS |
 | `INTERNAL_ERROR`        | 500  | Exceção não tratada                           |
 
