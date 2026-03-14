@@ -960,7 +960,7 @@ app.use((error, _req, res, _next) => {
   sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
 });
 
-const port = Number.parseInt(process.env.PORT || "3000", 10);
+const port = Number.parseInt(process.env.PORT || "3001", 10);
 app.listen(port, () => {
   console.log(`VexoApi listening on port ${port}`);
 });
