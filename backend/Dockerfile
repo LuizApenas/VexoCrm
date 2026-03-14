@@ -16,10 +16,11 @@ RUN addgroup -g 1001 -S appgroup && \
 USER appuser
 
 ENV NODE_ENV=production
-EXPOSE 3001
+ENV PORT=3000
+EXPOSE 3000
 
 # Healthcheck using wget (curl not available in alpine by default)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-3000}/health || exit 1
 
 CMD ["npm", "start"]

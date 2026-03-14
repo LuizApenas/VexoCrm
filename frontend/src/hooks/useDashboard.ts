@@ -4,9 +4,9 @@ import { API_BASE_URL } from "@/lib/api";
 export interface DashboardSummary {
   totalLeads: number;
   leadsToday: number;
-  emQualificacao: number;
+  qualifiedLeads: number;
   qualificationRate: number;
-  botAtivo: number;
+  activeCities: number;
   hotLeads: number;
   warmLeads: number;
   coldLeads: number;
@@ -15,7 +15,7 @@ export interface DashboardSummary {
 export interface DashboardChartPoint {
   day: string;
   leads: number;
-  emQualificacao: number;
+  qualifiedLeads: number;
 }
 
 export interface DashboardBreakdownItem {
@@ -28,6 +28,7 @@ export interface DashboardRecentLead {
   id: string;
   nome: string;
   tipo_cliente: string | null;
+  cidade: string | null;
   status: string;
   temperature: string;
   data_hora: string;

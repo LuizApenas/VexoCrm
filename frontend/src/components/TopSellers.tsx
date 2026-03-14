@@ -11,7 +11,7 @@ export function TopSellers({ data }: TopSellersProps) {
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-sm font-semibold text-foreground">Leads por Tipo de Cliente</h2>
+        <h2 className="text-sm font-semibold text-foreground">Leads por Perfil</h2>
       </div>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data}>
