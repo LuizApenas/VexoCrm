@@ -8,6 +8,7 @@ import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { TranscriptionError, transcribeWhatsAppAudio } from "./whatsapp-audio.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env") });
@@ -165,6 +166,18 @@ function normalizeString(value) {
 
 function normalizeBool(value) {
   return value === true || value === "true" || value === "TRUE" || value === "1";
+}
+
+function normalizeIsoDate(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return null;
+
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString();
 }
 
 function sanitizePhone(value) {
@@ -328,12 +341,13 @@ function humanizeStatus(value) {
   return map[normalized] || normalized.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function isQualifiedStatus(value) {
+  const normalized = normalizeString(value)?.toLowerCase();
+  return normalized === "qualificado" || normalized === "qualificados" || normalized === "em_qualificacao";
+}
+
 function detectTemperature(lead) {
-  const source = [lead.qualificacao, lead.historico]
-    .map((value) => normalizeString(value))
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  const source = normalizeString(lead.qualificacao)?.toLowerCase() || "";
 
   if (source.includes("quente")) return "hot";
   if (source.includes("morno")) return "warm";
@@ -353,7 +367,7 @@ function buildDashboardPayload(client, leads) {
       key,
       day: getDateLabel(date, timeZone),
       leads: 0,
-      emQualificacao: 0,
+      qualifiedLeads: 0,
     };
   });
 
@@ -368,52 +382,52 @@ function buildDashboardPayload(client, leads) {
   };
 
   let leadsToday = 0;
-  let emQualificacao = 0;
-  let botAtivo = 0;
+  let qualifiedLeads = 0;
+  const cities = new Set();
 
   for (const lead of leads) {
     const referenceDate = lead.data_hora ? new Date(lead.data_hora) : new Date(lead.created_at);
     const dateKey = getDateKey(referenceDate, timeZone);
-    const statusKey = normalizeString(lead.status) || "sem_status";
+    const statusKey = (normalizeString(lead.status) || "sem_status").toLowerCase();
     const typeKey = normalizeString(lead.tipo_cliente) || "nao_informado";
     const temperatureKey = detectTemperature(lead);
+    const cityKey = normalizeString(lead.cidade);
 
     if (dateKey === todayKey) {
       leadsToday += 1;
     }
 
-    if (statusKey === "em_qualificacao") {
-      emQualificacao += 1;
-    }
-
-    if (lead.bot_ativo) {
-      botAtivo += 1;
+    if (isQualifiedStatus(statusKey)) {
+      qualifiedLeads += 1;
     }
 
     temperatureCounts[temperatureKey] += 1;
     statusCounts.set(statusKey, (statusCounts.get(statusKey) || 0) + 1);
     typeCounts.set(typeKey, (typeCounts.get(typeKey) || 0) + 1);
+    if (cityKey) {
+      cities.add(cityKey.toLowerCase());
+    }
 
     const dayEntry = recentDaysMap.get(dateKey);
     if (dayEntry) {
       dayEntry.leads += 1;
-      if (statusKey === "em_qualificacao") {
-        dayEntry.emQualificacao += 1;
+      if (isQualifiedStatus(statusKey)) {
+        dayEntry.qualifiedLeads += 1;
       }
     }
   }
 
   const totalLeads = leads.length;
-  const qualificationRate = totalLeads === 0 ? 0 : Math.round((emQualificacao / totalLeads) * 100);
+  const qualificationRate = totalLeads === 0 ? 0 : Math.round((qualifiedLeads / totalLeads) * 100);
 
   return {
     client,
     summary: {
       totalLeads,
       leadsToday,
-      emQualificacao,
+      qualifiedLeads,
       qualificationRate,
-      botAtivo,
+      activeCities: cities.size,
       hotLeads: temperatureCounts.hot,
       warmLeads: temperatureCounts.warm,
       coldLeads: temperatureCounts.cold,
@@ -442,6 +456,7 @@ function buildDashboardPayload(client, leads) {
       id: lead.id,
       nome: lead.nome || "Lead sem nome",
       tipo_cliente: lead.tipo_cliente,
+      cidade: lead.cidade,
       status: humanizeStatus(lead.status),
       temperature: detectTemperature(lead),
       data_hora: lead.data_hora || lead.created_at,
@@ -504,6 +519,33 @@ app.get("/health", (_req, res) => {
       firebaseAuth: firebaseReady,
     },
   });
+});
+
+app.post("/transcribe", async (req, res) => {
+  try {
+    const result = await transcribeWhatsAppAudio({
+      url: req.body?.url,
+      mediaKey: req.body?.mediaKey,
+      groqApiKey: process.env.GROQ_API_KEY,
+      logger: console,
+    });
+
+    res.json({ text: result.text });
+  } catch (error) {
+    if (error instanceof TranscriptionError) {
+      console.error("transcribe route error:", {
+        event: "transcribe_route_error",
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      });
+      sendError(res, error.status, error.code, error.message, error.details);
+      return;
+    }
+
+    console.error("transcribe route unexpected error:", error);
+    sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+  }
 });
 
 app.get("/api/sheets", async (req, res) => {
@@ -586,7 +628,7 @@ app.get("/api/dashboard", async (req, res) => {
 
     const { data: leads, error } = await supabase
       .from("leads")
-      .select("id, nome, tipo_cliente, status, bot_ativo, historico, qualificacao, data_hora, created_at")
+      .select("id, nome, tipo_cliente, status, qualificacao, data_hora, cidade, created_at")
       .eq("client_id", clientId)
       .order("data_hora", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false });
@@ -612,7 +654,8 @@ app.get("/api/leads", async (req, res) => {
       .from("leads")
       .select("*")
       .eq("client_id", clientId)
-      .order("data_hora", { ascending: false });
+      .order("data_hora", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
 
     if (error) {
       throw error;
@@ -716,10 +759,10 @@ app.post("/api/leads-webhook", async (req, res) => {
 
     const rows = leads
       .map((lead) => {
-        const telefone = normalizeString(lead.telefone ?? lead.Telefone);
+        const telefone = sanitizePhone(lead.telefone ?? lead.Telefone);
         if (!telefone) return null;
 
-        const dataHora = normalizeString(lead.data_hora ?? lead["Data e Hora"]);
+        const dataHora = normalizeIsoDate(lead.data_hora ?? lead["Data e Hora"]);
         return {
           client_id: clientId,
           telefone,
@@ -728,12 +771,11 @@ app.post("/api/leads-webhook", async (req, res) => {
           faixa_consumo: normalizeString(lead.faixa_consumo ?? lead["Faixa de Consumo"]),
           cidade: normalizeString(lead.cidade ?? lead.Cidade),
           estado: normalizeString(lead.estado ?? lead.Estado),
-          conta_energia: normalizeString(lead.conta_energia ?? lead["Conta de energia"]),
           status: normalizeString(lead.status ?? lead.Status),
-          bot_ativo: normalizeBool(lead.bot_ativo ?? lead["Bot Ativo"]),
-          historico: normalizeString(lead.historico ?? lead.Historico),
-          data_hora: dataHora ? new Date(dataHora).toISOString() : null,
-          qualificacao: normalizeString(lead.qualificacao ?? lead.Qualificacao),
+          data_hora: dataHora,
+          qualificacao: normalizeString(
+            lead.qualificacao ?? lead.Qualificacao ?? lead.resumo ?? lead.Resumo
+          ),
         };
       })
       .filter(Boolean);
@@ -918,7 +960,7 @@ app.use((error, _req, res, _next) => {
   sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
 });
 
-const port = Number.parseInt(process.env.PORT || "3001", 10);
+const port = Number.parseInt(process.env.PORT || "3000", 10);
 app.listen(port, () => {
   console.log(`VexoApi listening on port ${port}`);
 });

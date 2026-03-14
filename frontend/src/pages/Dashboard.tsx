@@ -1,6 +1,5 @@
-// VexoCrm/frontend/src/pages/Dashboard.tsx
 import { useEffect, useState } from "react";
-import { Users, Target, TrendingUp, Bot, Snowflake, Flame, Clock, Building2 } from "lucide-react";
+import { Building2, Clock, Flame, MapPin, Snowflake, Target, TrendingUp, Users } from "lucide-react";
 import { KpiCard } from "@/components/KpiCard";
 import { RevenueChart } from "@/components/charts/RevenueChart";
 import { ConversionDonut } from "@/components/charts/ConversionDonut";
@@ -24,21 +23,22 @@ const Dashboard = () => {
   useEffect(() => {
     if (!clients.length) return;
     const selectedStillExists = clients.some((client) => client.id === selectedClientId);
-    if (!selectedStillExists) setSelectedClientId(clients[0].id);
+    if (!selectedStillExists) {
+      setSelectedClientId(clients[0].id);
+    }
   }, [clients, selectedClientId]);
 
   const summary = data?.summary ?? {
     totalLeads: 0,
     leadsToday: 0,
-    emQualificacao: 0,
+    qualifiedLeads: 0,
     qualificationRate: 0,
-    botAtivo: 0,
+    activeCities: 0,
     hotLeads: 0,
     warmLeads: 0,
     coldLeads: 0,
   };
 
-  // Client selector shown in the sticky header
   const headerRight = (
     <div className="flex min-w-[220px] items-center gap-2">
       <Building2 className="h-4 w-4 text-muted-foreground" />
@@ -68,19 +68,19 @@ const Dashboard = () => {
       <KpiGrid>
         <KpiCard title="Total de Leads" value={String(summary.totalLeads)} icon={<Users className="h-4 w-4" />} />
         <KpiCard title="Leads Hoje" value={String(summary.leadsToday)} icon={<Clock className="h-4 w-4" />} />
-        <KpiCard title="Em Qualificação" value={String(summary.emQualificacao)} icon={<Target className="h-4 w-4" />} />
-        <KpiCard title="Taxa Qualificação" value={`${summary.qualificationRate}%`} icon={<TrendingUp className="h-4 w-4" />} />
+        <KpiCard title="Qualificados" value={String(summary.qualifiedLeads)} icon={<Target className="h-4 w-4" />} />
+        <KpiCard title="Taxa de Qualificacao" value={`${summary.qualificationRate}%`} icon={<TrendingUp className="h-4 w-4" />} />
       </KpiGrid>
 
       <KpiGrid>
-        <KpiCard title="Bot Ativo" value={String(summary.botAtivo)} icon={<Bot className="h-4 w-4" />} />
+        <KpiCard title="Cidades" value={String(summary.activeCities)} icon={<MapPin className="h-4 w-4" />} />
         <KpiCard title="Quentes" value={String(summary.hotLeads)} icon={<Flame className="h-4 w-4" />} indicator={{ color: "bg-primary", label: "Quentes" }} />
         <KpiCard title="Mornos" value={String(summary.warmLeads)} icon={<Clock className="h-4 w-4" />} indicator={{ color: "bg-warning", label: "Mornos" }} />
         <KpiCard title="Frios" value={String(summary.coldLeads)} icon={<Snowflake className="h-4 w-4" />} indicator={{ color: "bg-success", label: "Frios" }} />
       </KpiGrid>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <DashboardPanel title="Leads por Dia" subtitle="Volume diário e quantos estão em qualificação" className="lg:col-span-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <DashboardPanel title="Leads por Dia" subtitle="Volume diario e quantos ja foram qualificados" className="lg:col-span-3">
           <RevenueChart data={data?.leadsByDay ?? []} />
         </DashboardPanel>
         <DashboardPanel title="Temperatura dos Leads" className="lg:col-span-2">
@@ -88,7 +88,7 @@ const Dashboard = () => {
         </DashboardPanel>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <DashboardPanel>
           <TopSellers data={data?.typeBreakdown ?? []} />
         </DashboardPanel>

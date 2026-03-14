@@ -4,7 +4,7 @@ interface RevenueChartProps {
   data: Array<{
     day: string;
     leads: number;
-    emQualificacao: number;
+    qualifiedLeads: number;
   }>;
 }
 
@@ -19,7 +19,7 @@ export function RevenueChart({ data }: RevenueChartProps) {
           contentStyle={{ background: "hsl(230, 22%, 13%)", border: "1px solid hsl(230, 18%, 18%)", borderRadius: 8, color: "hsl(220, 20%, 92%)" }}
         />
         <Line type="monotone" dataKey="leads" stroke="hsl(32, 95%, 55%)" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="emQualificacao" stroke="hsl(217, 91%, 60%)" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="qualifiedLeads" stroke="hsl(217, 91%, 60%)" strokeWidth={2} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   );
