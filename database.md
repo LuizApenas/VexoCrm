@@ -9,6 +9,7 @@ O banco oficial do sistema esta no `Supabase PostgreSQL`.
 Hoje o fluxo principal nao depende de planilhas. As tabelas abaixo sustentam:
 
 - captura de leads;
+- importacao e auditoria de planilhas dos clientes;
 - memoria de conversa;
 - notificacoes operacionais;
 - rastreio de erros do n8n;
@@ -18,6 +19,8 @@ Hoje o fluxo principal nao depende de planilhas. As tabelas abaixo sustentam:
 
 - `leads_clients`
 - `leads`
+- `lead_imports`
+- `lead_import_items`
 - `lead_conversations`
 - `notifications`
 - `n8n_error_logs`
@@ -26,6 +29,9 @@ Hoje o fluxo principal nao depende de planilhas. As tabelas abaixo sustentam:
 
 ```text
 leads_clients (1) ---- (N) leads
+leads_clients (1) ---- (N) lead_imports
+lead_imports (1) ----- (N) lead_import_items
+lead_import_items ----> leads
 leads.telefone ------- lead_conversations.telefone
 n8n_error_logs ------> notifications
 ```
@@ -63,6 +69,41 @@ Tabela principal do CRM.
 ### Regra operacional
 
 O workflow e o backend tratam `client_id + telefone` como chave logica do lead.
+
+## `lead_imports`
+
+Cabecalho de cada planilha importada pelo CRM.
+
+| Coluna | Tipo | Observacao |
+| --- | --- | --- |
+| `id` | `uuid` | chave primaria |
+| `client_id` | `text` | cliente dono da carga |
+| `source_name` | `text` | nome original do arquivo |
+| `source_type` | `text` | extensao/tipo informado na carga |
+| `total_rows` | `integer` | total de linhas lidas |
+| `imported_rows` | `integer` | linhas aproveitadas |
+| `skipped_rows` | `integer` | linhas ignoradas |
+| `uploaded_by_uid` | `text` | uid do usuario interno |
+| `uploaded_by_email` | `text` | email do usuario interno |
+| `created_at` | `timestamptz` | carimbo da importacao |
+
+## `lead_import_items`
+
+Persistencia linha a linha da planilha recebida.
+
+| Coluna | Tipo | Observacao |
+| --- | --- | --- |
+| `id` | `uuid` | chave primaria |
+| `import_id` | `uuid` | referencia para `lead_imports` |
+| `client_id` | `text` | cliente dono da linha |
+| `row_number` | `integer` | numero original da linha na planilha |
+| `telefone` | `text` | telefone normalizado, quando existir |
+| `lead_id` | `uuid` | lead impactado pela importacao |
+| `imported` | `boolean` | indica se a linha virou lead/upsert |
+| `skip_reason` | `text` | motivo da rejeicao |
+| `raw_data` | `jsonb` | linha original extraida da planilha |
+| `normalized_data` | `jsonb` | payload padronizado para o CRM |
+| `created_at` | `timestamptz` | carimbo da persistencia |
 
 ### Campos antigos removidos
 
@@ -129,6 +170,7 @@ Tabela de auditoria tecnica dos workflows.
 
 - cria e finaliza leads;
 - salva memoria de conversa;
+- registra importacoes de planilhas e linhas extraidas;
 - busca ultima memoria;
 - registra erros operacionais.
 
@@ -136,13 +178,14 @@ Tabela de auditoria tecnica dos workflows.
 
 - le agregados do dashboard;
 - lista leads para o CRM;
+- importa planilhas e audita cada linha recebida;
 - serve notificacoes para o frontend;
 - prepara a futura migracao do audio.
 
 ### Frontend
 
-- consome backend para dashboard, leads e notificacoes.
+- consome backend para dashboard, leads, planilhas e notificacoes.
 
 ## Conclusao
 
-Para documentar o banco corretamente hoje, use este arquivo e [docs/supabase-functions.md](docs/supabase-functions.md). Nao use mais scripts ou docs antigas baseadas em planilhas.
+Para documentar o banco corretamente hoje, use este arquivo e [docs/supabase-functions.md](docs/supabase-functions.md). O CRM voltou a aceitar planilhas, mas agora elas entram como importacao auditada e viram registros persistidos no PostgreSQL.

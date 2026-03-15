@@ -1,13 +1,14 @@
-import { type AccessRole, useAuth } from "@/contexts/AuthContext";
+import { type AccessRole, type AccessView, useAuth } from "@/contexts/AuthContext";
 import { Navigate, useLocation } from "react-router-dom";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRoles?: AccessRole[];
+  requiredView?: AccessView;
 }
 
-export default function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { isAuthenticated, loading, mustChangePassword, accessRole, defaultRoute } = useAuth();
+export default function ProtectedRoute({ children, allowedRoles, requiredView }: ProtectedRouteProps) {
+  const { isAuthenticated, loading, mustChangePassword, accessRole, defaultRoute, canAccessView } = useAuth();
   const location = useLocation();
   const isSetPasswordPage = location.pathname === "/set-password";
 
@@ -32,6 +33,10 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
   }
 
   if (allowedRoles && !allowedRoles.includes(accessRole)) {
+    return <Navigate to={defaultRoute} replace />;
+  }
+
+  if (requiredView && !canAccessView(requiredView)) {
     return <Navigate to={defaultRoute} replace />;
   }
 

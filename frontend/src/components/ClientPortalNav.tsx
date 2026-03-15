@@ -12,7 +12,7 @@ interface ClientPortalNavProps {
 }
 
 export function ClientPortalNav({ clientId, clientName, active }: ClientPortalNavProps) {
-  const { isInternalUser, logout } = useAuth();
+  const { isInternalUser, logout, canAccessView } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleLogout = async () => {
@@ -30,18 +30,22 @@ export function ClientPortalNav({ clientId, clientName, active }: ClientPortalNa
         <Building2 className="h-3.5 w-3.5" />
         {clientName}
       </Badge>
-      <Button asChild size="sm" variant={active === "dashboard" ? "default" : "outline"}>
-        <Link to={`/clientes/${clientId}/dashboard`}>
-          <LayoutDashboard className="h-4 w-4" />
-          Dashboard
-        </Link>
-      </Button>
-      <Button asChild size="sm" variant={active === "leads" ? "default" : "outline"}>
-        <Link to={`/clientes/${clientId}/leads`}>
-          <TableProperties className="h-4 w-4" />
-          Leads
-        </Link>
-      </Button>
+      {canAccessView("dashboard") && (
+        <Button asChild size="sm" variant={active === "dashboard" ? "default" : "outline"}>
+          <Link to={`/clientes/${clientId}/dashboard`}>
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboard
+          </Link>
+        </Button>
+      )}
+      {canAccessView("leads") && (
+        <Button asChild size="sm" variant={active === "leads" ? "default" : "outline"}>
+          <Link to={`/clientes/${clientId}/leads`}>
+            <TableProperties className="h-4 w-4" />
+            Leads
+          </Link>
+        </Button>
+      )}
       {isInternalUser && (
         <Button asChild size="sm" variant="ghost">
           <Link to="/crm/dashboard">Abrir CRM</Link>

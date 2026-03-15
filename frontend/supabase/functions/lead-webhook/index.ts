@@ -58,6 +58,18 @@ const errorResponse = (status: number, error: string, details?: string) =>
     status,
   );
 
+const findLeadByPhone = async (
+  supabase: ReturnType<typeof createClient>,
+  clientId: string,
+  telefone: string,
+) =>
+  supabase
+    .from("leads")
+    .select("id, nome")
+    .eq("client_id", clientId)
+    .eq("telefone", telefone)
+    .maybeSingle();
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -102,12 +114,11 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     if (action === "create") {
-      const { data: existingLead, error: lookupError } = await supabase
-        .from("leads")
-        .select("id, nome")
-        .eq("client_id", clientId)
-        .eq("telefone", telefone)
-        .maybeSingle();
+      const { data: existingLead, error: lookupError } = await findLeadByPhone(
+        supabase,
+        clientId,
+        telefone,
+      );
 
       if (lookupError) {
         console.error("lead-webhook create lookup error:", lookupError);
@@ -115,28 +126,11 @@ Deno.serve(async (req: Request) => {
       }
 
       if (existingLead) {
-        const updatePayload: Record<string, unknown> = {
-          updated_at: now,
-        };
-
-        if (nome && nome !== existingLead.nome) {
-          updatePayload.nome = nome;
-        }
-
-        const { error: updateError } = await supabase
-          .from("leads")
-          .update(updatePayload)
-          .eq("id", existingLead.id);
-
-        if (updateError) {
-          console.error("lead-webhook create update error:", updateError);
-          return errorResponse(500, "Failed to update lead", updateError.message);
-        }
-
         return jsonResponse({
           success: true,
+          status: "ok",
           action,
-          operation: "updated_existing",
+          operation: "already_exists",
           id: existingLead.id,
           client_id: clientId,
           telefone,
@@ -160,12 +154,40 @@ Deno.serve(async (req: Request) => {
         .single();
 
       if (insertError) {
+        if (insertError.code === "23505") {
+          const { data: duplicateLead, error: duplicateLookupError } =
+            await findLeadByPhone(supabase, clientId, telefone);
+
+          if (duplicateLookupError) {
+            console.error(
+              "lead-webhook create duplicate lookup error:",
+              duplicateLookupError,
+            );
+            return errorResponse(
+              500,
+              "Failed to lookup duplicated lead",
+              duplicateLookupError.message,
+            );
+          }
+
+          return jsonResponse({
+            success: true,
+            status: "ok",
+            action,
+            operation: "already_exists",
+            id: duplicateLead?.id ?? null,
+            client_id: clientId,
+            telefone,
+          });
+        }
+
         console.error("lead-webhook create insert error:", insertError);
         return errorResponse(500, "Failed to create lead", insertError.message);
       }
 
       return jsonResponse({
         success: true,
+        status: "ok",
         action,
         operation: "created",
         id: insertedLead.id,
@@ -204,6 +226,7 @@ Deno.serve(async (req: Request) => {
 
     return jsonResponse({
       success: true,
+      status: "ok",
       action,
       operation: "upserted",
       id: finalizedLead.id,
