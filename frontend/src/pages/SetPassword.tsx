@@ -1,6 +1,6 @@
 // VexoCrm/frontend/src/pages/SetPassword.tsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -12,12 +12,22 @@ import { PageTitle } from "@/components/PageTitle";
 
 export default function SetPassword() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, updateInitialPassword, loading } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const fallbackPath =
+    typeof location.state === "object" &&
+    location.state !== null &&
+    "from" in location.state &&
+    typeof location.state.from === "object" &&
+    location.state.from !== null &&
+    "pathname" in location.state.from
+      ? String(location.state.from.pathname || "")
+      : "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +49,7 @@ export default function SetPassword() {
     try {
       setSubmitting(true);
       await updateInitialPassword(currentPassword, newPassword);
-      navigate("/", { replace: true });
+      navigate(fallbackPath || "/crm/dashboard", { replace: true });
     } catch (err: unknown) {
       const errorCode =
         typeof err === "object" && err !== null && "code" in err

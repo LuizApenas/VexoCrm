@@ -8,7 +8,6 @@ import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { TranscriptionError, transcribeWhatsAppAudio } from "./whatsapp-audio.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env") });
@@ -127,6 +126,42 @@ function ensureSupabase(res) {
   return true;
 }
 
+function normalizeRole(value) {
+  const normalized = normalizeString(value)?.toLowerCase();
+
+  if (!normalized) return "internal";
+
+  if (["client", "cliente", "customer"].includes(normalized)) {
+    return "client";
+  }
+
+  return "internal";
+}
+
+function buildAccessProfile(decodedToken) {
+  const role = normalizeRole(
+    decodedToken.role ??
+      decodedToken.userRole ??
+      decodedToken.user_type ??
+      decodedToken.userType ??
+      decodedToken.tipo_usuario
+  );
+
+  const clientId = normalizeString(
+    decodedToken.clientId ??
+      decodedToken.client_id ??
+      decodedToken.companyId ??
+      decodedToken.empresaId
+  );
+
+  return {
+    uid: decodedToken.uid,
+    email: normalizeString(decodedToken.email),
+    role,
+    clientId: role === "client" ? clientId : null,
+  };
+}
+
 async function requireFirebaseAuth(req, res, next) {
   if (!firebaseReady) {
     sendError(
@@ -149,12 +184,35 @@ async function requireFirebaseAuth(req, res, next) {
 
   try {
     const decoded = await getAuth().verifyIdToken(token);
+    const accessProfile = buildAccessProfile(decoded);
+
+    if (accessProfile.role === "client" && !accessProfile.clientId) {
+      sendError(
+        res,
+        403,
+        "INVALID_CLIENT_SCOPE",
+        "Client user is missing client scope",
+        "Set the Firebase custom claim clientId for this user"
+      );
+      return;
+    }
+
     req.authUser = decoded;
+    req.authAccess = accessProfile;
     next();
   } catch (error) {
     console.error("Firebase token validation failed:", error);
     sendError(res, 401, "INVALID_TOKEN", "Invalid token");
   }
+}
+
+function requireInternalAccess(req, res, next) {
+  if (req.authAccess?.role === "client") {
+    sendError(res, 403, "FORBIDDEN", "Forbidden");
+    return;
+  }
+
+  next();
 }
 
 function normalizeString(value) {
@@ -464,6 +522,26 @@ function buildDashboardPayload(client, leads) {
   };
 }
 
+function resolveAuthorizedClientId(req, res, requestedClientId) {
+  const authAccess = req.authAccess || { role: "internal", clientId: null };
+
+  if (authAccess.role === "client") {
+    if (requestedClientId && requestedClientId !== authAccess.clientId) {
+      sendError(
+        res,
+        403,
+        "FORBIDDEN_CLIENT_SCOPE",
+        "You do not have access to this client"
+      );
+      return null;
+    }
+
+    return authAccess.clientId;
+  }
+
+  return requestedClientId || "infinie";
+}
+
 function parseCsvLine(line) {
   const result = [];
   let current = "";
@@ -521,33 +599,6 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.post("/transcribe", async (req, res) => {
-  try {
-    const result = await transcribeWhatsAppAudio({
-      url: req.body?.url,
-      mediaKey: req.body?.mediaKey,
-      groqApiKey: process.env.GROQ_API_KEY,
-      logger: console,
-    });
-
-    res.json({ text: result.text });
-  } catch (error) {
-    if (error instanceof TranscriptionError) {
-      console.error("transcribe route error:", {
-        event: "transcribe_route_error",
-        code: error.code,
-        message: error.message,
-        details: error.details,
-      });
-      sendError(res, error.status, error.code, error.message, error.details);
-      return;
-    }
-
-    console.error("transcribe route unexpected error:", error);
-    sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
-  }
-});
-
 app.get("/api/sheets", async (req, res) => {
   const { sheetId, gid } = req.query;
   if (!sheetId || !gid) {
@@ -590,14 +641,19 @@ app.get("/api/sheets", async (req, res) => {
   }
 });
 
-app.get("/api/lead-clients", async (_req, res) => {
+app.get("/api/lead-clients", requireFirebaseAuth, async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   try {
-    const { data, error } = await supabase
-      .from("leads_clients")
-      .select("id, name, created_at")
-      .order("name", { ascending: true });
+    let query = supabase.from("leads_clients").select("id, name, created_at");
+
+    if (req.authAccess?.role === "client") {
+      query = query.eq("id", req.authAccess.clientId);
+    } else {
+      query = query.order("name", { ascending: true });
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw error;
@@ -610,10 +666,12 @@ app.get("/api/lead-clients", async (_req, res) => {
   }
 });
 
-app.get("/api/dashboard", async (req, res) => {
+app.get("/api/dashboard", requireFirebaseAuth, async (req, res) => {
   if (!ensureSupabase(res)) return;
 
-  const clientId = normalizeString(req.query.clientId) || "infinie";
+  const requestedClientId = normalizeString(req.query.clientId);
+  const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+  if (!clientId) return;
 
   try {
     const { data: client, error: clientError } = await supabase
@@ -644,10 +702,12 @@ app.get("/api/dashboard", async (req, res) => {
   }
 });
 
-app.get("/api/leads", async (req, res) => {
+app.get("/api/leads", requireFirebaseAuth, async (req, res) => {
   if (!ensureSupabase(res)) return;
 
-  const clientId = normalizeString(req.query.clientId) || "infinie";
+  const requestedClientId = normalizeString(req.query.clientId);
+  const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+  if (!clientId) return;
 
   try {
     const { data, error } = await supabase
@@ -668,7 +728,7 @@ app.get("/api/leads", async (req, res) => {
   }
 });
 
-app.get("/api/notifications", requireFirebaseAuth, async (req, res) => {
+app.get("/api/notifications", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   try {
@@ -702,7 +762,7 @@ app.get("/api/notifications", requireFirebaseAuth, async (req, res) => {
   }
 });
 
-app.patch("/api/notifications", requireFirebaseAuth, async (req, res) => {
+app.patch("/api/notifications", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   try {

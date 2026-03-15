@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { API_BASE_URL } from "@/lib/api";
 
 export interface LeadRow {
@@ -18,11 +19,21 @@ export interface LeadRow {
 }
 
 export function useLeads(clientId = "infinie") {
+  const { isAuthenticated, getIdToken } = useAuth();
+
   return useQuery({
     queryKey: ["leads", clientId],
+    enabled: isAuthenticated && !!clientId,
     queryFn: async (): Promise<LeadRow[]> => {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Usuario nao autenticado.");
+      }
+
       const url = `${API_BASE_URL}/api/leads?clientId=${encodeURIComponent(clientId)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!res.ok) {
         const errText = await res.text();
         throw new Error(`Leads fetch failed: ${res.status} ${errText}`);

@@ -1,6 +1,6 @@
 // VexoCrm/frontend/src/pages/Login.tsx
 import { useAuth } from "@/contexts/AuthContext";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";
@@ -11,16 +11,27 @@ import { LogoBlock } from "@/components/LogoBlock";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 export default function Login() {
-  const { isAuthenticated, mustChangePassword, loading, login } = useAuth();
+  const location = useLocation();
+  const { isAuthenticated, mustChangePassword, loading, login, defaultRoute } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const requestedPath =
+    typeof location.state === "object" &&
+    location.state !== null &&
+    "from" in location.state &&
+    typeof location.state.from === "object" &&
+    location.state.from !== null &&
+    "pathname" in location.state.from
+      ? String(location.state.from.pathname || "")
+      : "";
+  const redirectTo = mustChangePassword ? "/set-password" : requestedPath || defaultRoute;
 
   if (loading) return <LoadingScreen />;
 
   if (isAuthenticated) {
-    return <Navigate to={mustChangePassword ? "/set-password" : "/"} replace />;
+    return <Navigate to={redirectTo} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

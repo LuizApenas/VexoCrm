@@ -1,25 +1,36 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
-  House,
   LayoutDashboard,
   Users,
   Bot,
+  LogOut,
   PanelLeftClose,
   PanelLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/NotificationBell";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
-  { title: "Home", url: "/", icon: House },
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "Leads", url: "/leads", icon: Users },
-  { title: "Agente", url: "/agente", icon: Bot },
+  { title: "Dashboard", url: "/crm/dashboard", icon: LayoutDashboard },
+  { title: "Leads", url: "/crm/leads", icon: Users },
+  { title: "Agente", url: "/crm/agente", icon: Bot },
 ];
 
 export function AppSidebar() {
+  const { logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+      await logout();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
     <aside
@@ -47,7 +58,6 @@ export function AppSidebar() {
           <NavLink
             key={item.url}
             to={item.url}
-            end={item.url === "/"}
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
@@ -66,6 +76,14 @@ export function AppSidebar() {
       {/* Bottom */}
       <div className="border-t border-sidebar-border p-2 space-y-0.5 shrink-0">
         <NotificationBell collapsed={collapsed} />
+        <button
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          className="flex items-center gap-2 w-full rounded-md px-2.5 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/10 hover:text-sidebar-accent-foreground transition-colors disabled:pointer-events-none disabled:opacity-60"
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>{isLoggingOut ? "Saindo..." : "Sair"}</span>}
+        </button>
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="flex items-center gap-2 w-full rounded-md px-2.5 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/10 hover:text-sidebar-accent-foreground transition-colors"

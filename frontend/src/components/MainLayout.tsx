@@ -3,17 +3,13 @@
 // Extracted from App.tsx for cleaner structure.
 
 import { AppSidebar } from "@/components/AppSidebar";
-import type { ReactNode } from "react";
+import { Outlet } from "react-router-dom";
 
-interface MainLayoutProps {
-  children: ReactNode;
-}
-
-export function MainLayout({ children }: MainLayoutProps) {
+export function MainLayout() {
   return (
     <div className="flex min-h-screen w-full">
       <AppSidebar />
-      {children}
+      <Outlet />
     </div>
   );
 }

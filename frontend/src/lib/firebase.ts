@@ -3,6 +3,7 @@ import { FirebaseApp, getApp, getApps, initializeApp } from "firebase/app";
 import {
   Auth,
   EmailAuthProvider,
+  IdTokenResult,
   User,
   createUserWithEmailAndPassword,
   getAuth,
@@ -60,6 +61,11 @@ export async function logout(): Promise<void> {
 export async function getIdToken(forceRefresh = false): Promise<string | null> {
   if (!auth.currentUser) return null;
   return auth.currentUser.getIdToken(forceRefresh);
+}
+
+export async function getCurrentIdTokenResult(forceRefresh = false): Promise<IdTokenResult | null> {
+  if (!auth.currentUser) return null;
+  return auth.currentUser.getIdTokenResult(forceRefresh);
 }
 
 export function getCurrentUser(): User | null {

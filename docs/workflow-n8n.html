@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VexoCrm - Workflow n8n</title>
+    <link rel="stylesheet" href="./assets/report.css">
+  </head>
+  <body>
+    <main class="report">
+      <section class="cover">
+        <div class="eyebrow">Workflow n8n</div>
+        <h1>Versao Nova</h1>
+        <p>
+          Leitura operacional do workflow exportado, com foco nos blocos reais, nas chamadas
+          para Edge Functions e na situacao atual do ramo de audio.
+        </p>
+        <div class="meta">
+          <span>38 nos</span>
+          <span>Webhook de entrada</span>
+          <span>Atualizado em 14/03/2026</span>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Blocos visuais do workflow</h2>
+        <div class="grid grid-2">
+          <article class="card">
+            <strong>Verifica e Inclui Lead no Banco</strong>
+            <p>Normaliza telefone, consulta memoria anterior e cria o lead inicial.</p>
+          </article>
+          <article class="card">
+            <strong>Qualifica/Gerencia Lead</strong>
+            <p>Conduz a conversa, junta contexto e decide se a qualificacao terminou.</p>
+          </article>
+          <article class="card">
+            <strong>Envia Qualificacao para SDR</strong>
+            <p>Estrutura a saida, notifica o SDR e finaliza os dados do lead.</p>
+          </article>
+          <article class="card">
+            <strong>Limpeza Redis</strong>
+            <p>Compacta e salva memoria, mantendo o estado transitorio do fluxo controlado.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Sequencia principal</h2>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-index">1</div>
+            <div class="timeline-body">
+              <h3>Webhook de entrada</h3>
+              <p>`Webhook1` recebe a mensagem e a envia para a decisao `E Audio ou MSG`.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">2</div>
+            <div class="timeline-body">
+              <h3>Ramos de texto e audio</h3>
+              <p>Texto segue para `Dados Msg`. Audio passa por `Dados Audio`, download e decrypt.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">3</div>
+            <div class="timeline-body">
+              <h3>Contexto</h3>
+              <p>`Temos Conversas ?` consulta `conversation-memory-latest` com o telefone normalizado.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">4</div>
+            <div class="timeline-body">
+              <h3>Lead inicial</h3>
+              <p>`Salva Lead Infie` chama `lead-webhook` com `action=create`.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">5</div>
+            <div class="timeline-body">
+              <h3>Qualificacao</h3>
+              <p>`Juntar Contexto`, `Qualificador`, `Finalizado` e `If` controlam a decisao da conversa.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">6</div>
+            <div class="timeline-body">
+              <h3>Persistencia final</h3>
+              <p>`Salva Lead` envia a consolidacao do lead com `action=finalize`.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">7</div>
+            <div class="timeline-body">
+              <h3>Memoria</h3>
+              <p>`Compactar Conversa` e `Salvar Memoria no Backend` persistem o contexto no Supabase.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Chamadas HTTP centrais</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Destino</th>
+                <th>Objetivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>`Temos Conversas ?`</td>
+                <td>`conversation-memory-latest`</td>
+                <td>Buscar o ultimo contexto por telefone</td>
+              </tr>
+              <tr>
+                <td>`Salva Lead Infie`</td>
+                <td>`lead-webhook`</td>
+                <td>Criar o lead com `action=create`</td>
+              </tr>
+              <tr>
+                <td>`Salva Lead`</td>
+                <td>`lead-webhook`</td>
+                <td>Finalizar os dados com `action=finalize`</td>
+              </tr>
+              <tr>
+                <td>`Salvar Memoria no Backend`</td>
+                <td>`conversation-memory`</td>
+                <td>Salvar a conversa compactada</td>
+              </tr>
+              <tr>
+                <td>`Responde Lead` / `Agradece Lead` / `Envia SDR`</td>
+                <td>API de WhatsApp</td>
+                <td>Enviar mensagens de resposta</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section page-break">
+        <h2>Ramo de audio atual</h2>
+        <div class="grid grid-3">
+          <article class="card">
+            <strong>HTTP Request</strong>
+            <p>Baixa o arquivo de audio a partir da URL recebida no payload.</p>
+          </article>
+          <article class="card">
+            <strong>Code in Python</strong>
+            <p>Transforma e prepara o conteudo do audio dentro do proprio workflow.</p>
+          </article>
+          <article class="card">
+            <strong>Analyze audio</strong>
+            <p>Entrega o conteudo para a etapa de analise usada no fluxo.</p>
+          </article>
+        </div>
+        <div class="banner" style="margin-top: 18px;">
+          <strong>Leitura tecnica</strong>
+          O tratamento de audio permanece dentro do proprio fluxo operacional, sem dependencia de endpoint dedicado no backend.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
