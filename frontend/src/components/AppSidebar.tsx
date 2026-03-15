@@ -5,8 +5,10 @@ import {
   Users,
   Bot,
   LogOut,
+  ShieldCheck,
   PanelLeftClose,
   PanelLeft,
+  FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -15,7 +17,9 @@ import { useAuth } from "@/contexts/AuthContext";
 const navItems = [
   { title: "Dashboard", url: "/crm/dashboard", icon: LayoutDashboard },
   { title: "Leads", url: "/crm/leads", icon: Users },
+  { title: "Planilhas", url: "/crm/planilhas", icon: FileSpreadsheet },
   { title: "Agente", url: "/crm/agente", icon: Bot },
+  { title: "Usuarios", url: "/crm/usuarios", icon: ShieldCheck },
 ];
 
 export function AppSidebar() {

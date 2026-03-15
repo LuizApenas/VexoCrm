@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env") });
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "5mb" }));
 const isProduction = process.env.NODE_ENV === "production";
 const MAX_CONVERSATION_BYTES = 1024 * 1024;
 
@@ -126,6 +126,22 @@ function ensureSupabase(res) {
   return true;
 }
 
+const MANAGED_CLAIM_KEYS = [
+  "role",
+  "userRole",
+  "user_type",
+  "userType",
+  "tipo_usuario",
+  "clientId",
+  "client_id",
+  "companyId",
+  "empresaId",
+  "clientIds",
+  "allowedViews",
+  "companyName",
+];
+const DEFAULT_CLIENT_VIEWS = ["dashboard", "leads"];
+
 function normalizeRole(value) {
   const normalized = normalizeString(value)?.toLowerCase();
 
@@ -135,30 +151,85 @@ function normalizeRole(value) {
     return "client";
   }
 
+  if (["pending", "pendente", "pending_client", "cliente_pendente"].includes(normalized)) {
+    return "pending";
+  }
+
   return "internal";
 }
 
-function buildAccessProfile(decodedToken) {
-  const role = normalizeRole(
-    decodedToken.role ??
-      decodedToken.userRole ??
-      decodedToken.user_type ??
-      decodedToken.userType ??
-      decodedToken.tipo_usuario
-  );
+function normalizeStringArray(value) {
+  if (Array.isArray(value)) {
+    return Array.from(
+      new Set(value.map((item) => normalizeString(item)).filter(Boolean))
+    );
+  }
 
-  const clientId = normalizeString(
-    decodedToken.clientId ??
-      decodedToken.client_id ??
-      decodedToken.companyId ??
-      decodedToken.empresaId
+  const normalized = normalizeString(value);
+  if (!normalized) return [];
+
+  return Array.from(
+    new Set(
+      normalized
+        .split(",")
+        .map((item) => normalizeString(item))
+        .filter(Boolean)
+    )
   );
+}
+
+function normalizeAllowedViews(value, role) {
+  const allowed = normalizeStringArray(value)
+    .map((item) => item.toLowerCase())
+    .filter((item) => DEFAULT_CLIENT_VIEWS.includes(item));
+
+  if (role === "client" && allowed.length === 0) {
+    return [...DEFAULT_CLIENT_VIEWS];
+  }
+
+  return Array.from(new Set(allowed));
+}
+
+function extractManagedAccessClaims(rawClaims = {}) {
+  const role = normalizeRole(
+    rawClaims.role ??
+      rawClaims.userRole ??
+      rawClaims.user_type ??
+      rawClaims.userType ??
+      rawClaims.tipo_usuario
+  );
+  const directClientId = normalizeString(
+    rawClaims.clientId ??
+      rawClaims.client_id ??
+      rawClaims.companyId ??
+      rawClaims.empresaId
+  );
+  const clientIds = Array.from(
+    new Set([directClientId, ...normalizeStringArray(rawClaims.clientIds)].filter(Boolean))
+  );
+  const clientId = directClientId || clientIds[0] || null;
+  const allowedViews = normalizeAllowedViews(rawClaims.allowedViews, role);
+
+  return {
+    role,
+    clientId: role === "client" ? clientId : null,
+    clientIds: role === "client" ? clientIds : [],
+    allowedViews: role === "client" ? allowedViews : [],
+    companyName: normalizeString(rawClaims.companyName),
+  };
+}
+
+function buildAccessProfile(decodedToken) {
+  const claims = extractManagedAccessClaims(decodedToken);
 
   return {
     uid: decodedToken.uid,
     email: normalizeString(decodedToken.email),
-    role,
-    clientId: role === "client" ? clientId : null,
+    role: claims.role,
+    clientId: claims.clientId,
+    clientIds: claims.clientIds,
+    allowedViews: claims.allowedViews,
+    companyName: claims.companyName,
   };
 }
 
@@ -186,13 +257,13 @@ async function requireFirebaseAuth(req, res, next) {
     const decoded = await getAuth().verifyIdToken(token);
     const accessProfile = buildAccessProfile(decoded);
 
-    if (accessProfile.role === "client" && !accessProfile.clientId) {
+    if (accessProfile.role === "client" && accessProfile.clientIds.length === 0) {
       sendError(
         res,
         403,
         "INVALID_CLIENT_SCOPE",
         "Client user is missing client scope",
-        "Set the Firebase custom claim clientId for this user"
+        "Set the Firebase custom claim clientIds for this user"
       );
       return;
     }
@@ -207,7 +278,7 @@ async function requireFirebaseAuth(req, res, next) {
 }
 
 function requireInternalAccess(req, res, next) {
-  if (req.authAccess?.role === "client") {
+  if (req.authAccess?.role !== "internal") {
     sendError(res, 403, "FORBIDDEN", "Forbidden");
     return;
   }
@@ -242,8 +313,32 @@ function sanitizePhone(value) {
   const normalized = normalizeString(value);
   if (!normalized) return null;
 
-  const digits = normalized.replace(/\D/g, "");
-  return digits || null;
+  let digits = normalized.replace(/\D/g, "");
+  if (!digits) return null;
+
+  // Remove common Brazilian long-distance prefix if present.
+  if (digits.startsWith("0")) {
+    digits = digits.replace(/^0+/, "");
+  }
+
+  // Local/national BR numbers from spreadsheets usually arrive with 10 or 11 digits.
+  // Persist them in E.164-like format using country code 55.
+  if (digits.length === 10 || digits.length === 11) {
+    return `55${digits}`;
+  }
+
+  if (digits.length === 12 && digits.startsWith("55")) {
+    const national = digits.slice(2);
+    if (national.length === 10) {
+      return `55${national}`;
+    }
+  }
+
+  if (digits.length === 13 && digits.startsWith("55")) {
+    return digits;
+  }
+
+  return digits;
 }
 
 function isValidBase64(value) {
@@ -522,11 +617,70 @@ function buildDashboardPayload(client, leads) {
   };
 }
 
+function mergeManagedClaims(existingClaims = {}, managedClaims = {}) {
+  const preserved = { ...existingClaims };
+
+  for (const key of MANAGED_CLAIM_KEYS) {
+    delete preserved[key];
+  }
+
+  return {
+    ...preserved,
+    ...managedClaims,
+  };
+}
+
+function buildManagedClaims({ role, clientIds = [], allowedViews = [], companyName = null }) {
+  const normalizedRole = normalizeRole(role);
+  const normalizedClientIds = normalizeStringArray(clientIds);
+  const normalizedViews = normalizeAllowedViews(allowedViews, normalizedRole);
+  const normalizedCompanyName = normalizeString(companyName);
+
+  if (normalizedRole === "client" && normalizedClientIds.length === 0) {
+    throw new Error("Client users must have at least one associated client");
+  }
+
+  if (normalizedRole === "pending") {
+    return {
+      role: "pending",
+      companyName: normalizedCompanyName,
+    };
+  }
+
+  if (normalizedRole === "client") {
+    return {
+      role: "client",
+      clientId: normalizedClientIds[0],
+      clientIds: normalizedClientIds,
+      allowedViews: normalizedViews,
+      companyName: normalizedCompanyName,
+    };
+  }
+
+  return {
+    role: "internal",
+  };
+}
+
+async function listAllFirebaseUsers() {
+  const auth = getAuth();
+  let pageToken;
+  const users = [];
+
+  do {
+    const page = await auth.listUsers(1000, pageToken);
+    users.push(...page.users);
+    pageToken = page.pageToken;
+  } while (pageToken);
+
+  return users;
+}
+
 function resolveAuthorizedClientId(req, res, requestedClientId) {
-  const authAccess = req.authAccess || { role: "internal", clientId: null };
+  const authAccess = req.authAccess || { role: "internal", clientId: null, clientIds: [] };
 
   if (authAccess.role === "client") {
-    if (requestedClientId && requestedClientId !== authAccess.clientId) {
+    if (requestedClientId && !authAccess.clientIds.includes(requestedClientId)) {
       sendError(
         res,
         403,
@@ -536,7 +690,17 @@ function resolveAuthorizedClientId(req, res, requestedClientId) {
       return null;
     }
 
-    return authAccess.clientId;
+    return requestedClientId || authAccess.clientId || authAccess.clientIds[0] || null;
+  }
+
+  if (authAccess.role === "pending") {
+    sendError(
+      res,
+      403,
+      "PENDING_APPROVAL",
+      "Your account is waiting for approval"
+    );
+    return null;
   }
 
   return requestedClientId || "infinie";
@@ -586,6 +750,188 @@ function parseCsvToRows(csv) {
   }
 
   return rows;
+}
+
+function normalizeHeaderKey(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return "";
+
+  return normalized
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function pickRowValue(row, aliases) {
+  if (!row || typeof row !== "object") return null;
+
+  const entries = Object.entries(row);
+  for (const [key, value] of entries) {
+    const normalizedKey = normalizeHeaderKey(key);
+    if (aliases.includes(normalizedKey)) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function normalizeImportedLead(row, clientId) {
+  const telefone = sanitizePhone(
+    pickRowValue(row, [
+      "telefone",
+      "celular",
+      "whatsapp",
+      "phone",
+      "numero",
+      "numero_telefone",
+      "telefone_whatsapp",
+    ])
+  );
+
+  const nome = normalizeString(
+    pickRowValue(row, ["nome", "name", "cliente", "contato", "lead", "responsavel"])
+  );
+  const tipoCliente = normalizeString(
+    pickRowValue(row, ["tipo_cliente", "tipo", "perfil", "segmento", "classificacao"])
+  );
+  const faixaConsumo = normalizeString(
+    pickRowValue(row, [
+      "faixa_consumo",
+      "consumo",
+      "consumo_mensal",
+      "valor_conta",
+      "conta_de_energia",
+      "conta_energia",
+      "ticket",
+    ])
+  );
+  const cidade = normalizeString(pickRowValue(row, ["cidade", "city", "municipio"]));
+  const estado = normalizeString(pickRowValue(row, ["estado", "uf", "state"]));
+  const status = normalizeString(
+    pickRowValue(row, ["status", "etapa", "situacao", "pipeline_status"])
+  );
+  const dataHora = normalizeIsoDate(
+    pickRowValue(row, ["data_hora", "data", "created_at", "data_de_cadastro", "timestamp"])
+  );
+  const qualificacao = normalizeString(
+    pickRowValue(row, [
+      "qualificacao",
+      "observacoes",
+      "observacao",
+      "resumo",
+      "anotacoes",
+      "notas",
+      "descricao",
+    ])
+  );
+
+  return {
+    client_id: clientId,
+    telefone,
+    nome,
+    tipo_cliente: tipoCliente,
+    faixa_consumo: faixaConsumo,
+    cidade,
+    estado,
+    status,
+    data_hora: dataHora,
+    qualificacao,
+  };
+}
+
+function isImportedLeadEmpty(lead) {
+  return !lead.telefone && !lead.nome && !lead.cidade && !lead.qualificacao;
+}
+
+function buildImportPreview(items) {
+  return items.slice(0, 10).map((item) => ({
+    rowNumber: item.rowNumber,
+    telefone: item.normalized.telefone,
+    nome: item.normalized.nome,
+    cidade: item.normalized.cidade,
+    status: item.normalized.status,
+    imported: item.imported,
+    skipReason: item.skipReason,
+  }));
+}
+
+async function getClientName(clientId) {
+  if (!supabase) return clientId;
+
+  const { data, error } = await supabase
+    .from("leads_clients")
+    .select("id, name")
+    .eq("id", clientId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.name || clientId;
+}
+
+async function buildDispatchLeads({ clientId, importId = null, limit = null }) {
+  if (!supabase) return [];
+
+  let phoneScope = null;
+
+  if (importId) {
+    const { data: importItems, error: importItemsError } = await supabase
+      .from("lead_import_items")
+      .select("telefone")
+      .eq("client_id", clientId)
+      .eq("import_id", importId)
+      .eq("imported", true)
+      .not("telefone", "is", null);
+
+    if (importItemsError) {
+      throw importItemsError;
+    }
+
+    phoneScope = Array.from(
+      new Set((importItems || []).map((item) => sanitizePhone(item.telefone)).filter(Boolean))
+    );
+
+    if (phoneScope.length === 0) {
+      return [];
+    }
+  }
+
+  let query = supabase
+    .from("leads")
+    .select("id, client_id, telefone, nome, tipo_cliente, faixa_consumo, cidade, estado, status, data_hora, qualificacao, created_at")
+    .eq("client_id", clientId)
+    .not("telefone", "is", null)
+    .order("created_at", { ascending: false });
+
+  if (phoneScope) {
+    query = query.in("telefone", phoneScope);
+  }
+
+  if (limit && Number.isInteger(limit) && limit > 0) {
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw error;
+  }
+
+  return Array.from(
+    new Map(
+      (data || [])
+        .map((lead) => ({
+          ...lead,
+          telefone: sanitizePhone(lead.telefone),
+        }))
+        .filter((lead) => !!lead.telefone)
+        .map((lead) => [lead.telefone, lead])
+    ).values()
+  );
 }
 
 app.get("/health", (_req, res) => {
@@ -644,11 +990,16 @@ app.get("/api/sheets", async (req, res) => {
 app.get("/api/lead-clients", requireFirebaseAuth, async (req, res) => {
   if (!ensureSupabase(res)) return;
 
+  if (req.authAccess?.role === "pending") {
+    sendError(res, 403, "PENDING_APPROVAL", "Your account is waiting for approval");
+    return;
+  }
+
   try {
     let query = supabase.from("leads_clients").select("id, name, created_at");
 
     if (req.authAccess?.role === "client") {
-      query = query.eq("id", req.authAccess.clientId);
+      query = query.in("id", req.authAccess.clientIds);
     } else {
       query = query.order("name", { ascending: true });
     }
@@ -663,6 +1014,153 @@ app.get("/api/lead-clients", requireFirebaseAuth, async (req, res) => {
   } catch (error) {
     console.error("lead clients query error:", error);
     sendError(res, 500, "LEAD_CLIENTS_QUERY_FAILED", "Failed to query lead clients");
+  }
+});
+
+app.get("/api/admin/users", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+  try {
+    const users = await listAllFirebaseUsers();
+
+    res.json({
+      items: users.map((user) => {
+        const access = extractManagedAccessClaims(user.customClaims || {});
+        return {
+          uid: user.uid,
+          email: user.email || null,
+          displayName: user.displayName || null,
+          disabled: user.disabled,
+          createdAt: user.metadata.creationTime || null,
+          lastSignInAt: user.metadata.lastSignInTime || null,
+          access,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("admin users query error:", error);
+    sendError(res, 500, "ADMIN_USERS_QUERY_FAILED", "Failed to query users");
+  }
+});
+
+app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+  const uid = normalizeString(req.params.uid);
+  const role = normalizeString(req.body?.role);
+
+  if (!uid || !role) {
+    sendError(res, 400, "INVALID_BODY", "Missing uid or role");
+    return;
+  }
+
+  try {
+    const auth = getAuth();
+    const user = await auth.getUser(uid);
+    const managedClaims = buildManagedClaims({
+      role,
+      clientIds: req.body?.clientIds,
+      allowedViews: req.body?.allowedViews,
+      companyName: req.body?.companyName,
+    });
+    const mergedClaims = mergeManagedClaims(user.customClaims || {}, managedClaims);
+
+    await auth.setCustomUserClaims(uid, mergedClaims);
+
+    if (typeof req.body?.disabled === "boolean") {
+      await auth.updateUser(uid, { disabled: req.body.disabled });
+    }
+
+    const updatedUser = await auth.getUser(uid);
+    const access = extractManagedAccessClaims(updatedUser.customClaims || {});
+
+    res.json({
+      item: {
+        uid: updatedUser.uid,
+        email: updatedUser.email || null,
+        displayName: updatedUser.displayName || null,
+        disabled: updatedUser.disabled,
+        createdAt: updatedUser.metadata.creationTime || null,
+        lastSignInAt: updatedUser.metadata.lastSignInTime || null,
+        access,
+      },
+    });
+  } catch (error) {
+    console.error("admin user access update error:", error);
+    sendError(
+      res,
+      500,
+      "ADMIN_USER_ACCESS_UPDATE_FAILED",
+      error instanceof Error ? error.message : "Failed to update user access"
+    );
+  }
+});
+
+app.post("/api/client-signup", async (req, res) => {
+  if (!firebaseReady) {
+    sendError(
+      res,
+      500,
+      "FIREBASE_NOT_CONFIGURED",
+      "Firebase auth not configured"
+    );
+    return;
+  }
+
+  const name = normalizeString(req.body?.name);
+  const companyName = normalizeString(req.body?.companyName);
+  const email = normalizeString(req.body?.email)?.toLowerCase();
+  const password = normalizeString(req.body?.password);
+
+  if (!name || !companyName || !email || !password) {
+    sendError(res, 400, "INVALID_BODY", "Missing name, companyName, email or password");
+    return;
+  }
+
+  if (password.length < 8) {
+    sendError(res, 400, "WEAK_PASSWORD", "Password must have at least 8 characters");
+    return;
+  }
+
+  try {
+    const auth = getAuth();
+    const user = await auth.createUser({
+      email,
+      password,
+      displayName: `${name} - ${companyName}`.slice(0, 100),
+    });
+
+    const managedClaims = buildManagedClaims({
+      role: "pending",
+      companyName,
+    });
+
+    await auth.setCustomUserClaims(user.uid, mergeManagedClaims({}, managedClaims));
+
+    if (supabase) {
+      const title = `Novo cadastro de cliente: ${companyName}`.slice(0, 100);
+      const description = `${name} (${email}) aguardando associacao de acessos.`.slice(0, 200);
+      const { error } = await supabase.from("notifications").insert({
+        type: "client_signup",
+        title,
+        description,
+        read: false,
+      });
+
+      if (error) {
+        console.error("client signup notification insert error:", error);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Conta criada. Aguarde a liberacao do acesso pela equipe Vexo.",
+    });
+  } catch (error) {
+    console.error("client signup error:", error);
+    const code = error?.code || "";
+    if (code === "auth/email-already-exists") {
+      sendError(res, 409, "EMAIL_ALREADY_EXISTS", "This email is already registered");
+      return;
+    }
+
+    sendError(res, 500, "CLIENT_SIGNUP_FAILED", "Failed to create client account");
   }
 });
 
@@ -725,6 +1223,263 @@ app.get("/api/leads", requireFirebaseAuth, async (req, res) => {
   } catch (error) {
     console.error("leads query error:", error);
     sendError(res, 500, "LEADS_QUERY_FAILED", "Failed to query leads");
+  }
+});
+
+app.get("/api/lead-imports", requireFirebaseAuth, async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const requestedClientId = normalizeString(req.query.clientId);
+  const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+  if (!clientId) return;
+
+  try {
+    const { data, error } = await supabase
+      .from("lead_imports")
+      .select("id, client_id, source_name, source_type, total_rows, imported_rows, skipped_rows, uploaded_by_uid, uploaded_by_email, created_at")
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({ items: data || [] });
+  } catch (error) {
+    console.error("lead imports query error:", error);
+    sendError(res, 500, "LEAD_IMPORTS_QUERY_FAILED", "Failed to query imported spreadsheets");
+  }
+});
+
+app.post("/api/lead-imports", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const clientId = normalizeString(req.body?.clientId);
+  const sourceName = normalizeString(req.body?.sourceName) || "planilha";
+  const sourceType = normalizeString(req.body?.sourceType) || "spreadsheet";
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+
+  if (!clientId || !rows) {
+    sendError(res, 400, "INVALID_BODY", "Missing clientId or rows");
+    return;
+  }
+
+  if (rows.length === 0) {
+    sendError(res, 400, "INVALID_BODY", "rows must contain at least one item");
+    return;
+  }
+
+  if (rows.length > 5000) {
+    sendError(res, 413, "PAYLOAD_TOO_LARGE", "Maximum 5000 rows per import");
+    return;
+  }
+
+  try {
+    const parsedItems = rows.map((row, index) => {
+      const normalized = normalizeImportedLead(row, clientId);
+      const imported = !!normalized.telefone;
+      const skipReason = imported
+        ? null
+        : isImportedLeadEmpty(normalized)
+          ? "Linha vazia ou sem dados aproveitaveis"
+          : "Telefone ausente ou invalido";
+
+      return {
+        rowNumber: index + 2,
+        rawData: row,
+        normalized,
+        imported,
+        skipReason,
+      };
+    });
+
+    const validRowsMap = new Map();
+    for (const item of parsedItems) {
+      if (!item.imported) continue;
+      validRowsMap.set(item.normalized.telefone, item.normalized);
+    }
+
+    const validRows = Array.from(validRowsMap.values());
+    const skippedRows = parsedItems.length - validRows.length;
+
+    const { data: importRecord, error: importError } = await supabase
+      .from("lead_imports")
+      .insert({
+        client_id: clientId,
+        source_name: sourceName,
+        source_type: sourceType,
+        total_rows: parsedItems.length,
+        imported_rows: validRows.length,
+        skipped_rows: skippedRows,
+        uploaded_by_uid: req.authAccess?.uid || null,
+        uploaded_by_email: req.authAccess?.email || null,
+      })
+      .select("id, client_id, source_name, source_type, total_rows, imported_rows, skipped_rows, uploaded_by_uid, uploaded_by_email, created_at")
+      .single();
+
+    if (importError) {
+      throw importError;
+    }
+
+    let leadIdsByPhone = new Map();
+
+    if (validRows.length > 0) {
+      const { data: upsertedLeads, error: upsertError } = await supabase
+        .from("leads")
+        .upsert(validRows, {
+          onConflict: "client_id,telefone",
+          ignoreDuplicates: false,
+        })
+        .select("id, telefone");
+
+      if (upsertError) {
+        throw upsertError;
+      }
+
+      leadIdsByPhone = new Map((upsertedLeads || []).map((lead) => [lead.telefone, lead.id]));
+    }
+
+    const importItems = parsedItems.map((item) => ({
+      import_id: importRecord.id,
+      client_id: clientId,
+      row_number: item.rowNumber,
+      telefone: item.normalized.telefone,
+      lead_id: item.normalized.telefone ? leadIdsByPhone.get(item.normalized.telefone) || null : null,
+      imported: item.imported,
+      skip_reason: item.skipReason,
+      raw_data: item.rawData,
+      normalized_data: item.normalized,
+    }));
+
+    const { error: itemsError } = await supabase.from("lead_import_items").insert(importItems);
+    if (itemsError) {
+      throw itemsError;
+    }
+
+    res.status(201).json({
+      item: importRecord,
+      preview: buildImportPreview(parsedItems),
+    });
+  } catch (error) {
+    console.error("lead import create error:", error);
+    sendError(
+      res,
+      500,
+      "LEAD_IMPORT_CREATE_FAILED",
+      error instanceof Error ? error.message : "Failed to import spreadsheet"
+    );
+  }
+});
+
+app.post("/api/n8n-dispatches", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const clientId = normalizeString(req.body?.clientId);
+  const importId = normalizeString(req.body?.importId);
+  const webhookUrl =
+    normalizeString(req.body?.webhookUrl) || normalizeString(process.env.N8N_DISPATCH_WEBHOOK_URL);
+  const webhookToken =
+    normalizeString(req.body?.webhookToken) || normalizeString(process.env.N8N_DISPATCH_WEBHOOK_TOKEN);
+  const rawLimit = Number.parseInt(String(req.body?.limit ?? ""), 10);
+  const limit = Number.isNaN(rawLimit) ? null : rawLimit;
+
+  if (!clientId) {
+    sendError(res, 400, "INVALID_BODY", "Missing clientId");
+    return;
+  }
+
+  if (!webhookUrl) {
+    sendError(
+      res,
+      400,
+      "INVALID_BODY",
+      "Missing webhookUrl or N8N_DISPATCH_WEBHOOK_URL"
+    );
+    return;
+  }
+
+  try {
+    const leads = await buildDispatchLeads({ clientId, importId, limit });
+
+    if (leads.length === 0) {
+      sendError(res, 404, "NO_DISPATCH_LEADS", "No leads found for dispatch");
+      return;
+    }
+
+    const clientName = await getClientName(clientId);
+    const payload = {
+      source: "vexocrm",
+      action: "dispatch_leads",
+      requestedAt: new Date().toISOString(),
+      requestedBy: {
+        uid: req.authAccess?.uid || null,
+        email: req.authAccess?.email || null,
+      },
+      client: {
+        id: clientId,
+        name: clientName,
+      },
+      importId,
+      total: leads.length,
+      phones: leads.map((lead) => lead.telefone),
+      leads: leads.map((lead) => ({
+        id: lead.id,
+        telefone: lead.telefone,
+        nome: lead.nome,
+        cidade: lead.cidade,
+        estado: lead.estado,
+        status: lead.status,
+        tipo_cliente: lead.tipo_cliente,
+        faixa_consumo: lead.faixa_consumo,
+        qualificacao: lead.qualificacao,
+        data_hora: lead.data_hora,
+        created_at: lead.created_at,
+      })),
+    };
+
+    const headers = {
+      "Content-Type": "application/json",
+    };
+
+    if (webhookToken) {
+      headers.Authorization = `Bearer ${webhookToken}`;
+    }
+
+    const webhookResponse = await fetch(webhookUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    const responseText = await webhookResponse.text();
+
+    if (!webhookResponse.ok) {
+      sendError(
+        res,
+        502,
+        "N8N_DISPATCH_FAILED",
+        "n8n webhook returned an error",
+        responseText.slice(0, 1000)
+      );
+      return;
+    }
+
+    res.json({
+      success: true,
+      webhookUrl,
+      total: leads.length,
+      phones: payload.phones,
+      n8nResponse: responseText || null,
+    });
+  } catch (error) {
+    console.error("n8n dispatch error:", error);
+    sendError(
+      res,
+      500,
+      "N8N_DISPATCH_FAILED",
+      error instanceof Error ? error.message : "Failed to send leads to n8n"
+    );
   }
 });
 

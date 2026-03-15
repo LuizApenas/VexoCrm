@@ -25,6 +25,7 @@ Hoje este backend nao e a origem principal da operacao de leads no n8n. O fluxo 
 | `GET` | `/api/lead-clients` | filtros do CRM |
 | `GET` | `/api/dashboard` | dashboard do CRM |
 | `GET` | `/api/leads` | listagem de leads |
+| `POST` | `/api/n8n-dispatches` | envia numeros/leads para webhook de disparo no n8n |
 | `GET` | `/api/notifications` | feed de notificacoes |
 | `PATCH` | `/api/notifications` | marcar notificacoes como lidas |
 
@@ -47,6 +48,8 @@ As rotas abaixo ainda existem no codigo, mas nao sao a interface principal do wo
 | `FIREBASE_PROJECT_ID` | projeto Firebase |
 | `FIREBASE_CLIENT_EMAIL` | service account Firebase |
 | `FIREBASE_PRIVATE_KEY` | chave privada Firebase |
+| `N8N_DISPATCH_WEBHOOK_URL` | webhook do fluxo de disparo no n8n |
+| `N8N_DISPATCH_WEBHOOK_TOKEN` | bearer opcional para o webhook de disparo |
 
 Veja [backend/.env.example](./.env.example).
 

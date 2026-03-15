@@ -13,9 +13,13 @@ import ClientPortalDashboard from "./pages/ClientPortalDashboard";
 import ClientPortalLeads from "./pages/ClientPortalLeads";
 import LandingPage from "./pages/LandingPage";
 import Leads from "./pages/Leads";
+import LeadImports from "./pages/LeadImports";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import SetPassword from "./pages/SetPassword";
+import PendingApproval from "./pages/PendingApproval";
+import ClientSignup from "./pages/ClientSignup";
+import UserAccessManagement from "./pages/UserAccessManagement";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +34,7 @@ const App = () => (
             <Route path="/" element={<LandingPage />} />
             <Route path="/home" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/cadastro-cliente" element={<ClientSignup />} />
             <Route path="/crm/login" element={<Navigate to="/login" replace />} />
             <Route
               path="/set-password"
@@ -39,8 +44,17 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/aguardando-aprovacao"
+              element={
+                <ProtectedRoute allowedRoles={["pending"]}>
+                  <PendingApproval />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/dashboard" element={<Navigate to="/crm/dashboard" replace />} />
             <Route path="/leads" element={<Navigate to="/crm/leads" replace />} />
+            <Route path="/planilhas" element={<Navigate to="/crm/planilhas" replace />} />
             <Route path="/agente" element={<Navigate to="/crm/agente" replace />} />
             <Route
               path="/crm"
@@ -53,7 +67,9 @@ const App = () => (
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="leads" element={<Leads />} />
+              <Route path="planilhas" element={<LeadImports />} />
               <Route path="agente" element={<Agente />} />
+              <Route path="usuarios" element={<UserAccessManagement />} />
             </Route>
             <Route
               path="/clientes/:clientId"
@@ -74,7 +90,7 @@ const App = () => (
               <Route
                 path="dashboard"
                 element={
-                  <ProtectedRoute allowedRoles={["internal", "client"]}>
+                  <ProtectedRoute allowedRoles={["internal", "client"]} requiredView="dashboard">
                     <ClientPortalDashboard />
                   </ProtectedRoute>
                 }
@@ -82,7 +98,7 @@ const App = () => (
               <Route
                 path="leads"
                 element={
-                  <ProtectedRoute allowedRoles={["internal", "client"]}>
+                  <ProtectedRoute allowedRoles={["internal", "client"]} requiredView="leads">
                     <ClientPortalLeads />
                   </ProtectedRoute>
                 }

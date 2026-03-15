@@ -10,13 +10,18 @@ import {
   registerWithEmail,
 } from "@/lib/firebase";
 
-export type AccessRole = "internal" | "client";
+export type AccessRole = "internal" | "client" | "pending";
+export type AccessView = "dashboard" | "leads";
+const DEFAULT_CLIENT_VIEWS: AccessView[] = ["dashboard", "leads"];
 
 export interface AuthAccessProfile {
   uid: string;
   email: string | null;
   role: AccessRole;
   clientId: string | null;
+  clientIds: string[];
+  allowedViews: AccessView[];
+  companyName: string | null;
 }
 
 interface AuthContextType {
@@ -25,10 +30,13 @@ interface AuthContextType {
   accessProfile: AuthAccessProfile | null;
   accessRole: AccessRole;
   clientId: string | null;
+  clientIds: string[];
+  allowedViews: AccessView[];
   loading: boolean;
   isAuthenticated: boolean;
   isInternalUser: boolean;
   isClientUser: boolean;
+  isPendingUser: boolean;
   mustChangePassword: boolean;
   defaultRoute: string;
   login: (email: string, password: string) => Promise<void>;
@@ -39,6 +47,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   signOut: () => Promise<void>;
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
+  canAccessClient: (targetClientId: string) => boolean;
+  canAccessView: (view: AccessView) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -74,7 +84,41 @@ function normalizeAccessRole(value: unknown): AccessRole {
     return "client";
   }
 
+  if (normalized === "pending" || normalized === "pendente" || normalized === "pending_client") {
+    return "pending";
+  }
+
   return "internal";
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return Array.from(
+      new Set(
+        value
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+      )
+    );
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return Array.from(new Set(value.split(",").map((item) => item.trim()).filter(Boolean)));
+  }
+
+  return [];
+}
+
+function normalizeAllowedViews(value: unknown, role: AccessRole): AccessView[] {
+  const views = normalizeStringArray(value).filter(
+    (item): item is AccessView => item === "dashboard" || item === "leads"
+  );
+
+  if (role === "client" && views.length === 0) {
+    return [...DEFAULT_CLIENT_VIEWS];
+  }
+
+  return views;
 }
 
 function buildAccessProfile(user: User, claims: Record<string, unknown> = {}): AuthAccessProfile {
@@ -85,15 +129,23 @@ function buildAccessProfile(user: User, claims: Record<string, unknown> = {}): A
       claims.userType ??
       claims.tipo_usuario
   );
-  const rawClientId =
-    claims.clientId ?? claims.client_id ?? claims.companyId ?? claims.empresaId ?? null;
-  const clientId = typeof rawClientId === "string" && rawClientId.trim() ? rawClientId.trim() : null;
+  const rawClientId = claims.clientId ?? claims.client_id ?? claims.companyId ?? claims.empresaId ?? null;
+  const directClientId = typeof rawClientId === "string" && rawClientId.trim() ? rawClientId.trim() : null;
+  const clientIds = Array.from(new Set([directClientId, ...normalizeStringArray(claims.clientIds)].filter(Boolean)));
+  const clientId = role === "client" ? directClientId || clientIds[0] || null : null;
+  const allowedViews = role === "client" ? normalizeAllowedViews(claims.allowedViews, role) : [];
+  const companyName = typeof claims.companyName === "string" && claims.companyName.trim()
+    ? claims.companyName.trim()
+    : null;
 
   return {
     uid: user.uid,
     email: user.email,
     role,
-    clientId: role === "client" ? clientId : null,
+    clientId,
+    clientIds: role === "client" ? clientIds : [],
+    allowedViews,
+    companyName,
   };
 }
 
@@ -193,13 +245,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = !!firebaseUser;
   const accessRole = accessProfile?.role || "internal";
   const clientId = accessProfile?.clientId || null;
+  const clientIds = accessProfile?.clientIds || [];
+  const allowedViews = accessProfile?.allowedViews || [];
   const isInternalUser = accessRole === "internal";
   const isClientUser = accessRole === "client";
-  const defaultRoute = isClientUser
-    ? clientId
-      ? `/clientes/${clientId}/dashboard`
-      : "/home"
-    : "/crm/dashboard";
+  const isPendingUser = accessRole === "pending";
+  const defaultView = allowedViews.includes("dashboard") ? "dashboard" : allowedViews[0] || "dashboard";
+  const canAccessClient = useCallback(
+    (targetClientId: string) => isInternalUser || clientIds.includes(targetClientId),
+    [clientIds, isInternalUser]
+  );
+  const canAccessView = useCallback(
+    (view: AccessView) => isInternalUser || allowedViews.includes(view),
+    [allowedViews, isInternalUser]
+  );
+  const defaultRoute = isPendingUser
+    ? "/aguardando-aprovacao"
+    : isClientUser
+      ? clientId
+        ? `/clientes/${clientId}/${defaultView}`
+        : "/aguardando-aprovacao"
+      : "/crm/dashboard";
 
   return (
     <AuthContext.Provider
@@ -209,10 +275,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         accessProfile,
         accessRole,
         clientId,
+        clientIds,
+        allowedViews,
         loading,
         isAuthenticated,
         isInternalUser,
         isClientUser,
+        isPendingUser,
         mustChangePassword,
         defaultRoute,
         login,
@@ -223,6 +292,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         signOut: logout,
         getIdToken,
+        canAccessClient,
+        canAccessView,
       }}
     >
       {children}

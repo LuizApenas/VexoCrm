@@ -16,14 +16,14 @@ export function useClientPortalContext() {
 
 export function ClientPortalLayout() {
   const { clientId } = useParams();
-  const { isClientUser, clientId: scopedClientId } = useAuth();
+  const { isClientUser, clientId: scopedClientId, canAccessClient } = useAuth();
   const { data: clients = [], isLoading, error } = useLeadClients();
 
   if (!clientId) {
     return <Navigate to="/home" replace />;
   }
 
-  if (isClientUser && scopedClientId && clientId !== scopedClientId) {
+  if (isClientUser && scopedClientId && !canAccessClient(clientId)) {
     return <Navigate to={`/clientes/${scopedClientId}/dashboard`} replace />;
   }
 
