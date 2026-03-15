@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Building2, Database, FileSpreadsheet, RefreshCw } from "lucide-react";
 import { useLeads, type LeadRow } from "@/hooks/useLeads";
 import { useLeadClients } from "@/hooks/useLeadClients";
@@ -31,6 +31,14 @@ const COLUMNS = [
   { key: "created_at", label: "Criado em" },
 ] as const;
 
+interface LeadsProps {
+  fixedClientId?: string;
+  fixedClientName?: string;
+  title?: string;
+  subtitle?: string;
+  headerRight?: ReactNode;
+}
+
 function formatCell(value: unknown, key: string): string {
   if (value === null || value === undefined) return "";
 
@@ -50,22 +58,41 @@ function formatCell(value: unknown, key: string): string {
   return String(value);
 }
 
-export default function Leads() {
+export default function Leads({
+  fixedClientId,
+  fixedClientName,
+  title = "Leads",
+  subtitle = "Tabela alinhada com o schema atual da base leads",
+  headerRight,
+}: LeadsProps) {
   const { data: clients = [], isLoading: clientsLoading } = useLeadClients();
-  const [selectedClientId, setSelectedClientId] = useState("infinie");
-  const { data, isLoading, error, refetch } = useLeads(selectedClientId);
+  const [selectedClientId, setSelectedClientId] = useState(fixedClientId ?? "");
+  const effectiveClientId = fixedClientId || selectedClientId;
+  const { data, isLoading, error, refetch } = useLeads(effectiveClientId);
   const rows = data ?? [];
-  const selectedClient = clients.find((client) => client.id === selectedClientId);
+  const selectedClient = clients.find((client) => client.id === effectiveClientId);
+  const selectedClientName = fixedClientName || selectedClient?.name || effectiveClientId;
 
   useEffect(() => {
-    if (!clients.length) return;
+    if (fixedClientId) {
+      setSelectedClientId(fixedClientId);
+      return;
+    }
+
+    if (!clients.length) {
+      if (selectedClientId) {
+        setSelectedClientId("");
+      }
+      return;
+    }
+
     const selectedStillExists = clients.some((client) => client.id === selectedClientId);
-    if (!selectedStillExists) {
+    if (!selectedClientId || !selectedStillExists) {
       setSelectedClientId(clients[0].id);
     }
-  }, [clients, selectedClientId]);
+  }, [clients, fixedClientId, selectedClientId]);
 
-  const headerRight = (
+  const clientSelector = (
     <div className="flex min-w-[220px] items-center gap-2">
       <Building2 className="h-4 w-4 text-muted-foreground" />
       <Select value={selectedClientId} onValueChange={setSelectedClientId} disabled={clientsLoading}>
@@ -83,13 +110,21 @@ export default function Leads() {
     </div>
   );
 
+  const resolvedHeaderRight = headerRight ?? (!fixedClientId ? clientSelector : undefined);
+
   return (
     <PageShell
-      title="Leads"
-      subtitle="Tabela alinhada com o schema atual da base leads"
-      headerRight={headerRight}
+      title={title}
+      subtitle={subtitle}
+      headerRight={resolvedHeaderRight}
       spacing="space-y-6"
     >
+      {selectedClientName && (
+        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Cliente ativo: <span className="text-foreground">{selectedClientName}</span>
+        </p>
+      )}
+
       <section>
         <SectionHeader
           title="Base de Leads"
@@ -102,7 +137,7 @@ export default function Leads() {
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-base">
                 <FileSpreadsheet className="h-4 w-4" />
-                {selectedClient?.name ?? selectedClientId}
+                {selectedClientName || "Cliente nao selecionado"}
               </CardTitle>
               <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
                 <RefreshCw className={`mr-1 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -115,11 +150,18 @@ export default function Leads() {
 
             {isLoading && <EmptyState message="Carregando dados..." />}
 
-            {!isLoading && !error && rows.length === 0 && (
+            {!effectiveClientId && !clientsLoading && (
+              <EmptyState
+                title="Nenhum cliente cadastrado"
+                description="Cadastre um registro em leads_clients para liberar a grade de leads."
+              />
+            )}
+
+            {effectiveClientId && !isLoading && !error && rows.length === 0 && (
               <EmptyState message="Nenhum lead encontrado. Use o webhook no n8n para inserir." />
             )}
 
-            {!isLoading && !error && rows.length > 0 && (
+            {effectiveClientId && !isLoading && !error && rows.length > 0 && (
               <div className="overflow-x-auto rounded-md border">
                 <Table>
                   <TableHeader>

@@ -1,173 +1,148 @@
-# Banco de Dados do VexoCrm
+# Banco de dados do VexoCrm
 
-## Visão Geral
+Este documento descreve o schema operacional atual do projeto.
 
-O banco principal do `VexoCrm` está no Supabase (PostgreSQL). O domínio de dados mais estruturado no repositório hoje é o de leads, com suporte operacional para notificações e logs de erro do n8n.
+## Premissa
 
-Este documento mistura duas fontes:
-- schema confirmado nas migrations do projeto
-- uso real observado no backend Express
+O banco oficial do sistema esta no `Supabase PostgreSQL`.
 
-Quando algo estiver confirmado apenas pelo backend, isso será indicado explicitamente.
+Hoje o fluxo principal nao depende de planilhas. As tabelas abaixo sustentam:
 
-## Tabelas Principais
+- captura de leads;
+- memoria de conversa;
+- notificacoes operacionais;
+- rastreio de erros do n8n;
+- filtros e visoes do CRM.
 
-| Tabela | Finalidade | Status da documentação |
+## Tabelas ativas
+
+- `leads_clients`
+- `leads`
+- `lead_conversations`
+- `notifications`
+- `n8n_error_logs`
+
+## Relacionamento logico
+
+```text
+leads_clients (1) ---- (N) leads
+leads.telefone ------- lead_conversations.telefone
+n8n_error_logs ------> notifications
+```
+
+## `leads_clients`
+
+Cadastro dos clientes/origens exibidos no CRM.
+
+| Coluna | Tipo | Observacao |
 | --- | --- | --- |
-| `leads_clients` | Empresas/origens dos leads | Confirmada por migration |
-| `leads` | Leads capturados e enriquecidos | Confirmada por migration |
-| `lead_conversations` | Memória comprimida das conversas do agente | Confirmada por migration |
-| `notifications` | Notificações operacionais exibidas no CRM | Inferida pelo backend; RLS visível em migration |
-| `n8n_error_logs` | Registro de erros de execução dos workflows n8n | Inferida pelo backend; policy visível em migration |
+| `id` | `text` | chave logica usada como `client_id` |
+| `name` | `text` | nome exibido no sistema |
+| `created_at` | `timestamptz` | data de criacao |
 
-## 1. `leads_clients`
+## `leads`
 
-Representa as empresas ou grupos de origem usados para filtrar os leads no CRM.
+Tabela principal do CRM.
 
-### Colunas confirmadas
-
-| Coluna | Tipo | Observação |
+| Coluna | Tipo | Observacao |
 | --- | --- | --- |
-| `id` | `TEXT` | Chave primária |
-| `name` | `TEXT` | Nome da empresa/cliente |
-| `created_at` | `TIMESTAMPTZ` | Default `now()` |
+| `id` | `uuid` | chave primaria |
+| `client_id` | `text` | cliente/origem do lead |
+| `telefone` | `text` | telefone normalizado |
+| `nome` | `text` | nome do lead |
+| `tipo_cliente` | `text` | residencial, rural, comercial etc. |
+| `faixa_consumo` | `text` | faixa ou valor de consumo |
+| `cidade` | `text` | cidade |
+| `estado` | `text` | UF |
+| `status` | `text` | status comercial |
+| `data_hora` | `timestamptz` | marco temporal do lead |
+| `qualificacao` | `text` | resumo completo e sinais de temperatura |
+| `created_at` | `timestamptz` | criacao do registro |
+| `updated_at` | `timestamptz` | ultima alteracao |
 
-### Uso operacional
-- A tabela alimenta o seletor de empresa no dashboard.
-- O backend lista esses registros em `GET /api/lead-clients`.
-- Seed inicial confirmado: `id = 'infinie'`, `name = 'Infinie'`.
+### Regra operacional
 
-## 2. `leads`
+O workflow e o backend tratam `client_id + telefone` como chave logica do lead.
 
-Tabela principal de negócio do CRM. Armazena os leads associados a uma empresa em `leads_clients`.
+### Campos antigos removidos
 
-### Colunas confirmadas
+Estas colunas nao fazem mais parte do schema operacional:
 
-| Coluna | Tipo | Observação |
+- `conta_energia`
+- `bot_ativo`
+- `historico`
+
+Qualquer codigo que ainda tente ler esses campos esta defasado.
+
+## `lead_conversations`
+
+Persistencia da memoria comprimida das conversas.
+
+| Coluna | Tipo | Observacao |
 | --- | --- | --- |
-| `id` | `UUID` | Chave primária, default `gen_random_uuid()` |
-| `client_id` | `TEXT` | FK para `leads_clients.id` |
-| `telefone` | `TEXT` | Obrigatório |
-| `nome` | `TEXT` | Nome do lead |
-| `tipo_cliente` | `TEXT` | Ex.: residencial, casa, comercial |
-| `faixa_consumo` | `TEXT` | Faixa/valor de consumo |
-| `cidade` | `TEXT` | Cidade |
-| `estado` | `TEXT` | Estado |
-| `conta_energia` | `TEXT` | Informação complementar da conta |
-| `status` | `TEXT` | Estado comercial/operacional do lead |
-| `bot_ativo` | `BOOLEAN` | Default `false` |
-| `historico` | `TEXT` | Texto livre com contexto do lead |
-| `data_hora` | `TIMESTAMPTZ` | Data do evento/origem do lead |
-| `qualificacao` | `TEXT` | Campo complementar de qualificação |
-| `created_at` | `TIMESTAMPTZ` | Default `now()` |
-| `updated_at` | `TIMESTAMPTZ` | Default `now()` |
+| `id` | `uuid` | chave primaria |
+| `telefone` | `text` | telefone associado |
+| `conversation_compressed` | `text` | payload compactado |
+| `tamanho_original` | `integer` | tamanho antes da compressao |
+| `unknown_lead` | `boolean` | indica lead ainda nao identificado |
+| `created_at` | `timestamptz` | carimbo temporal |
 
-### Regras confirmadas
-- Chave única composta: `UNIQUE (client_id, telefone)`
-- FK: `client_id REFERENCES leads_clients(id) ON DELETE CASCADE`
+### Uso
 
-### Índices confirmados
-- `idx_leads_client_id`
-- `idx_leads_status`
-- `idx_leads_data_hora`
+- escrita por `conversation-memory`;
+- leitura por `conversation-memory` e `conversation-memory-latest`.
 
-### Uso operacional
-- `GET /api/leads?clientId=<id>` retorna os leads filtrados por empresa.
-- `POST /api/leads-webhook` faz upsert por `(client_id, telefone)`.
-- `GET /api/dashboard?clientId=<id>` agrega essa tabela para KPIs e gráficos do dashboard.
+## `notifications`
 
-### Métricas derivadas no dashboard
-- total de leads
-- leads do dia
-- leads em qualificação (`status = em_qualificacao`)
-- taxa de qualificação
-- leads com `bot_ativo = true`
-- temperatura inferida por texto em `historico` / `qualificacao`
-- breakdown por status e por tipo de cliente
+Tabela de notificacoes exibidas no CRM.
 
-## 3. `lead_conversations`
-
-Tabela operacional para armazenar memória comprimida das conversas do agente de IA que roda no n8n.
-
-### Colunas confirmadas
-
-| Coluna | Tipo | Observação |
+| Coluna | Tipo | Observacao |
 | --- | --- | --- |
-| `id` | `UUID` | Chave primária, default `gen_random_uuid()` |
-| `telefone` | `TEXT` | Telefone sanitizado para dígitos |
-| `conversation_compressed` | `TEXT` | Conteúdo recebido em gzip + base64 |
-| `tamanho_original` | `INTEGER` | Tamanho do payload antes da compressão |
-| `unknown_lead` | `BOOLEAN` | `true` quando o telefone não existe em `leads` |
-| `created_at` | `TIMESTAMPTZ` | Timestamp recebido da conversa |
+| `id` | `uuid` | chave primaria |
+| `type` | `text` | tipo da notificacao |
+| `title` | `text` | titulo curto |
+| `description` | `text` | descricao exibida |
+| `link` | `text` | link opcional |
+| `read` | `boolean` | controle de leitura |
+| `created_at` | `timestamptz` | data de criacao |
 
-### Índices confirmados
-- `idx_lead_conversations_telefone`
-- `idx_lead_conversations_created_at`
+### Uso
 
-### Uso operacional
-- Alimentada por `POST /api/conversation-memory`
-- Usa `N8N_WEBHOOK_SECRET` como bearer
-- O backend valida base64, gzip, tamanho e sanitização do telefone antes de salvar
-- A tabela não tem leitura pública
+- leitura/atualizacao pelo CRM;
+- escrita automatica por `n8n-error-webhook`.
 
-## 4. `notifications`
+## `n8n_error_logs`
 
-Tabela usada para exibir notificações operacionais no sino do CRM e na tela do agente.
+Tabela de auditoria tecnica dos workflows.
 
-### Campos observados no backend
-
-| Coluna | Tipo inferido | Observação |
+| Coluna | Tipo | Observacao |
 | --- | --- | --- |
-| `id` | `UUID/TEXT` | Identificador da notificação |
-| `type` | `TEXT` | Ex.: `n8n_error` |
-| `title` | `TEXT` | Título exibido ao usuário |
-| `description` | `TEXT` | Descrição resumida |
-| `link` | `TEXT` | Link opcional para execução/log |
-| `read` | `BOOLEAN` | Controle de leitura |
-| `created_at` | `TIMESTAMPTZ` | Ordenação de listagem |
+| `execution_id` | `text` | execucao unica do n8n |
+| `workflow_name` | `text` | nome do workflow |
+| `message` | `text` | mensagem de erro |
+| `node` | `text` | ultimo no executado |
+| `execution_url` | `text` | link da execucao no n8n |
 
-### Observações
-- O backend lê e atualiza essa tabela em `/api/notifications`.
-- O backend também insere notificações após erro em `/api/n8n-error-webhook`.
-- Há migration confirmando RLS ativa e bloqueio de acesso direto do cliente.
+## Como cada camada usa o banco
 
-## 5. `n8n_error_logs`
+### n8n + Edge Functions
 
-Tabela operacional usada para persistir erros dos workflows do n8n.
+- cria e finaliza leads;
+- salva memoria de conversa;
+- busca ultima memoria;
+- registra erros operacionais.
 
-### Campos observados no backend
+### Backend
 
-| Coluna | Tipo inferido | Observação |
-| --- | --- | --- |
-| `execution_id` | `TEXT` | Chave de unicidade lógica do erro |
-| `workflow_name` | `TEXT` | Nome do workflow |
-| `message` | `TEXT` | Mensagem de erro |
-| `node` | `TEXT` | Último nó executado |
-| `execution_url` | `TEXT` | Link para a execução no n8n |
+- le agregados do dashboard;
+- lista leads para o CRM;
+- serve notificacoes para o frontend;
+- prepara a futura migracao do audio.
 
-### Observações
-- O backend faz `upsert` nessa tabela em `/api/n8n-error-webhook`.
-- Há policy confirmada em migration bloqueando acesso direto do cliente.
+### Frontend
 
-## Relacionamentos
+- consome backend para dashboard, leads e notificacoes.
 
-- `leads.client_id` -> `leads_clients.id`
-- `notifications` é consumida por usuários autenticados via Firebase no backend
-- `n8n_error_logs` alimenta `notifications` quando ocorre erro operacional
+## Conclusao
 
-## Segurança / Acesso
-
-### Confirmado por migration
-- `leads` e `leads_clients` têm RLS habilitada
-- leitura liberada para `anon` e `authenticated`
-- escrita fica reservada ao fluxo de backend/service role
-
-### Confirmado por backend
-- o frontend não acessa Supabase diretamente para o dashboard
-- o backend usa `SUPABASE_SERVICE_ROLE_KEY` para consultar e gravar dados
-- notificações exigem autenticação Firebase no backend
-
-## Observações de nomenclatura
-
-- O nome real da tabela é `leads_clients`
-- Em conversas informais pode aparecer `lead_clients`, mas no banco e no backend o identificador usado é `leads_clients`
+Para documentar o banco corretamente hoje, use este arquivo e [docs/supabase-functions.md](docs/supabase-functions.md). Nao use mais scripts ou docs antigas baseadas em planilhas.

@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import {
+  getCurrentIdTokenResult,
   User,
   changePassword as changeFirebasePassword,
   getIdToken as getFirebaseIdToken,
@@ -9,12 +10,27 @@ import {
   registerWithEmail,
 } from "@/lib/firebase";
 
+export type AccessRole = "internal" | "client";
+
+export interface AuthAccessProfile {
+  uid: string;
+  email: string | null;
+  role: AccessRole;
+  clientId: string | null;
+}
+
 interface AuthContextType {
   user: User | null;
   firebaseUser: User | null;
+  accessProfile: AuthAccessProfile | null;
+  accessRole: AccessRole;
+  clientId: string | null;
   loading: boolean;
   isAuthenticated: boolean;
+  isInternalUser: boolean;
+  isClientUser: boolean;
   mustChangePassword: boolean;
+  defaultRoute: string;
   login: (email: string, password: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName?: string) => Promise<void>;
@@ -51,24 +67,77 @@ const isFirstLogin = (user: User) => {
   return Math.abs(lastSignInAt - createdAt) < 5000;
 };
 
+function normalizeAccessRole(value: unknown): AccessRole {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+
+  if (normalized === "client" || normalized === "cliente" || normalized === "customer") {
+    return "client";
+  }
+
+  return "internal";
+}
+
+function buildAccessProfile(user: User, claims: Record<string, unknown> = {}): AuthAccessProfile {
+  const role = normalizeAccessRole(
+    claims.role ??
+      claims.userRole ??
+      claims.user_type ??
+      claims.userType ??
+      claims.tipo_usuario
+  );
+  const rawClientId =
+    claims.clientId ?? claims.client_id ?? claims.companyId ?? claims.empresaId ?? null;
+  const clientId = typeof rawClientId === "string" && rawClientId.trim() ? rawClientId.trim() : null;
+
+  return {
+    uid: user.uid,
+    email: user.email,
+    role,
+    clientId: role === "client" ? clientId : null,
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [accessProfile, setAccessProfile] = useState<AuthAccessProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [mustChangePassword, setMustChangePassword] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthChange((user) => {
-      setFirebaseUser(user);
-      if (user) {
-        const shouldChange = isFirstLogin(user) && !hasCompletedInitialPasswordReset(user.uid);
-        setMustChangePassword(shouldChange);
-      } else {
-        setMustChangePassword(false);
-      }
-      setLoading(false);
-    }); 
+    let active = true;
 
-    return unsubscribe;
+    const unsubscribe = onAuthChange(async (user) => {
+      if (!active) return;
+
+      setFirebaseUser(user);
+
+      if (!user) {
+        setAccessProfile(null);
+        setMustChangePassword(false);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const tokenResult = await getCurrentIdTokenResult();
+        if (!active) return;
+
+        setAccessProfile(buildAccessProfile(user, tokenResult?.claims));
+      } catch (error) {
+        console.error("Failed to read Firebase custom claims:", error);
+        if (!active) return;
+        setAccessProfile(buildAccessProfile(user));
+      }
+
+      const shouldChange = isFirstLogin(user) && !hasCompletedInitialPasswordReset(user.uid);
+      setMustChangePassword(shouldChange);
+      setLoading(false);
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -122,15 +191,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const isAuthenticated = !!firebaseUser;
+  const accessRole = accessProfile?.role || "internal";
+  const clientId = accessProfile?.clientId || null;
+  const isInternalUser = accessRole === "internal";
+  const isClientUser = accessRole === "client";
+  const defaultRoute = isClientUser
+    ? clientId
+      ? `/clientes/${clientId}/dashboard`
+      : "/home"
+    : "/crm/dashboard";
 
   return (
     <AuthContext.Provider
       value={{
         user: firebaseUser,
         firebaseUser,
+        accessProfile,
+        accessRole,
+        clientId,
         loading,
         isAuthenticated,
+        isInternalUser,
+        isClientUser,
         mustChangePassword,
+        defaultRoute,
         login,
         signIn: login,
         register,

@@ -1,8 +1,13 @@
-import { useAuth } from "@/contexts/AuthContext";
+import { type AccessRole, useAuth } from "@/contexts/AuthContext";
 import { Navigate, useLocation } from "react-router-dom";
 
-export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, loading, mustChangePassword } = useAuth();
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  allowedRoles?: AccessRole[];
+}
+
+export default function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
+  const { isAuthenticated, loading, mustChangePassword, accessRole, defaultRoute } = useAuth();
   const location = useLocation();
   const isSetPasswordPage = location.pathname === "/set-password";
 
@@ -15,15 +20,19 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
   if (mustChangePassword && !isSetPasswordPage) {
-    return <Navigate to="/set-password" replace />;
+    return <Navigate to="/set-password" replace state={{ from: location }} />;
   }
 
   if (!mustChangePassword && isSetPasswordPage) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={defaultRoute} replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(accessRole)) {
+    return <Navigate to={defaultRoute} replace />;
   }
 
   return <>{children}</>;

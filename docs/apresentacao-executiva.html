@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VexoCrm - Apresentacao Executiva</title>
+    <link rel="stylesheet" href="./assets/report.css">
+  </head>
+  <body>
+    <main class="report">
+      <section class="cover">
+        <div class="eyebrow">VexoCrm</div>
+        <h1>Apresentacao Executiva</h1>
+        <p>
+          Documento executivo para apresentar o estado atual do CRM, da automacao em n8n
+          e da arquitetura baseada em Supabase.
+        </p>
+        <div class="meta">
+          <span>Versao 2026.03</span>
+          <span>Atualizado em 14/03/2026</span>
+          <span>Operacao Vexo / Infinie</span>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Resumo</h2>
+        <p class="lead">
+          O projeto deixou de operar com planilhas e passou a trabalhar com banco centralizado,
+          automacao estruturada e trilha de auditoria. Hoje a espinha dorsal do sistema e
+          formada por n8n, Supabase e Edge Functions.
+        </p>
+        <div class="grid grid-3">
+          <article class="card kpi">
+            <span class="value">5</span>
+            <span class="label">Edge Functions ativas</span>
+          </article>
+          <article class="card kpi">
+            <span class="value">1</span>
+            <span class="label">Base central de dados no Supabase</span>
+          </article>
+          <article class="card kpi">
+            <span class="value">38</span>
+            <span class="label">Nos no workflow exportado</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Arquitetura em uma frase</h2>
+        <div class="banner">
+          <strong>Mensagem principal</strong>
+          O VexoCrm ja nao e um processo apoiado por planilhas. Ele opera como uma stack integrada
+          de automacao, banco e CRM, com persistencia centralizada no Supabase e orquestracao no n8n.
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Componentes ativos</h2>
+        <div class="grid grid-2">
+          <article class="card">
+            <strong>Automacao</strong>
+            <ul>
+              <li>n8n como orquestrador do atendimento</li>
+              <li>qualificacao e consolidacao do lead</li>
+              <li>gestao de memoria e de erros operacionais</li>
+            </ul>
+          </article>
+          <article class="card">
+            <strong>Persistencia</strong>
+            <ul>
+              <li>Supabase PostgreSQL como base principal</li>
+              <li>leads, memoria de conversa, notificacoes e logs</li>
+              <li>sem dependencia operacional de planilhas</li>
+            </ul>
+          </article>
+          <article class="card">
+            <strong>Camada de integracao</strong>
+            <ul>
+              <li>`conversation-memory`</li>
+              <li>`conversation-memory-latest`</li>
+              <li>`lead-webhook`</li>
+              <li>`n8n-error-webhook`</li>
+              <li>`notifications-api`</li>
+            </ul>
+          </article>
+          <article class="card">
+            <strong>Camada de produto</strong>
+            <ul>
+              <li>frontend React/Vite para CRM e portal</li>
+              <li>backend Node.js para dashboard, leads e notificacoes</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section page-break">
+        <h2>Fluxo resumido</h2>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-index">1</div>
+            <div class="timeline-body">
+              <h3>Entrada</h3>
+              <p>Mensagens chegam ao n8n a partir da API de WhatsApp usada na operacao.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">2</div>
+            <div class="timeline-body">
+              <h3>Contexto</h3>
+              <p>O workflow consulta a memoria mais recente da conversa no Supabase.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">3</div>
+            <div class="timeline-body">
+              <h3>Lead</h3>
+              <p>O lead e criado no inicio da conversa e finalizado ao final da qualificacao.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">4</div>
+            <div class="timeline-body">
+              <h3>Persistencia</h3>
+              <p>Qualificacao, memoria e rastros de erro sao gravados no Supabase.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">5</div>
+            <div class="timeline-body">
+              <h3>Operacao</h3>
+              <p>O CRM consulta esses dados consolidados e exibe notificacoes para o time.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Beneficios operacionais</h2>
+        <div class="grid grid-3">
+          <article class="card">
+            <strong>Base unica</strong>
+            <p>Leads e memoria deixaram de ficar dispersos em planilhas e passaram a viver no banco oficial.</p>
+          </article>
+          <article class="card">
+            <strong>Auditoria</strong>
+            <p>Falhas de workflow podem ser registradas e notificadas de forma rastreavel.</p>
+          </article>
+          <article class="card">
+            <strong>Escalabilidade</strong>
+            <p>A automacao agora esta organizada em camadas mais claras de entrada, integracao e visualizacao.</p>
+          </article>
+        </div>
+      </section>
+
+    </main>
+  </body>
+</html>

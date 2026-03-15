@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VexoCrm - Arquitetura Operacional</title>
+    <link rel="stylesheet" href="./assets/report.css">
+  </head>
+  <body>
+    <main class="report">
+      <section class="cover">
+        <div class="eyebrow">VexoCrm</div>
+        <h1>Arquitetura Operacional</h1>
+        <p>
+          Visao tecnica da estrutura atual do projeto, com responsabilidades por camada,
+          tabelas operacionais e servicos ativos.
+        </p>
+        <div class="meta">
+          <span>Documento tecnico</span>
+          <span>Atualizado em 14/03/2026</span>
+          <span>Arquitetura vigente</span>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Topologia</h2>
+        <div class="diagram">
+          <div class="diagram-row">
+            <article class="node">
+              <strong>API de WhatsApp</strong>
+              Entrada de mensagens de texto e audio.
+            </article>
+            <div class="arrow">→</div>
+            <article class="node">
+              <strong>n8n</strong>
+              Orquestra o workflow, a qualificacao e as chamadas HTTP.
+            </article>
+          </div>
+          <div class="diagram-row">
+            <article class="node">
+              <strong>Supabase Edge Functions</strong>
+              Interface operacional do workflow com o banco.
+            </article>
+            <div class="arrow">→</div>
+            <article class="node">
+              <strong>Supabase PostgreSQL</strong>
+              Leads, memoria, notificacoes e logs.
+            </article>
+          </div>
+          <div class="diagram-row">
+            <article class="node">
+              <strong>Frontend CRM / Portal</strong>
+              Dashboard, leads, agente e visao por cliente.
+            </article>
+            <div class="arrow">↔</div>
+            <article class="node">
+              <strong>Backend Node.js</strong>
+              APIs do CRM para dashboard, leads e notificacoes.
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Responsabilidade por componente</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Componente</th>
+                <th>Responsabilidade</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>n8n</td>
+                <td>Entrada do WhatsApp, decisao de fluxo, IA de qualificacao e notificacao ao SDR</td>
+                <td>Ativo</td>
+              </tr>
+              <tr>
+                <td>Edge Functions</td>
+                <td>Persistir leads, memoria e erros diretamente no Supabase</td>
+                <td>Ativo</td>
+              </tr>
+              <tr>
+                <td>Backend Node.js</td>
+                <td>Servir frontend, dashboard, leads e notificacoes</td>
+                <td>Ativo</td>
+              </tr>
+              <tr>
+                <td>Google Sheets</td>
+                <td>Nao faz mais parte do fluxo operacional</td>
+                <td>Descontinuado</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Edge Functions ativas</h2>
+        <div class="grid grid-2">
+          <article class="card">
+            <strong>`conversation-memory`</strong>
+            <p>Salva memoria comprimida e tambem permite consultar a ultima conversa.</p>
+          </article>
+          <article class="card">
+            <strong>`conversation-memory-latest`</strong>
+            <p>Busca a memoria mais recente por telefone antes de montar o contexto.</p>
+          </article>
+          <article class="card">
+            <strong>`lead-webhook`</strong>
+            <p>Cria o lead no inicio da conversa e finaliza os dados apos a qualificacao.</p>
+          </article>
+          <article class="card">
+            <strong>`n8n-error-webhook`</strong>
+            <p>Registra falhas tecnicas e gera notificacoes operacionais.</p>
+          </article>
+          <article class="card">
+            <strong>`notifications-api`</strong>
+            <p>Lista e atualiza notificacoes visiveis no CRM.</p>
+          </article>
+          <article class="card">
+            <strong>Escopo removido</strong>
+            <p>`sheets-proxy` e `lead-exists-by-phone` sairam da arquitetura ativa.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section page-break">
+        <h2>Tabelas operacionais</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tabela</th>
+                <th>Uso</th>
+                <th>Camada principal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>`leads_clients`</td>
+                <td>Cadastro de clientes/origens</td>
+                <td>Frontend / backend</td>
+              </tr>
+              <tr>
+                <td>`leads`</td>
+                <td>Base principal de leads</td>
+                <td>n8n + `lead-webhook`</td>
+              </tr>
+              <tr>
+                <td>`lead_conversations`</td>
+                <td>Memoria de conversa</td>
+                <td>`conversation-memory`</td>
+              </tr>
+              <tr>
+                <td>`notifications`</td>
+                <td>Notificacoes operacionais</td>
+                <td>`n8n-error-webhook` e CRM</td>
+              </tr>
+              <tr>
+                <td>`n8n_error_logs`</td>
+                <td>Auditoria de erros do workflow</td>
+                <td>`n8n-error-webhook`</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Fluxo de dados</h2>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-index">1</div>
+            <div class="timeline-body">
+              <h3>Entrada e normalizacao</h3>
+              <p>O n8n recebe a mensagem, extrai o telefone e define o ramo de texto ou audio.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">2</div>
+            <div class="timeline-body">
+              <h3>Contexto</h3>
+              <p>`conversation-memory-latest` retorna a memoria mais recente para enriquecer a conversa.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">3</div>
+            <div class="timeline-body">
+              <h3>Persistencia inicial</h3>
+              <p>`lead-webhook` com `action=create` garante a existencia do lead.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">4</div>
+            <div class="timeline-body">
+              <h3>Qualificacao</h3>
+              <p>O motor do n8n conduz a conversa, extrai dados e dispara notificacao para o SDR.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">5</div>
+            <div class="timeline-body">
+              <h3>Persistencia final</h3>
+              <p>`lead-webhook` com `action=finalize` grava cidade, estado, perfil, consumo e qualificacao.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-index">6</div>
+            <div class="timeline-body">
+              <h3>Monitoramento</h3>
+              <p>Qualquer falha relevante pode ser consolidada em `n8n_error_logs` e `notifications`.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </body>
+</html>

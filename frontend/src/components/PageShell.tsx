@@ -20,8 +20,8 @@ interface PageShellProps {
 export function PageShell({ title, subtitle, headerRight, children, spacing = "space-y-5" }: PageShellProps) {
   return (
     <div className="flex-1 overflow-auto">
-      <header className="h-14 border-b border-border flex items-center px-6 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="flex items-center justify-between w-full gap-3">
+      <header className="min-h-14 border-b border-border bg-card/50 px-6 py-3 backdrop-blur-sm sticky top-0 z-10">
+        <div className="flex w-full flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold text-foreground">{title}</h1>
             {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
