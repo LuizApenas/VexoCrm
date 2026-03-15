@@ -877,39 +877,16 @@ async function getClientName(clientId) {
 async function buildDispatchLeads({ clientId, importId = null, limit = null }) {
   if (!supabase) return [];
 
-  let phoneScope = null;
-
-  if (importId) {
-    const { data: importItems, error: importItemsError } = await supabase
-      .from("lead_import_items")
-      .select("telefone")
-      .eq("client_id", clientId)
-      .eq("import_id", importId)
-      .eq("imported", true)
-      .not("telefone", "is", null);
-
-    if (importItemsError) {
-      throw importItemsError;
-    }
-
-    phoneScope = Array.from(
-      new Set((importItems || []).map((item) => sanitizePhone(item.telefone)).filter(Boolean))
-    );
-
-    if (phoneScope.length === 0) {
-      return [];
-    }
-  }
-
   let query = supabase
-    .from("leads")
-    .select("id, client_id, telefone, nome, tipo_cliente, faixa_consumo, cidade, estado, status, data_hora, qualificacao, created_at")
+    .from("lead_import_items")
+    .select("id, import_id, client_id, telefone, normalized_data, created_at")
     .eq("client_id", clientId)
+    .eq("imported", true)
     .not("telefone", "is", null)
     .order("created_at", { ascending: false });
 
-  if (phoneScope) {
-    query = query.in("telefone", phoneScope);
+  if (importId) {
+    query = query.eq("import_id", importId);
   }
 
   if (limit && Number.isInteger(limit) && limit > 0) {
@@ -924,12 +901,30 @@ async function buildDispatchLeads({ clientId, importId = null, limit = null }) {
   return Array.from(
     new Map(
       (data || [])
-        .map((lead) => ({
-          ...lead,
-          telefone: sanitizePhone(lead.telefone),
-        }))
-        .filter((lead) => !!lead.telefone)
-        .map((lead) => [lead.telefone, lead])
+        .map((item) => {
+          const normalizedData =
+            item.normalized_data && typeof item.normalized_data === "object"
+              ? item.normalized_data
+              : {};
+
+          return {
+            id: item.id,
+            import_id: item.import_id,
+            client_id: item.client_id,
+            telefone: sanitizePhone(item.telefone),
+            nome: normalizeString(normalizedData.nome),
+            tipo_cliente: normalizeString(normalizedData.tipo_cliente),
+            faixa_consumo: normalizeString(normalizedData.faixa_consumo),
+            cidade: normalizeString(normalizedData.cidade),
+            estado: normalizeString(normalizedData.estado),
+            status: normalizeString(normalizedData.status),
+            data_hora: normalizeIsoDate(normalizedData.data_hora),
+            qualificacao: normalizeString(normalizedData.qualificacao),
+            created_at: item.created_at,
+          };
+        })
+        .filter((item) => !!item.telefone)
+        .map((item) => [item.telefone, item])
     ).values()
   );
 }
@@ -1322,30 +1317,12 @@ app.post("/api/lead-imports", requireFirebaseAuth, requireInternalAccess, async 
       throw importError;
     }
 
-    let leadIdsByPhone = new Map();
-
-    if (validRows.length > 0) {
-      const { data: upsertedLeads, error: upsertError } = await supabase
-        .from("leads")
-        .upsert(validRows, {
-          onConflict: "client_id,telefone",
-          ignoreDuplicates: false,
-        })
-        .select("id, telefone");
-
-      if (upsertError) {
-        throw upsertError;
-      }
-
-      leadIdsByPhone = new Map((upsertedLeads || []).map((lead) => [lead.telefone, lead.id]));
-    }
-
     const importItems = parsedItems.map((item) => ({
       import_id: importRecord.id,
       client_id: clientId,
       row_number: item.rowNumber,
       telefone: item.normalized.telefone,
-      lead_id: item.normalized.telefone ? leadIdsByPhone.get(item.normalized.telefone) || null : null,
+      lead_id: null,
       imported: item.imported,
       skip_reason: item.skipReason,
       raw_data: item.rawData,
