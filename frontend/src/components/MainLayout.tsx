@@ -1,15 +1,13 @@
-// VexoCrm/frontend/src/components/MainLayout.tsx
-// Layout wrapper with sidebar and main content area.
-// Extracted from App.tsx for cleaner structure.
-
 import { AppSidebar } from "@/components/AppSidebar";
 import { Outlet } from "react-router-dom";
 
 export function MainLayout() {
   return (
-    <div className="flex min-h-screen w-full">
+    <div className="flex min-h-screen w-full bg-transparent">
       <AppSidebar />
-      <Outlet />
+      <main className="min-w-0 flex-1">
+        <Outlet />
+      </main>
     </div>
   );
 }

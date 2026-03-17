@@ -782,12 +782,21 @@ function normalizeImportedLead(row, clientId) {
   const telefone = sanitizePhone(
     pickRowValue(row, [
       "telefone",
+      "telefones",
+      "fone",
+      "fones",
       "celular",
+      "celulares",
       "whatsapp",
+      "whatsapps",
       "phone",
+      "phones",
       "numero",
+      "numeros",
       "numero_telefone",
+      "numero_telefones",
       "telefone_whatsapp",
+      "telefones_whatsapp",
     ])
   );
 
