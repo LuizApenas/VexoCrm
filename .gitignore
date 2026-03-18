@@ -48,6 +48,8 @@ Thumbs.db
 .cache/
 .turbo/
 *.tsbuildinfo
+backend/.wwebjs_auth/
+backend/.wwebjs_cache/
 
 # Testing
 coverage/
