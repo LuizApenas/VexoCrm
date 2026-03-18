@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
@@ -14,20 +15,29 @@ import {
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
+import { type InternalPage } from "@/lib/access";
 
 const navItems = [
-  { title: "Dashboard", url: "/crm/dashboard", icon: LayoutDashboard },
-  { title: "Leads", url: "/crm/leads", icon: Users, badge: "CRM" },
-  { title: "Planilhas", url: "/crm/planilhas", icon: FileSpreadsheet },
-  { title: "WhatsApp", url: "/crm/whatsapp", icon: MessageCircle },
-  { title: "Agente", url: "/crm/agente", icon: Bot },
-  { title: "Usuarios", url: "/crm/usuarios", icon: ShieldCheck },
-];
+  { title: "Dashboard", url: "/crm/dashboard", icon: LayoutDashboard, page: "dashboard" as const },
+  { title: "Leads", url: "/crm/leads", icon: Users, badge: "CRM", page: "leads" as const },
+  { title: "Planilhas", url: "/crm/planilhas", icon: FileSpreadsheet, page: "planilhas" as const },
+  { title: "WhatsApp", url: "/crm/whatsapp", icon: MessageCircle, page: "whatsapp" as const },
+  { title: "Agente", url: "/crm/agente", icon: Bot, page: "agente" as const },
+  { title: "Usuarios", url: "/crm/usuarios", icon: ShieldCheck, page: "usuarios" as const },
+] satisfies Array<{
+  title: string;
+  url: string;
+  icon: ComponentType<{ className?: string }>;
+  badge?: string;
+  page: InternalPage;
+}>;
 
 export function AppSidebar() {
-  const { logout } = useAuth();
+  const { logout, canAccessInternalPage, isAdminUser } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const visibleNavItems = navItems.filter((item) => canAccessInternalPage(item.page));
+  const canSeeAgentNotifications = canAccessInternalPage("agente");
 
   const handleLogout = async () => {
     try {
@@ -72,7 +82,7 @@ export function AppSidebar() {
         )}
 
         <div className="space-y-1">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.url}
               to={item.url}
@@ -113,7 +123,7 @@ export function AppSidebar() {
         )}
 
         <div className="space-y-1">
-          <NotificationBell collapsed={collapsed} />
+          {canSeeAgentNotifications ? <NotificationBell collapsed={collapsed} /> : null}
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-all hover:bg-primary/5 hover:text-foreground"
@@ -133,7 +143,9 @@ export function AppSidebar() {
           {!collapsed && (
             <div>
               <p className="text-sm font-semibold text-foreground">Vexo Staff</p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Admin</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                {isAdminUser ? "Admin" : "Interno"}
+              </p>
             </div>
           )}
         </div>

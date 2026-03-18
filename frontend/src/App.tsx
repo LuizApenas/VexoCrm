@@ -2,15 +2,19 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ClientPortalLayout } from "@/components/ClientPortalLayout";
+import { EmptyState } from "@/components/EmptyState";
 import { MainLayout } from "@/components/MainLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { INTERNAL_PAGE_ORDER, getDefaultClientRoute } from "@/lib/access";
 import Dashboard from "./pages/Dashboard";
 import Agente from "./pages/Agente";
 import ClientPortalDashboard from "./pages/ClientPortalDashboard";
 import ClientPortalLeads from "./pages/ClientPortalLeads";
+import ClientPortalPlanilhas from "./pages/ClientPortalPlanilhas";
+import ClientPortalWhatsApp from "./pages/ClientPortalWhatsApp";
 import LandingPage from "./pages/LandingPage";
 import Leads from "./pages/Leads";
 import LeadImports from "./pages/LeadImports";
@@ -23,6 +27,35 @@ import UserAccessManagement from "./pages/UserAccessManagement";
 import WhatsAppInbox from "./pages/WhatsAppInbox";
 
 const queryClient = new QueryClient();
+
+function InternalIndexRedirect() {
+  const { canAccessInternalPage } = useAuth();
+  const target = INTERNAL_PAGE_ORDER.find((page) => canAccessInternalPage(page));
+
+  if (!target) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <EmptyState
+          title="Nenhuma pagina liberada"
+          description="Este usuario interno nao possui paginas liberadas. Ajuste as permissoes no painel para continuar."
+        />
+      </div>
+    );
+  }
+
+  return <Navigate to={target} replace />;
+}
+
+function ClientIndexRedirect() {
+  const { accessProfile } = useAuth();
+  const { clientId } = useParams();
+
+  if (!clientId || !accessProfile) {
+    return <Navigate to="/aguardando-aprovacao" replace />;
+  }
+
+  return <Navigate to={getDefaultClientRoute(clientId, accessProfile.allowedViews)} replace />;
+}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -66,19 +99,61 @@ const App = () => (
                 </ProtectedRoute>
               }
             >
-              <Route index element={<Navigate to="dashboard" replace />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="leads" element={<Leads />} />
-              <Route path="planilhas" element={<LeadImports />} />
-              <Route path="whatsapp" element={<WhatsAppInbox />} />
-              <Route path="agente" element={<Agente />} />
-              <Route path="usuarios" element={<UserAccessManagement />} />
+              <Route index element={<InternalIndexRedirect />} />
+              <Route
+                path="dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="dashboard">
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="leads"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="leads">
+                    <Leads />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="planilhas"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="planilhas">
+                    <LeadImports />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="whatsapp"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="whatsapp">
+                    <WhatsAppInbox />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="agente"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="agente">
+                    <Agente />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="usuarios"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="usuarios">
+                    <UserAccessManagement />
+                  </ProtectedRoute>
+                }
+              />
             </Route>
-            <Route
-              path="/clientes/:clientId"
-              element={
-                <ProtectedRoute allowedRoles={["internal", "client"]}>
-                  <ClientPortalLayout />
+              <Route
+                path="/clientes/:clientId"
+                element={
+                  <ProtectedRoute allowedRoles={["internal", "client"]}>
+                    <ClientPortalLayout />
                 </ProtectedRoute>
               }
             >
@@ -86,7 +161,7 @@ const App = () => (
                 index
                 element={
                   <ProtectedRoute allowedRoles={["internal", "client"]}>
-                    <Navigate to="dashboard" replace />
+                    <ClientIndexRedirect />
                   </ProtectedRoute>
                 }
               />
@@ -103,6 +178,22 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={["internal", "client"]} requiredView="leads">
                     <ClientPortalLeads />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="planilhas"
+                element={
+                  <ProtectedRoute allowedRoles={["internal", "client"]} requiredView="planilhas">
+                    <ClientPortalPlanilhas />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="whatsapp"
+                element={
+                  <ProtectedRoute allowedRoles={["internal", "client"]} requiredView="whatsapp">
+                    <ClientPortalWhatsApp />
                   </ProtectedRoute>
                 }
               />

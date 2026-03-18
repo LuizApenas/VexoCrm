@@ -9,18 +9,30 @@ import {
   onAuthChange,
   registerWithEmail,
 } from "@/lib/firebase";
+import {
+  getDefaultClientRoute,
+  getDefaultInternalRoute,
+  isFixedAdminAccount,
+  normalizeAccessRole,
+  normalizeAllowedViews,
+  normalizeInternalPages,
+  normalizeString,
+  normalizeStringArray,
+  type AccessView,
+  type InternalPage,
+} from "@/lib/access";
 
 export type AccessRole = "internal" | "client" | "pending";
-export type AccessView = "dashboard" | "leads";
-const DEFAULT_CLIENT_VIEWS: AccessView[] = ["dashboard", "leads"];
 
 export interface AuthAccessProfile {
   uid: string;
   email: string | null;
   role: AccessRole;
+  isAdmin: boolean;
   clientId: string | null;
   clientIds: string[];
   allowedViews: AccessView[];
+  internalPages: InternalPage[];
   companyName: string | null;
 }
 
@@ -32,11 +44,13 @@ interface AuthContextType {
   clientId: string | null;
   clientIds: string[];
   allowedViews: AccessView[];
+  internalPages: InternalPage[];
   loading: boolean;
   isAuthenticated: boolean;
   isInternalUser: boolean;
   isClientUser: boolean;
   isPendingUser: boolean;
+  isAdminUser: boolean;
   mustChangePassword: boolean;
   defaultRoute: string;
   login: (email: string, password: string) => Promise<void>;
@@ -49,6 +63,7 @@ interface AuthContextType {
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
   canAccessClient: (targetClientId: string) => boolean;
   canAccessView: (view: AccessView) => boolean;
+  canAccessInternalPage: (page: InternalPage) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -77,74 +92,40 @@ const isFirstLogin = (user: User) => {
   return Math.abs(lastSignInAt - createdAt) < 5000;
 };
 
-function normalizeAccessRole(value: unknown): AccessRole {
-  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-
-  if (normalized === "client" || normalized === "cliente" || normalized === "customer") {
-    return "client";
-  }
-
-  if (normalized === "pending" || normalized === "pendente" || normalized === "pending_client") {
-    return "pending";
-  }
-
-  return "internal";
-}
-
-function normalizeStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return Array.from(
-      new Set(
-        value
-          .map((item) => (typeof item === "string" ? item.trim() : ""))
-          .filter(Boolean)
-      )
-    );
-  }
-
-  if (typeof value === "string" && value.trim()) {
-    return Array.from(new Set(value.split(",").map((item) => item.trim()).filter(Boolean)));
-  }
-
-  return [];
-}
-
-function normalizeAllowedViews(value: unknown, role: AccessRole): AccessView[] {
-  const views = normalizeStringArray(value).filter(
-    (item): item is AccessView => item === "dashboard" || item === "leads"
-  );
-
-  if (role === "client" && views.length === 0) {
-    return [...DEFAULT_CLIENT_VIEWS];
-  }
-
-  return views;
-}
-
 function buildAccessProfile(user: User, claims: Record<string, unknown> = {}): AuthAccessProfile {
-  const role = normalizeAccessRole(
+  const requestedRole = normalizeAccessRole(
     claims.role ??
       claims.userRole ??
       claims.user_type ??
       claims.userType ??
       claims.tipo_usuario
   );
+  const isAdmin = Boolean(
+    claims.isAdmin ||
+      claims.admin ||
+      claims.is_admin ||
+      isFixedAdminAccount(user.uid, user.email || claims.email || null)
+  );
+  const role = isAdmin ? "internal" : requestedRole;
   const rawClientId = claims.clientId ?? claims.client_id ?? claims.companyId ?? claims.empresaId ?? null;
-  const directClientId = typeof rawClientId === "string" && rawClientId.trim() ? rawClientId.trim() : null;
-  const clientIds = Array.from(new Set([directClientId, ...normalizeStringArray(claims.clientIds)].filter(Boolean)));
+  const directClientId = normalizeString(rawClientId);
+  const clientIds = Array.from(
+    new Set([directClientId, ...normalizeStringArray(claims.clientIds)].filter(Boolean))
+  );
   const clientId = role === "client" ? directClientId || clientIds[0] || null : null;
   const allowedViews = role === "client" ? normalizeAllowedViews(claims.allowedViews, role) : [];
-  const companyName = typeof claims.companyName === "string" && claims.companyName.trim()
-    ? claims.companyName.trim()
-    : null;
+  const internalPages = role === "internal" ? normalizeInternalPages(claims.internalPages, isAdmin) : [];
+  const companyName = normalizeString(claims.companyName);
 
   return {
     uid: user.uid,
     email: user.email,
     role,
+    isAdmin,
     clientId,
     clientIds: role === "client" ? clientIds : [],
     allowedViews,
+    internalPages,
     companyName,
   };
 }
@@ -244,13 +225,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = !!firebaseUser;
   const accessRole = accessProfile?.role || "internal";
+  const isAdminUser = accessProfile?.isAdmin || false;
   const clientId = accessProfile?.clientId || null;
   const clientIds = accessProfile?.clientIds || [];
   const allowedViews = accessProfile?.allowedViews || [];
+  const internalPages = accessProfile?.internalPages || [];
   const isInternalUser = accessRole === "internal";
   const isClientUser = accessRole === "client";
   const isPendingUser = accessRole === "pending";
-  const defaultView = allowedViews.includes("dashboard") ? "dashboard" : allowedViews[0] || "dashboard";
   const canAccessClient = useCallback(
     (targetClientId: string) => isInternalUser || clientIds.includes(targetClientId),
     [clientIds, isInternalUser]
@@ -259,13 +241,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (view: AccessView) => isInternalUser || allowedViews.includes(view),
     [allowedViews, isInternalUser]
   );
+  const canAccessInternalPage = useCallback(
+    (page: InternalPage) => isInternalUser && (isAdminUser || internalPages.includes(page)),
+    [internalPages, isAdminUser, isInternalUser]
+  );
   const defaultRoute = isPendingUser
     ? "/aguardando-aprovacao"
     : isClientUser
       ? clientId
-        ? `/clientes/${clientId}/${defaultView}`
+        ? getDefaultClientRoute(clientId, allowedViews)
         : "/aguardando-aprovacao"
-      : "/crm/dashboard";
+      : getDefaultInternalRoute(internalPages, isAdminUser);
 
   return (
     <AuthContext.Provider
@@ -277,11 +263,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clientId,
         clientIds,
         allowedViews,
+        internalPages,
         loading,
         isAuthenticated,
         isInternalUser,
         isClientUser,
         isPendingUser,
+        isAdminUser,
         mustChangePassword,
         defaultRoute,
         login,
@@ -294,6 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         getIdToken,
         canAccessClient,
         canAccessView,
+        canAccessInternalPage,
       }}
     >
       {children}

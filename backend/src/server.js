@@ -140,8 +140,26 @@ const MANAGED_CLAIM_KEYS = [
   "clientIds",
   "allowedViews",
   "companyName",
+  "internalPages",
 ];
+const CLIENT_VIEW_KEYS = ["dashboard", "leads", "planilhas", "whatsapp"];
 const DEFAULT_CLIENT_VIEWS = ["dashboard", "leads"];
+const INTERNAL_PAGE_KEYS = ["dashboard", "leads", "planilhas", "whatsapp", "agente", "usuarios"];
+const FIXED_ADMIN_UIDS = new Set([
+  "IozfnQTmWHQAxopr3FyNb1SdYs52",
+  "pKpOKg3Fttf6AnYsTzZD7xjJLaN2",
+]);
+const FIXED_ADMIN_EMAILS = new Set([
+  "luizz.felipe.santos17@gmail.com",
+  "econradofl@gmail.com",
+]);
+
+function isFixedAdminIdentity(identity = {}) {
+  const uid = normalizeString(identity.uid);
+  const email = normalizeString(identity.email)?.toLowerCase() || null;
+
+  return (uid && FIXED_ADMIN_UIDS.has(uid)) || (email && FIXED_ADMIN_EMAILS.has(email)) || false;
+}
 
 function normalizeRole(value) {
   const normalized = normalizeString(value)?.toLowerCase();
@@ -182,7 +200,7 @@ function normalizeStringArray(value) {
 function normalizeAllowedViews(value, role) {
   const allowed = normalizeStringArray(value)
     .map((item) => item.toLowerCase())
-    .filter((item) => DEFAULT_CLIENT_VIEWS.includes(item));
+    .filter((item) => CLIENT_VIEW_KEYS.includes(item));
 
   if (role === "client" && allowed.length === 0) {
     return [...DEFAULT_CLIENT_VIEWS];
@@ -191,7 +209,27 @@ function normalizeAllowedViews(value, role) {
   return Array.from(new Set(allowed));
 }
 
-function extractManagedAccessClaims(rawClaims = {}) {
+function normalizeInternalPages(value, role, isAdmin = false) {
+  if (role !== "internal") {
+    return [];
+  }
+
+  if (isAdmin) {
+    return [...INTERNAL_PAGE_KEYS];
+  }
+
+  const pages = normalizeStringArray(value)
+    .map((item) => item.toLowerCase())
+    .filter((item) => INTERNAL_PAGE_KEYS.includes(item));
+
+  if (pages.length === 0) {
+    return [...INTERNAL_PAGE_KEYS];
+  }
+
+  return Array.from(new Set(pages));
+}
+
+function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
   const role = normalizeRole(
     rawClaims.role ??
       rawClaims.userRole ??
@@ -199,6 +237,7 @@ function extractManagedAccessClaims(rawClaims = {}) {
       rawClaims.userType ??
       rawClaims.tipo_usuario
   );
+  const isAdmin = role === "internal" && isFixedAdminIdentity(identity);
   const directClientId = normalizeString(
     rawClaims.clientId ??
       rawClaims.client_id ??
@@ -210,26 +249,31 @@ function extractManagedAccessClaims(rawClaims = {}) {
   );
   const clientId = directClientId || clientIds[0] || null;
   const allowedViews = normalizeAllowedViews(rawClaims.allowedViews, role);
+  const internalPages = normalizeInternalPages(rawClaims.internalPages, role, isAdmin);
 
   return {
     role,
+    isAdmin,
     clientId: role === "client" ? clientId : null,
     clientIds: role === "client" ? clientIds : [],
     allowedViews: role === "client" ? allowedViews : [],
+    internalPages,
     companyName: normalizeString(rawClaims.companyName),
   };
 }
 
 function buildAccessProfile(decodedToken) {
-  const claims = extractManagedAccessClaims(decodedToken);
+  const claims = extractManagedAccessClaims(decodedToken, decodedToken);
 
   return {
     uid: decodedToken.uid,
     email: normalizeString(decodedToken.email),
     role: claims.role,
+    isAdmin: claims.isAdmin,
     clientId: claims.clientId,
     clientIds: claims.clientIds,
     allowedViews: claims.allowedViews,
+    internalPages: claims.internalPages,
     companyName: claims.companyName,
   };
 }
@@ -287,6 +331,79 @@ function requireInternalAccess(req, res, next) {
   next();
 }
 
+function requireAdminAccess(req, res, next) {
+  if (req.authAccess?.role !== "internal" || !req.authAccess?.isAdmin) {
+    sendError(res, 403, "FORBIDDEN", "Admin permission required");
+    return;
+  }
+
+  next();
+}
+
+function requireInternalPageAccess(page) {
+  return (req, res, next) => {
+    const access = req.authAccess;
+
+    if (access?.role !== "internal") {
+      sendError(res, 403, "FORBIDDEN", "Internal access required");
+      return;
+    }
+
+    if (access.isAdmin || access.internalPages?.includes(page)) {
+      next();
+      return;
+    }
+
+    sendError(res, 403, "FORBIDDEN", `Missing permission for page ${page}`);
+  };
+}
+
+function hasInternalPageAccess(access, page) {
+  return access?.role === "internal" && (access.isAdmin || access.internalPages?.includes(page));
+}
+
+function hasClientViewAccess(access, view) {
+  return access?.role === "client" && access.allowedViews?.includes(view);
+}
+
+function canAccessAppView(access, view) {
+  return hasInternalPageAccess(access, view) || hasClientViewAccess(access, view);
+}
+
+function requireAppViewAccess(view) {
+  return (req, res, next) => {
+    const access = req.authAccess;
+
+    if (!access || access.role === "pending") {
+      sendError(res, 403, "PENDING_APPROVAL", "Your account is waiting for approval");
+      return;
+    }
+
+    if (canAccessAppView(access, view)) {
+      next();
+      return;
+    }
+
+    sendError(res, 403, "FORBIDDEN", `Missing permission for view ${view}`);
+  };
+}
+
+function ensureSharedRoutePageAccess(req, res, page) {
+  const access = req.authAccess;
+
+  if (access?.role === "pending") {
+    sendError(res, 403, "PENDING_APPROVAL", "Your account is waiting for approval");
+    return false;
+  }
+
+  if (canAccessAppView(access, page)) {
+    return true;
+  }
+
+  sendError(res, 403, "FORBIDDEN", `Missing permission for view ${page}`);
+  return false;
+}
+
 function normalizeString(value) {
   if (value === null || value === undefined) return null;
   const str = String(value).trim();
@@ -340,6 +457,110 @@ function sanitizePhone(value) {
   }
 
   return digits;
+}
+
+function normalizePhoneToWhatsAppChatId(value) {
+  const phone = sanitizePhone(value);
+  return phone ? `${phone}@c.us` : null;
+}
+
+function normalizeWhatsAppChatId(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return null;
+
+  if (normalized.includes("@")) {
+    const [base] = normalized.split("@");
+    const digits = base.replace(/\D/g, "");
+    return digits ? `${digits}@c.us` : normalized;
+  }
+
+  return normalizePhoneToWhatsAppChatId(normalized);
+}
+
+async function getAuthorizedClientWhatsAppChatIds(clientIds = []) {
+  if (!supabase) {
+    throw new Error("Supabase is not configured");
+  }
+
+  if (!clientIds.length) {
+    return new Set();
+  }
+
+  const { data, error } = await supabase
+    .from("leads")
+    .select("telefone")
+    .in("client_id", clientIds);
+
+  if (error) {
+    throw error;
+  }
+
+  return new Set(
+    (data || [])
+      .map((item) => normalizePhoneToWhatsAppChatId(item.telefone))
+      .filter(Boolean)
+  );
+}
+
+async function getAuthorizedWhatsAppChatIdsForRequest(req, res) {
+  if (req.authAccess?.role !== "client") {
+    return null;
+  }
+
+  if (!ensureSupabase(res)) {
+    return null;
+  }
+
+  try {
+    return await getAuthorizedClientWhatsAppChatIds(req.authAccess.clientIds || []);
+  } catch (error) {
+    console.error("authorized whatsapp chats query error:", error);
+    sendError(
+      res,
+      500,
+      "WHATSAPP_SCOPE_QUERY_FAILED",
+      error instanceof Error ? error.message : "Failed to resolve WhatsApp scope"
+    );
+    return null;
+  }
+}
+
+async function ensureAuthorizedWhatsAppChat(req, res, chatId) {
+  if (req.authAccess?.role !== "client") {
+    return true;
+  }
+
+  const authorizedChatIds = await getAuthorizedWhatsAppChatIdsForRequest(req, res);
+  if (!authorizedChatIds) {
+    return false;
+  }
+
+  const normalizedChatId = normalizeWhatsAppChatId(chatId);
+  if (normalizedChatId && authorizedChatIds.has(normalizedChatId)) {
+    return true;
+  }
+
+  sendError(res, 403, "FORBIDDEN_CLIENT_SCOPE", "You do not have access to this WhatsApp chat");
+  return false;
+}
+
+async function ensureAuthorizedWhatsAppPhone(req, res, phone) {
+  if (req.authAccess?.role !== "client") {
+    return true;
+  }
+
+  const authorizedChatIds = await getAuthorizedWhatsAppChatIdsForRequest(req, res);
+  if (!authorizedChatIds) {
+    return false;
+  }
+
+  const normalizedChatId = normalizePhoneToWhatsAppChatId(phone);
+  if (normalizedChatId && authorizedChatIds.has(normalizedChatId)) {
+    return true;
+  }
+
+  sendError(res, 403, "FORBIDDEN_CLIENT_SCOPE", "You do not have access to this WhatsApp contact");
+  return false;
 }
 
 function isValidBase64(value) {
@@ -631,11 +852,18 @@ function mergeManagedClaims(existingClaims = {}, managedClaims = {}) {
   };
 }
 
-function buildManagedClaims({ role, clientIds = [], allowedViews = [], companyName = null }) {
+function buildManagedClaims({
+  role,
+  clientIds = [],
+  allowedViews = [],
+  companyName = null,
+  internalPages = [],
+}) {
   const normalizedRole = normalizeRole(role);
   const normalizedClientIds = normalizeStringArray(clientIds);
   const normalizedViews = normalizeAllowedViews(allowedViews, normalizedRole);
   const normalizedCompanyName = normalizeString(companyName);
+  const normalizedInternalPages = normalizeInternalPages(internalPages, normalizedRole);
 
   if (normalizedRole === "client" && normalizedClientIds.length === 0) {
     throw new Error("Client users must have at least one associated client");
@@ -660,6 +888,7 @@ function buildManagedClaims({ role, clientIds = [], allowedViews = [], companyNa
 
   return {
     role: "internal",
+    internalPages: normalizedInternalPages,
   };
 }
 
@@ -675,6 +904,23 @@ async function listAllFirebaseUsers() {
   } while (pageToken);
 
   return users;
+}
+
+function mapAdminUserRecord(user) {
+  const access = extractManagedAccessClaims(user.customClaims || {}, {
+    uid: user.uid,
+    email: user.email,
+  });
+
+  return {
+    uid: user.uid,
+    email: user.email || null,
+    displayName: user.displayName || null,
+    disabled: user.disabled,
+    createdAt: user.metadata.creationTime || null,
+    lastSignInAt: user.metadata.lastSignInTime || null,
+    access,
+  };
 }
 
 function resolveAuthorizedClientId(req, res, requestedClientId) {
@@ -1022,23 +1268,12 @@ app.get("/api/lead-clients", requireFirebaseAuth, async (req, res) => {
   }
 });
 
-app.get("/api/admin/users", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+app.get("/api/admin/users", requireFirebaseAuth, requireInternalPageAccess("usuarios"), async (_req, res) => {
   try {
     const users = await listAllFirebaseUsers();
 
     res.json({
-      items: users.map((user) => {
-        const access = extractManagedAccessClaims(user.customClaims || {});
-        return {
-          uid: user.uid,
-          email: user.email || null,
-          displayName: user.displayName || null,
-          disabled: user.disabled,
-          createdAt: user.metadata.creationTime || null,
-          lastSignInAt: user.metadata.lastSignInTime || null,
-          access,
-        };
-      }),
+      items: users.map(mapAdminUserRecord),
     });
   } catch (error) {
     console.error("admin users query error:", error);
@@ -1046,7 +1281,7 @@ app.get("/api/admin/users", requireFirebaseAuth, requireInternalAccess, async (_
   }
 });
 
-app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
   const uid = normalizeString(req.params.uid);
   const role = normalizeString(req.body?.role);
 
@@ -1058,33 +1293,37 @@ app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireInternalAc
   try {
     const auth = getAuth();
     const user = await auth.getUser(uid);
-    const managedClaims = buildManagedClaims({
-      role,
-      clientIds: req.body?.clientIds,
-      allowedViews: req.body?.allowedViews,
-      companyName: req.body?.companyName,
-    });
+    const isTargetFixedAdmin = isFixedAdminIdentity({ uid: user.uid, email: user.email });
+    const managedClaims = isTargetFixedAdmin
+      ? buildManagedClaims({
+          role: "internal",
+          internalPages: INTERNAL_PAGE_KEYS,
+        })
+      : buildManagedClaims({
+          role,
+          clientIds: req.body?.clientIds,
+          allowedViews: req.body?.allowedViews,
+          companyName: req.body?.companyName,
+          internalPages: req.body?.internalPages,
+        });
+
+    if (isTargetFixedAdmin && typeof req.body?.disabled === "boolean" && req.body.disabled) {
+      sendError(res, 400, "INVALID_BODY", "Fixed admin accounts cannot be disabled");
+      return;
+    }
+
     const mergedClaims = mergeManagedClaims(user.customClaims || {}, managedClaims);
 
     await auth.setCustomUserClaims(uid, mergedClaims);
 
-    if (typeof req.body?.disabled === "boolean") {
+    if (!isTargetFixedAdmin && typeof req.body?.disabled === "boolean") {
       await auth.updateUser(uid, { disabled: req.body.disabled });
     }
 
     const updatedUser = await auth.getUser(uid);
-    const access = extractManagedAccessClaims(updatedUser.customClaims || {});
 
     res.json({
-      item: {
-        uid: updatedUser.uid,
-        email: updatedUser.email || null,
-        displayName: updatedUser.displayName || null,
-        disabled: updatedUser.disabled,
-        createdAt: updatedUser.metadata.creationTime || null,
-        lastSignInAt: updatedUser.metadata.lastSignInTime || null,
-        access,
-      },
+      item: mapAdminUserRecord(updatedUser),
     });
   } catch (error) {
     console.error("admin user access update error:", error);
@@ -1093,6 +1332,69 @@ app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireInternalAc
       500,
       "ADMIN_USER_ACCESS_UPDATE_FAILED",
       error instanceof Error ? error.message : "Failed to update user access"
+    );
+  }
+});
+
+app.post("/api/admin/users", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
+  const email = normalizeString(req.body?.email)?.toLowerCase();
+  const password = normalizeString(req.body?.password);
+  const displayName = normalizeString(req.body?.displayName);
+  const role = normalizeString(req.body?.role);
+  const sendPasswordReset = normalizeBool(req.body?.sendPasswordReset);
+
+  if (!email || !password || !role) {
+    sendError(res, 400, "INVALID_BODY", "Missing email, password or role");
+    return;
+  }
+
+  if (password.length < 8) {
+    sendError(res, 400, "WEAK_PASSWORD", "Password must have at least 8 characters");
+    return;
+  }
+
+  try {
+    const auth = getAuth();
+    const user = await auth.createUser({
+      email,
+      password,
+      displayName: displayName || undefined,
+    });
+    const managedClaims = buildManagedClaims({
+      role,
+      clientIds: req.body?.clientIds,
+      allowedViews: req.body?.allowedViews,
+      companyName: req.body?.companyName,
+      internalPages: req.body?.internalPages,
+    });
+
+    await auth.setCustomUserClaims(user.uid, mergeManagedClaims({}, managedClaims));
+
+    let passwordResetLink = null;
+    if (sendPasswordReset) {
+      passwordResetLink = await auth.generatePasswordResetLink(email);
+    }
+
+    const createdUser = await auth.getUser(user.uid);
+
+    res.status(201).json({
+      item: mapAdminUserRecord(createdUser),
+      passwordResetLink,
+    });
+  } catch (error) {
+    console.error("admin user create error:", error);
+    const code = error?.code || "";
+
+    if (code === "auth/email-already-exists") {
+      sendError(res, 409, "EMAIL_ALREADY_EXISTS", "This email is already registered");
+      return;
+    }
+
+    sendError(
+      res,
+      500,
+      "ADMIN_USER_CREATE_FAILED",
+      error instanceof Error ? error.message : "Failed to create user"
     );
   }
 });
@@ -1171,6 +1473,7 @@ app.post("/api/client-signup", async (req, res) => {
 
 app.get("/api/dashboard", requireFirebaseAuth, async (req, res) => {
   if (!ensureSupabase(res)) return;
+  if (!ensureSharedRoutePageAccess(req, res, "dashboard")) return;
 
   const requestedClientId = normalizeString(req.query.clientId);
   const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
@@ -1207,6 +1510,7 @@ app.get("/api/dashboard", requireFirebaseAuth, async (req, res) => {
 
 app.get("/api/leads", requireFirebaseAuth, async (req, res) => {
   if (!ensureSupabase(res)) return;
+  if (!ensureSharedRoutePageAccess(req, res, "leads")) return;
 
   const requestedClientId = normalizeString(req.query.clientId);
   const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
@@ -1231,7 +1535,7 @@ app.get("/api/leads", requireFirebaseAuth, async (req, res) => {
   }
 });
 
-app.get("/api/lead-imports", requireFirebaseAuth, async (req, res) => {
+app.get("/api/lead-imports", requireFirebaseAuth, requireAppViewAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   const requestedClientId = normalizeString(req.query.clientId);
@@ -1257,7 +1561,7 @@ app.get("/api/lead-imports", requireFirebaseAuth, async (req, res) => {
   }
 });
 
-app.post("/api/lead-imports", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+app.post("/api/lead-imports", requireFirebaseAuth, requireAppViewAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   const clientId = normalizeString(req.body?.clientId);
@@ -1359,7 +1663,7 @@ app.post("/api/lead-imports", requireFirebaseAuth, requireInternalAccess, async 
   }
 });
 
-app.post("/api/n8n-dispatches", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+app.post("/api/n8n-dispatches", requireFirebaseAuth, requireInternalPageAccess("agente"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   const clientId = normalizeString(req.body?.clientId);
@@ -1470,7 +1774,7 @@ app.post("/api/n8n-dispatches", requireFirebaseAuth, requireInternalAccess, asyn
   }
 });
 
-app.get("/api/notifications", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+app.get("/api/notifications", requireFirebaseAuth, requireInternalPageAccess("agente"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   try {
@@ -1504,7 +1808,7 @@ app.get("/api/notifications", requireFirebaseAuth, requireInternalAccess, async 
   }
 });
 
-app.patch("/api/notifications", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+app.patch("/api/notifications", requireFirebaseAuth, requireInternalPageAccess("agente"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   try {
@@ -1747,7 +2051,7 @@ app.post(
   }
 );
 
-app.get("/api/whatsapp/session", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+app.get("/api/whatsapp/session", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (_req, res) => {
   if (whatsappSessionManager.getState().hasPersistedSession) {
     whatsappSessionManager.restorePersistedSession().catch((error) => {
       console.error("whatsapp persisted session restore error:", error);
@@ -1757,7 +2061,7 @@ app.get("/api/whatsapp/session", requireFirebaseAuth, requireInternalAccess, asy
   res.json(whatsappSessionManager.getState());
 });
 
-app.post("/api/whatsapp/session/start", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+app.post("/api/whatsapp/session/start", requireFirebaseAuth, requireInternalPageAccess("whatsapp"), async (_req, res) => {
   try {
     const state = await whatsappSessionManager.start();
     res.json(state);
@@ -1772,7 +2076,7 @@ app.post("/api/whatsapp/session/start", requireFirebaseAuth, requireInternalAcce
   }
 });
 
-app.post("/api/whatsapp/session/reset", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+app.post("/api/whatsapp/session/reset", requireFirebaseAuth, requireInternalPageAccess("whatsapp"), async (_req, res) => {
   try {
     const state = await whatsappSessionManager.reset();
     res.json(state);
@@ -1787,18 +2091,50 @@ app.post("/api/whatsapp/session/reset", requireFirebaseAuth, requireInternalAcce
   }
 });
 
-app.get("/api/whatsapp/chats", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+app.get("/api/whatsapp/chats", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (_req, res) => {
   try {
     const search = normalizeString(_req.query.search)?.toLowerCase() || "";
     const rawLimit = Number.parseInt(String(_req.query.limit || "100"), 10);
     const rawOffset = Number.parseInt(String(_req.query.offset || "0"), 10);
     const limit = Number.isNaN(rawLimit) ? 20 : Math.min(Math.max(rawLimit, 1), 200);
     const offset = Number.isNaN(rawOffset) ? 0 : Math.max(rawOffset, 0);
-    const payload = await whatsappSessionManager.getChatsPage({
-      search,
-      limit,
-      offset,
-    });
+
+    if (_req.authAccess?.role === "client") {
+      const authorizedChatIds = await getAuthorizedWhatsAppChatIdsForRequest(_req, res);
+      if (!authorizedChatIds) {
+        return;
+      }
+
+      const matchesSearch = (chat) => {
+        if (!search) return true;
+
+        const haystack = [
+          chat.name,
+          chat.id,
+          chat.lastMessage?.body,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return haystack.includes(search);
+      };
+
+      const items = (await whatsappSessionManager.getChats())
+        .filter((chat) => authorizedChatIds.has(normalizeWhatsAppChatId(chat.id)))
+        .filter(matchesSearch);
+      const pageItems = items.slice(offset, offset + limit);
+
+      res.json({
+        items: pageItems,
+        total: items.length,
+        nextOffset: offset + pageItems.length,
+        hasMore: offset + pageItems.length < items.length,
+      });
+      return;
+    }
+
+    const payload = await whatsappSessionManager.getChatsPage({ search, limit, offset });
 
     res.json(payload);
   } catch (error) {
@@ -1812,11 +2148,15 @@ app.get("/api/whatsapp/chats", requireFirebaseAuth, requireInternalAccess, async
   }
 });
 
-app.post("/api/whatsapp/chats/read", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+app.post("/api/whatsapp/chats/read", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
   const chatId = normalizeString(req.body?.chatId);
 
   if (!chatId) {
     sendError(res, 400, "INVALID_BODY", "Missing chatId");
+    return;
+  }
+
+  if (!(await ensureAuthorizedWhatsAppChat(req, res, chatId))) {
     return;
   }
 
@@ -1834,13 +2174,17 @@ app.post("/api/whatsapp/chats/read", requireFirebaseAuth, requireInternalAccess,
   }
 });
 
-app.get("/api/whatsapp/messages", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+app.get("/api/whatsapp/messages", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
   const chatId = normalizeString(req.query.chatId);
   const rawLimit = Number.parseInt(String(req.query.limit || "20"), 10);
   const limit = Number.isNaN(rawLimit) ? 20 : Math.min(Math.max(rawLimit, 1), 50);
 
   if (!chatId) {
     sendError(res, 400, "INVALID_QUERY", "Missing chatId");
+    return;
+  }
+
+  if (!(await ensureAuthorizedWhatsAppChat(req, res, chatId))) {
     return;
   }
 
@@ -1858,12 +2202,16 @@ app.get("/api/whatsapp/messages", requireFirebaseAuth, requireInternalAccess, as
   }
 });
 
-app.post("/api/whatsapp/messages", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+app.post("/api/whatsapp/messages", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
   const chatId = normalizeString(req.body?.chatId);
   const body = normalizeString(req.body?.body);
 
   if (!chatId || !body) {
     sendError(res, 400, "INVALID_BODY", "Missing chatId or body");
+    return;
+  }
+
+  if (!(await ensureAuthorizedWhatsAppChat(req, res, chatId))) {
     return;
   }
 
@@ -1881,12 +2229,16 @@ app.post("/api/whatsapp/messages", requireFirebaseAuth, requireInternalAccess, a
   }
 });
 
-app.post("/api/whatsapp/messages/direct", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+app.post("/api/whatsapp/messages/direct", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
   const phone = normalizeString(req.body?.phone);
   const body = normalizeString(req.body?.body);
 
   if (!phone || !body) {
     sendError(res, 400, "INVALID_BODY", "Missing phone or body");
+    return;
+  }
+
+  if (!(await ensureAuthorizedWhatsAppPhone(req, res, phone))) {
     return;
   }
 

@@ -38,11 +38,11 @@ interface CreateLeadImportResponse {
 }
 
 export function useLeadImports(clientId?: string) {
-  const { isAuthenticated, getIdToken } = useAuth();
+  const { isAuthenticated, canAccessView, getIdToken } = useAuth();
 
   return useQuery({
     queryKey: ["lead-imports", clientId],
-    enabled: isAuthenticated && !!clientId,
+    enabled: isAuthenticated && !!clientId && canAccessView("planilhas"),
     queryFn: async (): Promise<LeadImportItem[]> => {
       const token = await getIdToken();
       if (!token) {

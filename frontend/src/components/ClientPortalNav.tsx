@@ -1,14 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { Building2, LayoutDashboard, LogOut, TableProperties } from "lucide-react";
+import { Building2, FileSpreadsheet, LayoutDashboard, LogOut, MessageCircle, TableProperties } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 
 interface ClientPortalNavProps {
   clientId: string;
   clientName: string;
-  active: "dashboard" | "leads";
+  active: "dashboard" | "leads" | "planilhas" | "whatsapp";
 }
 
 export function ClientPortalNav({ clientId, clientName, active }: ClientPortalNavProps) {
@@ -43,6 +43,22 @@ export function ClientPortalNav({ clientId, clientName, active }: ClientPortalNa
           <Link to={`/clientes/${clientId}/leads`}>
             <TableProperties className="h-4 w-4" />
             Leads
+          </Link>
+        </Button>
+      )}
+      {canAccessView("planilhas") && (
+        <Button asChild size="sm" variant={active === "planilhas" ? "default" : "outline"}>
+          <Link to={`/clientes/${clientId}/planilhas`}>
+            <FileSpreadsheet className="h-4 w-4" />
+            Planilhas
+          </Link>
+        </Button>
+      )}
+      {canAccessView("whatsapp") && (
+        <Button asChild size="sm" variant={active === "whatsapp" ? "default" : "outline"}>
+          <Link to={`/clientes/${clientId}/whatsapp`}>
+            <MessageCircle className="h-4 w-4" />
+            WhatsApp
           </Link>
         </Button>
       )}

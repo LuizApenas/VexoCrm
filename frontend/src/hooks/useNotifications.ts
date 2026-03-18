@@ -18,14 +18,15 @@ const POLL_INTERVAL = 15000;
 const LAST_SEEN_KEY = "notifications_lastSeenCreatedAt";
 
 export function useNotifications() {
-  const { user, getIdToken } = useAuth();
+  const { user, getIdToken, canAccessInternalPage } = useAuth();
   const [items, setItems] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const lastSeenRef = useRef(localStorage.getItem(LAST_SEEN_KEY) || "");
+  const canReadNotifications = canAccessInternalPage("agente");
 
   const fetchNotifications = useCallback(async () => {
-    if (!user) return;
+    if (!user || !canReadNotifications) return;
     try {
       const token = await getIdToken();
       if (!token) return;
@@ -59,18 +60,25 @@ export function useNotifications() {
     } catch (err) {
       console.error("Failed to fetch notifications:", err);
     }
-  }, [getIdToken, user]);
+  }, [canReadNotifications, getIdToken, user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !canReadNotifications) {
+      setItems([]);
+      setUnreadCount(0);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     fetchNotifications().finally(() => setLoading(false));
     const interval = setInterval(fetchNotifications, POLL_INTERVAL);
     return () => clearInterval(interval);
-  }, [fetchNotifications, user]);
+  }, [canReadNotifications, fetchNotifications, user]);
 
   const markAsRead = useCallback(
     async (id: string) => {
+      if (!canReadNotifications) return;
       const token = await getIdToken();
       if (!token) return;
 
@@ -84,10 +92,11 @@ export function useNotifications() {
       });
       await fetchNotifications();
     },
-    [fetchNotifications, getIdToken]
+    [canReadNotifications, fetchNotifications, getIdToken]
   );
 
   const markAllRead = useCallback(async () => {
+    if (!canReadNotifications) return;
     const token = await getIdToken();
     if (!token) return;
 
@@ -100,7 +109,7 @@ export function useNotifications() {
       body: JSON.stringify({ markAllRead: true }),
     });
     await fetchNotifications();
-  }, [fetchNotifications, getIdToken]);
+  }, [canReadNotifications, fetchNotifications, getIdToken]);
 
   return { items, unreadCount, loading, markAsRead, markAllRead };
 }
