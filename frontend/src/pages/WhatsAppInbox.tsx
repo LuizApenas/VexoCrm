@@ -189,6 +189,10 @@ export default function WhatsAppInbox({
         {isStarting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
         {session?.status === "idle" ? "Iniciar sessao" : "Gerar QR"}
       </Button>
+      <Button variant="outline" size="sm" onClick={handleResetSession} disabled={isResetting}>
+        {isResetting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
+        Desconectar
+      </Button>
     </div>
   ) : null;
 
@@ -332,7 +336,7 @@ export default function WhatsAppInbox({
                   disabled={isResetting}
                 >
                   {isResetting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  Reiniciar sessao
+                  Sair da sessao do WhatsApp Web
                 </Button>
               </>
             )}

@@ -10,7 +10,7 @@ export default function ClientPortalWhatsApp() {
       title="WhatsApp do Cliente"
       subtitle={`${clientName} - conversas e atendimento liberados para esta unidade`}
       headerRight={<ClientPortalNav clientId={clientId} clientName={clientName} active="whatsapp" />}
-      allowSessionControls={false}
+      allowSessionControls
     />
   );
 }

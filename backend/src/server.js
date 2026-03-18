@@ -2061,7 +2061,7 @@ app.get("/api/whatsapp/session", requireFirebaseAuth, requireAppViewAccess("what
   res.json(whatsappSessionManager.getState());
 });
 
-app.post("/api/whatsapp/session/start", requireFirebaseAuth, requireInternalPageAccess("whatsapp"), async (_req, res) => {
+app.post("/api/whatsapp/session/start", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (_req, res) => {
   try {
     const state = await whatsappSessionManager.start();
     res.json(state);
@@ -2076,7 +2076,7 @@ app.post("/api/whatsapp/session/start", requireFirebaseAuth, requireInternalPage
   }
 });
 
-app.post("/api/whatsapp/session/reset", requireFirebaseAuth, requireInternalPageAccess("whatsapp"), async (_req, res) => {
+app.post("/api/whatsapp/session/reset", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (_req, res) => {
   try {
     const state = await whatsappSessionManager.reset();
     res.json(state);
