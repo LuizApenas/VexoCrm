@@ -1,14 +1,29 @@
 import { type AccessRole, type AccessView, useAuth } from "@/contexts/AuthContext";
+import { type InternalPage } from "@/lib/access";
 import { Navigate, useLocation } from "react-router-dom";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRoles?: AccessRole[];
   requiredView?: AccessView;
+  requiredInternalPage?: InternalPage;
 }
 
-export default function ProtectedRoute({ children, allowedRoles, requiredView }: ProtectedRouteProps) {
-  const { isAuthenticated, loading, mustChangePassword, accessRole, defaultRoute, canAccessView } = useAuth();
+export default function ProtectedRoute({
+  children,
+  allowedRoles,
+  requiredView,
+  requiredInternalPage,
+}: ProtectedRouteProps) {
+  const {
+    isAuthenticated,
+    loading,
+    mustChangePassword,
+    accessRole,
+    defaultRoute,
+    canAccessView,
+    canAccessInternalPage,
+  } = useAuth();
   const location = useLocation();
   const isSetPasswordPage = location.pathname === "/set-password";
 
@@ -38,6 +53,10 @@ export default function ProtectedRoute({ children, allowedRoles, requiredView }:
 
   if (requiredView && !canAccessView(requiredView)) {
     return <Navigate to={defaultRoute} replace />;
+  }
+
+  if (requiredInternalPage && !canAccessInternalPage(requiredInternalPage)) {
+    return <Navigate to="/crm" replace />;
   }
 
   return <>{children}</>;

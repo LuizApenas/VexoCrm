@@ -16,7 +16,7 @@ export function useClientPortalContext() {
 
 export function ClientPortalLayout() {
   const { clientId } = useParams();
-  const { isClientUser, clientId: scopedClientId, canAccessClient } = useAuth();
+  const { isClientUser, clientId: scopedClientId, canAccessClient, defaultRoute } = useAuth();
   const { data: clients = [], isLoading, error } = useLeadClients();
 
   if (!clientId) {
@@ -24,7 +24,7 @@ export function ClientPortalLayout() {
   }
 
   if (isClientUser && scopedClientId && !canAccessClient(clientId)) {
-    return <Navigate to={`/clientes/${scopedClientId}/dashboard`} replace />;
+    return <Navigate to={defaultRoute} replace />;
   }
 
   if (isLoading) {

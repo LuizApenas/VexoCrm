@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import * as XLSX from "xlsx";
 import {
   Building2,
@@ -30,6 +30,14 @@ import { SectionHeader } from "@/components/SectionHeader";
 import { cn } from "@/lib/utils";
 
 type SheetTab = "dados" | "campanha" | "enviadas" | "agendamentos";
+
+interface LeadImportsProps {
+  fixedClientId?: string;
+  fixedClientName?: string;
+  title?: string;
+  subtitle?: string;
+  headerRight?: ReactNode;
+}
 
 const TABS: Array<{ id: SheetTab; label: string }> = [
   { id: "dados", label: "Dados Gerais" },
@@ -99,9 +107,15 @@ function Metric({
   );
 }
 
-export default function LeadImports() {
+export default function LeadImports({
+  fixedClientId,
+  fixedClientName,
+  title = "Planilhas",
+  subtitle = "Gerencie dados e mantenha a estrutura visual de campanhas dentro do CRM.",
+  headerRight,
+}: LeadImportsProps) {
   const { data: clients = [], isLoading: clientsLoading } = useLeadClients();
-  const [selectedClientId, setSelectedClientId] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState(fixedClientId || "");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<Record<string, unknown>[]>([]);
   const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
@@ -114,10 +128,16 @@ export default function LeadImports() {
   const createLeadImport = useCreateLeadImport();
 
   useEffect(() => {
+    if (fixedClientId) {
+      setSelectedClientId(fixedClientId);
+      return;
+    }
+
     if (clients.length > 0 && !selectedClientId) setSelectedClientId(clients[0].id);
-  }, [clients, selectedClientId]);
+  }, [clients, fixedClientId, selectedClientId]);
 
   const selectedClient = clients.find((client) => client.id === selectedClientId);
+  const resolvedClientName = fixedClientName || selectedClient?.name || selectedClientId;
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] || null;
@@ -155,7 +175,7 @@ export default function LeadImports() {
     }
   }
 
-  const clientSelector = (
+  const clientSelector = fixedClientId ? null : (
     <div className="flex min-w-[220px] items-center gap-2">
       <Building2 className="h-4 w-4 text-muted-foreground" />
       <Select value={selectedClientId} onValueChange={setSelectedClientId} disabled={clientsLoading}>
@@ -175,9 +195,9 @@ export default function LeadImports() {
 
   return (
     <PageShell
-      title="Planilhas"
-      subtitle="Gerencie dados e mantenha a estrutura visual de campanhas dentro do CRM."
-      headerRight={clientSelector}
+      title={title}
+      subtitle={subtitle}
+      headerRight={headerRight ?? clientSelector}
       spacing="space-y-6"
     >
       <section className="space-y-5">
@@ -206,7 +226,7 @@ export default function LeadImports() {
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <FileSpreadsheet className="h-4 w-4" />
-                    {selectedClient?.name || "Selecione um cliente"}
+                    {resolvedClientName || "Selecione um cliente"}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">

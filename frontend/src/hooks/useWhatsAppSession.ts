@@ -57,7 +57,7 @@ async function parseApiResponse(res: Response) {
 }
 
 export function useWhatsAppSession() {
-  const { isAuthenticated, isInternalUser, getIdToken } = useAuth();
+  const { isAuthenticated, canAccessView, getIdToken } = useAuth();
   const queryClient = useQueryClient();
 
   const fetchSessionState = async (): Promise<WhatsAppSessionState> => {
@@ -77,7 +77,7 @@ export function useWhatsAppSession() {
 
   const query = useQuery({
     queryKey: QUERY_KEY,
-    enabled: isAuthenticated && isInternalUser,
+    enabled: isAuthenticated && canAccessView("whatsapp"),
     queryFn: fetchSessionState,
     refetchInterval: (queryData) => {
       const status = queryData.state.data?.status;

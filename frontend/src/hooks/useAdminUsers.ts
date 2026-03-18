@@ -1,16 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_BASE_URL } from "@/lib/api";
+import { type AccessView, type InternalPage } from "@/lib/access";
 
 export type AdminUserRole = "internal" | "client" | "pending";
-export type AdminUserView = "dashboard" | "leads";
 
 export interface AdminUserAccess {
   role: AdminUserRole;
   clientId: string | null;
   clientIds: string[];
-  allowedViews: AdminUserView[];
+  allowedViews: AccessView[];
+  internalPages: InternalPage[];
   companyName: string | null;
+  isAdmin: boolean;
 }
 
 export interface AdminUserRecord {
@@ -24,11 +26,11 @@ export interface AdminUserRecord {
 }
 
 export function useAdminUsers() {
-  const { isAuthenticated, isInternalUser, getIdToken } = useAuth();
+  const { isAuthenticated, canAccessInternalPage, getIdToken } = useAuth();
 
   return useQuery({
     queryKey: ["admin-users"],
-    enabled: isAuthenticated && isInternalUser,
+    enabled: isAuthenticated && canAccessInternalPage("usuarios"),
     queryFn: async (): Promise<AdminUserRecord[]> => {
       const token = await getIdToken();
       if (!token) {

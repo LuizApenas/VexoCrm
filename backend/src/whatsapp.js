@@ -9,6 +9,12 @@ const { Client, LocalAuth } = pkg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTH_DATA_PATH = join(__dirname, "..", ".wwebjs_auth");
 const SESSION_CLIENT_ID = "vexocrm";
+const CHROME_CANDIDATE_PATHS = [
+  process.env.PUPPETEER_EXECUTABLE_PATH,
+  process.env.CHROME_BIN,
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+].filter(Boolean);
 
 function buildInitialState() {
   return {
@@ -44,6 +50,10 @@ function normalizePhoneToWhatsAppId(phone) {
   }
 
   throw new Error("Phone number is invalid.");
+}
+
+function resolveChromeExecutablePath() {
+  return CHROME_CANDIDATE_PATHS.find((candidate) => existsSync(candidate)) || undefined;
 }
 
 class WhatsAppSessionManager {
@@ -255,6 +265,7 @@ class WhatsAppSessionManager {
         dataPath: AUTH_DATA_PATH,
       }),
       puppeteer: {
+        executablePath: resolveChromeExecutablePath(),
         headless: true,
         args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
       },

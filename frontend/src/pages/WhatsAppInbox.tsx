@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Clock3,
   LoaderCircle,
@@ -60,7 +60,19 @@ function getPreview(chat: WhatsAppChat) {
   return body.length > 72 ? `${body.slice(0, 72)}...` : body;
 }
 
-export default function WhatsAppInbox() {
+interface WhatsAppInboxProps {
+  title?: string;
+  subtitle?: string;
+  headerRight?: ReactNode;
+  allowSessionControls?: boolean;
+}
+
+export default function WhatsAppInbox({
+  title = "WhatsApp",
+  subtitle = "Conecte a conta por QR Code e atenda conversas dentro do CRM.",
+  headerRight,
+  allowSessionControls = true,
+}: WhatsAppInboxProps) {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const chatsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -167,7 +179,7 @@ export default function WhatsAppInbox() {
     }
   };
 
-  const headerRight = (
+  const sessionControls = allowSessionControls ? (
     <div className="flex items-center gap-2">
       <Button variant="outline" size="sm" onClick={() => refetchSession()} disabled={sessionLoading}>
         <RefreshCw className={cn("h-4 w-4", sessionLoading && "animate-spin")} />
@@ -178,13 +190,22 @@ export default function WhatsAppInbox() {
         {session?.status === "idle" ? "Iniciar sessao" : "Gerar QR"}
       </Button>
     </div>
-  );
+  ) : null;
 
   return (
     <PageShell
-      title="WhatsApp"
-      subtitle="Conecte a conta por QR Code e atenda conversas dentro do CRM."
-      headerRight={headerRight}
+      title={title}
+      subtitle={subtitle}
+      headerRight={
+        headerRight ? (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {headerRight}
+            {sessionControls}
+          </div>
+        ) : (
+          sessionControls
+        )
+      }
       spacing="space-y-6"
     >
       <section className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -275,35 +296,46 @@ export default function WhatsAppInbox() {
                   <p>Plataforma: <span className="text-foreground">{session.clientInfo?.platform || "WhatsApp Web"}</span></p>
                 </div>
               </div>
-            ) : (
+            ) : allowSessionControls ? (
               <EmptyState
                 icon={WifiOff}
                 title="Sessao offline"
                 description="Clique em iniciar sessao para abrir o WhatsApp Web no backend e gerar o QR Code."
                 className="rounded-2xl border border-dashed border-border/70 bg-background/30"
               />
+            ) : (
+              <EmptyState
+                icon={WifiOff}
+                title="Sessao offline"
+                description="O WhatsApp da operacao esta offline no momento. Assim que a equipe reconectar a sessao, suas conversas liberadas voltam a aparecer aqui."
+                className="rounded-2xl border border-dashed border-border/70 bg-background/30"
+              />
             )}
 
-            <div className="grid gap-2 text-xs text-muted-foreground">
-              <p>1. Clique em iniciar sessao para subir o cliente do WhatsApp.</p>
-              <p>2. Escaneie o QR Code com o celular do atendente.</p>
-              <p>3. Quando o status mudar para conectado, a caixa de entrada libera automaticamente.</p>
-            </div>
+            {allowSessionControls && (
+              <>
+                <div className="grid gap-2 text-xs text-muted-foreground">
+                  <p>1. Clique em iniciar sessao para subir o cliente do WhatsApp.</p>
+                  <p>2. Escaneie o QR Code com o celular do atendente.</p>
+                  <p>3. Quando o status mudar para conectado, a caixa de entrada libera automaticamente.</p>
+                </div>
 
-            <Button className="w-full" onClick={handleStartSession} disabled={isStarting || isReady}>
-              {isStarting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
-              {session?.status === "idle" ? "Iniciar sessao e gerar QR" : "Gerar novo QR Code"}
-            </Button>
+                <Button className="w-full" onClick={handleStartSession} disabled={isStarting || isReady}>
+                  {isStarting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                  {session?.status === "idle" ? "Iniciar sessao e gerar QR" : "Gerar novo QR Code"}
+                </Button>
 
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={handleResetSession}
-              disabled={isResetting}
-            >
-              {isResetting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Reiniciar sessao
-            </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleResetSession}
+                  disabled={isResetting}
+                >
+                  {isResetting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Reiniciar sessao
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
 
