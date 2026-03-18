@@ -9,6 +9,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   FileSpreadsheet,
+  MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -18,6 +19,7 @@ const navItems = [
   { title: "Dashboard", url: "/crm/dashboard", icon: LayoutDashboard },
   { title: "Leads", url: "/crm/leads", icon: Users, badge: "CRM" },
   { title: "Planilhas", url: "/crm/planilhas", icon: FileSpreadsheet },
+  { title: "WhatsApp", url: "/crm/whatsapp", icon: MessageCircle },
   { title: "Agente", url: "/crm/agente", icon: Bot },
   { title: "Usuarios", url: "/crm/usuarios", icon: ShieldCheck },
 ];

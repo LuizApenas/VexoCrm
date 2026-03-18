@@ -20,6 +20,7 @@ import SetPassword from "./pages/SetPassword";
 import PendingApproval from "./pages/PendingApproval";
 import ClientSignup from "./pages/ClientSignup";
 import UserAccessManagement from "./pages/UserAccessManagement";
+import WhatsAppInbox from "./pages/WhatsAppInbox";
 
 const queryClient = new QueryClient();
 
@@ -56,6 +57,7 @@ const App = () => (
             <Route path="/leads" element={<Navigate to="/crm/leads" replace />} />
             <Route path="/planilhas" element={<Navigate to="/crm/planilhas" replace />} />
             <Route path="/agente" element={<Navigate to="/crm/agente" replace />} />
+            <Route path="/whatsapp" element={<Navigate to="/crm/whatsapp" replace />} />
             <Route
               path="/crm"
               element={
@@ -68,6 +70,7 @@ const App = () => (
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="leads" element={<Leads />} />
               <Route path="planilhas" element={<LeadImports />} />
+              <Route path="whatsapp" element={<WhatsAppInbox />} />
               <Route path="agente" element={<Agente />} />
               <Route path="usuarios" element={<UserAccessManagement />} />
             </Route>

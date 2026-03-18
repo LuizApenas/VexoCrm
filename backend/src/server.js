@@ -8,6 +8,7 @@ import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { whatsappSessionManager } from "./whatsapp.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env") });
@@ -1746,6 +1747,163 @@ app.post(
   }
 );
 
+app.get("/api/whatsapp/session", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+  if (whatsappSessionManager.getState().hasPersistedSession) {
+    whatsappSessionManager.restorePersistedSession().catch((error) => {
+      console.error("whatsapp persisted session restore error:", error);
+    });
+  }
+
+  res.json(whatsappSessionManager.getState());
+});
+
+app.post("/api/whatsapp/session/start", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+  try {
+    const state = await whatsappSessionManager.start();
+    res.json(state);
+  } catch (error) {
+    console.error("whatsapp session start error:", error);
+    sendError(
+      res,
+      500,
+      "WHATSAPP_SESSION_START_FAILED",
+      error instanceof Error ? error.message : "Failed to start WhatsApp session"
+    );
+  }
+});
+
+app.post("/api/whatsapp/session/reset", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+  try {
+    const state = await whatsappSessionManager.reset();
+    res.json(state);
+  } catch (error) {
+    console.error("whatsapp session reset error:", error);
+    sendError(
+      res,
+      500,
+      "WHATSAPP_SESSION_RESET_FAILED",
+      error instanceof Error ? error.message : "Failed to reset WhatsApp session"
+    );
+  }
+});
+
+app.get("/api/whatsapp/chats", requireFirebaseAuth, requireInternalAccess, async (_req, res) => {
+  try {
+    const search = normalizeString(_req.query.search)?.toLowerCase() || "";
+    const rawLimit = Number.parseInt(String(_req.query.limit || "100"), 10);
+    const rawOffset = Number.parseInt(String(_req.query.offset || "0"), 10);
+    const limit = Number.isNaN(rawLimit) ? 20 : Math.min(Math.max(rawLimit, 1), 200);
+    const offset = Number.isNaN(rawOffset) ? 0 : Math.max(rawOffset, 0);
+    const payload = await whatsappSessionManager.getChatsPage({
+      search,
+      limit,
+      offset,
+    });
+
+    res.json(payload);
+  } catch (error) {
+    console.error("whatsapp chats error:", error);
+    sendError(
+      res,
+      409,
+      "WHATSAPP_NOT_READY",
+      error instanceof Error ? error.message : "WhatsApp session is not connected"
+    );
+  }
+});
+
+app.post("/api/whatsapp/chats/read", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+  const chatId = normalizeString(req.body?.chatId);
+
+  if (!chatId) {
+    sendError(res, 400, "INVALID_BODY", "Missing chatId");
+    return;
+  }
+
+  try {
+    const result = await whatsappSessionManager.markChatAsSeen(chatId);
+    res.json(result);
+  } catch (error) {
+    console.error("whatsapp mark read error:", error);
+    sendError(
+      res,
+      409,
+      "WHATSAPP_MARK_READ_FAILED",
+      error instanceof Error ? error.message : "Failed to mark WhatsApp chat as seen"
+    );
+  }
+});
+
+app.get("/api/whatsapp/messages", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+  const chatId = normalizeString(req.query.chatId);
+  const rawLimit = Number.parseInt(String(req.query.limit || "20"), 10);
+  const limit = Number.isNaN(rawLimit) ? 20 : Math.min(Math.max(rawLimit, 1), 50);
+
+  if (!chatId) {
+    sendError(res, 400, "INVALID_QUERY", "Missing chatId");
+    return;
+  }
+
+  try {
+    const items = await whatsappSessionManager.getMessages(chatId, limit);
+    res.json({ items });
+  } catch (error) {
+    console.error("whatsapp messages error:", error);
+    sendError(
+      res,
+      409,
+      "WHATSAPP_MESSAGES_FAILED",
+      error instanceof Error ? error.message : "Failed to fetch WhatsApp messages"
+    );
+  }
+});
+
+app.post("/api/whatsapp/messages", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+  const chatId = normalizeString(req.body?.chatId);
+  const body = normalizeString(req.body?.body);
+
+  if (!chatId || !body) {
+    sendError(res, 400, "INVALID_BODY", "Missing chatId or body");
+    return;
+  }
+
+  try {
+    const item = await whatsappSessionManager.sendMessage(chatId, body);
+    res.status(201).json({ item });
+  } catch (error) {
+    console.error("whatsapp send message error:", error);
+    sendError(
+      res,
+      409,
+      "WHATSAPP_SEND_FAILED",
+      error instanceof Error ? error.message : "Failed to send WhatsApp message"
+    );
+  }
+});
+
+app.post("/api/whatsapp/messages/direct", requireFirebaseAuth, requireInternalAccess, async (req, res) => {
+  const phone = normalizeString(req.body?.phone);
+  const body = normalizeString(req.body?.body);
+
+  if (!phone || !body) {
+    sendError(res, 400, "INVALID_BODY", "Missing phone or body");
+    return;
+  }
+
+  try {
+    const result = await whatsappSessionManager.sendDirectMessage(phone, body);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error("whatsapp direct send error:", error);
+    sendError(
+      res,
+      409,
+      "WHATSAPP_DIRECT_SEND_FAILED",
+      error instanceof Error ? error.message : "Failed to send direct WhatsApp message"
+    );
+  }
+});
+
 app.use((error, _req, res, _next) => {
   if (error?.type === "entity.too.large" || error?.status === 413) {
     sendError(res, 413, "PAYLOAD_TOO_LARGE", "Request payload exceeds 1MB limit");
@@ -1764,4 +1922,8 @@ app.use((error, _req, res, _next) => {
 const port = Number.parseInt(process.env.PORT || "3001", 10);
 app.listen(port, () => {
   console.log(`VexoApi listening on port ${port}`);
+
+  whatsappSessionManager.restorePersistedSession().catch((error) => {
+    console.error("whatsapp startup restore error:", error);
+  });
 });
