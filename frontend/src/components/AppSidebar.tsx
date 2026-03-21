@@ -51,14 +51,14 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "sticky top-0 flex h-screen flex-col overflow-hidden border-r border-sidebar-border/10 bg-[linear-gradient(180deg,rgba(13,18,32,0.96),rgba(8,12,20,0.98))] backdrop-blur-xl transition-all duration-200",
+        "sticky top-0 flex h-screen flex-col overflow-hidden border-r border-white/8 bg-[linear-gradient(180deg,rgba(4,7,6,0.98),rgba(3,4,4,0.98))] backdrop-blur-xl transition-all duration-200",
         collapsed ? "w-[84px]" : "w-[220px]"
       )}
     >
-      <div className="relative shrink-0 border-b border-sidebar-border/10 px-4 py-5">
-        <div className="absolute -left-10 -top-10 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
+      <div className="relative shrink-0 border-b border-white/8 px-4 py-5">
+        <div className="absolute -left-10 -top-10 h-32 w-32 rounded-full bg-primary/14 blur-3xl" />
         <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-emerald-300 font-mono text-sm font-bold text-background shadow-[0_0_20px_rgba(0,212,255,0.28)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-[linear-gradient(135deg,#19e37d,#97ffd0)] font-mono text-sm font-bold text-background shadow-[0_0_26px_rgba(25,227,125,0.22)]">
             VX
           </div>
           {!collapsed && (
@@ -66,8 +66,8 @@ export function AppSidebar() {
               <p className="text-lg font-extrabold tracking-tight text-foreground">
                 Vexo<span className="text-primary">.</span>
               </p>
-              <p className="inline-flex rounded-sm border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.24em] text-primary">
-                CRM v2.6
+              <p className="inline-flex rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.24em] text-primary">
+                CRM system
               </p>
             </div>
           )}
@@ -90,8 +90,8 @@ export function AppSidebar() {
                 cn(
                   "group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all",
                   isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-sidebar-foreground hover:bg-primary/5 hover:text-foreground"
+                    ? "bg-primary/12 text-primary shadow-[inset_0_0_0_1px_rgba(25,227,125,0.14)]"
+                    : "text-sidebar-foreground hover:bg-white/[0.04] hover:text-foreground"
                 )
               }
             >
@@ -109,7 +109,7 @@ export function AppSidebar() {
                       {item.badge}
                     </span>
                   )}
-                  {isActive && <span className="absolute right-0 top-1.5 h-[calc(100%-12px)] w-0.5 rounded-l bg-primary shadow-[0_0_12px_rgba(0,212,255,0.8)]" />}
+                  {isActive && <span className="absolute right-0 top-1.5 h-[calc(100%-12px)] w-0.5 rounded-l bg-primary shadow-[0_0_12px_rgba(25,227,125,0.8)]" />}
                 </>
               )}
             </NavLink>
@@ -126,7 +126,7 @@ export function AppSidebar() {
           {canSeeAgentNotifications ? <NotificationBell collapsed={collapsed} /> : null}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-all hover:bg-primary/5 hover:text-foreground"
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-all hover:bg-white/[0.04] hover:text-foreground"
           >
             {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             {!collapsed && <span>Recolher</span>}
@@ -134,9 +134,9 @@ export function AppSidebar() {
         </div>
       </nav>
 
-      <div className="shrink-0 border-t border-sidebar-border/10 px-3 py-4">
+      <div className="shrink-0 border-t border-white/8 px-3 py-4">
         <div className={cn("mb-3 flex items-center gap-3", collapsed && "justify-center")}>
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-pink-500 to-violet-600 text-sm font-bold text-white">
+          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-[linear-gradient(135deg,#0f1513,#1b2b24)] text-sm font-bold text-white">
             VS
             <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0d1220] bg-emerald-400" />
           </div>
@@ -153,7 +153,7 @@ export function AppSidebar() {
         <button
           onClick={handleLogout}
           disabled={isLoggingOut}
-          className="flex w-full items-center gap-3 rounded-md border border-pink-500/20 px-3 py-2.5 text-sm font-medium text-pink-400 transition-all hover:bg-pink-500/8 hover:text-pink-300 disabled:pointer-events-none disabled:opacity-60"
+          className="flex w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2.5 text-sm font-medium text-white/72 transition-all hover:bg-white/[0.05] hover:text-white disabled:pointer-events-none disabled:opacity-60"
         >
           <LogOut className="h-4 w-4 shrink-0" />
           {!collapsed && <span>{isLoggingOut ? "Saindo..." : "Sair"}</span>}
