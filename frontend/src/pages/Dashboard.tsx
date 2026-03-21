@@ -71,7 +71,7 @@ const Dashboard = ({
     <div className="flex min-w-[220px] items-center gap-2">
       <Building2 className="h-4 w-4 text-muted-foreground" />
       <Select value={selectedClientId} onValueChange={setSelectedClientId} disabled={clientsLoading}>
-        <SelectTrigger className="border-border/80 bg-secondary/80">
+        <SelectTrigger className="border-white/10 bg-white/[0.04]">
           <SelectValue placeholder="Selecionar empresa" />
         </SelectTrigger>
         <SelectContent>

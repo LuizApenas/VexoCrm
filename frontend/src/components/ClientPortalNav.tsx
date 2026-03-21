@@ -26,12 +26,12 @@ export function ClientPortalNav({ clientId, clientName, active }: ClientPortalNa
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <Badge variant="outline" className="gap-1.5 border-primary/30 bg-primary/5 px-3 py-1 text-primary">
+      <Badge variant="outline" className="gap-1.5 border-primary/25 bg-primary/8 px-3 py-1 text-primary">
         <Building2 className="h-3.5 w-3.5" />
         {clientName}
       </Badge>
       {canAccessView("dashboard") && (
-        <Button asChild size="sm" variant={active === "dashboard" ? "default" : "outline"}>
+        <Button asChild size="sm" variant={active === "dashboard" ? "default" : "outline"} className="rounded-full">
           <Link to={`/clientes/${clientId}/dashboard`}>
             <LayoutDashboard className="h-4 w-4" />
             Dashboard
@@ -39,7 +39,7 @@ export function ClientPortalNav({ clientId, clientName, active }: ClientPortalNa
         </Button>
       )}
       {canAccessView("leads") && (
-        <Button asChild size="sm" variant={active === "leads" ? "default" : "outline"}>
+        <Button asChild size="sm" variant={active === "leads" ? "default" : "outline"} className="rounded-full">
           <Link to={`/clientes/${clientId}/leads`}>
             <TableProperties className="h-4 w-4" />
             Leads
@@ -47,7 +47,7 @@ export function ClientPortalNav({ clientId, clientName, active }: ClientPortalNa
         </Button>
       )}
       {canAccessView("planilhas") && (
-        <Button asChild size="sm" variant={active === "planilhas" ? "default" : "outline"}>
+        <Button asChild size="sm" variant={active === "planilhas" ? "default" : "outline"} className="rounded-full">
           <Link to={`/clientes/${clientId}/planilhas`}>
             <FileSpreadsheet className="h-4 w-4" />
             Planilhas
@@ -55,7 +55,7 @@ export function ClientPortalNav({ clientId, clientName, active }: ClientPortalNa
         </Button>
       )}
       {canAccessView("whatsapp") && (
-        <Button asChild size="sm" variant={active === "whatsapp" ? "default" : "outline"}>
+        <Button asChild size="sm" variant={active === "whatsapp" ? "default" : "outline"} className="rounded-full">
           <Link to={`/clientes/${clientId}/whatsapp`}>
             <MessageCircle className="h-4 w-4" />
             WhatsApp
@@ -63,11 +63,11 @@ export function ClientPortalNav({ clientId, clientName, active }: ClientPortalNa
         </Button>
       )}
       {isInternalUser && (
-        <Button asChild size="sm" variant="ghost">
+        <Button asChild size="sm" variant="ghost" className="rounded-full">
           <Link to="/crm/dashboard">Abrir CRM</Link>
         </Button>
       )}
-      <Button size="sm" variant="ghost" onClick={handleLogout} disabled={isLoggingOut}>
+      <Button size="sm" variant="ghost" onClick={handleLogout} disabled={isLoggingOut} className="rounded-full">
         <LogOut className="h-4 w-4" />
         {isLoggingOut ? "Saindo..." : "Sair"}
       </Button>
