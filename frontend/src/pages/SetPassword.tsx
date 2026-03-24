@@ -9,6 +9,10 @@ import { AuthLayout } from "@/components/AuthLayout";
 import { FormField } from "@/components/FormField";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { PageTitle } from "@/components/PageTitle";
+import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
+import { validatePassword } from "@/lib/passwordValidation";
+import { setPasswordSchema } from "@/lib/validationSchemas";
+import { ZodError } from "zod";
 
 export default function SetPassword() {
   const navigate = useNavigate();
@@ -19,6 +23,7 @@ export default function SetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const passwordValidation = validatePassword(newPassword);
   const fallbackPath =
     typeof location.state === "object" &&
     location.state !== null &&
@@ -33,24 +38,22 @@ export default function SetPassword() {
     e.preventDefault();
     setError("");
 
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setError("Preencha todos os campos.");
-      return;
-    }
-    if (newPassword.length < 6) {
-      setError("A nova senha deve ter pelo menos 6 caracteres.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError("A confirmação da senha não confere.");
-      return;
-    }
-
     try {
+      const validData = setPasswordSchema.parse({
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      });
+
       setSubmitting(true);
-      await updateInitialPassword(currentPassword, newPassword);
+      await updateInitialPassword(validData.currentPassword, validData.newPassword);
       navigate(fallbackPath || "/crm/dashboard", { replace: true });
     } catch (err: unknown) {
+      if (err instanceof ZodError) {
+        setError(err.errors[0]?.message || "Dados inválidos.");
+        return;
+      }
+
       const errorCode =
         typeof err === "object" && err !== null && "code" in err
           ? String((err as { code?: string }).code || "")
@@ -89,15 +92,18 @@ export default function SetPassword() {
       </FormField>
 
       <FormField label="Nova senha" id="new-password">
-        <Input
-          id="new-password"
-          type="password"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          autoComplete="new-password"
-          disabled={submitting || loading}
-          required
-        />
+        <div className="space-y-3">
+          <Input
+            id="new-password"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+            disabled={submitting || loading}
+            required
+          />
+          {newPassword && <PasswordStrengthIndicator validation={passwordValidation} />}
+        </div>
       </FormField>
 
       <FormField label="Confirmar nova senha" id="confirm-password">

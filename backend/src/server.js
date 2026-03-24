@@ -2272,24 +2272,32 @@ app.post("/api/whatsapp/messages", requireFirebaseAuth, requireAppViewAccess("wh
   }
 });
 
-app.post("/api/whatsapp/messages/direct", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
+app.post("/api/whatsapp/messages/direct", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
   const phone = normalizeString(req.body?.phone);
   const body = normalizeString(req.body?.body);
 
-  if (!phone || !body) {
-    sendError(res, 400, "INVALID_BODY", "Missing phone or body");
+  // ✅ Validação de phone (10-13 dígitos)
+  if (!phone || !/^\d{10,13}$/.test(phone.replace(/\D/g, ""))) {
+    sendError(res, 400, "INVALID_PHONE", "Invalid phone number (must be 10-13 digits)");
     return;
   }
 
-  if (!(await ensureAuthorizedWhatsAppPhone(req, res, phone))) {
+  // ✅ Validação de mensagem (não vazio, máximo 4096 caracteres)
+  if (!body || body.length > 4096) {
+    sendError(res, 400, "INVALID_MESSAGE", "Message too long or empty (max 4096 characters)");
     return;
   }
 
   try {
+    // ✅ Auditoria log com UID + phone
+    console.log(
+      `[AUDIT] WhatsApp direct message sent by admin ${req.authAccess?.uid} to phone ${phone}`
+    );
+
     const result = await whatsappSessionManager.sendDirectMessage(phone, body);
     res.status(201).json(result);
   } catch (error) {
-    console.error("whatsapp direct send error:", error);
+    console.error("[SECURITY] WhatsApp direct send error:", error);
     sendError(
       res,
       409,

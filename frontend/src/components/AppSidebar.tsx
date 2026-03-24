@@ -33,11 +33,14 @@ const navItems = [
 }>;
 
 export function AppSidebar() {
-  const { logout, canAccessInternalPage, isAdminUser } = useAuth();
+  const { logout, canAccessInternalPage, user, accessProfile } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const visibleNavItems = navItems.filter((item) => canAccessInternalPage(item.page));
   const canSeeAgentNotifications = canAccessInternalPage("agente");
+  const userEmail = user?.email || accessProfile?.email || "";
+  const userLogin = userEmail.includes("@") ? userEmail.split("@")[0] : userEmail;
+  const userName = user?.displayName?.trim() || userLogin || "Usuario";
 
   const handleLogout = async () => {
     try {
@@ -58,16 +61,10 @@ export function AppSidebar() {
       <div className="relative shrink-0 border-b border-sidebar-border/10 px-4 py-5">
         <div className="absolute -left-10 -top-10 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-emerald-300 font-mono text-sm font-bold text-background shadow-[0_0_20px_rgba(0,212,255,0.28)]">
-            VX
-          </div>
           {!collapsed && (
             <div className="overflow-hidden">
               <p className="text-lg font-extrabold tracking-tight text-foreground">
-                Vexo<span className="text-primary">.</span>
-              </p>
-              <p className="inline-flex rounded-sm border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.24em] text-primary">
-                CRM v2.6
+                Vexo<span className="text-primary"></span>
               </p>
             </div>
           )}
@@ -135,17 +132,10 @@ export function AppSidebar() {
       </nav>
 
       <div className="shrink-0 border-t border-sidebar-border/10 px-3 py-4">
-        <div className={cn("mb-3 flex items-center gap-3", collapsed && "justify-center")}>
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-pink-500 to-violet-600 text-sm font-bold text-white">
-            VS
-            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0d1220] bg-emerald-400" />
-          </div>
+        <div className={cn("mb-3", collapsed && "hidden")}>
           {!collapsed && (
             <div>
-              <p className="text-sm font-semibold text-foreground">Vexo Staff</p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                {isAdminUser ? "Admin" : "Interno"}
-              </p>
+              <p className="text-sm font-semibold text-foreground">{userName}</p>
             </div>
           )}
         </div>
