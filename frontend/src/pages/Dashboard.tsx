@@ -107,17 +107,17 @@ const Dashboard = ({
       {effectiveClientId && (
         <>
           <KpiGrid>
-            <KpiCard title="Total de Leads" value={String(summary.totalLeads)} icon={<Users className="h-4 w-4" />} tone="cyan" trend="▲ base ativa" />
-            <KpiCard title="Leads Hoje" value={String(summary.leadsToday)} icon={<Clock className="h-4 w-4" />} tone="teal" trend="▲ entrada diaria" />
-            <KpiCard title="Leads Classificados" value={String(summary.qualifiedLeads)} icon={<Target className="h-4 w-4" />} tone="amber" trend="▲ com criterio aplicado" />
-            <KpiCard title="Cobertura de Classificacao" value={`${summary.qualificationRate}%`} icon={<TrendingUp className="h-4 w-4" />} tone="pink" trend="▲ base analisada" />
+            <KpiCard title="Total de Leads" value={String(summary.totalLeads)} icon={<Users className="h-4 w-4" />} tone="cyan" trend="base ativa" />
+            <KpiCard title="Leads Hoje" value={String(summary.leadsToday)} icon={<Clock className="h-4 w-4" />} tone="teal" trend="entrada diaria" />
+            <KpiCard title="Leads Classificados" value={String(summary.qualifiedLeads)} icon={<Target className="h-4 w-4" />} tone="amber" trend="com criterio aplicado" />
+            <KpiCard title="Cobertura de Classificacao" value={`${summary.qualificationRate}%`} icon={<TrendingUp className="h-4 w-4" />} tone="pink" trend="base analisada" />
           </KpiGrid>
 
           <KpiGrid>
-            <KpiCard title="Cidades" value={String(summary.activeCities)} icon={<MapPin className="h-4 w-4" />} tone="purple" trend="▲ cobertura" />
-            <KpiCard title="Quentes" value={String(summary.hotLeads)} icon={<Flame className="h-4 w-4" />} indicator={{ color: "bg-primary", label: "Quentes" }} tone="cyan" trend="▲ prioridade alta" />
-            <KpiCard title="Mornos" value={String(summary.warmLeads)} icon={<Clock className="h-4 w-4" />} indicator={{ color: "bg-warning", label: "Mornos" }} tone="amber" trend="• monitorando" />
-            <KpiCard title="Frios" value={String(summary.coldLeads)} icon={<Snowflake className="h-4 w-4" />} indicator={{ color: "bg-success", label: "Frios" }} tone="teal" trend="• nutricao ativa" />
+            <KpiCard title="Cidades" value={String(summary.activeCities)} icon={<MapPin className="h-4 w-4" />} tone="purple" trend="cobertura" />
+            <KpiCard title="Quentes" value={String(summary.hotLeads)} icon={<Flame className="h-4 w-4" />} indicator={{ color: "bg-primary", label: "Quentes" }} tone="cyan" trend="prioridade alta" />
+            <KpiCard title="Mornos" value={String(summary.warmLeads)} icon={<Clock className="h-4 w-4" />} indicator={{ color: "bg-warning", label: "Mornos" }} tone="amber" trend="monitorando" />
+            <KpiCard title="Frios" value={String(summary.coldLeads)} icon={<Snowflake className="h-4 w-4" />} indicator={{ color: "bg-success", label: "Frios" }} tone="teal" trend="nutricao ativa" />
           </KpiGrid>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
