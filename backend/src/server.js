@@ -940,6 +940,33 @@ function resolveAuthorizedClientId(req, res, requestedClientId) {
     return requestedClientId || authAccess.clientId || authAccess.clientIds[0] || null;
   }
 
+  // P0.2 SECURITY FIX: Internal users também precisam validar clientId
+  if (authAccess.role === "internal") {
+    // Se requestedClientId é especificado, validar se interno tem acesso
+    if (requestedClientId) {
+      // Opção 1: Admins podem acessar qualquer cliente
+      if (authAccess.isAdmin) {
+        return requestedClientId;
+      }
+
+      // Opção 2: Internos não-admin devem ter clientId na lista
+      if (authAccess.clientIds && authAccess.clientIds.length > 0) {
+        if (!authAccess.clientIds.includes(requestedClientId)) {
+          sendError(res, 403, "FORBIDDEN_CLIENT_SCOPE", "You do not have access to this client");
+          return null;
+        }
+        return requestedClientId;
+      }
+
+      // Opção 3: Sem clientIds atribuídos = erro
+      sendError(res, 403, "NO_CLIENT_ACCESS", "You do not have access to any client");
+      return null;
+    }
+
+    // Se nenhum clientId especificado, usar default (se houver)
+    return authAccess.clientId || null;
+  }
+
   if (authAccess.role === "pending") {
     sendError(
       res,
@@ -950,7 +977,8 @@ function resolveAuthorizedClientId(req, res, requestedClientId) {
     return null;
   }
 
-  return requestedClientId || "infinie";
+  sendError(res, 403, "FORBIDDEN", "Invalid role");
+  return null;
 }
 
 function parseCsvLine(line) {
@@ -1196,19 +1224,34 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.get("/api/sheets", async (req, res) => {
-  const { sheetId, gid } = req.query;
-  if (!sheetId || !gid) {
-    sendError(res, 400, "INVALID_QUERY", "Missing sheetId or gid query params");
+// P0.1 SECURITY FIX: SSRF in /api/sheets - Add authentication, validation, and timeout
+const VALID_GOOGLE_SHEETS_REGEX = /^[a-zA-Z0-9-_]{44}$/; // UUID do Google Sheets
+
+app.get("/api/sheets", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  const sheetId = normalizeString(req.query?.sheetId);
+  const gid = normalizeString(req.query?.gid);
+
+  // Validação de formato
+  if (!sheetId || !VALID_GOOGLE_SHEETS_REGEX.test(sheetId)) {
+    sendError(res, 400, "INVALID_SHEET_ID", "Invalid Google Sheets ID");
+    return;
+  }
+
+  if (gid && !/^\d+$/.test(gid)) {
+    sendError(res, 400, "INVALID_GID", "Invalid sheet GID");
     return;
   }
 
   try {
     const exportUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(
       sheetId
-    )}/export?format=csv&gid=${encodeURIComponent(gid)}`;
+    )}/export?format=csv&gid=${encodeURIComponent(gid || "0")}`;
 
-    const sheetResponse = await fetch(exportUrl);
+    const sheetResponse = await fetch(exportUrl, {
+      timeout: 10000, // Timeout de 10 segundos
+      headers: { "User-Agent": "VexoCRM/1.0" }
+    });
+
     if (!sheetResponse.ok) {
       sendError(
         res,
@@ -1233,8 +1276,8 @@ app.get("/api/sheets", async (req, res) => {
 
     res.json({ rows: parseCsvToRows(csv) });
   } catch (error) {
-    console.error("sheets api error:", error);
-    sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+    console.error("[SECURITY] Sheets fetch error:", error.message);
+    sendError(res, 502, "SHEETS_FETCH_FAILED", "Failed to fetch spreadsheet");
   }
 });
 
