@@ -10,18 +10,18 @@ interface KpiCardProps {
 }
 
 const toneClasses = {
-  cyan: "border-cyan-400/20 text-cyan-300 shadow-[0_0_24px_rgba(0,212,255,0.12)]",
-  teal: "border-emerald-400/20 text-emerald-300 shadow-[0_0_24px_rgba(0,255,179,0.10)]",
-  amber: "border-amber-400/20 text-amber-300 shadow-[0_0_24px_rgba(255,184,0,0.10)]",
-  pink: "border-pink-500/20 text-pink-300 shadow-[0_0_24px_rgba(255,45,122,0.10)]",
-  purple: "border-violet-500/20 text-violet-300 shadow-[0_0_24px_rgba(124,58,237,0.10)]",
+  cyan: "border-primary/20 text-primary shadow-[0_0_24px_rgba(26,92,255,0.15)]",
+  teal: "border-primary/18 text-[#2E6FFF] shadow-[0_0_24px_rgba(26,92,255,0.12)]",
+  amber: "border-white/12 text-white shadow-[0_0_24px_rgba(255,255,255,0.06)]",
+  pink: "border-primary/16 text-[#3A75FF] shadow-[0_0_24px_rgba(26,92,255,0.10)]",
+  purple: "border-white/10 text-white/90 shadow-[0_0_24px_rgba(255,255,255,0.05)]",
 };
 
 export function KpiCard({ title, value, icon, indicator, tone = "cyan", trend }: KpiCardProps) {
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-xl border bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30",
+        "group relative overflow-hidden rounded-[1.5rem] border bg-[linear-gradient(180deg,rgba(5,8,30,0.94),rgba(3,5,24,0.98))] p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30",
         toneClasses[tone]
       )}
     >
@@ -35,7 +35,7 @@ export function KpiCard({ title, value, icon, indicator, tone = "cyan", trend }:
             {indicator && (
               <span className={cn("h-2.5 w-2.5 rounded-full", indicator.color)} title={indicator.label} />
             )}
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-current/10 bg-current/10 text-current">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-current/10 bg-current/10 text-current">
               {icon}
             </div>
           </div>

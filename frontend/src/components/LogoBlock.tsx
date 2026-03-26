@@ -14,8 +14,8 @@ interface LogoBlockProps {
 export function LogoBlock({ icon, name, subtitle }: LogoBlockProps) {
   return (
     <>
-      <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
-        <span className="text-primary-foreground font-bold text-xl">{icon}</span>
+      <div className="shiny-cta w-14 h-14 rounded-2xl bg-[#1A5CFF]/15 flex items-center justify-center shadow-[0_0_30px_rgba(26,92,255,0.25)]">
+        <span className="text-[#1A5CFF] font-bold text-xl">{icon}</span>
       </div>
       <div className="text-center">
         <h1 className="text-2xl font-bold text-foreground">{name}</h1>
