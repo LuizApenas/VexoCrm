@@ -398,12 +398,12 @@ export default function LeadImports({
                   <CardContent className="space-y-5 p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div><p className="text-xl font-extrabold tracking-tight text-foreground">{name}</p><p className="mt-1 font-mono text-[11px] text-muted-foreground">{info}</p></div>
-                      <span className={cn("rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", channel === "WHATSAPP" ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300" : channel === "SMS" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : "border-primary/20 bg-primary/10 text-primary")}>{channel}</span>
+                      <span className={cn("rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", channel === "WHATSAPP" ? "border-[#1A5CFF]/20 bg-[#1A5CFF]/10 text-[#3A75FF]" : channel === "SMS" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : "border-primary/20 bg-primary/10 text-primary")}>{channel}</span>
                     </div>
                     <div className="border-t border-border/70 pt-4"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Segmento: {segment}</p></div>
                     <div className="grid gap-4 md:grid-cols-3">
                       <Metric value={delivery} label="Entrega" bar="bg-cyan-400" text="text-cyan-300" />
-                      <Metric value={open} label="Abertura" bar="bg-emerald-400" text="text-emerald-300" />
+                      <Metric value={open} label="Abertura" bar="bg-[#1A5CFF]" text="text-[#3A75FF]" />
                       <Metric value={clicks} label={channel === "WHATSAPP" ? "Resposta" : "Cliques"} bar="bg-pink-500" text="text-pink-300" />
                     </div>
                   </CardContent>

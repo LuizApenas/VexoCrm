@@ -10,10 +10,10 @@ interface KpiCardProps {
 }
 
 const toneClasses = {
-  cyan: "border-primary/20 text-primary shadow-[0_0_24px_rgba(25,227,125,0.12)]",
-  teal: "border-primary/18 text-[#97ffd0] shadow-[0_0_24px_rgba(25,227,125,0.10)]",
+  cyan: "border-primary/20 text-primary shadow-[0_0_24px_rgba(26,92,255,0.15)]",
+  teal: "border-primary/18 text-[#2E6FFF] shadow-[0_0_24px_rgba(26,92,255,0.12)]",
   amber: "border-white/12 text-white shadow-[0_0_24px_rgba(255,255,255,0.06)]",
-  pink: "border-primary/16 text-[#c5ffe1] shadow-[0_0_24px_rgba(25,227,125,0.09)]",
+  pink: "border-primary/16 text-[#3A75FF] shadow-[0_0_24px_rgba(26,92,255,0.10)]",
   purple: "border-white/10 text-white/90 shadow-[0_0_24px_rgba(255,255,255,0.05)]",
 };
 
@@ -21,7 +21,7 @@ export function KpiCard({ title, value, icon, indicator, tone = "cyan", trend }:
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-[1.5rem] border bg-[linear-gradient(180deg,rgba(9,12,11,0.94),rgba(5,8,7,0.98))] p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30",
+        "group relative overflow-hidden rounded-[1.5rem] border bg-[linear-gradient(180deg,rgba(5,8,30,0.94),rgba(3,5,24,0.98))] p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30",
         toneClasses[tone]
       )}
     >
