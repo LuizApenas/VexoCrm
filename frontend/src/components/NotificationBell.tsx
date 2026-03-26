@@ -24,60 +24,50 @@ export function NotificationBell({ collapsed }: NotificationBellProps) {
       <PopoverTrigger asChild>
         <button
           className={cn(
-            "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors relative w-full",
-            "text-sidebar-foreground hover:bg-sidebar-accent/10 hover:text-sidebar-accent-foreground"
+            "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+            "text-sidebar-foreground hover:bg-white/[0.04] hover:text-sidebar-accent-foreground"
           )}
         >
           <Bell className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Notificações</span>}
-          {unreadCount > 0 && (
-            <span className="absolute right-2 top-2 min-w-[8px] h-2 rounded-full bg-destructive" />
-          )}
+          {!collapsed && <span>Notificacoes</span>}
+          {unreadCount > 0 && <span className="absolute right-2 top-2 h-2 min-w-[8px] rounded-full bg-primary shadow-[0_0_10px_rgba(26,92,255,0.8)]" />}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="right" align="end" className="w-80 p-0">
-        <div className="flex items-center justify-between p-3 border-b">
-          <h4 className="text-sm font-semibold text-foreground">Notificações</h4>
+      <PopoverContent side="right" align="end" className="w-80 border-white/10 bg-[rgba(3,5,30,0.96)] p-0 text-foreground">
+        <div className="flex items-center justify-between border-b border-white/8 p-3">
+          <h4 className="text-sm font-semibold text-foreground">Notificacoes</h4>
           {unreadCount > 0 && (
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={markAllRead}>
-              <CheckCheck className="h-3 w-3 mr-1" />
+            <Button variant="ghost" size="sm" className="h-7 rounded-full text-xs" onClick={markAllRead}>
+              <CheckCheck className="mr-1 h-3 w-3" />
               Marcar todas como lidas
             </Button>
           )}
         </div>
         <ScrollArea className="max-h-[320px]">
           {items.length === 0 ? (
-            <div className="p-6 text-center text-sm text-muted-foreground">
-              Nenhuma notificação
-            </div>
+            <div className="p-6 text-center text-sm text-muted-foreground">Nenhuma notificacao</div>
           ) : (
-            <div className="divide-y">
+            <div className="divide-y divide-white/8">
               {items.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => handleClick(item)}
                   className={cn(
-                    "w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors flex gap-2",
-                    !item.read && "bg-primary/5"
+                    "flex w-full gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03]",
+                    !item.read && "bg-primary/6"
                   )}
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className={cn("text-xs leading-snug", !item.read && "font-medium text-foreground")}>
-                      {item.title}
-                    </p>
-                    {item.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                        {item.description}
-                      </p>
-                    )}
-                    <p className="text-[10px] text-muted-foreground mt-1">
+                  <div className="min-w-0 flex-1">
+                    <p className={cn("text-xs leading-snug", !item.read && "font-medium text-foreground")}>{item.title}</p>
+                    {item.description && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.description}</p>}
+                    <p className="mt-1 text-[10px] text-muted-foreground">
                       {formatDistanceToNow(new Date(item.created_at), {
                         addSuffix: true,
                         locale: ptBR,
                       })}
                     </p>
                   </div>
-                  {item.link && <ExternalLink className="h-3 w-3 shrink-0 mt-0.5 text-muted-foreground" />}
+                  {item.link && <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />}
                 </button>
               ))}
             </div>

@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { MainLayout } from "@/components/MainLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { INTERNAL_PAGE_ORDER, getDefaultClientRoute } from "@/lib/access";
+import { Particles } from "@/components/Particles";
 import Dashboard from "./pages/Dashboard";
 import Agente from "./pages/Agente";
 import ClientPortalDashboard from "./pages/ClientPortalDashboard";
@@ -62,6 +63,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <Particles />
       <BrowserRouter>
         <AuthProvider>
           <Routes>
