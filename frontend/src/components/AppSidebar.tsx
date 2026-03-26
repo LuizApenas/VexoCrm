@@ -51,14 +51,14 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "sticky top-0 flex h-screen flex-col overflow-hidden border-r border-white/8 bg-[linear-gradient(180deg,rgba(4,7,6,0.98),rgba(3,4,4,0.98))] backdrop-blur-xl transition-all duration-200",
+        "sticky top-0 flex h-screen flex-col overflow-hidden border-r border-white/8 bg-[linear-gradient(180deg,rgba(3,5,30,0.98),rgba(2,3,24,0.98))] backdrop-blur-xl transition-all duration-200",
         collapsed ? "w-[84px]" : "w-[220px]"
       )}
     >
       <div className="relative shrink-0 border-b border-white/8 px-4 py-5">
         <div className="absolute -left-10 -top-10 h-32 w-32 rounded-full bg-primary/14 blur-3xl" />
         <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-[linear-gradient(135deg,#19e37d,#97ffd0)] font-mono text-sm font-bold text-background shadow-[0_0_26px_rgba(25,227,125,0.22)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-[linear-gradient(135deg,#1A5CFF,#2E6FFF)] font-mono text-sm font-bold text-white shadow-[0_0_26px_rgba(26,92,255,0.30)]">
             VX
           </div>
           {!collapsed && (
@@ -90,7 +90,7 @@ export function AppSidebar() {
                 cn(
                   "group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all",
                   isActive
-                    ? "bg-primary/12 text-primary shadow-[inset_0_0_0_1px_rgba(25,227,125,0.14)]"
+                    ? "bg-primary/12 text-primary shadow-[inset_0_0_0_1px_rgba(26,92,255,0.18)]"
                     : "text-sidebar-foreground hover:bg-white/[0.04] hover:text-foreground"
                 )
               }
@@ -109,7 +109,7 @@ export function AppSidebar() {
                       {item.badge}
                     </span>
                   )}
-                  {isActive && <span className="absolute right-0 top-1.5 h-[calc(100%-12px)] w-0.5 rounded-l bg-primary shadow-[0_0_12px_rgba(25,227,125,0.8)]" />}
+                  {isActive && <span className="absolute right-0 top-1.5 h-[calc(100%-12px)] w-0.5 rounded-l bg-primary shadow-[0_0_12px_rgba(26,92,255,0.8)]" />}
                 </>
               )}
             </NavLink>
@@ -136,9 +136,9 @@ export function AppSidebar() {
 
       <div className="shrink-0 border-t border-white/8 px-3 py-4">
         <div className={cn("mb-3 flex items-center gap-3", collapsed && "justify-center")}>
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-[linear-gradient(135deg,#0f1513,#1b2b24)] text-sm font-bold text-white">
+          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-[linear-gradient(135deg,#0A0F28,#121B3A)] text-sm font-bold text-white">
             VS
-            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0d1220] bg-emerald-400" />
+            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0d1220] bg-[#1A5CFF]" />
           </div>
           {!collapsed && (
             <div>

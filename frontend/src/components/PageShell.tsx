@@ -12,15 +12,15 @@ interface PageShellProps {
 export function PageShell({ title, subtitle, headerRight, children, spacing = "space-y-5" }: PageShellProps) {
   return (
     <div className="flex-1 overflow-auto">
-      <header className="sticky top-0 z-20 flex min-h-[64px] items-center gap-4 border-b border-white/10 bg-[rgba(5,8,7,0.86)] px-7 py-3 backdrop-blur-xl">
+      <header className="sticky top-0 z-20 flex min-h-[64px] items-center gap-4 border-b border-white/10 bg-[rgba(3,5,30,0.86)] px-7 py-3 backdrop-blur-xl">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#8affc1]">VEXO</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#3A75FF]">VEXO</span>
           <span className="text-muted-foreground">/</span>
           <span className="text-sm font-semibold text-foreground">{title}</span>
         </div>
 
-        <div className="hidden items-center gap-2 rounded-full border border-[#19e37d]/20 bg-[#19e37d]/8 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[#8affc1] md:flex">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#19e37d]" />
+        <div className="hidden items-center gap-2 rounded-full border border-[#1A5CFF]/20 bg-[#1A5CFF]/8 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[#3A75FF] md:flex">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#1A5CFF]" />
           Sistema online
         </div>
 
@@ -40,7 +40,7 @@ export function PageShell({ title, subtitle, headerRight, children, spacing = "s
       <div className={`px-7 py-6 ${spacing}`}>
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.03] px-5 py-5 shadow-[0_20px_60px_rgba(0,0,0,0.24)]">
-            <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-[#8affc1]">// Control panel</p>
+            <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-[#3A75FF]">// Control panel</p>
             <h1 className="text-3xl font-extrabold tracking-[-0.04em] text-foreground">{title}</h1>
             {subtitle && <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{subtitle}</p>}
           </div>

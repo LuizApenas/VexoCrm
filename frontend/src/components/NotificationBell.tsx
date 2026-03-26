@@ -30,10 +30,10 @@ export function NotificationBell({ collapsed }: NotificationBellProps) {
         >
           <Bell className="h-4 w-4 shrink-0" />
           {!collapsed && <span>Notificacoes</span>}
-          {unreadCount > 0 && <span className="absolute right-2 top-2 h-2 min-w-[8px] rounded-full bg-primary shadow-[0_0_10px_rgba(25,227,125,0.8)]" />}
+          {unreadCount > 0 && <span className="absolute right-2 top-2 h-2 min-w-[8px] rounded-full bg-primary shadow-[0_0_10px_rgba(26,92,255,0.8)]" />}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="right" align="end" className="w-80 border-white/10 bg-[rgba(7,10,9,0.96)] p-0 text-foreground">
+      <PopoverContent side="right" align="end" className="w-80 border-white/10 bg-[rgba(3,5,30,0.96)] p-0 text-foreground">
         <div className="flex items-center justify-between border-b border-white/8 p-3">
           <h4 className="text-sm font-semibold text-foreground">Notificacoes</h4>
           {unreadCount > 0 && (

@@ -28,10 +28,10 @@ export function AuthLayout({
   const alignClass = formAlign === "center" ? "items-center" : "";
 
   return (
-    <div className="flex items-center justify-center min-h-screen w-full bg-background px-4">
+    <div className="flex items-center justify-center min-h-screen w-full bg-[#030308] px-4">
       <form
         onSubmit={onSubmit}
-        className={`flex flex-col p-8 rounded-xl border bg-card shadow-lg w-full ${maxWidthClass} ${formGap} ${alignClass}`}
+        className={`glass-panel flex flex-col p-8 rounded-2xl w-full ${maxWidthClass} ${formGap} ${alignClass} shadow-[0_24px_80px_rgba(0,0,0,0.5)]`}
       >
         {children}
       </form>

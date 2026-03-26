@@ -12,7 +12,7 @@ export function DashboardPanel({ title, subtitle, children, className }: Dashboa
   return (
     <div
       className={cn(
-        "rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(9,12,11,0.94),rgba(5,8,7,0.98))] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.28)]",
+        "rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(5,8,30,0.94),rgba(3,5,24,0.98))] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.28)]",
         className
       )}
     >
@@ -20,7 +20,7 @@ export function DashboardPanel({ title, subtitle, children, className }: Dashboa
         <div className="mb-4 border-b border-white/8 pb-4">
           {title && (
             <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_12px_rgba(25,227,125,0.8)]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_12px_rgba(26,92,255,0.8)]" />
               {title}
             </h2>
           )}

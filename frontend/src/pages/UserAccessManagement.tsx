@@ -54,7 +54,7 @@ const ROLE_LABELS: Record<ManagedRole, string> = {
 
 const ROLE_BADGE_CLASS: Record<ManagedRole, string> = {
   internal: "bg-primary/10 text-primary",
-  client: "bg-emerald-500/10 text-emerald-500",
+  client: "bg-[#1A5CFF]/10 text-[#1A5CFF]",
   pending: "bg-amber-500/10 text-amber-500",
 };
 
@@ -408,7 +408,7 @@ export default function UserAccessManagement() {
       ) : null}
 
       {createSuccess ? (
-        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-500">
+        <div className="rounded-lg border border-[#1A5CFF]/20 bg-[#1A5CFF]/10 px-4 py-3 text-sm text-[#1A5CFF]">
           {createSuccess}
         </div>
       ) : null}
