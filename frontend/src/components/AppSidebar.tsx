@@ -6,6 +6,7 @@ import {
   Users,
   Bot,
   LogOut,
+  Megaphone,
   ShieldCheck,
   PanelLeftClose,
   PanelLeft,
@@ -23,6 +24,7 @@ const navItems = [
   { title: "Planilhas", url: "/crm/planilhas", icon: FileSpreadsheet, page: "planilhas" as const },
   { title: "WhatsApp", url: "/crm/whatsapp", icon: MessageCircle, page: "whatsapp" as const },
   { title: "Agente", url: "/crm/agente", icon: Bot, page: "agente" as const },
+  { title: "Campanhas", url: "/crm/campanhas", icon: Megaphone, page: "campanhas" as const },
   { title: "Usuarios", url: "/crm/usuarios", icon: ShieldCheck, page: "usuarios" as const },
 ] satisfies Array<{
   title: string;

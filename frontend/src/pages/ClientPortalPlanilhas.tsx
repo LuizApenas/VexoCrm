@@ -10,7 +10,7 @@ export default function ClientPortalPlanilhas() {
       fixedClientId={clientId}
       fixedClientName={clientName}
       title="Planilhas do Cliente"
-      subtitle={`${clientName} · importações, histórico e campanhas sincronizadas`}
+      subtitle={`${clientName} · importacoes, bases disponiveis e historico operacional`}
       headerRight={<ClientPortalNav clientId={clientId} clientName={clientName} active="planilhas" />}
     />
   );
