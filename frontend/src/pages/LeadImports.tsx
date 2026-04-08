@@ -1,8 +1,10 @@
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import * as XLSX from "xlsx";
 import {
+  AlertTriangle,
   Building2,
   CalendarDays,
+  CheckCircle2,
   Clock3,
   Eye,
   FileSpreadsheet,
@@ -12,10 +14,18 @@ import {
   RefreshCw,
   Search,
   Send,
+  Trash2,
   Upload,
+  XCircle,
 } from "lucide-react";
 import { useLeadClients } from "@/hooks/useLeadClients";
-import { useCreateLeadImport, useLeadImports, type LeadImportPreviewItem } from "@/hooks/useLeadImports";
+import {
+  useCreateLeadImport,
+  useDeleteLeadImport,
+  useLeadImports,
+  useLeadImportItems,
+  type LeadImportPreviewItem,
+} from "@/hooks/useLeadImports";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,7 +39,7 @@ import { PageShell } from "@/components/PageShell";
 import { SectionHeader } from "@/components/SectionHeader";
 import { cn } from "@/lib/utils";
 
-type SheetTab = "dados" | "campanha" | "enviadas" | "agendamentos";
+type SheetTab = "dados" | "campanha" | "pendentes" | "enviadas" | "agendamentos";
 
 interface LeadImportsProps {
   fixedClientId?: string;
@@ -41,6 +51,7 @@ interface LeadImportsProps {
 
 const TABS: Array<{ id: SheetTab; label: string }> = [
   { id: "dados", label: "Dados Gerais" },
+  { id: "pendentes", label: "Leads Pendentes" },
   { id: "campanha", label: "Nova Campanha" },
   { id: "enviadas", label: "Campanhas Enviadas" },
   { id: "agendamentos", label: "Agendamentos" },
@@ -123,9 +134,13 @@ export default function LeadImports({
   const [parseError, setParseError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SheetTab>("dados");
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [pendingFilter, setPendingFilter] = useState<string>("false");
 
   const { data: imports = [], isLoading: importsLoading, error: importsError, refetch } = useLeadImports(selectedClientId);
   const createLeadImport = useCreateLeadImport();
+  const deleteLeadImport = useDeleteLeadImport();
+  const { data: pendingData, isLoading: pendingLoading, refetch: refetchPending } = useLeadImportItems(selectedClientId, undefined, pendingFilter);
 
   useEffect(() => {
     if (fixedClientId) {
@@ -175,6 +190,15 @@ export default function LeadImports({
     }
   }
 
+  async function handleDelete(importId: string) {
+    try {
+      await deleteLeadImport.mutateAsync(importId);
+      setDeleteConfirmId(null);
+    } catch (error) {
+      setParseError(error instanceof Error ? error.message : "Falha ao deletar planilha.");
+    }
+  }
+
   const clientSelector = fixedClientId ? null : (
     <div className="flex min-w-[220px] items-center gap-2">
       <Building2 className="h-4 w-4 text-muted-foreground" />
@@ -213,11 +237,17 @@ export default function LeadImports({
               )}
             >
               {tab.label}
+              {tab.id === "pendentes" && pendingData && (
+                <span className="ml-1.5 rounded-full bg-primary/20 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                  {pendingData.pendingCount}
+                </span>
+              )}
               {activeTab === tab.id && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-primary shadow-[0_0_10px_rgba(0,212,255,0.9)]" />}
             </button>
           ))}
         </div>
 
+        {/* ── Dados Gerais ── */}
         {activeTab === "dados" && (
           <div className="space-y-6">
             <section>
@@ -330,6 +360,7 @@ export default function LeadImports({
                             <TableHead>Ignoradas</TableHead>
                             <TableHead>Usuario</TableHead>
                             <TableHead>Data</TableHead>
+                            <TableHead className="w-[80px]">Acoes</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -342,6 +373,38 @@ export default function LeadImports({
                               <TableCell>{item.skipped_rows}</TableCell>
                               <TableCell>{item.uploaded_by_email || "-"}</TableCell>
                               <TableCell>{formatDate(item.created_at)}</TableCell>
+                              <TableCell>
+                                {deleteConfirmId === item.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      variant="destructive"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs"
+                                      onClick={() => handleDelete(item.id)}
+                                      disabled={deleteLeadImport.isPending}
+                                    >
+                                      {deleteLeadImport.isPending ? "..." : "Sim"}
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs"
+                                      onClick={() => setDeleteConfirmId(null)}
+                                    >
+                                      Nao
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                                    onClick={() => setDeleteConfirmId(item.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -354,6 +417,130 @@ export default function LeadImports({
           </div>
         )}
 
+        {/* ── Leads Pendentes ── */}
+        {activeTab === "pendentes" && (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Leads Pendentes de Disparo</h2>
+                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  {pendingData ? `${pendingData.pendingCount} pendentes de ${pendingData.total} total` : "Carregando..."}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Select value={pendingFilter} onValueChange={setPendingFilter}>
+                  <SelectTrigger className="w-[180px] border-border/80 bg-secondary/80">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="false">Nao disparados</SelectItem>
+                    <SelectItem value="true">Ja disparados</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" onClick={() => refetchPending()} disabled={pendingLoading}>
+                  <RefreshCw className={cn("mr-1 h-4 w-4", pendingLoading && "animate-spin")} />
+                  Atualizar
+                </Button>
+              </div>
+            </div>
+
+            {pendingData && pendingData.pendingCount > 0 && (
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Card className="rounded-2xl border-border/80 bg-card/95">
+                  <CardContent className="flex items-center gap-4 p-5">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-amber-400/20 bg-amber-400/10">
+                      <AlertTriangle className="h-5 w-5 text-amber-400" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-extrabold text-foreground">{pendingData.pendingCount}</p>
+                      <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Aguardando disparo</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-2xl border-border/80 bg-card/95">
+                  <CardContent className="flex items-center gap-4 p-5">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
+                      <CheckCircle2 className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-extrabold text-foreground">{pendingData.total - pendingData.pendingCount}</p>
+                      <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Ja disparados</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-2xl border-border/80 bg-card/95">
+                  <CardContent className="flex items-center gap-4 p-5">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+                      <FileSpreadsheet className="h-5 w-5 text-white/60" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-extrabold text-foreground">{pendingData.total}</p>
+                      <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Total importados</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            <Card className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
+              <CardContent className="p-4">
+                {pendingLoading && <EmptyState message="Carregando leads..." />}
+                {!pendingLoading && pendingData && pendingData.items.length === 0 && (
+                  <EmptyState
+                    title={pendingFilter === "false" ? "Todos os leads ja foram disparados" : "Nenhum lead encontrado"}
+                    description="Altere o filtro para ver leads em outro estado."
+                  />
+                )}
+                {!pendingLoading && pendingData && pendingData.items.length > 0 && (
+                  <div className="overflow-x-auto rounded-xl border border-border/70">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>#</TableHead>
+                          <TableHead>Telefone</TableHead>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Cidade</TableHead>
+                          <TableHead>Estado</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Disparo</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pendingData.items.map((item) => {
+                          const nd = item.normalized_data && typeof item.normalized_data === "object" ? item.normalized_data : {};
+                          return (
+                            <TableRow key={item.id}>
+                              <TableCell className="font-mono text-xs text-muted-foreground">{item.row_number}</TableCell>
+                              <TableCell className="font-mono text-sm">{item.telefone || "-"}</TableCell>
+                              <TableCell>{(nd as Record<string, unknown>).nome as string || "-"}</TableCell>
+                              <TableCell>{(nd as Record<string, unknown>).cidade as string || "-"}</TableCell>
+                              <TableCell>{(nd as Record<string, unknown>).estado as string || "-"}</TableCell>
+                              <TableCell>{(nd as Record<string, unknown>).status as string || "-"}</TableCell>
+                              <TableCell>
+                                {item.dispatched ? (
+                                  <span className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary">
+                                    <CheckCircle2 className="h-3 w-3" /> Enviado
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-md border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] text-amber-400">
+                                    <XCircle className="h-3 w-3" /> Pendente
+                                  </span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ── Nova Campanha ── */}
         {activeTab === "campanha" && (
           <Card className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
             <CardContent className="space-y-6 p-6">
@@ -385,6 +572,7 @@ export default function LeadImports({
           </Card>
         )}
 
+        {/* ── Campanhas Enviadas ── */}
         {activeTab === "enviadas" && (
           <div className="space-y-5">
             <div className="flex flex-wrap gap-3">
@@ -413,6 +601,7 @@ export default function LeadImports({
           </div>
         )}
 
+        {/* ── Agendamentos ── */}
         {activeTab === "agendamentos" && (
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
