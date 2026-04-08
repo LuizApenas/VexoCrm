@@ -24,7 +24,8 @@ const rawCorsOrigins = (process.env.CORS_ORIGINS || "*")
   .filter(Boolean);
 
 const hasWildcard = rawCorsOrigins.includes("*");
-const allowAnyCorsOrigin = hasWildcard && !isProduction;
+// Non-production: allow any browser origin (Vite port is 8080 in frontend/vite.config.ts; list in CORS_ORIGINS still applies in production).
+const allowAnyCorsOrigin = !isProduction;
 
 // In production, strip wildcard so only explicit origins are accepted.
 const corsOrigins = isProduction
@@ -355,6 +356,31 @@ function requireInternalPageAccess(page) {
     }
 
     sendError(res, 403, "FORBIDDEN", `Missing permission for page ${page}`);
+  };
+}
+
+function requireAnyInternalPageAccess(pages) {
+  const normalizedPages = Array.isArray(pages) ? pages.filter(Boolean) : [];
+
+  return (req, res, next) => {
+    const access = req.authAccess;
+
+    if (access?.role !== "internal") {
+      sendError(res, 403, "FORBIDDEN", "Internal access required");
+      return;
+    }
+
+    if (access.isAdmin || normalizedPages.some((page) => access.internalPages?.includes(page))) {
+      next();
+      return;
+    }
+
+    sendError(
+      res,
+      403,
+      "FORBIDDEN",
+      `Missing permission for pages ${normalizedPages.join(", ")}`
+    );
   };
 }
 
@@ -940,6 +966,33 @@ function resolveAuthorizedClientId(req, res, requestedClientId) {
     return requestedClientId || authAccess.clientId || authAccess.clientIds[0] || null;
   }
 
+  // P0.2 SECURITY FIX: Internal users também precisam validar clientId
+  if (authAccess.role === "internal") {
+    // Se requestedClientId é especificado, validar se interno tem acesso
+    if (requestedClientId) {
+      // Opção 1: Admins podem acessar qualquer cliente
+      if (authAccess.isAdmin) {
+        return requestedClientId;
+      }
+
+      // Opção 2: Internos não-admin devem ter clientId na lista
+      if (authAccess.clientIds && authAccess.clientIds.length > 0) {
+        if (!authAccess.clientIds.includes(requestedClientId)) {
+          sendError(res, 403, "FORBIDDEN_CLIENT_SCOPE", "You do not have access to this client");
+          return null;
+        }
+        return requestedClientId;
+      }
+
+      // Opção 3: Sem clientIds atribuídos = erro
+      sendError(res, 403, "NO_CLIENT_ACCESS", "You do not have access to any client");
+      return null;
+    }
+
+    // Se nenhum clientId especificado, usar default (se houver)
+    return authAccess.clientId || null;
+  }
+
   if (authAccess.role === "pending") {
     sendError(
       res,
@@ -950,7 +1003,8 @@ function resolveAuthorizedClientId(req, res, requestedClientId) {
     return null;
   }
 
-  return requestedClientId || "infinie";
+  sendError(res, 403, "FORBIDDEN", "Invalid role");
+  return null;
 }
 
 function parseCsvLine(line) {
@@ -1196,19 +1250,34 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.get("/api/sheets", async (req, res) => {
-  const { sheetId, gid } = req.query;
-  if (!sheetId || !gid) {
-    sendError(res, 400, "INVALID_QUERY", "Missing sheetId or gid query params");
+// P0.1 SECURITY FIX: SSRF in /api/sheets - Add authentication, validation, and timeout
+const VALID_GOOGLE_SHEETS_REGEX = /^[a-zA-Z0-9-_]{44}$/; // UUID do Google Sheets
+
+app.get("/api/sheets", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  const sheetId = normalizeString(req.query?.sheetId);
+  const gid = normalizeString(req.query?.gid);
+
+  // Validação de formato
+  if (!sheetId || !VALID_GOOGLE_SHEETS_REGEX.test(sheetId)) {
+    sendError(res, 400, "INVALID_SHEET_ID", "Invalid Google Sheets ID");
+    return;
+  }
+
+  if (gid && !/^\d+$/.test(gid)) {
+    sendError(res, 400, "INVALID_GID", "Invalid sheet GID");
     return;
   }
 
   try {
     const exportUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(
       sheetId
-    )}/export?format=csv&gid=${encodeURIComponent(gid)}`;
+    )}/export?format=csv&gid=${encodeURIComponent(gid || "0")}`;
 
-    const sheetResponse = await fetch(exportUrl);
+    const sheetResponse = await fetch(exportUrl, {
+      timeout: 10000, // Timeout de 10 segundos
+      headers: { "User-Agent": "VexoCRM/1.0" }
+    });
+
     if (!sheetResponse.ok) {
       sendError(
         res,
@@ -1233,8 +1302,8 @@ app.get("/api/sheets", async (req, res) => {
 
     res.json({ rows: parseCsvToRows(csv) });
   } catch (error) {
-    console.error("sheets api error:", error);
-    sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+    console.error("[SECURITY] Sheets fetch error:", error.message);
+    sendError(res, 502, "SHEETS_FETCH_FAILED", "Failed to fetch spreadsheet");
   }
 });
 
@@ -1772,6 +1841,9 @@ app.post("/api/n8n-dispatches", requireFirebaseAuth, requireAppViewAccess("plani
   const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
   if (!clientId) return;
   const importId = normalizeString(req.body?.importId);
+  const scheduledAt = normalizeString(req.body?.scheduledAt);
+  const campaignName = normalizeString(req.body?.campaignName);
+  const channel = normalizeString(req.body?.channel);
   const webhookUrl =
     normalizeString(req.body?.webhookUrl) || normalizeString(process.env.N8N_DISPATCH_WEBHOOK_URL);
   const webhookToken =
@@ -1811,6 +1883,10 @@ app.post("/api/n8n-dispatches", requireFirebaseAuth, requireAppViewAccess("plani
         name: clientName,
       },
       importId,
+      campaignName: campaignName || null,
+      channel: channel || null,
+      scheduledAt: scheduledAt || null,
+      dispatchMode: scheduledAt ? "scheduled" : "immediate",
       total: leads.length,
       phones: leads.map((lead) => lead.telefone),
       leads: leads.map((lead) => ({
@@ -1871,7 +1947,8 @@ app.post("/api/n8n-dispatches", requireFirebaseAuth, requireAppViewAccess("plani
       error instanceof Error ? error.message : "Failed to send leads to n8n"
     );
   }
-});
+  }
+);
 
 app.get("/api/notifications", requireFirebaseAuth, requireInternalPageAccess("agente"), async (req, res) => {
   if (!ensureSupabase(res)) return;
@@ -2328,30 +2405,368 @@ app.post("/api/whatsapp/messages", requireFirebaseAuth, requireAppViewAccess("wh
   }
 });
 
-app.post("/api/whatsapp/messages/direct", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
+app.post("/api/whatsapp/messages/direct", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
   const phone = normalizeString(req.body?.phone);
   const body = normalizeString(req.body?.body);
 
-  if (!phone || !body) {
-    sendError(res, 400, "INVALID_BODY", "Missing phone or body");
+  // ✅ Validação de phone (10-13 dígitos)
+  if (!phone || !/^\d{10,13}$/.test(phone.replace(/\D/g, ""))) {
+    sendError(res, 400, "INVALID_PHONE", "Invalid phone number (must be 10-13 digits)");
     return;
   }
 
-  if (!(await ensureAuthorizedWhatsAppPhone(req, res, phone))) {
+  // ✅ Validação de mensagem (não vazio, máximo 4096 caracteres)
+  if (!body || body.length > 4096) {
+    sendError(res, 400, "INVALID_MESSAGE", "Message too long or empty (max 4096 characters)");
     return;
   }
 
   try {
+    // ✅ Auditoria log com UID + phone
+    console.log(
+      `[AUDIT] WhatsApp direct message sent by admin ${req.authAccess?.uid} to phone ${phone}`
+    );
+
     const result = await whatsappSessionManager.sendDirectMessage(phone, body);
     res.status(201).json(result);
   } catch (error) {
-    console.error("whatsapp direct send error:", error);
+    console.error("[SECURITY] WhatsApp direct send error:", error);
     sendError(
       res,
       409,
       "WHATSAPP_DIRECT_SEND_FAILED",
       error instanceof Error ? error.message : "Failed to send direct WhatsApp message"
     );
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// CAMPANHAS — CRUD + TRIGGER + LEADS-FOR-DISPATCH
+// ─────────────────────────────────────────────────────────────
+
+// GET /api/campaigns — lista campanhas do usuário
+app.get("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  try {
+    const { data, error } = await supabase
+      .from("campaigns")
+      .select("id, name, client_id, import_id, limit_per_run, webhook_url, webhook_token, status, last_triggered_at, created_by_uid, created_by_email, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      sendError(res, 500, "CAMPAIGNS_FETCH_FAILED", "Failed to fetch campaigns", error.message);
+      return;
+    }
+
+    // Fetch client names separately (no FK declared in schema cache)
+    const clientIds = [...new Set((data || []).map((r) => r.client_id).filter(Boolean))];
+    let clientNameMap = {};
+    if (clientIds.length > 0) {
+      const { data: clients } = await supabase
+        .from("leads_clients")
+        .select("id, name")
+        .in("id", clientIds);
+      (clients || []).forEach((c) => { clientNameMap[c.id] = c.name; });
+    }
+
+    const items = (data || []).map((row) => ({
+      ...row,
+      client_name: clientNameMap[row.client_id] ?? null,
+      webhook_token: row.webhook_token ? "***" : null,
+    }));
+
+    res.json({ items });
+  } catch (error) {
+    console.error("campaigns fetch error:", error);
+    sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+  }
+});
+
+// POST /api/campaigns — cria campanha
+app.post("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const name = normalizeString(req.body?.name);
+  const clientId = normalizeString(req.body?.clientId);
+  const importId = normalizeString(req.body?.importId) || null;
+  const rawLimit = Number.parseInt(String(req.body?.limitPerRun ?? "50"), 10);
+  const limitPerRun = Number.isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 500);
+  const webhookUrl = normalizeString(req.body?.webhookUrl);
+  const webhookToken = normalizeString(req.body?.webhookToken) || null;
+
+  if (!name) { sendError(res, 400, "INVALID_BODY", "Missing name"); return; }
+  if (!clientId) { sendError(res, 400, "INVALID_BODY", "Missing clientId"); return; }
+  if (!webhookUrl) { sendError(res, 400, "INVALID_BODY", "Missing webhookUrl"); return; }
+
+  try {
+    const { data, error } = await supabase
+      .from("campaigns")
+      .insert({
+        name,
+        client_id: clientId,
+        import_id: importId,
+        limit_per_run: limitPerRun,
+        webhook_url: webhookUrl,
+        webhook_token: webhookToken,
+        status: "active",
+        created_by_uid: req.authAccess?.uid || null,
+        created_by_email: req.authAccess?.email || null,
+      })
+      .select("id, name, client_id, import_id, limit_per_run, webhook_url, status, last_triggered_at, created_at")
+      .single();
+
+    if (error) {
+      sendError(res, 500, "CAMPAIGN_CREATE_FAILED", "Failed to create campaign", error.message);
+      return;
+    }
+
+    res.status(201).json({ item: { ...data, webhook_token: webhookToken ? "***" : null } });
+  } catch (error) {
+    console.error("campaign create error:", error);
+    sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+  }
+});
+
+// PATCH /api/campaigns/:id — atualiza campanha
+app.patch("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const id = normalizeString(req.params?.id);
+  if (!id) { sendError(res, 400, "INVALID_PARAM", "Missing campaign id"); return; }
+
+  const updates = {};
+  if (req.body?.name) updates.name = normalizeString(req.body.name);
+  if (req.body?.status === "active" || req.body?.status === "paused") updates.status = req.body.status;
+  if (req.body?.limitPerRun) {
+    const v = Number.parseInt(String(req.body.limitPerRun), 10);
+    if (!Number.isNaN(v) && v > 0) updates.limit_per_run = Math.min(v, 500);
+  }
+  if (req.body?.webhookUrl) updates.webhook_url = normalizeString(req.body.webhookUrl);
+  if ("webhookToken" in req.body) updates.webhook_token = normalizeString(req.body.webhookToken);
+
+  if (Object.keys(updates).length === 0) {
+    sendError(res, 400, "INVALID_BODY", "No valid fields to update");
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("campaigns")
+      .update(updates)
+      .eq("id", id)
+      .select("id, name, client_id, import_id, limit_per_run, webhook_url, status, last_triggered_at, created_at")
+      .single();
+
+    if (error) {
+      sendError(res, 500, "CAMPAIGN_UPDATE_FAILED", "Failed to update campaign", error.message);
+      return;
+    }
+
+    res.json({ item: { ...data, webhook_token: null } });
+  } catch (error) {
+    console.error("campaign update error:", error);
+    sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+  }
+});
+
+// DELETE /api/campaigns/:id — exclui campanha
+app.delete("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const id = normalizeString(req.params?.id);
+  if (!id) { sendError(res, 400, "INVALID_PARAM", "Missing campaign id"); return; }
+
+  try {
+    const { error } = await supabase.from("campaigns").delete().eq("id", id);
+
+    if (error) {
+      sendError(res, 500, "CAMPAIGN_DELETE_FAILED", "Failed to delete campaign", error.message);
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("campaign delete error:", error);
+    sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+  }
+});
+
+// POST /api/campaigns/:id/trigger — dispara campanha (chama webhook n8n)
+app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const id = normalizeString(req.params?.id);
+  if (!id) { sendError(res, 400, "INVALID_PARAM", "Missing campaign id"); return; }
+
+  try {
+    const { data: campaign, error: fetchError } = await supabase
+      .from("campaigns")
+      .select("id, name, client_id, import_id, limit_per_run, webhook_url, webhook_token, status")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !campaign) {
+      sendError(res, 404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
+      return;
+    }
+
+    if (campaign.status !== "active") {
+      sendError(res, 400, "CAMPAIGN_PAUSED", "Campaign is paused");
+      return;
+    }
+
+    // Buscar leads reais para incluir no payload
+    const leads = await buildDispatchLeads({
+      clientId: campaign.client_id,
+      importId: campaign.import_id || null,
+      limit: campaign.limit_per_run,
+    });
+
+    if (leads.length === 0) {
+      sendError(res, 404, "NO_DISPATCH_LEADS", "No leads found for this campaign");
+      return;
+    }
+
+    const clientName = await getClientName(campaign.client_id);
+
+    const headers = { "Content-Type": "application/json" };
+    if (campaign.webhook_token) {
+      headers.Authorization = `Bearer ${campaign.webhook_token}`;
+    }
+
+    const payload = {
+      source: "vexocrm",
+      action: "campaign_dispatch",
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      requestedAt: new Date().toISOString(),
+      client: { id: campaign.client_id, name: clientName },
+      importId: campaign.import_id || null,
+      limit: campaign.limit_per_run,
+      total: leads.length,
+      phones: leads.map((l) => l.telefone),
+      leads: leads.map((l) => ({
+        id: l.id,
+        telefone: l.telefone,
+        nome: l.nome,
+        cidade: l.cidade,
+        estado: l.estado,
+        status: l.status,
+        tipo_cliente: l.tipo_cliente,
+        faixa_consumo: l.faixa_consumo,
+        qualificacao: l.qualificacao,
+        data_hora: l.data_hora,
+        created_at: l.created_at,
+      })),
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    let n8nResponse = null;
+    try {
+      const webhookRes = await fetch(campaign.webhook_url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      n8nResponse = await webhookRes.text();
+
+      if (!webhookRes.ok) {
+        sendError(res, 502, "N8N_TRIGGER_FAILED", "n8n webhook returned an error", n8nResponse.slice(0, 500));
+        return;
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    await supabase
+      .from("campaigns")
+      .update({ last_triggered_at: new Date().toISOString() })
+      .eq("id", id);
+
+    res.json({
+      success: true,
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      webhookUrl: campaign.webhook_url,
+      n8nResponse: n8nResponse || null,
+    });
+  } catch (error) {
+    console.error("campaign trigger error:", error);
+    if (error?.name === "AbortError") {
+      sendError(res, 504, "N8N_TIMEOUT", "n8n webhook timed out (15s)");
+      return;
+    }
+    sendError(res, 500, "INTERNAL_ERROR", error instanceof Error ? error.message : "Internal server error");
+  }
+});
+
+// GET /api/leads-for-dispatch — n8n busca leads pendentes (autenticado por Bearer token)
+app.get("/api/leads-for-dispatch", requireN8nWebhookSecret, async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const clientId = normalizeString(req.query?.clientId);
+  const importId = normalizeString(req.query?.importId) || null;
+  const rawLimit = Number.parseInt(String(req.query?.limit ?? "50"), 10);
+  const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 200);
+
+  if (!clientId) {
+    sendError(res, 400, "INVALID_QUERY", "Missing clientId");
+    return;
+  }
+
+  try {
+    let query = supabase
+      .from("leads")
+      .select("id, telefone, nome, cidade, estado, status, tipo_cliente, faixa_consumo, qualificacao, created_at")
+      .eq("client_id", clientId)
+      .not("telefone", "is", null)
+      .neq("status", "dispatched")
+      .order("created_at", { ascending: true })
+      .limit(limit);
+
+    if (importId) {
+      const { data: importItems } = await supabase
+        .from("lead_import_items")
+        .select("telefone")
+        .eq("import_id", importId)
+        .eq("client_id", clientId)
+        .eq("imported", true);
+
+      const phones = (importItems || []).map((i) => i.telefone).filter(Boolean);
+      if (phones.length === 0) {
+        return res.json({ success: true, total: 0, leads: [] });
+      }
+      query = query.in("telefone", phones);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      sendError(res, 500, "LEADS_FETCH_FAILED", "Failed to fetch leads", error.message);
+      return;
+    }
+
+    const leads = (data || []).map((lead) => ({
+      id: lead.id,
+      telefone: lead.telefone,
+      nome: lead.nome,
+      cidade: lead.cidade,
+      estado: lead.estado,
+      status: lead.status,
+      tipo_cliente: lead.tipo_cliente,
+      faixa_consumo: lead.faixa_consumo,
+      qualificacao: lead.qualificacao,
+      created_at: lead.created_at,
+    }));
+
+    res.json({ success: true, total: leads.length, leads });
+  } catch (error) {
+    console.error("leads-for-dispatch error:", error);
+    sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
   }
 });
 

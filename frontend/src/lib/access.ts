@@ -5,6 +5,7 @@ export const INTERNAL_PAGE_ORDER = [
   "whatsapp",
   "agente",
   "usuarios",
+  "campanhas",
 ] as const;
 
 export type InternalPage = (typeof INTERNAL_PAGE_ORDER)[number];
