@@ -1,15 +1,8 @@
-// VexoCrm/frontend/src/components/ErrorMessage.tsx
-// Standardized error display for forms and data sections.
-// Replaces repeated error paragraph/div pattern in Login, SetPassword, Leads.
-
 import { cn } from "@/lib/utils";
 
 interface ErrorMessageProps {
-  /** Error message to display (nothing rendered if null/undefined/empty) */
   message?: string | null;
-  /** inline: simple text. banner: with background. dashboard: with border and background */
   variant?: "inline" | "banner" | "dashboard";
-  /** Additional Tailwind classes */
   className?: string;
 }
 
@@ -20,7 +13,7 @@ export function ErrorMessage({ message, variant = "inline", className }: ErrorMe
     return (
       <div
         className={cn(
-          "flex items-center gap-2 text-destructive text-sm mb-4 p-3 rounded-md bg-destructive/10",
+          "mb-4 flex items-center gap-2 rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive",
           className
         )}
       >
@@ -33,7 +26,7 @@ export function ErrorMessage({ message, variant = "inline", className }: ErrorMe
     return (
       <div
         className={cn(
-          "rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive",
+          "rounded-[1.25rem] border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive",
           className
         )}
       >
