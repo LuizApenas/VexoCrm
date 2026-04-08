@@ -1,7 +1,7 @@
 # VexoCrm
 
 Monorepo do CRM e da operacao automatizada da Vexo/Infinie.
-
+ 
 Hoje a arquitetura real do projeto e:
 
 - `Supabase` como banco principal e camada de persistencia.
