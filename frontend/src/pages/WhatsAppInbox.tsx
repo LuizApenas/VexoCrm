@@ -218,7 +218,7 @@ export default function WhatsAppInbox({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle className="flex items-center gap-2 text-lg">
-                  <Smartphone className="h-5 w-5 text-[#1A5CFF]" />
+                  <Smartphone className="h-5 w-5 text-electric-indigo" />
                   Conexao
                 </CardTitle>
                 <CardDescription>
@@ -229,7 +229,7 @@ export default function WhatsAppInbox({
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]",
                   isReady
-                    ? "border-[#1A5CFF]/30 bg-[#1A5CFF]/10 text-[#3A75FF]"
+                    ? "border-electric-indigo/30 bg-electric-indigo/10 text-electric-indigo"
                     : "border-amber-400/20 bg-amber-400/10 text-amber-200"
                 )}
               >
@@ -289,8 +289,8 @@ export default function WhatsAppInbox({
                 </div>
               </div>
             ) : isReady ? (
-              <div className="rounded-2xl border border-[#1A5CFF]/20 bg-[#1A5CFF]/5 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[#3A75FF]">
+              <div className="rounded-2xl border border-electric-indigo/20 bg-electric-indigo/5 p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-electric-indigo">
                   <Wifi className="h-4 w-4" />
                   Conta conectada
                 </div>
@@ -411,7 +411,7 @@ export default function WhatsAppInbox({
                           <p className="truncate text-xs text-muted-foreground">{getPreview(chat)}</p>
                           <div className="mt-2 flex items-center gap-2">
                             {chat.unreadCount > 0 && (
-                              <span className="rounded-full bg-[#1A5CFF] px-2 py-0.5 text-[10px] font-bold text-black">
+                              <span className="rounded-full bg-electric-indigo px-2 py-0.5 text-[10px] font-bold text-black">
                                 {chat.unreadCount} novas
                               </span>
                             )}
@@ -467,7 +467,7 @@ export default function WhatsAppInbox({
                           className={cn(
                             "max-w-[78%] rounded-2xl px-4 py-3 text-sm",
                             message.fromMe
-                              ? "ml-auto bg-[#1A5CFF]/15 text-foreground"
+                              ? "ml-auto bg-electric-indigo/15 text-foreground"
                               : "bg-secondary text-foreground"
                           )}
                         >
