@@ -68,6 +68,83 @@ export function useLeadImports(clientId?: string) {
   });
 }
 
+export interface LeadImportItemDetail {
+  id: string;
+  import_id: string;
+  client_id: string;
+  row_number: number;
+  telefone: string | null;
+  normalized_data: Record<string, unknown> | null;
+  imported: boolean;
+  skip_reason: string | null;
+  created_at: string;
+  dispatched: boolean;
+}
+
+interface LeadImportItemsResponse {
+  items: LeadImportItemDetail[];
+  total: number;
+  pendingCount: number;
+}
+
+export function useLeadImportItems(clientId?: string, importId?: string, dispatched?: string) {
+  const { isAuthenticated, canAccessView, getIdToken } = useAuth();
+
+  return useQuery({
+    queryKey: ["lead-import-items", clientId, importId, dispatched],
+    enabled: isAuthenticated && !!clientId && canAccessView("planilhas"),
+    queryFn: async (): Promise<LeadImportItemsResponse> => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuario nao autenticado.");
+
+      const params = new URLSearchParams();
+      if (clientId) params.set("clientId", clientId);
+      if (importId) params.set("importId", importId);
+      if (dispatched !== undefined) params.set("dispatched", dispatched);
+
+      const res = await fetch(`${API_BASE_URL}/api/lead-import-items?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Lead import items fetch failed: ${res.status} ${errText}`);
+      }
+
+      return res.json();
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useDeleteLeadImport() {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (importId: string): Promise<{ success: boolean; deletedId: string }> => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuario nao autenticado.");
+
+      const res = await fetch(`${API_BASE_URL}/api/lead-imports/${importId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Delete failed: ${res.status} ${errText}`);
+      }
+
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lead-imports"] });
+      queryClient.invalidateQueries({ queryKey: ["lead-import-items"] });
+    },
+  });
+}
+
 export function useCreateLeadImport() {
   const { getIdToken } = useAuth();
   const queryClient = useQueryClient();

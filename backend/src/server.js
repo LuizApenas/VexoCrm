@@ -1561,6 +1561,108 @@ app.get("/api/lead-imports", requireFirebaseAuth, requireAppViewAccess("planilha
   }
 });
 
+app.delete("/api/lead-imports/:importId", requireFirebaseAuth, requireAppViewAccess("planilhas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const importId = normalizeString(req.params.importId);
+  if (!importId) {
+    sendError(res, 400, "INVALID_PARAMS", "Missing importId");
+    return;
+  }
+
+  try {
+    const { data: record, error: fetchError } = await supabase
+      .from("lead_imports")
+      .select("id, client_id")
+      .eq("id", importId)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!record) {
+      sendError(res, 404, "NOT_FOUND", "Import not found");
+      return;
+    }
+
+    const clientId = resolveAuthorizedClientId(req, res, record.client_id);
+    if (!clientId) return;
+
+    const { error: itemsDeleteError } = await supabase
+      .from("lead_import_items")
+      .delete()
+      .eq("import_id", importId);
+    if (itemsDeleteError) throw itemsDeleteError;
+
+    const { error: importDeleteError } = await supabase
+      .from("lead_imports")
+      .delete()
+      .eq("id", importId);
+    if (importDeleteError) throw importDeleteError;
+
+    res.json({ success: true, deletedId: importId });
+  } catch (error) {
+    console.error("lead import delete error:", error);
+    sendError(res, 500, "LEAD_IMPORT_DELETE_FAILED", "Failed to delete import");
+  }
+});
+
+app.get("/api/lead-import-items", requireFirebaseAuth, requireAppViewAccess("planilhas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const requestedClientId = normalizeString(req.query.clientId);
+  const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+  if (!clientId) return;
+
+  const importId = normalizeString(req.query.importId);
+  const dispatched = req.query.dispatched;
+
+  try {
+    let query = supabase
+      .from("lead_import_items")
+      .select("id, import_id, client_id, row_number, telefone, normalized_data, imported, skip_reason, created_at")
+      .eq("client_id", clientId)
+      .eq("imported", true)
+      .not("telefone", "is", null)
+      .order("row_number", { ascending: true });
+
+    if (importId) {
+      query = query.eq("import_id", importId);
+    }
+
+    const { data: items, error } = await query;
+    if (error) throw error;
+
+    const allItems = items || [];
+
+    const { data: dispatches } = await supabase
+      .from("campaigns")
+      .select("phones")
+      .eq("client_id", clientId);
+
+    const dispatchedPhones = new Set();
+    for (const d of dispatches || []) {
+      if (Array.isArray(d.phones)) {
+        for (const phone of d.phones) dispatchedPhones.add(phone);
+      }
+    }
+
+    const enriched = allItems.map((item) => ({
+      ...item,
+      dispatched: dispatchedPhones.has(item.telefone),
+    }));
+
+    if (dispatched === "false") {
+      res.json({ items: enriched.filter((i) => !i.dispatched), total: enriched.length, pendingCount: enriched.filter((i) => !i.dispatched).length });
+    } else if (dispatched === "true") {
+      res.json({ items: enriched.filter((i) => i.dispatched), total: enriched.length, pendingCount: enriched.filter((i) => !i.dispatched).length });
+    } else {
+      res.json({ items: enriched, total: enriched.length, pendingCount: enriched.filter((i) => !i.dispatched).length });
+    }
+  } catch (error) {
+    console.error("lead import items query error:", error);
+    sendError(res, 500, "LEAD_IMPORT_ITEMS_QUERY_FAILED", "Failed to query import items");
+  }
+});
+
 app.post("/api/lead-imports", requireFirebaseAuth, requireAppViewAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
@@ -1663,10 +1765,12 @@ app.post("/api/lead-imports", requireFirebaseAuth, requireAppViewAccess("planilh
   }
 });
 
-app.post("/api/n8n-dispatches", requireFirebaseAuth, requireInternalPageAccess("agente"), async (req, res) => {
+app.post("/api/n8n-dispatches", requireFirebaseAuth, requireAppViewAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
-  const clientId = normalizeString(req.body?.clientId);
+  const requestedClientId = normalizeString(req.body?.clientId);
+  const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+  if (!clientId) return;
   const importId = normalizeString(req.body?.importId);
   const webhookUrl =
     normalizeString(req.body?.webhookUrl) || normalizeString(process.env.N8N_DISPATCH_WEBHOOK_URL);
@@ -1674,11 +1778,6 @@ app.post("/api/n8n-dispatches", requireFirebaseAuth, requireInternalPageAccess("
     normalizeString(req.body?.webhookToken) || normalizeString(process.env.N8N_DISPATCH_WEBHOOK_TOKEN);
   const rawLimit = Number.parseInt(String(req.body?.limit ?? ""), 10);
   const limit = Number.isNaN(rawLimit) ? null : rawLimit;
-
-  if (!clientId) {
-    sendError(res, 400, "INVALID_BODY", "Missing clientId");
-    return;
-  }
 
   if (!webhookUrl) {
     sendError(
