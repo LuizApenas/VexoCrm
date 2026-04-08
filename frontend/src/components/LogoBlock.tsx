@@ -1,6 +1,5 @@
 // VexoCrm/frontend/src/components/LogoBlock.tsx
 // Logo icon + app name + subtitle block for auth pages (Login).
-// Replaces raw div+span+h1+p pattern.
 
 interface LogoBlockProps {
   /** Icon character or emoji */
@@ -14,12 +13,12 @@ interface LogoBlockProps {
 export function LogoBlock({ icon, name, subtitle }: LogoBlockProps) {
   return (
     <>
-      <div className="shiny-cta w-14 h-14 rounded-2xl bg-[#1A5CFF]/15 flex items-center justify-center shadow-[0_0_30px_rgba(26,92,255,0.25)]">
-        <span className="text-[#1A5CFF] font-bold text-xl">{icon}</span>
+      <div className="shiny-cta w-14 h-14 rounded-xl bg-electric-indigo/15 flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.20)]">
+        <span className="text-electric-indigo font-bold text-xl">{icon}</span>
       </div>
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-foreground">{name}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>}
+        <h1 className="text-2xl font-bold text-[#F8FAFC]">{name}</h1>
+        {subtitle && <p className="text-sm text-[#E2E8F0]/60 mt-1">{subtitle}</p>}
       </div>
     </>
   );

@@ -128,7 +128,7 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg border-white/10 bg-[rgba(3,5,30,0.97)]">
+      <DialogContent className="max-w-lg border-white/10 bg-[rgba(11,14,20,0.4)]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-foreground">
             <Megaphone className="h-4 w-4 text-primary" />
@@ -300,7 +300,7 @@ function CampaignCard({ campaign }: CampaignCardProps) {
 
   return (
     <>
-      <Card className="border-white/8 bg-[rgba(3,5,30,0.6)] backdrop-blur-sm transition-all hover:border-white/12">
+      <Card className="border-white/8 bg-[rgba(11,14,20,0.4)] backdrop-blur-sm transition-all hover:border-white/12">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -414,7 +414,7 @@ function CampaignCard({ campaign }: CampaignCardProps) {
       </Card>
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <AlertDialogContent className="border-white/10 bg-[rgba(3,5,30,0.97)]">
+        <AlertDialogContent className="border-white/10 bg-[rgba(11,14,20,0.4)]">
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir campanha?</AlertDialogTitle>
             <AlertDialogDescription>
