@@ -22,6 +22,7 @@ import { useLeadClients } from "@/hooks/useLeadClients";
 import {
   useCreateLeadImport,
   useDeleteLeadImport,
+  useDispatchCampaign,
   useLeadImports,
   useLeadImportItems,
   type LeadImportPreviewItem,
@@ -134,12 +135,20 @@ export default function LeadImports({
   const [parseError, setParseError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SheetTab>("dados");
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [pendingFilter, setPendingFilter] = useState<string>("false");
+  const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
+  const [isDispatching, setIsDispatching] = useState(false);
+  const [campaignName, setCampaignName] = useState("");
+  const [campaignChannel, setCampaignChannel] = useState("");
+  const [selectedImportId, setSelectedImportId] = useState("");
 
   const { data: imports = [], isLoading: importsLoading, error: importsError, refetch } = useLeadImports(selectedClientId);
   const createLeadImport = useCreateLeadImport();
   const deleteLeadImport = useDeleteLeadImport();
+  const dispatchCampaign = useDispatchCampaign();
   const { data: pendingData, isLoading: pendingLoading, refetch: refetchPending } = useLeadImportItems(selectedClientId, undefined, pendingFilter);
 
   useEffect(() => {
@@ -196,6 +205,37 @@ export default function LeadImports({
       setDeleteConfirmId(null);
     } catch (error) {
       setParseError(error instanceof Error ? error.message : "Falha ao deletar planilha.");
+    }
+  }
+
+  async function handleDispatch() {
+    if (!selectedClientId) {
+      setDispatchStatus("Selecione um cliente antes de disparar.");
+      return;
+    }
+    setIsDispatching(true);
+    setDispatchStatus(null);
+    try {
+      let scheduledAtIso: string | undefined;
+      if (scheduleEnabled && scheduleDate && scheduleTime) {
+        scheduledAtIso = new Date(`${scheduleDate}T${scheduleTime}:00`).toISOString();
+      }
+      const result = await dispatchCampaign.mutateAsync({
+        clientId: selectedClientId,
+        importId: selectedImportId || undefined,
+        campaignName: campaignName || undefined,
+        channel: campaignChannel || undefined,
+        scheduledAt: scheduledAtIso,
+      });
+      setDispatchStatus(
+        scheduleEnabled
+          ? `Campanha agendada para ${scheduleDate} as ${scheduleTime}. ${result.total} leads serao disparados.`
+          : `Disparo realizado com sucesso! ${result.total} leads enviados ao n8n.`
+      );
+    } catch (error) {
+      setDispatchStatus(error instanceof Error ? error.message : "Falha ao disparar campanha.");
+    } finally {
+      setIsDispatching(false);
     }
   }
 
@@ -548,25 +588,114 @@ export default function LeadImports({
                 <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Criar Nova Campanha</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Configure os parametros de envio e segmentacao da campanha.</p>
               </div>
+
+              {dispatchStatus && (
+                <div className={cn(
+                  "rounded-xl border p-4 text-sm font-medium",
+                  dispatchStatus.includes("sucesso") || dispatchStatus.includes("agendada")
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-destructive/30 bg-destructive/10 text-destructive"
+                )}>
+                  {dispatchStatus}
+                </div>
+              )}
+
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Nome da Campanha *</p><Input placeholder="Ex: Newsletter Marco 2026" className="border-border/80 bg-secondary/70" /></div>
-                <div className="space-y-2"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Canal de Envio *</p><Select><SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Selecione..." /></SelectTrigger><SelectContent><SelectItem value="email">E-mail Marketing</SelectItem><SelectItem value="whatsapp">WhatsApp</SelectItem><SelectItem value="sms">SMS</SelectItem></SelectContent></Select></div>
-                <div className="space-y-2"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Segmento / Lista *</p><Select><SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Todos os contatos (2.418)" /></SelectTrigger><SelectContent><SelectItem value="todos">Todos os contatos (2.418)</SelectItem></SelectContent></Select></div>
-                <div className="space-y-2"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Categoria</p><Select><SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Selecione..." /></SelectTrigger><SelectContent><SelectItem value="promo">Promocional</SelectItem><SelectItem value="news">Newsletter</SelectItem></SelectContent></Select></div>
-                <div className="space-y-2 md:col-span-2"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Assunto / Titulo *</p><Input placeholder="Ex: Oferta especial para {{nome}} da {{empresa}}" className="border-border/80 bg-secondary/70" /><p className="font-mono text-[10px] text-muted-foreground">Use &#123;&#123;nome&#125;&#125;, &#123;&#123;empresa&#125;&#125;, &#123;&#123;link&#125;&#125; para personalizacao dinamica</p></div>
-                <div className="space-y-2 md:col-span-2"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Conteudo da Mensagem *</p><Textarea placeholder="Digite o conteudo da campanha aqui..." className="min-h-[130px] border-border/80 bg-secondary/70" /></div>
-                <div className="space-y-2"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Remetente</p><Input placeholder="Equipe Vexo CRM" className="border-border/80 bg-secondary/70" /></div>
-                <div className="space-y-2"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">E-mail de Resposta</p><Input placeholder="contato@empresa.com.br" className="border-border/80 bg-secondary/70" /></div>
+                <div className="space-y-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Nome da Campanha *</p>
+                  <Input placeholder="Ex: Newsletter Marco 2026" className="border-border/80 bg-secondary/70" value={campaignName} onChange={(e) => setCampaignName(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Canal de Envio *</p>
+                  <Select value={campaignChannel} onValueChange={setCampaignChannel}>
+                    <SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                      <SelectItem value="email">E-mail Marketing</SelectItem>
+                      <SelectItem value="sms">SMS</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Base de Leads (importacao)</p>
+                  <Select value={selectedImportId} onValueChange={setSelectedImportId}>
+                    <SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Todas as importacoes" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Todas as importacoes</SelectItem>
+                      {imports.map((imp) => (
+                        <SelectItem key={imp.id} value={imp.id}>
+                          {imp.source_name} ({imp.imported_rows} leads)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Leads pendentes</p>
+                  <div className="flex h-10 items-center rounded-md border border-border/80 bg-secondary/70 px-3 font-mono text-sm text-muted-foreground">
+                    {pendingData ? `${pendingData.pendingCount} aguardando disparo` : "Carregando..."}
+                  </div>
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Conteudo da Mensagem</p>
+                  <Textarea placeholder="Digite o conteudo da campanha aqui..." className="min-h-[130px] border-border/80 bg-secondary/70" />
+                </div>
               </div>
+
+              {/* Agendamento de Horário */}
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
-                <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-primary"><CalendarDays className="h-4 w-4" />Agendamento de Envio</div>
-                <div className="mb-4 flex items-center gap-3"><Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} /><span className="text-sm text-muted-foreground">Agendar para data e horario especifico</span></div>
-                {scheduleEnabled && <div className="grid gap-4 md:grid-cols-3"><Input type="date" defaultValue="2026-03-20" className="border-border/80 bg-secondary/70" /><Input type="time" defaultValue="09:00" className="border-border/80 bg-secondary/70" /><Input placeholder="BRT (Sao Paulo)" className="border-border/80 bg-secondary/70" /></div>}
+                <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-primary">
+                  <CalendarDays className="h-4 w-4" />
+                  Horario de Disparo
+                </div>
+                <div className="mb-4 flex items-center gap-3">
+                  <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
+                  <span className="text-sm text-muted-foreground">
+                    {scheduleEnabled ? "Disparo agendado — o n8n sera notificado do horario" : "Disparo imediato — sera enviado agora"}
+                  </span>
+                </div>
+                {scheduleEnabled && (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Data do disparo *</p>
+                      <Input
+                        type="date"
+                        value={scheduleDate}
+                        onChange={(e) => setScheduleDate(e.target.value)}
+                        min={new Date().toISOString().split("T")[0]}
+                        className="border-border/80 bg-secondary/70"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Horario do disparo *</p>
+                      <Input
+                        type="time"
+                        value={scheduleTime}
+                        onChange={(e) => setScheduleTime(e.target.value)}
+                        className="border-border/80 bg-secondary/70"
+                      />
+                    </div>
+                  </div>
+                )}
+                {scheduleEnabled && scheduleDate && scheduleTime && (
+                  <p className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2 font-mono text-[11px] text-primary">
+                    O disparo sera realizado em {new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString("pt-BR")} (horario local). O n8n recebera o campo scheduledAt para aguardar ate esse momento.
+                  </p>
+                )}
               </div>
+
               <div className="flex flex-wrap gap-3 border-t border-border/70 pt-5">
-                <Button variant="outline">Salvar Rascunho</Button>
-                <Button variant="outline" className="border-primary/30 text-primary hover:bg-primary/10"><Eye className="mr-2 h-4 w-4" />Pre-visualizar</Button>
-                <Button><Send className="mr-2 h-4 w-4" />Enviar Agora</Button>
+                <Button
+                  onClick={handleDispatch}
+                  disabled={isDispatching || !selectedClientId}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  {isDispatching
+                    ? "Enviando..."
+                    : scheduleEnabled
+                      ? "Agendar Disparo"
+                      : "Disparar Agora"}
+                </Button>
               </div>
             </CardContent>
           </Card>

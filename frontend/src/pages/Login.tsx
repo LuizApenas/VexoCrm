@@ -11,6 +11,9 @@ import { ErrorMessage } from "@/components/ErrorMessage";
 import { LogoBlock } from "@/components/LogoBlock";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Building2, ShieldCheck } from "lucide-react";
+import { loginSchema } from "@/lib/validationSchemas";
+import { useRateLimit } from "@/hooks/useRateLimit";
+import { ZodError } from "zod";
 
 type LoginMode = "client" | "admin";
 
@@ -58,6 +61,11 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const rateLimit = useRateLimit({
+    maxAttempts: 5,
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    cooldownMs: 60 * 1000, // 1 minute cooldown
+  });
   const requestedPath =
     typeof location.state === "object" &&
     location.state !== null &&
@@ -80,10 +88,23 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Check rate limit
+    if (rateLimit.isLimited) {
+      setError(rateLimit.cooldownMessage);
+      return;
+    }
+
     setError("");
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      // Validate input
+      const validData = loginSchema.parse({
+        email: email.trim(),
+        password,
+      });
+
+      await login(validData.email, validData.password);
       const tokenResult = await getCurrentIdTokenResult(true);
       const accessRole = normalizeAccessRole(tokenResult?.claims?.role);
       const validForSelectedMode =
@@ -92,14 +113,24 @@ export default function Login() {
           : accessRole === "internal";
 
       if (!validForSelectedMode) {
+        rateLimit.recordAttempt(false);
         await logout();
         setError(
           loginMode === "client"
             ? "Este acesso e exclusivo para clientes. Use o login administrativo."
             : "Este acesso e exclusivo para admin e gestores. Use o login de cliente."
         );
+      } else {
+        rateLimit.recordAttempt(true);
       }
     } catch (err: unknown) {
+      rateLimit.recordAttempt(false);
+
+      if (err instanceof ZodError) {
+        setError(err.errors[0]?.message || "Dados inválidos.");
+        return;
+      }
+
       const errorMessages: Record<string, string> = {
         "auth/user-not-found": "Usuario nao encontrado.",
         "auth/wrong-password": "Senha incorreta.",
@@ -183,7 +214,18 @@ export default function Login() {
 
       <ErrorMessage message={error} className="text-center" />
 
-      <Button type="submit" className="w-full" size="lg" disabled={submitting}>
+      {!rateLimit.isLimited && rateLimit.attemptsLeft > 0 && rateLimit.attemptsLeft < 3 && (
+        <div className="text-center text-xs text-amber-600 bg-amber-50 rounded p-2 border border-amber-200">
+          Aviso: {rateLimit.attemptsLeft} tentativa(s) restante(s)
+        </div>
+      )}
+
+      <Button
+        type="submit"
+        className="w-full"
+        size="lg"
+        disabled={submitting || rateLimit.isLimited}
+      >
         {submitting ? "Entrando..." : "Entrar"}
       </Button>
 

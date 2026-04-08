@@ -8,6 +8,11 @@ import { LogoBlock } from "@/components/LogoBlock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { API_BASE_URL } from "@/lib/api";
+import { clientSignupSchema } from "@/lib/validationSchemas";
+import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
+import { validatePassword } from "@/lib/passwordValidation";
+import { useRateLimit } from "@/hooks/useRateLimit";
+import { ZodError } from "zod";
 
 export default function ClientSignup() {
   const [name, setName] = useState("");
@@ -18,39 +23,56 @@ export default function ClientSignup() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const passwordValidation = validatePassword(password);
+  const rateLimit = useRateLimit({
+    maxAttempts: 3,
+    windowMs: 60 * 60 * 1000, // 1 hour
+    cooldownMs: 30 * 60 * 1000, // 30 minutes cooldown
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccessMessage("");
 
-    if (password !== confirmPassword) {
-      setError("As senhas precisam ser iguais.");
+    // Check rate limit
+    if (rateLimit.isLimited) {
+      setError(rateLimit.cooldownMessage);
       return;
     }
 
-    setSubmitting(true);
     try {
+      const validData = clientSignupSchema.parse({
+        name,
+        email,
+        companyName,
+        password,
+        confirmPassword,
+      });
+
+      setSubmitting(true);
       const res = await fetch(`${API_BASE_URL}/api/client-signup`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: name.trim(),
-          companyName: companyName.trim(),
-          email: email.trim(),
-          password,
+          name: validData.name.trim(),
+          companyName: validData.companyName.trim(),
+          email: validData.email.trim(),
+          password: validData.password,
         }),
       });
 
       const payload = await res.json().catch(() => null);
 
       if (!res.ok) {
+        rateLimit.recordAttempt(false);
         const apiMessage = payload?.error?.message || payload?.error?.details;
         throw new Error(apiMessage || "Nao foi possivel criar a conta.");
       }
 
+      rateLimit.recordAttempt(true);
       setSuccessMessage(
         payload?.message || "Conta criada. Aguarde a associacao do seu acesso pela equipe Vexo."
       );
@@ -59,7 +81,11 @@ export default function ClientSignup() {
       setEmail("");
       setPassword("");
       setConfirmPassword("");
-    } catch (err) {
+    } catch (err: unknown) {
+      if (err instanceof ZodError) {
+        setError(err.errors[0]?.message || "Dados inválidos.");
+        return;
+      }
       setError(err instanceof Error ? err.message : "Nao foi possivel criar a conta.");
     } finally {
       setSubmitting(false);
@@ -108,8 +134,8 @@ export default function ClientSignup() {
         />
       </FormField>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField label="Senha" id="password">
+      <FormField label="Senha" id="password">
+        <div className="space-y-3">
           <Input
             id="password"
             type="password"
@@ -118,18 +144,20 @@ export default function ClientSignup() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-        </FormField>
-        <FormField label="Confirmar senha" id="confirmPassword">
-          <Input
-            id="confirmPassword"
-            type="password"
-            placeholder="Repita sua senha"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-          />
-        </FormField>
-      </div>
+          {password && <PasswordStrengthIndicator validation={passwordValidation} />}
+        </div>
+      </FormField>
+
+      <FormField label="Confirmar senha" id="confirmPassword">
+        <Input
+          id="confirmPassword"
+          type="password"
+          placeholder="Repita sua senha"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          required
+        />
+      </FormField>
 
       {successMessage ? (
         <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
@@ -142,10 +170,17 @@ export default function ClientSignup() {
           </div>
         </div>
       ) : (
-        <ErrorMessage message={error} variant="banner" />
+        <>
+          <ErrorMessage message={error} variant="banner" />
+          {rateLimit.isLimited && (
+            <div className="text-center text-xs text-red-600 bg-red-50 rounded p-2 border border-red-200">
+              {rateLimit.cooldownMessage}
+            </div>
+          )}
+        </>
       )}
 
-      <Button type="submit" size="lg" disabled={submitting}>
+      <Button type="submit" size="lg" disabled={submitting || rateLimit.isLimited}>
         <Building2 className="h-4 w-4" />
         {submitting ? "Criando conta..." : "Criar conta de cliente"}
       </Button>

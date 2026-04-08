@@ -6,6 +6,7 @@ import {
   Users,
   Bot,
   LogOut,
+  Megaphone,
   ShieldCheck,
   PanelLeftClose,
   PanelLeft,
@@ -23,6 +24,7 @@ const navItems = [
   { title: "Planilhas", url: "/crm/planilhas", icon: FileSpreadsheet, page: "planilhas" as const },
   { title: "WhatsApp", url: "/crm/whatsapp", icon: MessageCircle, page: "whatsapp" as const },
   { title: "Agente", url: "/crm/agente", icon: Bot, page: "agente" as const },
+  { title: "Campanhas", url: "/crm/campanhas", icon: Megaphone, page: "campanhas" as const },
   { title: "Usuarios", url: "/crm/usuarios", icon: ShieldCheck, page: "usuarios" as const },
 ] satisfies Array<{
   title: string;
@@ -33,11 +35,14 @@ const navItems = [
 }>;
 
 export function AppSidebar() {
-  const { logout, canAccessInternalPage, isAdminUser } = useAuth();
+  const { logout, canAccessInternalPage, user, accessProfile } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const visibleNavItems = navItems.filter((item) => canAccessInternalPage(item.page));
   const canSeeAgentNotifications = canAccessInternalPage("agente");
+  const userEmail = user?.email || accessProfile?.email || "";
+  const userLogin = userEmail.includes("@") ? userEmail.split("@")[0] : userEmail;
+  const userName = user?.displayName?.trim() || userLogin || "Usuario";
 
   const handleLogout = async () => {
     try {
@@ -142,10 +147,7 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div>
-              <p className="text-sm font-semibold text-foreground">Vexo Staff</p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                {isAdminUser ? "Admin" : "Interno"}
-              </p>
+              <p className="text-sm font-semibold text-foreground">{userName}</p>
             </div>
           )}
         </div>

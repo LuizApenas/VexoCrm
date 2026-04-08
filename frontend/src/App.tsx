@@ -26,6 +26,7 @@ import PendingApproval from "./pages/PendingApproval";
 import ClientSignup from "./pages/ClientSignup";
 import UserAccessManagement from "./pages/UserAccessManagement";
 import WhatsAppInbox from "./pages/WhatsAppInbox";
+import Campanhas from "./pages/Campanhas";
 
 const queryClient = new QueryClient();
 
@@ -147,6 +148,14 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="usuarios">
                     <UserAccessManagement />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="campanhas"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="campanhas">
+                    <Campanhas />
                   </ProtectedRoute>
                 }
               />

@@ -37,6 +37,20 @@ interface CreateLeadImportResponse {
   preview: LeadImportPreviewItem[];
 }
 
+interface CreateN8nDispatchPayload {
+  clientId: string;
+  importId: string;
+  limit?: number;
+}
+
+export interface CreateN8nDispatchResponse {
+  success: boolean;
+  webhookUrl: string;
+  total: number;
+  phones: string[];
+  n8nResponse: string | null;
+}
+
 export function useLeadImports(clientId?: string) {
   const { isAuthenticated, canAccessView, getIdToken } = useAuth();
 
@@ -145,6 +159,47 @@ export function useDeleteLeadImport() {
   });
 }
 
+export interface DispatchCampaignPayload {
+  clientId: string;
+  importId?: string;
+  campaignName?: string;
+  channel?: string;
+  scheduledAt?: string; // ISO datetime for scheduled dispatch
+  limit?: number;
+}
+
+export function useDispatchCampaign() {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: DispatchCampaignPayload) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuario nao autenticado.");
+
+      const res = await fetch(`${API_BASE_URL}/api/n8n-dispatches`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Dispatch failed: ${res.status} ${errText}`);
+      }
+
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lead-import-items"] });
+      queryClient.invalidateQueries({ queryKey: ["lead-imports"] });
+    },
+  });
+}
+
 export function useCreateLeadImport() {
   const { getIdToken } = useAuth();
   const queryClient = useQueryClient();
@@ -175,6 +230,37 @@ export function useCreateLeadImport() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["lead-imports", variables.clientId] });
       queryClient.invalidateQueries({ queryKey: ["leads", variables.clientId] });
+    },
+  });
+}
+
+export function useCreateN8nDispatch() {
+  const { getIdToken } = useAuth();
+
+  return useMutation({
+    mutationFn: async (
+      payload: CreateN8nDispatchPayload
+    ): Promise<CreateN8nDispatchResponse> => {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Usuario nao autenticado.");
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/n8n-dispatches`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`N8N dispatch failed: ${res.status} ${errText}`);
+      }
+
+      return res.json();
     },
   });
 }
