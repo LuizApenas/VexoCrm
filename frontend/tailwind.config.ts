@@ -14,6 +14,12 @@ export default {
     },
     extend: {
       colors: {
+        /* ── Vexo Design System ── */
+        "deep-navy": "#020617",
+        "slate-dark": "#0B0E14",
+        "electric-indigo": "#6366F1",
+        "cyan-neon": "#22D3EE",
+
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -76,6 +82,10 @@ export default {
           "4": "hsl(var(--chart-4))",
           "5": "hsl(var(--chart-5))",
         },
+      },
+      fontFamily: {
+        sans: ["Inter", "system-ui", "sans-serif"],
+        mono: ["Geist Mono", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       borderRadius: {
         lg: "var(--radius)",
