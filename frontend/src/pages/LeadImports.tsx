@@ -142,8 +142,8 @@ export default function LeadImports({
   const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
   const [isDispatching, setIsDispatching] = useState(false);
   const [campaignName, setCampaignName] = useState("");
-  const [campaignChannel, setCampaignChannel] = useState("");
-  const [selectedImportId, setSelectedImportId] = useState("");
+  const [campaignChannel, setCampaignChannel] = useState("whatsapp");
+  const [selectedImportId, setSelectedImportId] = useState("__all__");
 
   const { data: imports = [], isLoading: importsLoading, error: importsError, refetch } = useLeadImports(selectedClientId);
   const createLeadImport = useCreateLeadImport();
@@ -222,7 +222,7 @@ export default function LeadImports({
       }
       const result = await dispatchCampaign.mutateAsync({
         clientId: selectedClientId,
-        importId: selectedImportId || undefined,
+        importId: selectedImportId === "__all__" ? undefined : selectedImportId || undefined,
         campaignName: campaignName || undefined,
         channel: campaignChannel || undefined,
         scheduledAt: scheduledAtIso,
@@ -621,7 +621,7 @@ export default function LeadImports({
                   <Select value={selectedImportId} onValueChange={setSelectedImportId}>
                     <SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Todas as importacoes" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todas as importacoes</SelectItem>
+                      <SelectItem value="__all__">Todas as importacoes</SelectItem>
                       {imports.map((imp) => (
                         <SelectItem key={imp.id} value={imp.id}>
                           {imp.source_name} ({imp.imported_rows} leads)
