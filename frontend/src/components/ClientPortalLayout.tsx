@@ -30,7 +30,7 @@ export function ClientPortalLayout() {
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-6">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-3 rounded-xl border border-[rgba(226,232,240,0.1)] bg-[rgba(11,14,20,0.4)] px-5 py-4 text-sm text-muted-foreground shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-[10px]">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-b-transparent" />
           Carregando portal do cliente...
         </div>
@@ -45,9 +45,9 @@ export function ClientPortalLayout() {
   if (errorMessage || notFound) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-6">
-        <Card className="w-full max-w-lg border-border/80 bg-card/90">
+        <Card className="w-full max-w-lg border-white/10 bg-[rgba(11,14,20,0.4)] backdrop-blur-[10px]">
           <CardHeader className="space-y-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-destructive">
               {notFound ? <Building2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
             </div>
             <div className="space-y-1">
@@ -62,7 +62,7 @@ export function ClientPortalLayout() {
             </div>
           </CardHeader>
           <CardContent>
-            <Button asChild variant="outline" className="w-full justify-between">
+            <Button asChild variant="outline" className="w-full justify-between rounded-full">
               <Link to="/home">
                 Voltar para a landing page
                 <ArrowLeft className="h-4 w-4" />

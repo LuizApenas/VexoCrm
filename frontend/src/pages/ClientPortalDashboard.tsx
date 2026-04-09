@@ -10,7 +10,7 @@ export default function ClientPortalDashboard() {
       fixedClientId={clientId}
       fixedClientName={clientName}
       title="Portal do Cliente"
-      subtitle={`${clientName} · indicadores executivos, funil e leitura diária da operação`}
+      subtitle={`${clientName} · indicadores executivos, funil e leitura diaria da operacao`}
       headerRight={<ClientPortalNav clientId={clientId} clientName={clientName} active="dashboard" />}
     />
   );

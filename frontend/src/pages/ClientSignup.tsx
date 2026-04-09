@@ -173,7 +173,7 @@ export default function ClientSignup() {
         <>
           <ErrorMessage message={error} variant="banner" />
           {rateLimit.isLimited && (
-            <div className="text-center text-xs text-red-600 bg-red-50 rounded p-2 border border-red-200">
+            <div className="text-center text-xs text-red-300/80 bg-red-500/10 rounded p-2 border border-red-500/20">
               {rateLimit.cooldownMessage}
             </div>
           )}
