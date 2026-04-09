@@ -134,18 +134,59 @@ const MANAGED_CLAIM_KEYS = [
   "user_type",
   "userType",
   "tipo_usuario",
+  "isAdmin",
+  "admin",
+  "is_admin",
+  "accessPreset",
+  "scopeMode",
+  "tenantScope",
+  "approvalLevel",
+  "permissions",
   "clientId",
   "client_id",
   "companyId",
   "empresaId",
+  "tenantId",
   "clientIds",
+  "tenantIds",
   "allowedViews",
   "companyName",
   "internalPages",
 ];
 const CLIENT_VIEW_KEYS = ["dashboard", "leads", "planilhas", "whatsapp"];
 const DEFAULT_CLIENT_VIEWS = ["dashboard", "leads"];
-const INTERNAL_PAGE_KEYS = ["dashboard", "leads", "planilhas", "whatsapp", "agente", "usuarios"];
+const INTERNAL_PAGE_KEYS = [
+  "dashboard",
+  "leads",
+  "planilhas",
+  "whatsapp",
+  "agente",
+  "usuarios",
+  "campanhas",
+];
+const ACCESS_SCOPE_KEYS = ["all_clients", "assigned_clients", "no_client_access"];
+const APPROVAL_LEVEL_KEYS = ["none", "operator", "supervisor", "manager", "director"];
+const ACCESS_PERMISSION_KEYS = [
+  "dashboard.view",
+  "leads.view",
+  "leads.export",
+  "imports.manage",
+  "whatsapp.view",
+  "whatsapp.reply",
+  "campaigns.manage",
+  "agente.view",
+  "users.view",
+  "users.manage",
+];
+const ACCESS_PRESET_KEYS = [
+  "internal_admin",
+  "internal_manager",
+  "internal_operator",
+  "client_manager",
+  "client_operator",
+  "client_viewer",
+  "pending",
+];
 const FIXED_ADMIN_UIDS = new Set([
   "IozfnQTmWHQAxopr3FyNb1SdYs52",
   "pKpOKg3Fttf6AnYsTzZD7xjJLaN2",
@@ -162,6 +203,82 @@ function isFixedAdminIdentity(identity = {}) {
   return (uid && FIXED_ADMIN_UIDS.has(uid)) || (email && FIXED_ADMIN_EMAILS.has(email)) || false;
 }
 
+const ACCESS_PRESET_DEFAULTS = {
+  internal_admin: {
+    role: "internal",
+    scopeMode: "all_clients",
+    approvalLevel: "director",
+    permissions: [...ACCESS_PERMISSION_KEYS],
+    internalPages: [...INTERNAL_PAGE_KEYS],
+    allowedViews: [],
+  },
+  internal_manager: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "leads.export",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+      "campaigns.manage",
+      "agente.view",
+      "users.view",
+    ],
+    internalPages: [...INTERNAL_PAGE_KEYS],
+    allowedViews: [],
+  },
+  internal_operator: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: ["dashboard.view", "leads.view", "imports.manage", "whatsapp.view", "whatsapp.reply"],
+    internalPages: ["dashboard", "leads", "planilhas", "whatsapp"],
+    allowedViews: [],
+  },
+  client_manager: {
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "leads.export",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+    ],
+    internalPages: [],
+    allowedViews: [...CLIENT_VIEW_KEYS],
+  },
+  client_operator: {
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: ["dashboard.view", "leads.view", "whatsapp.view", "whatsapp.reply"],
+    internalPages: [],
+    allowedViews: ["dashboard", "leads", "whatsapp"],
+  },
+  client_viewer: {
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "none",
+    permissions: ["dashboard.view", "leads.view"],
+    internalPages: [],
+    allowedViews: ["dashboard", "leads"],
+  },
+  pending: {
+    role: "pending",
+    scopeMode: "no_client_access",
+    approvalLevel: "none",
+    permissions: [],
+    internalPages: [],
+    allowedViews: [],
+  },
+};
+
 function normalizeRole(value) {
   const normalized = normalizeString(value)?.toLowerCase();
 
@@ -176,6 +293,73 @@ function normalizeRole(value) {
   }
 
   return "internal";
+}
+
+function isValidManagedRoleInput(value) {
+  const normalized = normalizeString(value)?.toLowerCase();
+  return Boolean(
+    normalized &&
+      [
+        "internal",
+        "client",
+        "pending",
+        "cliente",
+        "customer",
+        "pendente",
+        "pending_client",
+        "cliente_pendente",
+      ].includes(normalized)
+  );
+}
+
+function isValidManagedPresetInput(value) {
+  const normalized = normalizeString(value)?.toLowerCase();
+  return !normalized || ACCESS_PRESET_KEYS.includes(normalized);
+}
+
+function isValidManagedScopeInput(value) {
+  const normalized = normalizeString(value)?.toLowerCase();
+  if (!normalized) return true;
+
+  return (
+    ACCESS_SCOPE_KEYS.includes(normalized) ||
+    ["all", "global", "all_tenants", "assigned", "restricted", "assigned_tenants", "none", "no_access", "sem_escopo"].includes(normalized)
+  );
+}
+
+function isValidManagedApprovalLevelInput(value) {
+  const normalized = normalizeString(value)?.toLowerCase();
+  return !normalized || APPROVAL_LEVEL_KEYS.includes(normalized);
+}
+
+function getDefaultPresetForRole(role) {
+  if (role === "client") return "client_operator";
+  if (role === "pending") return "pending";
+  return "internal_operator";
+}
+
+function normalizeAccessPreset(value, role = "internal") {
+  const normalized = normalizeString(value)?.toLowerCase();
+
+  if (normalized && ACCESS_PRESET_KEYS.includes(normalized)) {
+    const preset = normalized;
+    return ACCESS_PRESET_DEFAULTS[preset].role === role ? preset : getDefaultPresetForRole(role);
+  }
+
+  return getDefaultPresetForRole(role);
+}
+
+function buildPresetDefaults(preset) {
+  const defaults = ACCESS_PRESET_DEFAULTS[preset] || ACCESS_PRESET_DEFAULTS.internal_operator;
+
+  return {
+    role: defaults.role,
+    scopeMode: defaults.scopeMode,
+    approvalLevel: defaults.approvalLevel,
+    permissions: [...defaults.permissions],
+    internalPages: [...defaults.internalPages],
+    allowedViews: [...defaults.allowedViews],
+  };
 }
 
 function normalizeStringArray(value) {
@@ -198,19 +382,79 @@ function normalizeStringArray(value) {
   );
 }
 
-function normalizeAllowedViews(value, role) {
+function normalizeScopeMode(value, role) {
+  if (role === "pending") {
+    return "no_client_access";
+  }
+
+  if (role === "client") {
+    return "assigned_clients";
+  }
+
+  const normalized = normalizeString(value)?.toLowerCase();
+
+  if (normalized && ACCESS_SCOPE_KEYS.includes(normalized)) {
+    return normalized;
+  }
+
+  if (normalized === "all" || normalized === "global" || normalized === "all_tenants") {
+    return "all_clients";
+  }
+
+  if (normalized === "assigned" || normalized === "restricted" || normalized === "assigned_tenants") {
+    return "assigned_clients";
+  }
+
+  if (normalized === "none" || normalized === "no_access" || normalized === "sem_escopo") {
+    return "no_client_access";
+  }
+
+  return role === "internal" ? "all_clients" : "assigned_clients";
+}
+
+function normalizeApprovalLevel(value, role) {
+  if (role === "pending") {
+    return "none";
+  }
+
+  const normalized = normalizeString(value)?.toLowerCase();
+  if (normalized && APPROVAL_LEVEL_KEYS.includes(normalized)) {
+    return normalized;
+  }
+
+  return buildPresetDefaults(getDefaultPresetForRole(role)).approvalLevel;
+}
+
+function normalizePermissions(value, role, preset = getDefaultPresetForRole(role)) {
+  if (role === "pending") {
+    return [];
+  }
+
+  const selected = normalizeStringArray(value)
+    .map((item) => item.toLowerCase())
+    .filter((item) => ACCESS_PERMISSION_KEYS.includes(item));
+
+  if (selected.length > 0) {
+    return Array.from(new Set(selected));
+  }
+
+  return buildPresetDefaults(preset).permissions;
+}
+
+function normalizeAllowedViews(value, role, preset = getDefaultPresetForRole(role)) {
   const allowed = normalizeStringArray(value)
     .map((item) => item.toLowerCase())
     .filter((item) => CLIENT_VIEW_KEYS.includes(item));
 
   if (role === "client" && allowed.length === 0) {
-    return [...DEFAULT_CLIENT_VIEWS];
+    const defaults = buildPresetDefaults(preset).allowedViews;
+    return defaults.length ? defaults : [...DEFAULT_CLIENT_VIEWS];
   }
 
   return Array.from(new Set(allowed));
 }
 
-function normalizeInternalPages(value, role, isAdmin = false) {
+function normalizeInternalPages(value, role, isAdmin = false, preset = "internal_operator") {
   if (role !== "internal") {
     return [];
   }
@@ -224,41 +468,74 @@ function normalizeInternalPages(value, role, isAdmin = false) {
     .filter((item) => INTERNAL_PAGE_KEYS.includes(item));
 
   if (pages.length === 0) {
-    return [...INTERNAL_PAGE_KEYS];
+    return buildPresetDefaults(preset).internalPages;
   }
 
   return Array.from(new Set(pages));
 }
 
 function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
-  const role = normalizeRole(
+  const requestedRole = normalizeRole(
     rawClaims.role ??
       rawClaims.userRole ??
       rawClaims.user_type ??
       rawClaims.userType ??
       rawClaims.tipo_usuario
   );
-  const isAdmin = role === "internal" && isFixedAdminIdentity(identity);
+  const accessPreset = normalizeAccessPreset(rawClaims.accessPreset, requestedRole);
+  const isAdmin = requestedRole === "internal" && (
+    rawClaims.isAdmin ||
+    rawClaims.admin ||
+    rawClaims.is_admin ||
+    accessPreset === "internal_admin" ||
+    isFixedAdminIdentity(identity)
+  );
+  const role = isAdmin ? "internal" : requestedRole;
+  const normalizedPreset = isAdmin ? "internal_admin" : normalizeAccessPreset(accessPreset, role);
+  const scopeMode = isAdmin
+    ? "all_clients"
+    : normalizeScopeMode(rawClaims.scopeMode ?? rawClaims.tenantScope, role);
+  const approvalLevel = isAdmin
+    ? "director"
+    : normalizeApprovalLevel(rawClaims.approvalLevel, role);
   const directClientId = normalizeString(
     rawClaims.clientId ??
       rawClaims.client_id ??
       rawClaims.companyId ??
-      rawClaims.empresaId
+      rawClaims.empresaId ??
+      rawClaims.tenantId
   );
   const clientIds = Array.from(
-    new Set([directClientId, ...normalizeStringArray(rawClaims.clientIds)].filter(Boolean))
+    new Set([
+      directClientId,
+      ...normalizeStringArray(rawClaims.clientIds),
+      ...normalizeStringArray(rawClaims.tenantIds),
+    ].filter(Boolean))
   );
-  const clientId = directClientId || clientIds[0] || null;
-  const allowedViews = normalizeAllowedViews(rawClaims.allowedViews, role);
-  const internalPages = normalizeInternalPages(rawClaims.internalPages, role, isAdmin);
+  const clientId = scopeMode === "no_client_access" ? null : directClientId || clientIds[0] || null;
+  const allowedViews = role === "client"
+    ? normalizeAllowedViews(rawClaims.allowedViews, role, normalizedPreset)
+    : [];
+  const internalPages = role === "internal"
+    ? normalizeInternalPages(rawClaims.internalPages, role, isAdmin, normalizedPreset)
+    : [];
+  const permissions = isAdmin
+    ? [...buildPresetDefaults("internal_admin").permissions]
+    : normalizePermissions(rawClaims.permissions, role, normalizedPreset);
 
   return {
     role,
     isAdmin,
-    clientId: role === "client" ? clientId : null,
-    clientIds: role === "client" ? clientIds : [],
-    allowedViews: role === "client" ? allowedViews : [],
+    accessPreset: normalizedPreset,
+    scopeMode,
+    approvalLevel,
+    clientId,
+    clientIds: scopeMode === "no_client_access" ? [] : clientIds,
+    tenantId: clientId,
+    tenantIds: scopeMode === "no_client_access" ? [] : clientIds,
+    allowedViews,
     internalPages,
+    permissions,
     companyName: normalizeString(rawClaims.companyName),
   };
 }
@@ -271,10 +548,16 @@ function buildAccessProfile(decodedToken) {
     email: normalizeString(decodedToken.email),
     role: claims.role,
     isAdmin: claims.isAdmin,
+    accessPreset: claims.accessPreset,
+    scopeMode: claims.scopeMode,
+    approvalLevel: claims.approvalLevel,
     clientId: claims.clientId,
     clientIds: claims.clientIds,
+    tenantId: claims.tenantId,
+    tenantIds: claims.tenantIds,
     allowedViews: claims.allowedViews,
     internalPages: claims.internalPages,
+    permissions: claims.permissions,
     companyName: claims.companyName,
   };
 }
@@ -880,41 +1163,103 @@ function mergeManagedClaims(existingClaims = {}, managedClaims = {}) {
 
 function buildManagedClaims({
   role,
+  accessPreset,
+  scopeMode,
+  approvalLevel,
+  permissions = [],
   clientIds = [],
+  tenantIds = [],
+  clientId,
+  tenantId,
   allowedViews = [],
   companyName = null,
   internalPages = [],
 }) {
   const normalizedRole = normalizeRole(role);
-  const normalizedClientIds = normalizeStringArray(clientIds);
-  const normalizedViews = normalizeAllowedViews(allowedViews, normalizedRole);
+  const normalizedPreset = normalizeAccessPreset(accessPreset, normalizedRole);
   const normalizedCompanyName = normalizeString(companyName);
-  const normalizedInternalPages = normalizeInternalPages(internalPages, normalizedRole);
-
-  if (normalizedRole === "client" && normalizedClientIds.length === 0) {
-    throw new Error("Client users must have at least one associated client");
-  }
+  const normalizedClientIds = Array.from(
+    new Set(
+      [
+        ...normalizeStringArray(clientIds),
+        ...normalizeStringArray(tenantIds),
+        normalizeString(clientId),
+        normalizeString(tenantId),
+      ].filter(Boolean)
+    )
+  );
+  const normalizedApprovalLevel =
+    normalizedRole === "pending"
+      ? "none"
+      : normalizeApprovalLevel(approvalLevel, normalizedRole);
 
   if (normalizedRole === "pending") {
     return {
       role: "pending",
+      isAdmin: false,
+      accessPreset: "pending",
+      scopeMode: "no_client_access",
+      approvalLevel: "none",
+      permissions: [],
+      clientId: null,
+      clientIds: [],
+      tenantId: null,
+      tenantIds: [],
+      allowedViews: [],
+      internalPages: [],
       companyName: normalizedCompanyName,
     };
   }
 
   if (normalizedRole === "client") {
+    if (normalizedClientIds.length === 0) {
+      throw new Error("Client users must have at least one associated tenant");
+    }
+
+    const normalizedAllowedViews = normalizeAllowedViews(allowedViews, normalizedRole, normalizedPreset);
+
     return {
       role: "client",
+      isAdmin: false,
+      accessPreset: normalizedPreset,
+      scopeMode: "assigned_clients",
+      approvalLevel: normalizedApprovalLevel,
       clientId: normalizedClientIds[0],
       clientIds: normalizedClientIds,
-      allowedViews: normalizedViews,
+      tenantId: normalizedClientIds[0],
+      tenantIds: normalizedClientIds,
+      allowedViews: normalizedAllowedViews,
+      internalPages: [],
+      permissions: normalizePermissions(permissions, normalizedRole, normalizedPreset),
       companyName: normalizedCompanyName,
     };
   }
 
+  const isAdmin = normalizedPreset === "internal_admin";
+  const resolvedScopeMode = isAdmin ? "all_clients" : normalizeScopeMode(scopeMode, normalizedRole);
+  const normalizedPermissions = isAdmin
+    ? [...ACCESS_PERMISSION_KEYS]
+    : normalizePermissions(permissions, normalizedRole, normalizedPreset);
+  const normalizedInternalPages = isAdmin
+    ? [...INTERNAL_PAGE_KEYS]
+    : normalizeInternalPages(internalPages, normalizedRole, false, normalizedPreset);
+  const effectiveClientIds =
+    resolvedScopeMode === "no_client_access" ? [] : normalizedClientIds;
+
   return {
     role: "internal",
+    isAdmin,
+    accessPreset: normalizedPreset,
+    scopeMode: resolvedScopeMode,
+    approvalLevel: isAdmin ? "director" : normalizedApprovalLevel,
+    clientId: effectiveClientIds[0] || null,
+    clientIds: effectiveClientIds,
+    tenantId: effectiveClientIds[0] || null,
+    tenantIds: effectiveClientIds,
+    allowedViews: [],
     internalPages: normalizedInternalPages,
+    permissions: normalizedPermissions,
+    companyName: normalizedCompanyName,
   };
 }
 
@@ -950,10 +1295,24 @@ function mapAdminUserRecord(user) {
 }
 
 function resolveAuthorizedClientId(req, res, requestedClientId) {
-  const authAccess = req.authAccess || { role: "internal", clientId: null, clientIds: [] };
+  const authAccess = req.authAccess || {
+    role: "internal",
+    scopeMode: "all_clients",
+    clientId: null,
+    clientIds: [],
+  };
+  const clientIds = authAccess.clientIds || [];
+  const scopeMode =
+    authAccess.scopeMode ||
+    (authAccess.role === "client" ? "assigned_clients" : "all_clients");
 
   if (authAccess.role === "client") {
-    if (requestedClientId && !authAccess.clientIds.includes(requestedClientId)) {
+    if (scopeMode === "no_client_access") {
+      sendError(res, 403, "NO_CLIENT_ACCESS", "You do not have access to any client");
+      return null;
+    }
+
+    if (requestedClientId && !clientIds.includes(requestedClientId)) {
       sendError(
         res,
         403,
@@ -963,34 +1322,41 @@ function resolveAuthorizedClientId(req, res, requestedClientId) {
       return null;
     }
 
-    return requestedClientId || authAccess.clientId || authAccess.clientIds[0] || null;
+    return requestedClientId || authAccess.clientId || clientIds[0] || null;
   }
 
-  // P0.2 SECURITY FIX: Internal users também precisam validar clientId
   if (authAccess.role === "internal") {
+    if (scopeMode === "no_client_access") {
+      sendError(res, 403, "NO_CLIENT_ACCESS", "You do not have access to any client");
+      return null;
+    }
+
     // Se requestedClientId é especificado, validar se interno tem acesso
     if (requestedClientId) {
-      // Opção 1: Admins podem acessar qualquer cliente
-      if (authAccess.isAdmin) {
+      if (authAccess.isAdmin || scopeMode === "all_clients") {
         return requestedClientId;
       }
 
-      // Opção 2: Internos não-admin devem ter clientId na lista
-      if (authAccess.clientIds && authAccess.clientIds.length > 0) {
-        if (!authAccess.clientIds.includes(requestedClientId)) {
+      if (scopeMode === "assigned_clients") {
+        if (clientIds.length === 0) {
+          sendError(res, 403, "NO_CLIENT_ACCESS", "You do not have access to any client");
+          return null;
+        }
+
+        if (!clientIds.includes(requestedClientId)) {
           sendError(res, 403, "FORBIDDEN_CLIENT_SCOPE", "You do not have access to this client");
           return null;
         }
         return requestedClientId;
       }
+    }
 
-      // Opção 3: Sem clientIds atribuídos = erro
+    if (scopeMode === "assigned_clients" && clientIds.length === 0) {
       sendError(res, 403, "NO_CLIENT_ACCESS", "You do not have access to any client");
       return null;
     }
 
-    // Se nenhum clientId especificado, usar default (se houver)
-    return authAccess.clientId || null;
+    return authAccess.clientId || clientIds[0] || null;
   }
 
   if (authAccess.role === "pending") {
@@ -1317,9 +1683,23 @@ app.get("/api/lead-clients", requireFirebaseAuth, async (req, res) => {
 
   try {
     let query = supabase.from("leads_clients").select("id, name, created_at");
+    const scopeMode =
+      req.authAccess?.scopeMode || (req.authAccess?.role === "client" ? "assigned_clients" : "all_clients");
 
     if (req.authAccess?.role === "client") {
-      query = query.in("id", req.authAccess.clientIds);
+      if (scopeMode === "no_client_access" || !req.authAccess.clientIds?.length) {
+        res.json({ items: [] });
+        return;
+      }
+
+      query = query.in("id", req.authAccess.clientIds).order("name", { ascending: true });
+    } else if (scopeMode === "assigned_clients") {
+      if (!req.authAccess.clientIds?.length) {
+        res.json({ items: [] });
+        return;
+      }
+
+      query = query.in("id", req.authAccess.clientIds).order("name", { ascending: true });
     } else {
       query = query.order("name", { ascending: true });
     }
@@ -1352,10 +1732,31 @@ app.get("/api/admin/users", requireFirebaseAuth, requireInternalPageAccess("usua
 
 app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
   const uid = normalizeString(req.params.uid);
-  const role = normalizeString(req.body?.role);
+  const rawRole = normalizeString(req.body?.role);
+  const role = normalizeRole(rawRole);
 
-  if (!uid || !role) {
+  if (!uid || !rawRole) {
     sendError(res, 400, "INVALID_BODY", "Missing uid or role");
+    return;
+  }
+
+  if (!isValidManagedRoleInput(rawRole)) {
+    sendError(res, 400, "INVALID_ROLE", "Unsupported role");
+    return;
+  }
+
+  if (!isValidManagedPresetInput(req.body?.accessPreset)) {
+    sendError(res, 400, "INVALID_ACCESS_PRESET", "Unsupported access preset");
+    return;
+  }
+
+  if (!isValidManagedScopeInput(req.body?.scopeMode ?? req.body?.tenantScope)) {
+    sendError(res, 400, "INVALID_SCOPE_MODE", "Unsupported scope mode");
+    return;
+  }
+
+  if (!isValidManagedApprovalLevelInput(req.body?.approvalLevel)) {
+    sendError(res, 400, "INVALID_APPROVAL_LEVEL", "Unsupported approval level");
     return;
   }
 
@@ -1366,11 +1767,28 @@ app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAcces
     const managedClaims = isTargetFixedAdmin
       ? buildManagedClaims({
           role: "internal",
+          accessPreset: "internal_admin",
+          scopeMode: "all_clients",
+          approvalLevel: "director",
+          permissions: ACCESS_PERMISSION_KEYS,
+          clientIds: req.body?.clientIds,
+          tenantIds: req.body?.tenantIds,
+          clientId: req.body?.clientId,
+          tenantId: req.body?.tenantId,
+          allowedViews: req.body?.allowedViews,
+          companyName: req.body?.companyName,
           internalPages: INTERNAL_PAGE_KEYS,
         })
       : buildManagedClaims({
           role,
+          accessPreset: req.body?.accessPreset,
+          scopeMode: req.body?.scopeMode ?? req.body?.tenantScope,
+          approvalLevel: req.body?.approvalLevel,
+          permissions: req.body?.permissions,
           clientIds: req.body?.clientIds,
+          tenantIds: req.body?.tenantIds,
+          clientId: req.body?.clientId,
+          tenantId: req.body?.tenantId,
           allowedViews: req.body?.allowedViews,
           companyName: req.body?.companyName,
           internalPages: req.body?.internalPages,
@@ -1409,11 +1827,32 @@ app.post("/api/admin/users", requireFirebaseAuth, requireAdminAccess, async (req
   const email = normalizeString(req.body?.email)?.toLowerCase();
   const password = normalizeString(req.body?.password);
   const displayName = normalizeString(req.body?.displayName);
-  const role = normalizeString(req.body?.role);
+  const rawRole = normalizeString(req.body?.role);
+  const role = normalizeRole(rawRole);
   const sendPasswordReset = normalizeBool(req.body?.sendPasswordReset);
 
-  if (!email || !password || !role) {
+  if (!email || !password || !rawRole) {
     sendError(res, 400, "INVALID_BODY", "Missing email, password or role");
+    return;
+  }
+
+  if (!isValidManagedRoleInput(rawRole)) {
+    sendError(res, 400, "INVALID_ROLE", "Unsupported role");
+    return;
+  }
+
+  if (!isValidManagedPresetInput(req.body?.accessPreset)) {
+    sendError(res, 400, "INVALID_ACCESS_PRESET", "Unsupported access preset");
+    return;
+  }
+
+  if (!isValidManagedScopeInput(req.body?.scopeMode ?? req.body?.tenantScope)) {
+    sendError(res, 400, "INVALID_SCOPE_MODE", "Unsupported scope mode");
+    return;
+  }
+
+  if (!isValidManagedApprovalLevelInput(req.body?.approvalLevel)) {
+    sendError(res, 400, "INVALID_APPROVAL_LEVEL", "Unsupported approval level");
     return;
   }
 
@@ -1431,7 +1870,14 @@ app.post("/api/admin/users", requireFirebaseAuth, requireAdminAccess, async (req
     });
     const managedClaims = buildManagedClaims({
       role,
+      accessPreset: req.body?.accessPreset,
+      scopeMode: req.body?.scopeMode ?? req.body?.tenantScope,
+      approvalLevel: req.body?.approvalLevel,
+      permissions: req.body?.permissions,
       clientIds: req.body?.clientIds,
+      tenantIds: req.body?.tenantIds,
+      clientId: req.body?.clientId,
+      tenantId: req.body?.tenantId,
       allowedViews: req.body?.allowedViews,
       companyName: req.body?.companyName,
       internalPages: req.body?.internalPages,
@@ -1834,7 +2280,11 @@ app.post("/api/lead-imports", requireFirebaseAuth, requireAppViewAccess("planilh
   }
 });
 
-app.post("/api/n8n-dispatches", requireFirebaseAuth, requireAppViewAccess("planilhas"), async (req, res) => {
+app.post(
+  "/api/n8n-dispatches",
+  requireFirebaseAuth,
+  requireAppViewAccess("planilhas"),
+  async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   const requestedClientId = normalizeString(req.body?.clientId);

@@ -10,8 +10,63 @@ export const INTERNAL_PAGE_ORDER = [
 
 export type InternalPage = (typeof INTERNAL_PAGE_ORDER)[number];
 export type AccessView = "dashboard" | "leads" | "planilhas" | "whatsapp";
+export type AccessRole = "internal" | "client" | "pending";
+export type AccessScope = "all_clients" | "assigned_clients" | "no_client_access";
+export type ApprovalLevel = "none" | "operator" | "supervisor" | "manager" | "director";
+export type AccessPermission =
+  | "dashboard.view"
+  | "leads.view"
+  | "leads.export"
+  | "imports.manage"
+  | "whatsapp.view"
+  | "whatsapp.reply"
+  | "campaigns.manage"
+  | "agente.view"
+  | "users.view"
+  | "users.manage";
+export type AccessPreset =
+  | "internal_admin"
+  | "internal_manager"
+  | "internal_operator"
+  | "client_manager"
+  | "client_operator"
+  | "client_viewer"
+  | "pending";
 
 export const CLIENT_VIEW_ORDER: AccessView[] = ["dashboard", "leads", "planilhas", "whatsapp"];
+export const ACCESS_SCOPE_ORDER: AccessScope[] = [
+  "all_clients",
+  "assigned_clients",
+  "no_client_access",
+];
+export const APPROVAL_LEVEL_ORDER: ApprovalLevel[] = [
+  "none",
+  "operator",
+  "supervisor",
+  "manager",
+  "director",
+];
+export const ACCESS_PERMISSION_ORDER: AccessPermission[] = [
+  "dashboard.view",
+  "leads.view",
+  "leads.export",
+  "imports.manage",
+  "whatsapp.view",
+  "whatsapp.reply",
+  "campaigns.manage",
+  "agente.view",
+  "users.view",
+  "users.manage",
+];
+export const ACCESS_PRESET_ORDER: AccessPreset[] = [
+  "internal_admin",
+  "internal_manager",
+  "internal_operator",
+  "client_manager",
+  "client_operator",
+  "client_viewer",
+  "pending",
+];
 
 export const FIXED_ADMIN_ACCOUNTS = [
   {
@@ -23,6 +78,167 @@ export const FIXED_ADMIN_ACCOUNTS = [
     uid: "pKpOKg3Fttf6AnYsTzZD7xjJLaN2",
   },
 ] as const;
+
+export const ACCESS_SCOPE_LABELS: Record<AccessScope, string> = {
+  all_clients: "Todos os tenants",
+  assigned_clients: "Tenants vinculados",
+  no_client_access: "Sem escopo operacional",
+};
+
+export const APPROVAL_LEVEL_LABELS: Record<ApprovalLevel, string> = {
+  none: "Sem alcada",
+  operator: "Operacional",
+  supervisor: "Supervisor",
+  manager: "Gerente",
+  director: "Diretoria",
+};
+
+export const ACCESS_PRESET_LABELS: Record<AccessPreset, string> = {
+  internal_admin: "Admin interno",
+  internal_manager: "Gestor interno",
+  internal_operator: "Operacao interna",
+  client_manager: "Gestor do cliente",
+  client_operator: "Operador do cliente",
+  client_viewer: "Leitura do cliente",
+  pending: "Aguardando aprovacao",
+};
+
+export const ACCESS_PERMISSION_DEFINITIONS: Record<
+  AccessPermission,
+  { label: string; description: string }
+> = {
+  "dashboard.view": {
+    label: "Dashboard",
+    description: "Pode consultar indicadores e paineis do CRM.",
+  },
+  "leads.view": {
+    label: "Leads",
+    description: "Pode listar e consultar bases de leads.",
+  },
+  "leads.export": {
+    label: "Exportar leads",
+    description: "Pode extrair ou baixar dados operacionais de leads.",
+  },
+  "imports.manage": {
+    label: "Planilhas",
+    description: "Pode importar, revisar e auditar planilhas.",
+  },
+  "whatsapp.view": {
+    label: "WhatsApp inbox",
+    description: "Pode abrir a caixa de entrada e consultar conversas.",
+  },
+  "whatsapp.reply": {
+    label: "Responder WhatsApp",
+    description: "Pode enviar mensagens e atuar no atendimento.",
+  },
+  "campaigns.manage": {
+    label: "Campanhas",
+    description: "Pode configurar e disparar campanhas.",
+  },
+  "agente.view": {
+    label: "Agente",
+    description: "Pode ler alertas operacionais e notificacoes tecnicas.",
+  },
+  "users.view": {
+    label: "Usuarios",
+    description: "Pode consultar usuarios, acessos e aprovacoes.",
+  },
+  "users.manage": {
+    label: "Gerenciar usuarios",
+    description: "Pode criar, editar e reconfigurar acessos.",
+  },
+};
+
+type PresetDefaults = {
+  role: AccessRole;
+  scopeMode: AccessScope;
+  approvalLevel: ApprovalLevel;
+  permissions: AccessPermission[];
+  internalPages: InternalPage[];
+  allowedViews: AccessView[];
+};
+
+const PRESET_DEFAULTS: Record<AccessPreset, PresetDefaults> = {
+  internal_admin: {
+    role: "internal",
+    scopeMode: "all_clients",
+    approvalLevel: "director",
+    permissions: [...ACCESS_PERMISSION_ORDER],
+    internalPages: [...INTERNAL_PAGE_ORDER],
+    allowedViews: [],
+  },
+  internal_manager: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "leads.export",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+      "campaigns.manage",
+      "agente.view",
+      "users.view",
+    ],
+    internalPages: ["dashboard", "leads", "planilhas", "whatsapp", "agente", "campanhas", "usuarios"],
+    allowedViews: [],
+  },
+  internal_operator: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+    ],
+    internalPages: ["dashboard", "leads", "planilhas", "whatsapp"],
+    allowedViews: [],
+  },
+  client_manager: {
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "leads.export",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+    ],
+    internalPages: [],
+    allowedViews: [...CLIENT_VIEW_ORDER],
+  },
+  client_operator: {
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: ["dashboard.view", "leads.view", "whatsapp.view", "whatsapp.reply"],
+    internalPages: [],
+    allowedViews: ["dashboard", "leads", "whatsapp"],
+  },
+  client_viewer: {
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "none",
+    permissions: ["dashboard.view", "leads.view"],
+    internalPages: [],
+    allowedViews: ["dashboard", "leads"],
+  },
+  pending: {
+    role: "pending",
+    scopeMode: "no_client_access",
+    approvalLevel: "none",
+    permissions: [],
+    internalPages: [],
+    allowedViews: [],
+  },
+};
 
 export function normalizeString(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -51,7 +267,7 @@ export function normalizeStringArray(value: unknown): string[] {
   return [];
 }
 
-export function normalizeAccessRole(value: unknown): "internal" | "client" | "pending" {
+export function normalizeAccessRole(value: unknown): AccessRole {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
 
   if (normalized === "client" || normalized === "cliente" || normalized === "customer") {
@@ -65,7 +281,118 @@ export function normalizeAccessRole(value: unknown): "internal" | "client" | "pe
   return "internal";
 }
 
-export function normalizeInternalPages(value: unknown, isAdmin = false): InternalPage[] {
+export function getDefaultPresetForRole(role: AccessRole): AccessPreset {
+  if (role === "client") return "client_operator";
+  if (role === "pending") return "pending";
+  return "internal_operator";
+}
+
+export function normalizeAccessPreset(value: unknown, role: AccessRole = "internal"): AccessPreset {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+
+  if ((ACCESS_PRESET_ORDER as readonly string[]).includes(normalized)) {
+    const preset = normalized as AccessPreset;
+    const presetRole = PRESET_DEFAULTS[preset].role;
+    return presetRole === role ? preset : getDefaultPresetForRole(role);
+  }
+
+  return getDefaultPresetForRole(role);
+}
+
+export function buildPresetDefaults(preset: AccessPreset): PresetDefaults {
+  const defaults = PRESET_DEFAULTS[preset];
+
+  return {
+    role: defaults.role,
+    scopeMode: defaults.scopeMode,
+    approvalLevel: defaults.approvalLevel,
+    permissions: [...defaults.permissions],
+    internalPages: [...defaults.internalPages],
+    allowedViews: [...defaults.allowedViews],
+  };
+}
+
+export function normalizeAccessScope(value: unknown, role: AccessRole): AccessScope {
+  if (role === "pending") {
+    return "no_client_access";
+  }
+
+  if (role === "client") {
+    return "assigned_clients";
+  }
+
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+
+  if (
+    normalized === "all_clients" ||
+    normalized === "all" ||
+    normalized === "global" ||
+    normalized === "all_tenants"
+  ) {
+    return "all_clients";
+  }
+
+  if (
+    normalized === "assigned_clients" ||
+    normalized === "assigned" ||
+    normalized === "restricted" ||
+    normalized === "assigned_tenants"
+  ) {
+    return "assigned_clients";
+  }
+
+  if (
+    normalized === "no_client_access" ||
+    normalized === "none" ||
+    normalized === "no_access" ||
+    normalized === "sem_escopo"
+  ) {
+    return "no_client_access";
+  }
+
+  return "all_clients";
+}
+
+export function normalizeApprovalLevel(value: unknown, role: AccessRole): ApprovalLevel {
+  if (role === "pending") {
+    return "none";
+  }
+
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+
+  if ((APPROVAL_LEVEL_ORDER as readonly string[]).includes(normalized)) {
+    return normalized as ApprovalLevel;
+  }
+
+  return buildPresetDefaults(getDefaultPresetForRole(role)).approvalLevel;
+}
+
+export function normalizePermissions(
+  value: unknown,
+  role: AccessRole,
+  preset: AccessPreset = getDefaultPresetForRole(role)
+): AccessPermission[] {
+  if (role === "pending") {
+    return [];
+  }
+
+  const selected = normalizeStringArray(value).filter(
+    (item): item is AccessPermission =>
+      (ACCESS_PERMISSION_ORDER as readonly string[]).includes(item)
+  );
+
+  if (selected.length > 0) {
+    return Array.from(new Set(selected));
+  }
+
+  return buildPresetDefaults(preset).permissions;
+}
+
+export function normalizeInternalPages(
+  value: unknown,
+  isAdmin = false,
+  preset: AccessPreset = "internal_operator"
+): InternalPage[] {
   if (isAdmin) {
     return [...INTERNAL_PAGE_ORDER];
   }
@@ -75,20 +402,24 @@ export function normalizeInternalPages(value: unknown, isAdmin = false): Interna
   );
 
   if (pages.length === 0) {
-    return [...INTERNAL_PAGE_ORDER];
+    return buildPresetDefaults(preset).internalPages;
   }
 
   return Array.from(new Set(pages));
 }
 
-export function normalizeAllowedViews(value: unknown, role: "internal" | "client" | "pending"): AccessView[] {
+export function normalizeAllowedViews(
+  value: unknown,
+  role: AccessRole,
+  preset: AccessPreset = getDefaultPresetForRole(role)
+): AccessView[] {
   const views = normalizeStringArray(value).filter(
     (item): item is AccessView =>
       item === "dashboard" || item === "leads" || item === "planilhas" || item === "whatsapp"
   );
 
   if (role === "client" && views.length === 0) {
-    return [...CLIENT_VIEW_ORDER];
+    return buildPresetDefaults(preset).allowedViews;
   }
 
   return Array.from(new Set(views));

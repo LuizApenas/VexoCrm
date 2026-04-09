@@ -1,16 +1,28 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_BASE_URL } from "@/lib/api";
-import { type AccessView, type InternalPage } from "@/lib/access";
+import {
+  type AccessPermission,
+  type AccessPreset,
+  type AccessRole,
+  type AccessScope,
+  type AccessView,
+  type ApprovalLevel,
+  type InternalPage,
+} from "@/lib/access";
 
-export type AdminUserRole = "internal" | "client" | "pending";
+export type AdminUserRole = AccessRole;
 
 export interface AdminUserAccess {
   role: AdminUserRole;
+  accessPreset: AccessPreset;
+  scopeMode: AccessScope;
+  approvalLevel: ApprovalLevel;
   clientId: string | null;
   clientIds: string[];
   allowedViews: AccessView[];
   internalPages: InternalPage[];
+  permissions: AccessPermission[];
   companyName: string | null;
   isAdmin: boolean;
 }

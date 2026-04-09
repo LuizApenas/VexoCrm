@@ -56,49 +56,47 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "sticky top-0 flex h-screen flex-col overflow-hidden border-r border-white/[0.06] bg-[rgba(11,14,20,0.4)] backdrop-blur-xl transition-all duration-300",
-        collapsed ? "w-[72px]" : "w-[220px]"
+        "relative flex min-h-full flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(8,10,34,0.98),rgba(5,6,24,0.98))] backdrop-blur-xl transition-all duration-200",
+        collapsed ? "w-[92px]" : "w-[240px]"
       )}
     >
-      {/* Logo */}
-      <div className="relative shrink-0 border-b border-white/[0.06] px-4 py-5">
-        <div className="absolute -left-10 -top-10 h-28 w-28 rounded-full bg-electric-indigo/10 blur-3xl" />
+      <div className="relative shrink-0 border-b border-white/10 px-5 py-6">
+        <div className="absolute -left-10 -top-10 h-32 w-32 rounded-full bg-fuchsia-500/16 blur-3xl" />
         <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-electric-indigo/20 bg-electric-indigo/15 font-mono text-sm font-bold text-white shadow-[0_0_20px_rgba(99,102,241,0.25)]">
-            VX
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 shadow-[0_10px_30px_rgba(34,211,238,0.16)]">
+            <span className="bg-[linear-gradient(135deg,#8b5cf6,#22d3ee)] bg-clip-text text-lg font-black text-transparent">
+              V
+            </span>
           </div>
           {!collapsed && (
             <div className="overflow-hidden">
-              <p className="text-lg font-bold tracking-tight text-[#F8FAFC]">
-                Vexo<span className="text-electric-indigo">.</span>
-              </p>
-              <p className="inline-flex rounded-full border border-electric-indigo/20 bg-electric-indigo/10 px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.24em] text-electric-indigo">
-                CRM system
+              <p className="text-lg font-extrabold tracking-tight text-foreground">Vexo CRM</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.26em] text-white/45">
+                Control hub
               </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-2 py-4">
+      <nav className="flex-1 overflow-y-auto px-3 py-5">
         {!collapsed && (
-          <p className="px-3 pb-2 font-mono text-[9px] font-bold uppercase tracking-[0.28em] text-[#E2E8F0]/50">
+          <p className="px-3 pb-3 font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-muted-foreground/70">
             Principal
           </p>
         )}
 
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           {visibleNavItems.map((item) => (
             <NavLink
               key={item.url}
               to={item.url}
               className={({ isActive }) =>
                 cn(
-                  "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-300",
+                  "group relative flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition-all",
                   isActive
-                    ? "bg-electric-indigo/12 text-electric-indigo shadow-[inset_0_0_0_1px_rgba(99,102,241,0.18)]"
-                    : "text-[#E2E8F0]/60 hover:bg-white/[0.04] hover:text-[#F8FAFC]"
+                    ? "bg-[linear-gradient(90deg,rgba(99,102,241,0.22),rgba(59,130,246,0.12))] text-white shadow-[inset_0_0_0_1px_rgba(129,140,248,0.34),0_20px_36px_rgba(15,23,42,0.35)]"
+                    : "text-sidebar-foreground hover:bg-white/[0.04] hover:text-foreground"
                 )
               }
             >
@@ -106,17 +104,19 @@ export function AppSidebar() {
                 <>
                   <item.icon
                     className={cn(
-                      "h-4 w-4 shrink-0 transition-colors duration-300",
-                      isActive ? "text-electric-indigo" : "text-[#E2E8F0]/50 group-hover:text-[#F8FAFC]"
+                      "h-4 w-4 shrink-0",
+                      isActive ? "text-cyan-200" : "text-sidebar-foreground group-hover:text-foreground"
                     )}
                   />
                   {!collapsed && <span className="truncate">{item.title}</span>}
                   {!collapsed && item.badge && (
-                    <span className="ml-auto rounded-sm border border-electric-indigo/20 bg-electric-indigo/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-electric-indigo">
+                    <span className="ml-auto rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 font-mono text-[10px] font-bold text-cyan-200">
                       {item.badge}
                     </span>
                   )}
-                  {isActive && <span className="absolute right-0 top-1.5 h-[calc(100%-12px)] w-0.5 rounded-l bg-electric-indigo shadow-[0_0_12px_rgba(99,102,241,0.8)]" />}
+                  {isActive && (
+                    <span className="absolute left-0 top-2 h-[calc(100%-16px)] w-1 rounded-r-full bg-[linear-gradient(180deg,#8b5cf6,#22d3ee)] shadow-[0_0_16px_rgba(139,92,246,0.8)]" />
+                  )}
                 </>
               )}
             </NavLink>
@@ -124,16 +124,16 @@ export function AppSidebar() {
         </div>
 
         {!collapsed && (
-          <p className="px-3 pb-2 pt-5 font-mono text-[9px] font-bold uppercase tracking-[0.28em] text-[#E2E8F0]/50">
+          <p className="px-3 pb-3 pt-6 font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-muted-foreground/70">
             Sistema
           </p>
         )}
 
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           {canSeeAgentNotifications ? <NotificationBell collapsed={collapsed} /> : null}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#E2E8F0]/60 transition-all duration-300 hover:bg-white/[0.04] hover:text-[#F8FAFC]"
+            className="flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-sidebar-foreground transition-all hover:bg-white/[0.04] hover:text-foreground"
           >
             {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             {!collapsed && <span>Recolher</span>}
@@ -141,16 +141,17 @@ export function AppSidebar() {
         </div>
       </nav>
 
-      {/* Footer */}
-      <div className="shrink-0 border-t border-white/[0.06] px-3 py-4">
-        <div className={cn("mb-3 flex items-center gap-3", collapsed && "justify-center")}>
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-[rgba(11,14,20,0.6)] text-sm font-bold text-[#F8FAFC]">
-            VS
-            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-deep-navy bg-electric-indigo" />
-          </div>
+      <div className="shrink-0 border-t border-sidebar-border/20 px-4 py-4">
+        <div
+          className={cn(
+            "mb-3 rounded-2xl border border-white/8 bg-white/[0.03] p-3",
+            collapsed && "hidden"
+          )}
+        >
           {!collapsed && (
             <div>
-              <p className="text-sm font-semibold text-[#F8FAFC]">{userName}</p>
+              <p className="text-sm font-semibold text-foreground">{userName}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Workspace principal</p>
             </div>
           )}
         </div>
@@ -158,7 +159,7 @@ export function AppSidebar() {
         <button
           onClick={handleLogout}
           disabled={isLoggingOut}
-          className="flex w-full items-center gap-3 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2.5 text-sm font-medium text-[#E2E8F0]/60 transition-all duration-300 hover:bg-white/[0.05] hover:text-[#F8FAFC] disabled:pointer-events-none disabled:opacity-60"
+          className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-sm font-medium text-white/72 transition-all hover:bg-white/[0.06] hover:text-white disabled:pointer-events-none disabled:opacity-60"
         >
           <LogOut className="h-4 w-4 shrink-0" />
           {!collapsed && <span>{isLoggingOut ? "Saindo..." : "Sair"}</span>}
