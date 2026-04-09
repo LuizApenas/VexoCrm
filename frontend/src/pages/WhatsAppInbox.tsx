@@ -230,7 +230,7 @@ export default function WhatsAppInbox({
                   "rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]",
                   isReady
                     ? "border-electric-indigo/30 bg-electric-indigo/10 text-electric-indigo"
-                    : "border-amber-400/20 bg-amber-400/10 text-amber-200"
+                    : "border-amber-400/20 bg-amber-500/8 text-amber-200"
                 )}
               >
                 {STATUS_LABELS[session?.status || "idle"]}
@@ -260,7 +260,7 @@ export default function WhatsAppInbox({
                   QR lido. Sincronizando conversas...
                 </div>
                 <div className="flex items-start gap-3 rounded-xl border border-border/60 bg-background/40 p-4">
-                  <LoaderCircle className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-amber-300" />
+                  <LoaderCircle className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-amber-200/80" />
                   <div className="space-y-2 text-sm text-muted-foreground">
                     <p className="text-foreground">A conexao foi iniciada com sucesso.</p>
                     <p>
