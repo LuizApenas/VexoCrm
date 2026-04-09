@@ -1,10 +1,12 @@
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import * as XLSX from "xlsx";
 import {
   AlertTriangle,
   Building2,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Eye,
   FileSpreadsheet,
@@ -18,6 +20,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useLeadClients } from "@/hooks/useLeadClients";
 import {
   useCreateLeadImport,
@@ -50,12 +53,17 @@ interface LeadImportsProps {
   headerRight?: ReactNode;
 }
 
-const TABS: Array<{ id: SheetTab; label: string }> = [
+const INTERNAL_TABS: Array<{ id: SheetTab; label: string }> = [
   { id: "dados", label: "Dados Gerais" },
   { id: "pendentes", label: "Leads Pendentes" },
   { id: "campanha", label: "Nova Campanha" },
   { id: "enviadas", label: "Campanhas Enviadas" },
   { id: "agendamentos", label: "Agendamentos" },
+];
+
+const CLIENT_TABS: Array<{ id: SheetTab; label: string }> = [
+  { id: "dados", label: "Dados Gerais" },
+  { id: "pendentes", label: "Leads Pendentes" },
 ];
 
 const CAMPAIGNS = [
@@ -71,6 +79,8 @@ const SCHEDULED = [
   ["25", "MAR", "Newsletter Marco 2026", "E-mail Marketing", "2.418 contatos", "08:00 BRT", "CONFIRMADA"],
   ["01", "ABR", "Reativacao Q2 - Leads Frios", "WhatsApp", "420 contatos", "10:30 BRT", "RECORRENTE"],
 ] as const;
+
+const IMPORTS_PAGE_SIZE = 10;
 
 function parseSpreadsheetFile(file: File): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
@@ -97,23 +107,91 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString("pt-BR");
 }
 
+function buildPaginationItems(currentPage: number, totalPages: number): Array<number | string> {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const items: Array<number | string> = [1];
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+
+  if (start > 2) items.push("start-ellipsis");
+  for (let page = start; page <= end; page += 1) items.push(page);
+  if (end < totalPages - 1) items.push("end-ellipsis");
+
+  items.push(totalPages);
+  return items;
+}
+
+function PaginationControls({
+  currentPage,
+  totalPages,
+  pageSize,
+  totalItems,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  pageSize: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalItems === 0) return null;
+
+  const startItem = (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, totalItems);
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-xs text-muted-foreground">
+        Mostrando {startItem}-{endItem} de {totalItems} registros
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1}>
+          <ChevronLeft className="h-4 w-4" />
+          Anterior
+        </Button>
+
+        {buildPaginationItems(currentPage, totalPages).map((item, index) =>
+          typeof item === "string" ? (
+            <span key={`${item}-${index}`} className="flex h-9 min-w-9 items-center justify-center px-2 text-sm text-muted-foreground">
+              ...
+            </span>
+          ) : (
+            <Button key={item} type="button" variant={item === currentPage ? "secondary" : "outline"} size="sm" className="min-w-9 px-3" onClick={() => onPageChange(item)}>
+              {item}
+            </Button>
+          ),
+        )}
+
+        <Button type="button" variant="outline" size="sm" onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages}>
+          Proxima
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function Metric({
   value,
   label,
-  bar,
-  text,
+  barClassName,
+  textClassName,
 }: {
   value: string;
   label: string;
-  bar: string;
-  text: string;
+  barClassName: string;
+  textClassName: string;
 }) {
   return (
     <div>
-      <p className={cn("font-mono text-[12px] font-bold", text)}>{value}</p>
+      <p className={cn("font-mono text-[12px] font-bold", textClassName)}>{value}</p>
       <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
       <div className="mt-2 h-1 rounded-full bg-secondary/90">
-        <div className={cn("h-1 rounded-full", bar)} style={{ width: value }} />
+        <div className={cn("h-1 rounded-full", barClassName)} style={{ width: value }} />
       </div>
     </div>
   );
@@ -126,6 +204,7 @@ export default function LeadImports({
   subtitle = "Gerencie dados e mantenha a estrutura visual de campanhas dentro do CRM.",
   headerRight,
 }: LeadImportsProps) {
+  const { isInternalUser } = useAuth();
   const { data: clients = [], isLoading: clientsLoading } = useLeadClients();
   const [selectedClientId, setSelectedClientId] = useState(fixedClientId || "");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -144,12 +223,17 @@ export default function LeadImports({
   const [campaignName, setCampaignName] = useState("");
   const [campaignChannel, setCampaignChannel] = useState("whatsapp");
   const [selectedImportId, setSelectedImportId] = useState("__all__");
+  const [importsPage, setImportsPage] = useState(1);
 
   const { data: imports = [], isLoading: importsLoading, error: importsError, refetch } = useLeadImports(selectedClientId);
   const createLeadImport = useCreateLeadImport();
   const deleteLeadImport = useDeleteLeadImport();
   const dispatchCampaign = useDispatchCampaign();
-  const { data: pendingData, isLoading: pendingLoading, refetch: refetchPending } = useLeadImportItems(selectedClientId, undefined, pendingFilter);
+  const { data: pendingData, isLoading: pendingLoading, error: pendingError, refetch: refetchPending } = useLeadImportItems(
+    selectedClientId,
+    selectedImportId === "__all__" ? undefined : selectedImportId,
+    pendingFilter,
+  );
 
   useEffect(() => {
     if (fixedClientId) {
@@ -157,11 +241,33 @@ export default function LeadImports({
       return;
     }
 
-    if (clients.length > 0 && !selectedClientId) setSelectedClientId(clients[0].id);
+    if (clients.length > 0 && !selectedClientId) {
+      setSelectedClientId(clients[0].id);
+    }
   }, [clients, fixedClientId, selectedClientId]);
+
+  useEffect(() => {
+    if (!isInternalUser && !["dados", "pendentes"].includes(activeTab)) {
+      setActiveTab("dados");
+    }
+  }, [activeTab, isInternalUser]);
+
+  useEffect(() => {
+    setImportsPage(1);
+  }, [selectedClientId, pendingFilter, selectedImportId]);
 
   const selectedClient = clients.find((client) => client.id === selectedClientId);
   const resolvedClientName = fixedClientName || selectedClient?.name || selectedClientId;
+  const tabs = isInternalUser ? INTERNAL_TABS : CLIENT_TABS;
+
+  const totalImportsPages = Math.max(1, Math.ceil(imports.length / IMPORTS_PAGE_SIZE));
+  const safeImportsPage = Math.min(importsPage, totalImportsPages);
+  const paginatedImports = useMemo(
+    () => imports.slice((safeImportsPage - 1) * IMPORTS_PAGE_SIZE, safeImportsPage * IMPORTS_PAGE_SIZE),
+    [imports, safeImportsPage],
+  );
+
+  const pendingItems = pendingData?.items ?? [];
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] || null;
@@ -170,7 +276,9 @@ export default function LeadImports({
     setParseError(null);
     setParsedRows([]);
     setPreviewRows([]);
+
     if (!file) return;
+
     try {
       const rows = await parseSpreadsheetFile(file);
       setParsedRows(rows);
@@ -181,11 +289,18 @@ export default function LeadImports({
   }
 
   async function handleImport() {
-    if (!selectedClientId) return setParseError("Selecione um cliente antes de importar.");
-    if (!selectedFile || parsedRows.length === 0) {
-      return setParseError("Selecione uma planilha valida para importar.");
+    if (!selectedClientId) {
+      setParseError("Selecione um cliente antes de importar.");
+      return;
     }
+
+    if (!selectedFile || parsedRows.length === 0) {
+      setParseError("Selecione uma planilha valida para importar.");
+      return;
+    }
+
     setParseError(null);
+
     try {
       const response = await createLeadImport.mutateAsync({
         clientId: selectedClientId,
@@ -194,6 +309,7 @@ export default function LeadImports({
         rows: parsedRows,
       });
       setImportPreview(response.preview);
+      setSelectedImportId(response.item.id);
     } catch (error) {
       setParseError(error instanceof Error ? error.message : "Falha ao importar planilha.");
     }
@@ -213,13 +329,16 @@ export default function LeadImports({
       setDispatchStatus("Selecione um cliente antes de disparar.");
       return;
     }
+
     setIsDispatching(true);
     setDispatchStatus(null);
+
     try {
       let scheduledAtIso: string | undefined;
       if (scheduleEnabled && scheduleDate && scheduleTime) {
         scheduledAtIso = new Date(`${scheduleDate}T${scheduleTime}:00`).toISOString();
       }
+
       const result = await dispatchCampaign.mutateAsync({
         clientId: selectedClientId,
         importId: selectedImportId === "__all__" ? undefined : selectedImportId || undefined,
@@ -227,11 +346,13 @@ export default function LeadImports({
         channel: campaignChannel || undefined,
         scheduledAt: scheduledAtIso,
       });
+
       setDispatchStatus(
         scheduleEnabled
           ? `Campanha agendada para ${scheduleDate} as ${scheduleTime}. ${result.total} leads serao disparados.`
-          : `Disparo realizado com sucesso! ${result.total} leads enviados ao n8n.`
+          : `Disparo realizado com sucesso! ${result.total} leads enviados ao n8n.`,
       );
+      void refetchPending();
     } catch (error) {
       setDispatchStatus(error instanceof Error ? error.message : "Falha ao disparar campanha.");
     } finally {
@@ -258,22 +379,17 @@ export default function LeadImports({
   );
 
   return (
-    <PageShell
-      title={title}
-      subtitle={subtitle}
-      headerRight={headerRight ?? clientSelector}
-      spacing="space-y-6"
-    >
+    <PageShell title={title} subtitle={subtitle} headerRight={headerRight ?? clientSelector} spacing="space-y-6">
       <section className="space-y-5">
         <div className="flex flex-wrap items-center gap-2 border-b border-border/70">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={cn(
                 "relative -mb-px px-4 py-3 text-sm font-semibold transition-colors",
-                activeTab === tab.id ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                activeTab === tab.id ? "text-primary" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {tab.label}
@@ -282,16 +398,21 @@ export default function LeadImports({
                   {pendingData.pendingCount}
                 </span>
               )}
-              {activeTab === tab.id && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-primary shadow-[0_0_10px_rgba(0,212,255,0.9)]" />}
+              {activeTab === tab.id && (
+                <span className="absolute inset-x-0 bottom-0 h-0.5 bg-primary shadow-[0_0_10px_rgba(0,212,255,0.9)]" />
+              )}
             </button>
           ))}
         </div>
 
-        {/* ── Dados Gerais ── */}
         {activeTab === "dados" && (
           <div className="space-y-6">
             <section>
-              <SectionHeader title="Nova importacao" subtitle="Aceita CSV, XLS e XLSX. O backend normaliza os campos e popula a tabela leads." icon={Upload} />
+              <SectionHeader
+                title="Nova importacao"
+                subtitle="Aceita CSV, XLS e XLSX. O backend normaliza os campos e popula a tabela leads."
+                icon={Upload}
+              />
               <Card className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 text-base">
@@ -320,13 +441,19 @@ export default function LeadImports({
                     <div className="overflow-x-auto rounded-xl border border-border/70">
                       <Table>
                         <TableHeader>
-                          <TableRow>{Object.keys(previewRows[0]).map((column) => <TableHead key={column}>{column}</TableHead>)}</TableRow>
+                          <TableRow>
+                            {Object.keys(previewRows[0]).map((column) => (
+                              <TableHead key={column}>{column}</TableHead>
+                            ))}
+                          </TableRow>
                         </TableHeader>
                         <TableBody>
                           {previewRows.map((row, index) => (
                             <TableRow key={`${index}-${Object.values(row).join("-")}`}>
                               {Object.keys(previewRows[0]).map((column) => (
-                                <TableCell key={column} className="max-w-[220px] truncate">{String(row[column] ?? "")}</TableCell>
+                                <TableCell key={column} className="max-w-[220px] truncate">
+                                  {String(row[column] ?? "")}
+                                </TableCell>
                               ))}
                             </TableRow>
                           ))}
@@ -371,7 +498,11 @@ export default function LeadImports({
             </section>
 
             <section>
-              <SectionHeader title="Historico" subtitle="Ultimas cargas registradas para consulta operacional e uso em nos de disparo." icon={History} />
+              <SectionHeader
+                title="Historico"
+                subtitle="Ultimas cargas registradas para consulta operacional e uso em nos de disparo."
+                icon={History}
+              />
               <Card className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
@@ -386,69 +517,60 @@ export default function LeadImports({
                   <ErrorMessage message={importsError ? (importsError as Error).message : null} variant="banner" />
                   {importsLoading && <EmptyState message="Carregando historico..." />}
                   {!importsLoading && !importsError && imports.length === 0 && (
-                    <EmptyState title="Nenhuma importacao encontrada" description="Assim que uma planilha for processada, o historico fica disponivel aqui." />
+                    <EmptyState
+                      title="Nenhuma importacao encontrada"
+                      description="Assim que uma planilha for processada, o historico fica disponivel aqui."
+                    />
                   )}
                   {!importsLoading && !importsError && imports.length > 0 && (
-                    <div className="overflow-x-auto rounded-xl border border-border/70">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Arquivo</TableHead>
-                            <TableHead>Tipo</TableHead>
-                            <TableHead>Total</TableHead>
-                            <TableHead>Importadas</TableHead>
-                            <TableHead>Ignoradas</TableHead>
-                            <TableHead>Usuario</TableHead>
-                            <TableHead>Data</TableHead>
-                            <TableHead className="w-[80px]">Acoes</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {imports.map((item) => (
-                            <TableRow key={item.id}>
-                              <TableCell>{item.source_name}</TableCell>
-                              <TableCell>{item.source_type}</TableCell>
-                              <TableCell>{item.total_rows}</TableCell>
-                              <TableCell>{item.imported_rows}</TableCell>
-                              <TableCell>{item.skipped_rows}</TableCell>
-                              <TableCell>{item.uploaded_by_email || "-"}</TableCell>
-                              <TableCell>{formatDate(item.created_at)}</TableCell>
-                              <TableCell>
-                                {deleteConfirmId === item.id ? (
-                                  <div className="flex items-center gap-1">
-                                    <Button
-                                      variant="destructive"
-                                      size="sm"
-                                      className="h-7 px-2 text-xs"
-                                      onClick={() => handleDelete(item.id)}
-                                      disabled={deleteLeadImport.isPending}
-                                    >
-                                      {deleteLeadImport.isPending ? "..." : "Sim"}
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 px-2 text-xs"
-                                      onClick={() => setDeleteConfirmId(null)}
-                                    >
-                                      Nao
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                                    onClick={() => setDeleteConfirmId(item.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                )}
-                              </TableCell>
+                    <div className="space-y-4">
+                      <div className="overflow-x-auto rounded-xl border border-border/70">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Arquivo</TableHead>
+                              <TableHead>Tipo</TableHead>
+                              <TableHead>Total</TableHead>
+                              <TableHead>Importadas</TableHead>
+                              <TableHead>Ignoradas</TableHead>
+                              <TableHead>Usuario</TableHead>
+                              <TableHead>Data</TableHead>
+                              <TableHead className="w-[80px]">Acoes</TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {paginatedImports.map((item) => (
+                              <TableRow key={item.id}>
+                                <TableCell>{item.source_name}</TableCell>
+                                <TableCell>{item.source_type}</TableCell>
+                                <TableCell>{item.total_rows}</TableCell>
+                                <TableCell>{item.imported_rows}</TableCell>
+                                <TableCell>{item.skipped_rows}</TableCell>
+                                <TableCell>{item.uploaded_by_email || "-"}</TableCell>
+                                <TableCell>{formatDate(item.created_at)}</TableCell>
+                                <TableCell>
+                                  {deleteConfirmId === item.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <Button variant="destructive" size="sm" className="h-7 px-2 text-xs" onClick={() => void handleDelete(item.id)} disabled={deleteLeadImport.isPending}>
+                                        {deleteLeadImport.isPending ? "..." : "Sim"}
+                                      </Button>
+                                      <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setDeleteConfirmId(null)}>
+                                        Nao
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive" onClick={() => setDeleteConfirmId(item.id)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      <PaginationControls currentPage={safeImportsPage} totalPages={totalImportsPages} pageSize={IMPORTS_PAGE_SIZE} totalItems={imports.length} onPageChange={setImportsPage} />
                     </div>
                   )}
                 </CardContent>
@@ -457,35 +579,16 @@ export default function LeadImports({
           </div>
         )}
 
-        {/* ── Leads Pendentes ── */}
         {activeTab === "pendentes" && (
           <div className="space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-4">
               <div>
                 <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Leads Pendentes de Disparo</h2>
                 <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                   {pendingData ? `${pendingData.pendingCount} pendentes de ${pendingData.total} total` : "Carregando..."}
                 </p>
               </div>
-              <div className="flex items-center gap-3">
-                <Select value={pendingFilter} onValueChange={setPendingFilter}>
-                  <SelectTrigger className="w-[180px] border-border/80 bg-secondary/80">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="false">Nao disparados</SelectItem>
-                    <SelectItem value="true">Ja disparados</SelectItem>
-                    <SelectItem value="all">Todos</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" size="sm" onClick={() => refetchPending()} disabled={pendingLoading}>
-                  <RefreshCw className={cn("mr-1 h-4 w-4", pendingLoading && "animate-spin")} />
-                  Atualizar
-                </Button>
-              </div>
-            </div>
 
-            {pendingData && pendingData.pendingCount > 0 && (
               <div className="grid gap-4 sm:grid-cols-3">
                 <Card className="rounded-2xl border-border/80 bg-card/95">
                   <CardContent className="flex items-center gap-4 p-5">
@@ -493,7 +596,7 @@ export default function LeadImports({
                       <AlertTriangle className="h-5 w-5 text-amber-400" />
                     </div>
                     <div>
-                      <p className="text-2xl font-extrabold text-foreground">{pendingData.pendingCount}</p>
+                      <p className="text-2xl font-extrabold text-foreground">{pendingData?.pendingCount ?? 0}</p>
                       <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Aguardando disparo</p>
                     </div>
                   </CardContent>
@@ -504,27 +607,63 @@ export default function LeadImports({
                       <CheckCircle2 className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                      <p className="text-2xl font-extrabold text-foreground">{pendingData.total - pendingData.pendingCount}</p>
+                      <p className="text-2xl font-extrabold text-foreground">
+                        {pendingData ? pendingData.total - pendingData.pendingCount : 0}
+                      </p>
                       <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Ja disparados</p>
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="rounded-2xl border-border/80 bg-card/95">
                   <CardContent className="flex items-center gap-4 p-5">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#E2E8F0]/10 bg-[#E2E8F0]/5">
-                      <FileSpreadsheet className="h-5 w-5 text-[#E2E8F0]/60" />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+                      <FileSpreadsheet className="h-5 w-5 text-white/60" />
                     </div>
                     <div>
-                      <p className="text-2xl font-extrabold text-foreground">{pendingData.total}</p>
+                      <p className="text-2xl font-extrabold text-foreground">{pendingData?.total ?? 0}</p>
                       <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Total importados</p>
                     </div>
                   </CardContent>
                 </Card>
               </div>
-            )}
+
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Select value={selectedImportId} onValueChange={setSelectedImportId}>
+                    <SelectTrigger className="w-[220px] border-border/80 bg-secondary/80">
+                      <SelectValue placeholder="Todas as importacoes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todas as importacoes</SelectItem>
+                      {imports.map((imp) => (
+                        <SelectItem key={imp.id} value={imp.id}>
+                          {imp.source_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={pendingFilter} onValueChange={setPendingFilter}>
+                    <SelectTrigger className="w-[180px] border-border/80 bg-secondary/80">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="false">Nao disparados</SelectItem>
+                      <SelectItem value="true">Ja disparados</SelectItem>
+                      <SelectItem value="all">Todos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button variant="outline" size="sm" onClick={() => refetchPending()} disabled={pendingLoading}>
+                  <RefreshCw className={cn("mr-1 h-4 w-4", pendingLoading && "animate-spin")} />
+                  Atualizar
+                </Button>
+              </div>
+            </div>
 
             <Card className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
               <CardContent className="p-4">
+                <ErrorMessage message={pendingError ? (pendingError as Error).message : null} variant="banner" />
                 {pendingLoading && <EmptyState message="Carregando leads..." />}
                 {!pendingLoading && pendingData && pendingData.items.length === 0 && (
                   <EmptyState
@@ -533,46 +672,54 @@ export default function LeadImports({
                   />
                 )}
                 {!pendingLoading && pendingData && pendingData.items.length > 0 && (
-                  <div className="overflow-x-auto rounded-xl border border-border/70">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>#</TableHead>
-                          <TableHead>Telefone</TableHead>
-                          <TableHead>Nome</TableHead>
-                          <TableHead>Cidade</TableHead>
-                          <TableHead>Estado</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Disparo</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {pendingData.items.map((item) => {
-                          const nd = item.normalized_data && typeof item.normalized_data === "object" ? item.normalized_data : {};
-                          return (
-                            <TableRow key={item.id}>
-                              <TableCell className="font-mono text-xs text-muted-foreground">{item.row_number}</TableCell>
-                              <TableCell className="font-mono text-sm">{item.telefone || "-"}</TableCell>
-                              <TableCell>{(nd as Record<string, unknown>).nome as string || "-"}</TableCell>
-                              <TableCell>{(nd as Record<string, unknown>).cidade as string || "-"}</TableCell>
-                              <TableCell>{(nd as Record<string, unknown>).estado as string || "-"}</TableCell>
-                              <TableCell>{(nd as Record<string, unknown>).status as string || "-"}</TableCell>
-                              <TableCell>
-                                {item.dispatched ? (
-                                  <span className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary">
-                                    <CheckCircle2 className="h-3 w-3" /> Enviado
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 rounded-md border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] text-amber-400">
-                                    <XCircle className="h-3 w-3" /> Pendente
-                                  </span>
-                                )}
-                              </TableCell>
+                  <div className="space-y-4">
+                    <div className="overflow-x-auto rounded-xl border border-border/70">
+                      <div className="max-h-[560px] overflow-y-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-[rgba(12,15,28,0.98)]">
+                              <TableHead>#</TableHead>
+                              <TableHead>Telefone</TableHead>
+                              <TableHead>Nome</TableHead>
+                              <TableHead>Cidade</TableHead>
+                              <TableHead>Estado</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Disparo</TableHead>
                             </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {pendingItems.map((item) => {
+                              const normalizedData =
+                                item.normalized_data && typeof item.normalized_data === "object"
+                                  ? (item.normalized_data as Record<string, unknown>)
+                                  : {};
+
+                              return (
+                                <TableRow key={item.id}>
+                                  <TableCell className="font-mono text-xs text-muted-foreground">{item.row_number}</TableCell>
+                                  <TableCell className="font-mono text-sm">{item.telefone || "-"}</TableCell>
+                                  <TableCell>{String(normalizedData.nome || "-")}</TableCell>
+                                  <TableCell>{String(normalizedData.cidade || "-")}</TableCell>
+                                  <TableCell>{String(normalizedData.estado || "-")}</TableCell>
+                                  <TableCell>{String(normalizedData.status || "-")}</TableCell>
+                                  <TableCell>
+                                    {item.dispatched ? (
+                                      <span className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary">
+                                        <CheckCircle2 className="h-3 w-3" /> Enviado
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 rounded-md border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] text-amber-400">
+                                        <XCircle className="h-3 w-3" /> Pendente
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -580,8 +727,7 @@ export default function LeadImports({
           </div>
         )}
 
-        {/* ── Nova Campanha ── */}
-        {activeTab === "campanha" && (
+        {activeTab === "campanha" && isInternalUser && (
           <Card className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
             <CardContent className="space-y-6 p-6">
               <div>
@@ -590,12 +736,14 @@ export default function LeadImports({
               </div>
 
               {dispatchStatus && (
-                <div className={cn(
-                  "rounded-xl border p-4 text-sm font-medium",
-                  dispatchStatus.includes("sucesso") || dispatchStatus.includes("agendada")
-                    ? "border-primary/30 bg-primary/10 text-primary"
-                    : "border-destructive/30 bg-destructive/10 text-destructive"
-                )}>
+                <div
+                  className={cn(
+                    "rounded-xl border p-4 text-sm font-medium",
+                    dispatchStatus.includes("sucesso") || dispatchStatus.includes("agendada")
+                      ? "border-primary/30 bg-primary/10 text-primary"
+                      : "border-destructive/30 bg-destructive/10 text-destructive",
+                  )}
+                >
                   {dispatchStatus}
                 </div>
               )}
@@ -608,7 +756,9 @@ export default function LeadImports({
                 <div className="space-y-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Canal de Envio *</p>
                   <Select value={campaignChannel} onValueChange={setCampaignChannel}>
-                    <SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectTrigger className="border-border/80 bg-secondary/70">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="whatsapp">WhatsApp</SelectItem>
                       <SelectItem value="email">E-mail Marketing</SelectItem>
@@ -619,7 +769,9 @@ export default function LeadImports({
                 <div className="space-y-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Base de Leads (importacao)</p>
                   <Select value={selectedImportId} onValueChange={setSelectedImportId}>
-                    <SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Todas as importacoes" /></SelectTrigger>
+                    <SelectTrigger className="border-border/80 bg-secondary/70">
+                      <SelectValue placeholder="Todas as importacoes" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__all__">Todas as importacoes</SelectItem>
                       {imports.map((imp) => (
@@ -642,7 +794,6 @@ export default function LeadImports({
                 </div>
               </div>
 
-              {/* Agendamento de Horário */}
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
                 <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-primary">
                   <CalendarDays className="h-4 w-4" />
@@ -651,61 +802,45 @@ export default function LeadImports({
                 <div className="mb-4 flex items-center gap-3">
                   <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
                   <span className="text-sm text-muted-foreground">
-                    {scheduleEnabled ? "Disparo agendado — o n8n sera notificado do horario" : "Disparo imediato — sera enviado agora"}
+                    {scheduleEnabled ? "Disparo agendado, o n8n sera notificado do horario." : "Disparo imediato, sera enviado agora."}
                   </span>
                 </div>
                 {scheduleEnabled && (
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Data do disparo *</p>
-                      <Input
-                        type="date"
-                        value={scheduleDate}
-                        onChange={(e) => setScheduleDate(e.target.value)}
-                        min={new Date().toISOString().split("T")[0]}
-                        className="border-border/80 bg-secondary/70"
-                      />
+                      <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} min={new Date().toISOString().split("T")[0]} className="border-border/80 bg-secondary/70" />
                     </div>
                     <div className="space-y-2">
                       <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Horario do disparo *</p>
-                      <Input
-                        type="time"
-                        value={scheduleTime}
-                        onChange={(e) => setScheduleTime(e.target.value)}
-                        className="border-border/80 bg-secondary/70"
-                      />
+                      <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} className="border-border/80 bg-secondary/70" />
                     </div>
                   </div>
                 )}
                 {scheduleEnabled && scheduleDate && scheduleTime && (
                   <p className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2 font-mono text-[11px] text-primary">
-                    O disparo sera realizado em {new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString("pt-BR")} (horario local). O n8n recebera o campo scheduledAt para aguardar ate esse momento.
+                    O disparo sera realizado em {new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString("pt-BR")} (horario local).
                   </p>
                 )}
               </div>
 
               <div className="flex flex-wrap gap-3 border-t border-border/70 pt-5">
-                <Button
-                  onClick={handleDispatch}
-                  disabled={isDispatching || !selectedClientId}
-                >
+                <Button onClick={() => void handleDispatch()} disabled={isDispatching || !selectedClientId}>
                   <Send className="mr-2 h-4 w-4" />
-                  {isDispatching
-                    ? "Enviando..."
-                    : scheduleEnabled
-                      ? "Agendar Disparo"
-                      : "Disparar Agora"}
+                  {isDispatching ? "Enviando..." : scheduleEnabled ? "Agendar Disparo" : "Disparar Agora"}
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* ── Campanhas Enviadas ── */}
-        {activeTab === "enviadas" && (
+        {activeTab === "enviadas" && isInternalUser && (
           <div className="space-y-5">
             <div className="flex flex-wrap gap-3">
-              <div className="relative w-full max-w-xs"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Buscar campanha..." className="border-border/80 bg-secondary/70 pl-9" /></div>
+              <div className="relative w-full max-w-xs">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Buscar campanha..." className="border-border/80 bg-secondary/70 pl-9" />
+              </div>
               <Button variant="outline">Todos os canais</Button>
               <Button variant="outline">Todos os periodos</Button>
             </div>
@@ -714,14 +849,21 @@ export default function LeadImports({
                 <Card key={name} className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
                   <CardContent className="space-y-5 p-5">
                     <div className="flex items-start justify-between gap-3">
-                      <div><p className="text-xl font-extrabold tracking-tight text-foreground">{name}</p><p className="mt-1 font-mono text-[11px] text-muted-foreground">{info}</p></div>
-                      <span className={cn("rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", channel === "WHATSAPP" ? "border-electric-indigo/20 bg-electric-indigo/10 text-electric-indigo" : channel === "SMS" ? "border-amber-500/15 bg-amber-500/8 text-amber-200/80" : "border-primary/20 bg-primary/10 text-primary")}>{channel}</span>
+                      <div>
+                        <p className="text-xl font-extrabold tracking-tight text-foreground">{name}</p>
+                        <p className="mt-1 font-mono text-[11px] text-muted-foreground">{info}</p>
+                      </div>
+                      <span className={cn("rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", channel === "WHATSAPP" ? "border-primary/20 bg-primary/10 text-primary" : channel === "SMS" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-sky-400/20 bg-sky-400/10 text-sky-300")}>
+                        {channel}
+                      </span>
                     </div>
-                    <div className="border-t border-border/70 pt-4"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Segmento: {segment}</p></div>
+                    <div className="border-t border-border/70 pt-4">
+                      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Segmento: {segment}</p>
+                    </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                      <Metric value={delivery} label="Entrega" bar="bg-electric-indigo" text="text-electric-indigo" />
-                      <Metric value={open} label="Abertura" bar="bg-electric-indigo" text="text-electric-indigo" />
-                      <Metric value={clicks} label={channel === "WHATSAPP" ? "Resposta" : "Cliques"} bar="bg-cyan-neon" text="text-cyan-neon" />
+                      <Metric value={delivery} label="Entrega" barClassName="bg-primary" textClassName="text-primary" />
+                      <Metric value={open} label="Abertura" barClassName="bg-sky-400" textClassName="text-sky-300" />
+                      <Metric value={clicks} label={channel === "WHATSAPP" ? "Resposta" : "Cliques"} barClassName="bg-amber-400" textClassName="text-amber-300" />
                     </div>
                   </CardContent>
                 </Card>
@@ -730,30 +872,44 @@ export default function LeadImports({
           </div>
         )}
 
-        {/* ── Agendamentos ── */}
-        {activeTab === "agendamentos" && (
+        {activeTab === "agendamentos" && isInternalUser && (
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div><h2 className="text-2xl font-extrabold tracking-tight text-foreground">Campanhas Agendadas</h2><p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">3 aguardando envio</p></div>
+              <div>
+                <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Campanhas Agendadas</h2>
+                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">3 aguardando envio</p>
+              </div>
               <Button>+ Agendar Nova</Button>
             </div>
             <div className="space-y-4">
               {SCHEDULED.map(([day, month, name, channel, contacts, time, status]) => (
                 <Card key={name} className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
                   <CardContent className="flex flex-wrap items-center gap-5 p-5">
-                    <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-xl border border-primary/20 bg-primary/5"><span className="font-mono text-3xl font-bold text-primary">{day}</span><span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">{month}</span></div>
+                    <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-xl border border-primary/20 bg-primary/5">
+                      <span className="font-mono text-3xl font-bold text-primary">{day}</span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">{month}</span>
+                    </div>
                     <div className="min-w-[220px] flex-1">
                       <p className="text-xl font-extrabold tracking-tight text-foreground">{name}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-4 font-mono text-[11px] text-muted-foreground">
-                        <span className="inline-flex items-center gap-1.5">{channel === "WhatsApp" ? <MessageSquare className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}{channel}</span>
+                        <span className="inline-flex items-center gap-1.5">
+                          {channel === "WhatsApp" ? <MessageSquare className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
+                          {channel}
+                        </span>
                         <span className="inline-flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />{contacts}</span>
                         <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{time}</span>
                       </div>
                     </div>
-                    <span className={cn("rounded-md border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", status === "AGENDADA" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : status === "RECORRENTE" ? "border-electric-indigo/20 bg-electric-indigo/10 text-electric-indigo" : "border-primary/20 bg-primary/10 text-primary")}>{status}</span>
+                    <span className={cn("rounded-md border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", status === "AGENDADA" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : status === "RECORRENTE" ? "border-primary/20 bg-primary/10 text-primary" : "border-sky-400/20 bg-sky-400/10 text-sky-300")}>
+                      {status}
+                    </span>
                     <div className="flex items-center gap-2">
-                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-secondary/70 text-muted-foreground transition-colors hover:text-foreground"><Eye className="h-4 w-4" /></button>
-                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-secondary/70 text-red-400/70 transition-colors hover:text-red-300/80">×</button>
+                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-secondary/70 text-muted-foreground transition-colors hover:text-foreground">
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-secondary/70 text-red-400/70 transition-colors hover:text-red-300/80">
+                        ×
+                      </button>
                     </div>
                   </CardContent>
                 </Card>

@@ -18,7 +18,7 @@ interface PipelineChartProps {
 
 export function PipelineChart({ data }: PipelineChartProps) {
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={190}>
       <BarChart data={data} layout="vertical" margin={{ left: 10 }}>
         <XAxis type="number" tick={{ fill: "hsl(220, 12%, 50%)", fontSize: 11 }} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="name" tick={{ fill: "hsl(220, 12%, 50%)", fontSize: 11 }} axisLine={false} tickLine={false} width={100} />
