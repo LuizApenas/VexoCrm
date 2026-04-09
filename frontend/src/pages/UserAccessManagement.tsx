@@ -1,34 +1,62 @@
 import { useEffect, useMemo, useState } from "react";
-import { LockKeyhole, Plus, Search, ShieldCheck, UserRound } from "lucide-react";
+import {
+  KeyRound,
+  LockKeyhole,
+  Plus,
+  Search,
+  ShieldCheck,
+  UserRound,
+  Workflow,
+} from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { PageShell } from "@/components/PageShell";
 import { useLeadClients } from "@/hooks/useLeadClients";
 import { type AdminUserRecord, useAdminUsers } from "@/hooks/useAdminUsers";
 import { API_BASE_URL } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
+  ACCESS_PERMISSION_DEFINITIONS,
+  ACCESS_PERMISSION_ORDER,
+  ACCESS_PRESET_LABELS,
+  ACCESS_SCOPE_LABELS,
+  APPROVAL_LEVEL_LABELS,
   CLIENT_VIEW_ORDER,
+  buildPresetDefaults,
+  getDefaultPresetForRole,
   INTERNAL_PAGE_ORDER,
   isFixedAdminAccount,
+  type AccessPermission,
+  type AccessPreset,
+  type AccessRole,
+  type AccessScope,
   type AccessView,
+  type ApprovalLevel,
   type InternalPage,
 } from "@/lib/access";
 import { useAuth } from "@/contexts/AuthContext";
 
-type ManagedRole = "internal" | "client" | "pending";
+type ManagedRole = AccessRole;
 
 interface UserDraft {
   role: ManagedRole;
+  accessPreset: AccessPreset;
+  scopeMode: AccessScope;
+  approvalLevel: ApprovalLevel;
   companyName: string;
   clientIds: string[];
   allowedViews: AccessView[];
   internalPages: InternalPage[];
+  permissions: AccessPermission[];
   disabled: boolean;
 }
 
@@ -37,11 +65,16 @@ interface CreateUserDraft {
   password: string;
   displayName: string;
   role: ManagedRole;
+  accessPreset: AccessPreset;
+  scopeMode: AccessScope;
+  approvalLevel: ApprovalLevel;
   companyName: string;
   clientIds: string[];
   allowedViews: AccessView[];
   internalPages: InternalPage[];
+  permissions: AccessPermission[];
   sendPasswordReset: boolean;
+  disabled: boolean;
 }
 
 const DEFAULT_INTERNAL_PAGES: InternalPage[] = ["dashboard"];
@@ -54,38 +87,84 @@ const ROLE_LABELS: Record<ManagedRole, string> = {
 
 const ROLE_BADGE_CLASS: Record<ManagedRole, string> = {
   internal: "bg-primary/10 text-primary",
-  client: "bg-electric-indigo/10 text-electric-indigo",
+  client: "bg-[#1A5CFF]/10 text-[#1A5CFF]",
   pending: "bg-amber-500/10 text-amber-500",
 };
 
+const ROLE_PRESETS: Record<ManagedRole, AccessPreset[]> = {
+  internal: ["internal_admin", "internal_manager", "internal_operator"],
+  client: ["client_manager", "client_operator", "client_viewer"],
+  pending: ["pending"],
+};
+
+const ROLE_SCOPES: Record<ManagedRole, AccessScope[]> = {
+  internal: ["all_clients", "assigned_clients", "no_client_access"],
+  client: ["assigned_clients", "no_client_access"],
+  pending: ["no_client_access"],
+};
+
+const ROLE_APPROVAL_LEVELS: Record<ManagedRole, ApprovalLevel[]> = {
+  internal: ["none", "operator", "supervisor", "manager", "director"],
+  client: ["none", "operator", "supervisor", "manager"],
+  pending: ["none"],
+};
+
+const ROLE_PERMISSIONS: Record<ManagedRole, AccessPermission[]> = {
+  internal: [...ACCESS_PERMISSION_ORDER],
+  client: [
+    "dashboard.view",
+    "leads.view",
+    "leads.export",
+    "imports.manage",
+    "whatsapp.view",
+    "whatsapp.reply",
+  ],
+  pending: [],
+};
+
 function buildUserDraft(user: AdminUserRecord): UserDraft {
-  const internalPages = user.access.internalPages?.length
-    ? user.access.internalPages
-    : user.access.isAdmin
-      ? [...INTERNAL_PAGE_ORDER]
-      : [];
+  const role = user.access.role;
+  const accessPreset = user.access.accessPreset || getDefaultPresetForRole(role);
+  const defaults = buildPresetDefaults(accessPreset);
 
   return {
-    role: user.access.role,
+    role,
+    accessPreset,
+    scopeMode: user.access.scopeMode || defaults.scopeMode,
+    approvalLevel: user.access.approvalLevel || defaults.approvalLevel,
     companyName: user.access.companyName || "",
-    clientIds: user.access.clientIds || [],
-    allowedViews: user.access.allowedViews?.length ? user.access.allowedViews : [...CLIENT_VIEW_ORDER],
-    internalPages,
+    clientIds: Array.from(new Set(user.access.clientIds || [])),
+    allowedViews: user.access.allowedViews?.length
+      ? user.access.allowedViews
+      : [...defaults.allowedViews],
+    internalPages: user.access.internalPages?.length
+      ? user.access.internalPages
+      : [...defaults.internalPages],
+    permissions: user.access.permissions?.length
+      ? user.access.permissions
+      : [...defaults.permissions],
     disabled: user.disabled,
   };
 }
 
 function buildCreateDraft(): CreateUserDraft {
+  const defaults = buildPresetDefaults("internal_operator");
+
   return {
     email: "",
     password: "",
     displayName: "",
     role: "internal",
+    accessPreset: "internal_operator",
+    scopeMode: defaults.scopeMode,
+    approvalLevel: defaults.approvalLevel,
     companyName: "",
     clientIds: [],
-    allowedViews: [...CLIENT_VIEW_ORDER],
+    allowedViews: [...defaults.allowedViews],
     internalPages: [...DEFAULT_INTERNAL_PAGES],
+    permissions: [...defaults.permissions],
     sendPasswordReset: false,
+    disabled: false,
   };
 }
 
@@ -103,33 +182,395 @@ function toggleItem<T>(items: T[], item: T, checked: boolean) {
   return checked ? Array.from(new Set([...items, item])) : items.filter((entry) => entry !== item);
 }
 
-function ensureRoleDefaults(draft: CreateUserDraft | UserDraft, role: ManagedRole) {
-  if (role === "client") {
+function normalizeDraft<T extends AccessDraft>(draft: T): T {
+  const role = draft.role;
+  const accessPreset = ROLE_PRESETS[role].includes(draft.accessPreset)
+    ? draft.accessPreset
+    : getDefaultPresetForRole(role);
+  const defaults = buildPresetDefaults(accessPreset);
+
+  if (role === "pending") {
     return {
       ...draft,
       role,
+      accessPreset: "pending",
+      scopeMode: "no_client_access",
+      approvalLevel: "none",
+      companyName: draft.companyName,
+      clientIds: [],
+      allowedViews: [],
       internalPages: [],
-      allowedViews: draft.allowedViews.length ? draft.allowedViews : [...CLIENT_VIEW_ORDER],
+      permissions: [],
+      disabled: draft.disabled,
     };
   }
 
-  if (role === "internal") {
-    return {
-      ...draft,
-      role,
-      clientIds: [],
-      allowedViews: [],
-      internalPages: draft.internalPages.length ? draft.internalPages : [...DEFAULT_INTERNAL_PAGES],
-    };
-  }
+  const clientIds = Array.from(new Set(draft.clientIds.map((value) => value.trim()).filter(Boolean)));
+  const allowedViews = role === "client" ? filterArray(draft.allowedViews, CLIENT_VIEW_ORDER) : [];
+  const internalPages = role === "internal" ? filterArray(draft.internalPages, INTERNAL_PAGE_ORDER) : [];
+  const permissions = filterArray(draft.permissions, ROLE_PERMISSIONS[role]);
 
   return {
     ...draft,
     role,
-    clientIds: [],
-    allowedViews: [],
-    internalPages: [],
+    accessPreset,
+    scopeMode: ROLE_SCOPES[role].includes(draft.scopeMode) ? draft.scopeMode : defaults.scopeMode,
+    approvalLevel: ROLE_APPROVAL_LEVELS[role].includes(draft.approvalLevel)
+      ? draft.approvalLevel
+      : defaults.approvalLevel,
+    clientIds:
+      role === "internal" && draft.scopeMode === "no_client_access" ? [] : clientIds,
+    allowedViews: role === "client" ? allowedViews : [],
+    internalPages: role === "internal" ? internalPages : [],
+    permissions,
   };
+}
+
+function transitionDraft<T extends AccessDraft>(draft: T): T {
+  const normalized = normalizeDraft(draft);
+  const defaults = buildPresetDefaults(normalized.accessPreset);
+
+  if (normalized.role === "client") {
+    return {
+      ...normalized,
+      scopeMode: "assigned_clients",
+      approvalLevel: ROLE_APPROVAL_LEVELS.client.includes(normalized.approvalLevel)
+        ? normalized.approvalLevel
+        : defaults.approvalLevel,
+      allowedViews: normalized.allowedViews.length ? normalized.allowedViews : [...defaults.allowedViews],
+      internalPages: [],
+      permissions: normalized.permissions.length ? normalized.permissions : [...defaults.permissions],
+    };
+  }
+
+  if (normalized.role === "internal") {
+    return {
+      ...normalized,
+      scopeMode: ROLE_SCOPES.internal.includes(normalized.scopeMode)
+        ? normalized.scopeMode
+        : defaults.scopeMode,
+      approvalLevel: ROLE_APPROVAL_LEVELS.internal.includes(normalized.approvalLevel)
+        ? normalized.approvalLevel
+        : defaults.approvalLevel,
+      allowedViews: [],
+      internalPages: normalized.internalPages.length ? normalized.internalPages : [...defaults.internalPages],
+      permissions: normalized.permissions.length ? normalized.permissions : [...defaults.permissions],
+    };
+  }
+
+  return normalized;
+}
+
+function buildPayload(draft: AccessDraft) {
+  const normalized = normalizeDraft(draft);
+
+  return {
+    role: normalized.role,
+    accessPreset: normalized.accessPreset,
+    scopeMode: normalized.scopeMode,
+    approvalLevel: normalized.approvalLevel,
+    companyName: normalized.companyName.trim() || undefined,
+    clientIds: normalized.clientIds,
+    allowedViews: normalized.allowedViews,
+    internalPages: normalized.internalPages,
+    permissions: normalized.permissions,
+    disabled: normalized.disabled,
+  };
+}
+
+function validateDraft(draft: AccessDraft) {
+  const normalized = normalizeDraft(draft);
+
+  if (normalized.role === "client") {
+    if (normalized.clientIds.length === 0) {
+      return "Selecione ao menos um tenant/cliente para este usuario.";
+    }
+
+    if (normalized.allowedViews.length === 0) {
+      return "Selecione ao menos uma view para o usuario cliente.";
+    }
+  }
+
+  if (normalized.role === "internal") {
+    if (normalized.scopeMode === "assigned_clients" && normalized.clientIds.length === 0) {
+      return "Usuarios internos com escopo vinculado precisam de pelo menos um tenant/cliente.";
+    }
+
+    if (normalized.internalPages.length === 0) {
+      return "Selecione ao menos uma pagina interna para este usuario.";
+    }
+  }
+
+  if (normalized.role !== "pending" && normalized.permissions.length === 0) {
+    return "Selecione ao menos uma permissao operacional.";
+  }
+
+  return null;
+}
+
+interface ChecklistPanelProps {
+  title: string;
+  description: string;
+  items: string[];
+  selected: string[];
+  disabled: boolean;
+  emptyMessage: string;
+  onToggle: (item: string, checked: boolean) => void;
+  renderLabel: (item: string) => string;
+  renderHint?: (item: string) => string | null;
+}
+
+function ChecklistPanel({
+  title,
+  description,
+  items,
+  selected,
+  disabled,
+  emptyMessage,
+  onToggle,
+  renderLabel,
+  renderHint,
+}: ChecklistPanelProps) {
+  return (
+    <div className="rounded-2xl border border-border/80 bg-background/40 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-foreground">{title}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+        </div>
+        <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+          {selected.length}
+        </Badge>
+      </div>
+
+      <Separator className="my-4" />
+
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+      ) : (
+        <ScrollArea className="h-64 pr-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {items.map((item) => (
+              <label
+                key={item}
+                className={cn(
+                  "flex items-start gap-3 rounded-xl border border-border/70 bg-background/70 px-3 py-3 text-sm transition-colors",
+                  disabled ? "opacity-70" : "hover:border-primary/30 hover:bg-primary/5"
+                )}
+              >
+                <Checkbox
+                  checked={selected.includes(item)}
+                  disabled={disabled}
+                  onCheckedChange={(checked) => onToggle(item, checked === true)}
+                />
+                <span className="space-y-1">
+                  <span className="block font-medium text-foreground">{renderLabel(item)}</span>
+                  {renderHint?.(item) ? (
+                    <span className="block text-xs text-muted-foreground">{renderHint(item)}</span>
+                  ) : null}
+                </span>
+              </label>
+            ))}
+          </div>
+        </ScrollArea>
+      )}
+    </div>
+  );
+}
+
+interface AccessGovernanceProps {
+  draft: AccessDraft;
+  clients: LeadClient[];
+  editable: boolean;
+  onChange: (patch: Partial<AccessDraft>) => void;
+}
+
+function AccessGovernance({ draft, clients, editable, onChange }: AccessGovernanceProps) {
+  const matrixDisabled = !editable || draft.role === "pending";
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Preset de acesso</p>
+          <Select
+            value={draft.accessPreset}
+            disabled={!editable}
+            onValueChange={(value: AccessPreset) => onChange({ accessPreset: value })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Selecionar preset" />
+            </SelectTrigger>
+            <SelectContent>
+              {ROLE_PRESETS[draft.role].map((preset) => (
+                <SelectItem key={preset} value={preset}>
+                  {ACCESS_PRESET_LABELS[preset]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Role base</p>
+          <Select
+            value={draft.role}
+            disabled={!editable}
+            onValueChange={(value: ManagedRole) => onChange({ role: value })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Selecionar perfil" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="internal">Interno</SelectItem>
+              <SelectItem value="client">Cliente</SelectItem>
+              <SelectItem value="pending">Pendente</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Escopo operacional</p>
+          <Select
+            value={draft.scopeMode}
+            disabled={!editable}
+            onValueChange={(value: AccessScope) => onChange({ scopeMode: value })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Selecionar escopo" />
+            </SelectTrigger>
+            <SelectContent>
+              {ROLE_SCOPES[draft.role].map((scope) => (
+                <SelectItem key={scope} value={scope}>
+                  {ACCESS_SCOPE_LABELS[scope]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Alcada</p>
+          <Select
+            value={draft.approvalLevel}
+            disabled={!editable}
+            onValueChange={(value: ApprovalLevel) => onChange({ approvalLevel: value })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Selecionar alcada" />
+            </SelectTrigger>
+            <SelectContent>
+              {ROLE_APPROVAL_LEVELS[draft.role].map((level) => (
+                <SelectItem key={level} value={level}>
+                  {APPROVAL_LEVEL_LABELS[level]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Badge className={ROLE_BADGE_CLASS[draft.role]}>{ROLE_LABELS[draft.role]}</Badge>
+        <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+          {ACCESS_PRESET_LABELS[draft.accessPreset]}
+        </Badge>
+        <Badge variant="outline">{ACCESS_SCOPE_LABELS[draft.scopeMode]}</Badge>
+        <Badge variant="outline">{APPROVAL_LEVEL_LABELS[draft.approvalLevel]}</Badge>
+        <Badge variant="outline">{draft.permissions.length} permissoes</Badge>
+        <Badge variant="outline">{draft.clientIds.length} tenants</Badge>
+      </div>
+
+      <Tabs defaultValue="tenants" className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="tenants">Tenants</TabsTrigger>
+          <TabsTrigger value="views">Views</TabsTrigger>
+          <TabsTrigger value="pages">Paginas</TabsTrigger>
+          <TabsTrigger value="permissions">Permissoes</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tenants" className="mt-4">
+          <ChecklistPanel
+            title="Vinculacao de tenants"
+            description="Escolha os clientes/tenants que este usuario pode enxergar ou operar."
+            items={clients.map((client) => client.id)}
+            selected={draft.clientIds}
+            disabled={matrixDisabled}
+            emptyMessage="Nenhum tenant cadastrado em `leads_clients`."
+            onToggle={(item, checked) =>
+              onChange({
+                clientIds: toggleItem(draft.clientIds, item, checked),
+              })
+            }
+            renderLabel={(item) => clients.find((client) => client.id === item)?.name || item}
+          />
+        </TabsContent>
+
+        <TabsContent value="views" className="mt-4">
+          <ChecklistPanel
+            title="Views do portal"
+            description="Controla o que o usuario cliente pode visualizar."
+            items={CLIENT_VIEW_ORDER}
+            selected={draft.allowedViews}
+            disabled={matrixDisabled || draft.role !== "client"}
+            emptyMessage="Views do cliente nao aplicam para usuarios internos."
+            onToggle={(item, checked) =>
+              onChange({
+                allowedViews: toggleItem(draft.allowedViews, item as AccessView, checked),
+              })
+            }
+            renderLabel={(item) => item}
+            renderHint={(item) => {
+              if (item === "whatsapp") return "Libera o inbox do cliente";
+              if (item === "planilhas") return "Libera importacoes e historico";
+              return null;
+            }}
+          />
+        </TabsContent>
+
+        <TabsContent value="pages" className="mt-4">
+          <ChecklistPanel
+            title="Paginas internas"
+            description="Define os modulos do CRM liberados para o usuario interno."
+            items={INTERNAL_PAGE_ORDER}
+            selected={draft.internalPages}
+            disabled={matrixDisabled || draft.role !== "internal"}
+            emptyMessage="Paginas internas nao aplicam para usuarios cliente."
+            onToggle={(item, checked) =>
+              onChange({
+                internalPages: toggleItem(draft.internalPages, item as InternalPage, checked),
+              })
+            }
+            renderLabel={(item) => item}
+            renderHint={(item) => {
+              if (item === "usuarios") return "Painel de governanca";
+              if (item === "agente") return "Monitoramento e alertas";
+              if (item === "campanhas") return "Execucao e disparo";
+              return null;
+            }}
+          />
+        </TabsContent>
+
+        <TabsContent value="permissions" className="mt-4">
+          <ChecklistPanel
+            title="Permissoes granulares"
+            description="Cada permissao se comporta como uma alavanca operacional."
+            items={ROLE_PERMISSIONS[draft.role]}
+            selected={draft.permissions}
+            disabled={matrixDisabled}
+            emptyMessage="Usuarios pendentes nao recebem permissoes operacionais."
+            onToggle={(item, checked) =>
+              onChange({
+                permissions: toggleItem(draft.permissions, item as AccessPermission, checked),
+              })
+            }
+            renderLabel={(item) => ACCESS_PERMISSION_DEFINITIONS[item as AccessPermission].label}
+            renderHint={(item) => ACCESS_PERMISSION_DEFINITIONS[item as AccessPermission].description}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
 }
 
 function isProtectedAdmin(user: AdminUserRecord) {
@@ -149,6 +590,7 @@ export default function UserAccessManagement() {
   const [createError, setCreateError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
   const [createSuccess, setCreateSuccess] = useState("");
+  const [createdPasswordResetLink, setCreatedPasswordResetLink] = useState<string | null>(null);
 
   const canEditUsers = isAdminUser;
 
@@ -178,7 +620,7 @@ export default function UserAccessManagement() {
     if (!term) return ordered;
 
     return ordered.filter((user) =>
-      [user.email, user.displayName, user.access.companyName]
+      [user.email, user.displayName, user.access.companyName, user.access.accessPreset, user.access.scopeMode]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term))
     );
@@ -190,6 +632,7 @@ export default function UserAccessManagement() {
       pending: users.filter((user) => user.access.role === "pending").length,
       clients: clients.length,
       admins: users.filter((user) => user.access.isAdmin).length,
+      scoped: users.filter((user) => user.access.scopeMode === "assigned_clients").length,
     }),
     [clients.length, users]
   );
@@ -201,26 +644,26 @@ export default function UserAccessManagement() {
         return current;
       }
 
-      const nextRole = patch.role || current[uid]?.role || "pending";
       const merged = {
         ...(current[uid] || buildUserDraft(sourceUser)),
         ...patch,
       };
+
+      const next = patch.role || patch.accessPreset ? transitionDraft(merged) : normalizeDraft(merged);
       return {
         ...current,
-        [uid]: ensureRoleDefaults(merged, nextRole),
+        [uid]: next,
       };
     });
   };
 
   const updateCreateDraft = (patch: Partial<CreateUserDraft>) => {
     setCreateDraft((current) => {
-      const nextRole = patch.role || current.role;
       const merged = {
         ...current,
         ...patch,
       };
-      return ensureRoleDefaults(merged, nextRole);
+      return patch.role || patch.accessPreset ? transitionDraft(merged) : normalizeDraft(merged);
     });
   };
 
@@ -229,6 +672,12 @@ export default function UserAccessManagement() {
 
     const draft = drafts[user.uid];
     if (!draft) return;
+
+    const validationError = validateDraft(draft);
+    if (validationError) {
+      setSaveError(validationError);
+      return;
+    }
 
     setSavingUid(user.uid);
     setSaveError("");
@@ -240,22 +689,7 @@ export default function UserAccessManagement() {
         throw new Error("Usuario nao autenticado.");
       }
 
-      const payload = {
-        role: draft.role,
-        companyName: draft.companyName,
-        clientIds: draft.role === "client" ? draft.clientIds : [],
-        allowedViews: draft.role === "client" ? draft.allowedViews : [],
-        internalPages: draft.role === "internal" ? draft.internalPages : [],
-        disabled: draft.disabled,
-      };
-
-      if (draft.role === "client" && payload.clientIds.length === 0) {
-        throw new Error("Selecione ao menos um cliente para este usuario.");
-      }
-
-      if (draft.role === "internal" && payload.internalPages.length === 0) {
-        throw new Error("Selecione ao menos uma pagina interna para este usuario.");
-      }
+      const payload = buildPayload(draft);
 
       const res = await fetch(`${API_BASE_URL}/api/admin/users/${encodeURIComponent(user.uid)}/access`, {
         method: "PATCH",
@@ -288,37 +722,28 @@ export default function UserAccessManagement() {
   const createUser = async () => {
     if (!canEditUsers) return;
 
+    const validationError = validateDraft(createDraft);
+    if (validationError) {
+      setCreateError(validationError);
+      return;
+    }
+
     setCreating(true);
     setCreateError("");
     setCreateSuccess("");
+    setCreatedPasswordResetLink(null);
 
     try {
-      if (!createDraft.email.trim() || !createDraft.password.trim()) {
-        throw new Error("Informe e-mail e senha para criar o usuario.");
-      }
-
-      if (createDraft.role === "client" && createDraft.clientIds.length === 0) {
-        throw new Error("Selecione ao menos um cliente para o usuario cliente.");
-      }
-
-      if (createDraft.role === "internal" && createDraft.internalPages.length === 0) {
-        throw new Error("Selecione ao menos uma pagina para o usuario interno.");
-      }
-
       const token = await getIdToken();
       if (!token) {
         throw new Error("Usuario nao autenticado.");
       }
 
       const payload = {
+        ...buildPayload(createDraft),
         email: createDraft.email.trim().toLowerCase(),
         password: createDraft.password,
         displayName: createDraft.displayName.trim() || undefined,
-        role: createDraft.role,
-        companyName: createDraft.companyName.trim() || undefined,
-        clientIds: createDraft.role === "client" ? createDraft.clientIds : [],
-        allowedViews: createDraft.role === "client" ? createDraft.allowedViews : [],
-        internalPages: createDraft.role === "internal" ? createDraft.internalPages : [],
         sendPasswordReset: createDraft.sendPasswordReset,
       };
 
@@ -338,6 +763,7 @@ export default function UserAccessManagement() {
       }
 
       setCreateSuccess(`Usuario ${body.item?.email || payload.email} criado com sucesso.`);
+      setCreatedPasswordResetLink(body.passwordResetLink || null);
       setCreateDraft(buildCreateDraft());
       await refetch();
     } catch (err) {
@@ -350,21 +776,21 @@ export default function UserAccessManagement() {
   return (
     <PageShell
       title="Usuarios e Acessos"
-      subtitle="Associe usuarios aos clientes, paginas internas e perfis da plataforma."
+      subtitle="Governanca de acesso, alcadas e tenants para o CRM multi-tenant."
       headerRight={
         <div className="relative min-w-[260px]">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, e-mail ou empresa"
+            placeholder="Buscar por nome, e-mail, preset ou empresa"
             className="pl-9"
           />
         </div>
       }
       spacing="space-y-6"
     >
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Total de usuarios</CardDescription>
@@ -373,13 +799,13 @@ export default function UserAccessManagement() {
         </Card>
         <Card>
           <CardHeader className="pb-3">
-            <CardDescription>Clientes pendentes</CardDescription>
+            <CardDescription>Pendentes</CardDescription>
             <CardTitle className="text-3xl">{stats.pending}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
-            <CardDescription>Clientes cadastrados</CardDescription>
+            <CardDescription>Tenants cadastrados</CardDescription>
             <CardTitle className="text-3xl">{stats.clients}</CardTitle>
           </CardHeader>
         </Card>
@@ -387,6 +813,12 @@ export default function UserAccessManagement() {
           <CardHeader className="pb-3">
             <CardDescription>Admins protegidos</CardDescription>
             <CardTitle className="text-3xl">{stats.admins}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardDescription>Com escopo vinculado</CardDescription>
+            <CardTitle className="text-3xl">{stats.scoped}</CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -408,8 +840,13 @@ export default function UserAccessManagement() {
       ) : null}
 
       {createSuccess ? (
-        <div className="rounded-lg border border-electric-indigo/20 bg-electric-indigo/10 px-4 py-3 text-sm text-electric-indigo">
-          {createSuccess}
+        <div className="space-y-2 rounded-lg border border-[#1A5CFF]/20 bg-[#1A5CFF]/10 px-4 py-3 text-sm text-[#1A5CFF]">
+          <p>{createSuccess}</p>
+          {createdPasswordResetLink ? (
+            <p className="break-all text-xs opacity-90">
+              Link de redefinicao: {createdPasswordResetLink}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -447,103 +884,12 @@ export default function UserAccessManagement() {
                 onChange={(e) => updateCreateDraft({ displayName: e.target.value })}
                 placeholder="Nome de exibicao"
               />
-              <Select
-                value={createDraft.role}
-                onValueChange={(value: ManagedRole) => updateCreateDraft({ role: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecionar perfil" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="internal">Interno</SelectItem>
-                  <SelectItem value="client">Cliente</SelectItem>
-                  <SelectItem value="pending">Pendente</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input
+                value={createDraft.companyName}
+                onChange={(e) => updateCreateDraft({ companyName: e.target.value })}
+                placeholder="Empresa exibida"
+              />
             </div>
-
-            <Input
-              value={createDraft.companyName}
-              onChange={(e) => updateCreateDraft({ companyName: e.target.value })}
-              placeholder="Empresa exibida"
-            />
-
-            {createDraft.role === "internal" && (
-              <div className="rounded-xl border border-border/80 p-4">
-                <p className="text-sm font-medium text-foreground">Paginas internas liberadas</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Escolha quais paginas este usuario podera acessar no CRM.
-                </p>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {INTERNAL_PAGE_ORDER.map((page) => (
-                    <label key={page} className="flex items-center gap-3 text-sm">
-                      <Checkbox
-                        checked={createDraft.internalPages.includes(page)}
-                        onCheckedChange={(checked) =>
-                          updateCreateDraft({
-                            internalPages: toggleItem(createDraft.internalPages, page, checked === true),
-                          })
-                        }
-                      />
-                      <span className="capitalize text-foreground">{page}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {createDraft.role === "client" && (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-xl border border-border/80 p-4">
-                  <p className="text-sm font-medium text-foreground">Clientes associados</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Selecione uma ou mais unidades para este usuario.
-                  </p>
-                  <div className="mt-4 grid gap-3">
-                    {clients.map((client) => (
-                      <label key={client.id} className="flex items-center gap-3 text-sm">
-                        <Checkbox
-                          checked={createDraft.clientIds.includes(client.id)}
-                          onCheckedChange={(checked) =>
-                            updateCreateDraft({
-                              clientIds: toggleItem(createDraft.clientIds, client.id, checked === true),
-                            })
-                          }
-                        />
-                        <span>{client.name}</span>
-                      </label>
-                    ))}
-                    {!clients.length && (
-                      <p className="text-sm text-muted-foreground">
-                        Nenhum cliente cadastrado em `leads_clients`.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-border/80 p-4">
-                  <p className="text-sm font-medium text-foreground">Views liberadas</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Controle o que este usuario cliente pode visualizar.
-                  </p>
-                  <div className="mt-4 grid gap-3">
-                    {CLIENT_VIEW_ORDER.map((view) => (
-                      <label key={view} className="flex items-center gap-3 text-sm">
-                        <Checkbox
-                          checked={createDraft.allowedViews.includes(view)}
-                          onCheckedChange={(checked) =>
-                            updateCreateDraft({
-                              allowedViews: toggleItem(createDraft.allowedViews, view, checked === true),
-                            })
-                          }
-                        />
-                        <span className="capitalize">{view}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
 
             <label className="flex items-center gap-3 text-sm text-muted-foreground">
               <Checkbox
@@ -553,7 +899,15 @@ export default function UserAccessManagement() {
               Enviar e-mail de redefinicao de senha
             </label>
 
-            <div className="flex flex-wrap justify-end">
+            <Separator />
+
+            <AccessGovernance draft={createDraft} clients={clients} editable={canEditUsers} onChange={updateCreateDraft} />
+
+            <div className="flex flex-wrap justify-end gap-3">
+              <div className="flex items-center gap-2 rounded-full border border-border/70 px-3 py-2 text-xs text-muted-foreground">
+                <KeyRound className="h-4 w-4 text-primary" />
+                Preset define defaults, mas voce pode ajustar manualmente.
+              </div>
               <Button onClick={createUser} disabled={creating}>
                 <UserRound className="h-4 w-4" />
                 {creating ? "Criando..." : "Criar usuario"}
@@ -651,7 +1005,7 @@ export default function UserAccessManagement() {
                   </div>
 
                   <div className="rounded-xl border border-border/80 bg-background/40 px-4 py-3 text-sm text-muted-foreground">
-                    <p className="font-medium text-foreground">Acesso atual</p>
+                    <p className="font-medium text-foreground">Resumo operacional</p>
                     {protectedAccount ? (
                       <p className="mt-1 leading-6">
                         Esta conta esta protegida por allowlist fixa de admin. Nao e possivel alterar
@@ -659,105 +1013,24 @@ export default function UserAccessManagement() {
                       </p>
                     ) : draft.role === "internal" ? (
                       <p className="mt-1 leading-6">
-                        Usuarios internos acessam apenas as paginas liberadas em `internalPages`.
+                        Usuarios internos operam com alcada, escopo e tenants vinculados. O preset serve como
+                        atalho, nao como muleta.
                       </p>
                     ) : draft.role === "client" ? (
                       <p className="mt-1 leading-6">
-                        Usuarios cliente precisam ter clientes associados e ao menos uma view liberada.
+                        Usuarios cliente precisam de tenants, views e permissoes coerentes com o preset.
                       </p>
                     ) : (
                       <p className="mt-1 leading-6">
-                        Usuarios pendentes aguardam aprovacao e nao devem ter acesso operacional.
+                        Usuarios pendentes ainda nao acessam modulos operacionais.
                       </p>
                     )}
                   </div>
                 </div>
 
-                {!protectedAccount && draft.role === "internal" && (
-                  <div className="rounded-xl border border-border/80 p-4">
-                    <p className="text-sm font-medium text-foreground">Paginas internas liberadas</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Controle o que este usuario interno pode visualizar.
-                    </p>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {INTERNAL_PAGE_ORDER.map((page) => (
-                        <label key={page} className="flex items-center gap-3 text-sm">
-                          <Checkbox
-                            checked={draft.internalPages.includes(page)}
-                            disabled={!editable}
-                            onCheckedChange={(checked) =>
-                              updateDraft(user.uid, {
-                                internalPages: toggleItem(draft.internalPages, page, checked === true),
-                              })
-                            }
-                          />
-                          <span className={!editable ? "text-muted-foreground" : "text-foreground"}>
-                            <span className="capitalize">{page}</span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {!protectedAccount && draft.role === "client" && (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-xl border border-border/80 p-4">
-                      <p className="text-sm font-medium text-foreground">Clientes associados</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Selecione uma ou mais unidades de cliente para este usuario.
-                      </p>
-                      <div className="mt-4 grid gap-3">
-                        {clients.map((client) => (
-                          <label key={client.id} className="flex items-center gap-3 text-sm">
-                            <Checkbox
-                              checked={draft.clientIds.includes(client.id)}
-                              disabled={!editable}
-                              onCheckedChange={(checked) =>
-                                updateDraft(user.uid, {
-                                  clientIds: toggleItem(draft.clientIds, client.id, checked === true),
-                                })
-                              }
-                            />
-                            <span className={!editable ? "text-muted-foreground" : "text-foreground"}>
-                              {client.name}
-                            </span>
-                          </label>
-                        ))}
-                        {!clients.length && (
-                          <p className="text-sm text-muted-foreground">
-                            Nenhum cliente cadastrado em `leads_clients`.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-border/80 p-4">
-                      <p className="text-sm font-medium text-foreground">Views liberadas</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Controle o que este usuario cliente pode visualizar.
-                      </p>
-                      <div className="mt-4 grid gap-3">
-                        {CLIENT_VIEW_ORDER.map((view) => (
-                          <label key={view} className="flex items-center gap-3 text-sm">
-                            <Checkbox
-                              checked={draft.allowedViews.includes(view)}
-                              disabled={!editable}
-                              onCheckedChange={(checked) =>
-                                updateDraft(user.uid, {
-                                  allowedViews: toggleItem(draft.allowedViews, view, checked === true),
-                                })
-                              }
-                            />
-                            <span className={!editable ? "text-muted-foreground" : "text-foreground"}>
-                              {view}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {!protectedAccount ? (
+                  <AccessGovernance draft={draft} clients={clients} editable={editable} onChange={(patch) => updateDraft(user.uid, patch)} />
+                ) : null}
 
                 <div className="flex flex-wrap justify-end gap-3">
                   <Button
@@ -776,6 +1049,16 @@ export default function UserAccessManagement() {
             </Card>
           );
         })}
+      </div>
+
+      <div className="rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-xs text-muted-foreground">
+        <div className="flex items-start gap-2">
+          <Workflow className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p>
+            Tenants aqui correspondem aos registros em <span className="font-mono">leads_clients</span>. O
+            preset organiza acesso, alcada e permissao sem perder compatibilidade com o backend atual.
+          </p>
+        </div>
       </div>
     </PageShell>
   );
