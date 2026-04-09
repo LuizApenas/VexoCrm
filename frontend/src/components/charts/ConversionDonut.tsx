@@ -1,4 +1,5 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { useTheme } from "next-themes";
 
 interface ConversionDonutProps {
   data: Array<{
@@ -9,6 +10,20 @@ interface ConversionDonutProps {
 }
 
 export function ConversionDonut({ data }: ConversionDonutProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme !== "light";
+  const tooltipStyle = isDark
+    ? {
+        background: "rgba(8, 12, 32, 0.96)",
+        border: "1px solid rgba(255, 255, 255, 0.12)",
+        color: "rgba(255,255,255,0.92)",
+      }
+    : {
+        background: "rgba(255,255,255,0.98)",
+        border: "1px solid rgba(226,232,240,0.95)",
+        color: "rgb(15 23 42)",
+      };
+
   return (
     <div className="flex flex-col items-center">
       <ResponsiveContainer width="100%" height={150}>
@@ -18,9 +33,7 @@ export function ConversionDonut({ data }: ConversionDonutProps) {
               <Cell key={index} fill={entry.color} />
             ))}
           </Pie>
-          <Tooltip
-            contentStyle={{ background: "hsl(230, 22%, 13%)", border: "1px solid hsl(230, 18%, 18%)", borderRadius: 8, color: "hsl(220, 20%, 92%)" }}
-          />
+          <Tooltip contentStyle={{ ...tooltipStyle, borderRadius: 12, boxShadow: "0 18px 45px rgba(15,23,42,0.12)" }} />
         </PieChart>
       </ResponsiveContainer>
       <div className="flex gap-4 mt-2">
