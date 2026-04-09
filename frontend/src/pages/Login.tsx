@@ -1,5 +1,5 @@
 // VexoCrm/frontend/src/pages/Login.tsx
-import { getCurrentIdTokenResult } from "@/lib/firebase";
+import { getCurrentIdTokenResult, resetPassword } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { Building2, ShieldCheck } from "lucide-react";
 import { loginSchema } from "@/lib/validationSchemas";
 import { useRateLimit } from "@/hooks/useRateLimit";
+import { toast } from "@/components/ui/sonner";
 import { ZodError } from "zod";
 
 type LoginMode = "client" | "admin";
@@ -61,6 +62,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
   const rateLimit = useRateLimit({
     maxAttempts: 5,
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -149,6 +151,47 @@ export default function Login() {
     }
   };
 
+  const handlePasswordReset = async () => {
+    const emailValidation = loginSchema.pick({ email: true }).safeParse({
+      email: email.trim(),
+    });
+
+    if (!emailValidation.success) {
+      setError(
+        emailValidation.error.errors[0]?.message ||
+          "Informe um e-mail valido para recuperar a senha."
+      );
+      return;
+    }
+
+    setError("");
+    setResettingPassword(true);
+
+    try {
+      await resetPassword(emailValidation.data.email);
+      toast.success("Link de recuperacao enviado para o e-mail informado.");
+    } catch (err: unknown) {
+      const firebaseCode =
+        typeof err === "object" && err !== null && "code" in err
+          ? String((err as { code?: string }).code || "")
+          : "";
+
+      const errorMessages: Record<string, string> = {
+        "auth/invalid-email": "Informe um e-mail valido para recuperar a senha.",
+        "auth/user-not-found": "Nao encontramos um usuario com esse e-mail.",
+        "auth/too-many-requests":
+          "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+      };
+
+      setError(
+        errorMessages[firebaseCode] ||
+          "Nao foi possivel enviar o link de recuperacao agora."
+      );
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
   return (
     <AuthLayout onSubmit={handleSubmit} maxWidth="sm" formAlign="center">
       <LogoBlock icon="V" name="Infinie" subtitle="Solucoes Renovaveis" />
@@ -210,12 +253,27 @@ export default function Login() {
             required
           />
         </FormField>
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span className="text-xs text-muted-foreground">
+            Receba um link para redefinir sua senha no e-mail informado.
+          </span>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto px-0"
+            onClick={handlePasswordReset}
+            disabled={resettingPassword || submitting}
+          >
+            {resettingPassword ? "Enviando..." : "Recuperar senha"}
+          </Button>
+        </div>
       </div>
 
       <ErrorMessage message={error} className="text-center" />
 
       {!rateLimit.isLimited && rateLimit.attemptsLeft > 0 && rateLimit.attemptsLeft < 3 && (
-        <div className="text-center text-xs text-amber-600 bg-amber-50 rounded p-2 border border-amber-200">
+        <div className="text-center text-xs text-amber-200/80 bg-amber-500/10 rounded p-2 border border-amber-500/20">
           Aviso: {rateLimit.attemptsLeft} tentativa(s) restante(s)
         </div>
       )}

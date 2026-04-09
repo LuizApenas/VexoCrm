@@ -1,86 +1,83 @@
 import { z } from "zod";
 
-const emailSchema = z
-  .string()
-  .min(1, "E-mail é obrigatório")
-  .email("E-mail inválido");
+const emailSchema = z.string().min(1, "E-mail e obrigatorio").email("E-mail invalido");
 
 const strongPasswordSchema = z
   .string()
-  .min(8, "Senha deve ter no mínimo 8 caracteres")
-  .regex(/[A-Z]/, "Senha deve conter letras maiúsculas")
-  .regex(/[a-z]/, "Senha deve conter letras minúsculas")
-  .regex(/\d/, "Senha deve conter números")
+  .min(8, "Senha deve ter no minimo 8 caracteres")
+  .regex(/[A-Z]/, "Senha deve conter letras maiusculas")
+  .regex(/[a-z]/, "Senha deve conter letras minusculas")
+  .regex(/\d/, "Senha deve conter numeros")
   .regex(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/, "Senha deve conter caracteres especiais");
 
-const weakPasswordSchema = z
-  .string()
-  .min(6, "Senha deve ter no mínimo 6 caracteres");
+const weakPasswordSchema = z.string().min(6, "Senha deve ter no minimo 6 caracteres");
 
-/**
- * Login form validation
- */
 export const loginSchema = z.object({
   email: emailSchema,
-  password: z.string().min(1, "Senha é obrigatória"),
+  password: z.string().min(1, "Senha e obrigatoria"),
 });
 
 export type LoginFormData = z.infer<typeof loginSchema>;
 
-/**
- * Set Password form validation (uses weaker password rules for forced password change)
- */
 export const setPasswordSchema = z
   .object({
-    currentPassword: z.string().min(1, "Senha atual é obrigatória"),
+    currentPassword: z.string().min(1, "Senha atual e obrigatoria"),
     newPassword: weakPasswordSchema,
-    confirmPassword: z.string().min(1, "Confirmação de senha é obrigatória"),
+    confirmPassword: z.string().min(1, "Confirmacao de senha e obrigatoria"),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
-    message: "As senhas não conferem",
+    message: "As senhas nao conferem",
     path: ["confirmPassword"],
   });
 
 export type SetPasswordFormData = z.infer<typeof setPasswordSchema>;
 
-/**
- * Client Signup form validation
- */
 export const clientSignupSchema = z
   .object({
-    name: z
-      .string()
-      .min(1, "Nome é obrigatório")
-      .min(3, "Nome deve ter no mínimo 3 caracteres"),
+    name: z.string().min(1, "Nome e obrigatorio").min(3, "Nome deve ter no minimo 3 caracteres"),
     email: emailSchema,
     companyName: z
       .string()
-      .min(1, "Nome da empresa é obrigatório")
-      .min(3, "Nome da empresa deve ter no mínimo 3 caracteres"),
+      .min(1, "Nome da empresa e obrigatorio")
+      .min(3, "Nome da empresa deve ter no minimo 3 caracteres"),
     password: strongPasswordSchema,
-    confirmPassword: z.string().min(1, "Confirmação de senha é obrigatória"),
+    confirmPassword: z.string().min(1, "Confirmacao de senha e obrigatoria"),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "As senhas não conferem",
+    message: "As senhas nao conferem",
     path: ["confirmPassword"],
   });
 
 export type ClientSignupFormData = z.infer<typeof clientSignupSchema>;
 
-/**
- * User creation form validation
- */
 export const createUserSchema = z.object({
   email: emailSchema,
-  password: z
-    .string()
-    .min(1, "Senha é obrigatória")
-    .min(8, "Senha deve ter no mínimo 8 caracteres"),
-  role: z.enum(["internal", "client"], {
-    errorMap: () => ({ message: "Role inválido" }),
+  password: z.string().min(1, "Senha e obrigatoria").min(8, "Senha deve ter no minimo 8 caracteres"),
+  role: z.enum(["internal", "client", "pending"], {
+    errorMap: () => ({ message: "Role invalido" }),
   }),
+  accessPreset: z
+    .enum(
+      [
+        "internal_admin",
+        "internal_manager",
+        "internal_operator",
+        "client_manager",
+        "client_operator",
+        "client_viewer",
+        "pending",
+      ],
+      {
+        errorMap: () => ({ message: "Preset de acesso invalido" }),
+      }
+    )
+    .optional(),
+  scopeMode: z.enum(["all_clients", "assigned_clients", "no_client_access"]).optional(),
+  approvalLevel: z.enum(["none", "operator", "supervisor", "manager", "director"]).optional(),
   clientIds: z.array(z.string()).optional(),
+  allowedViews: z.array(z.string()).optional(),
   internalPages: z.array(z.string()).optional(),
+  permissions: z.array(z.string()).optional(),
 });
 
 export type CreateUserFormData = z.infer<typeof createUserSchema>;

@@ -51,6 +51,34 @@ export interface CreateN8nDispatchResponse {
   n8nResponse: string | null;
 }
 
+export interface LeadImportItemDetail {
+  id: string;
+  import_id: string;
+  client_id: string;
+  row_number: number;
+  telefone: string | null;
+  normalized_data: Record<string, unknown> | null;
+  imported: boolean;
+  skip_reason: string | null;
+  created_at: string;
+  dispatched: boolean;
+}
+
+interface LeadImportItemsResponse {
+  items: LeadImportItemDetail[];
+  total: number;
+  pendingCount: number;
+}
+
+export interface DispatchCampaignPayload {
+  clientId: string;
+  importId?: string;
+  campaignName?: string;
+  channel?: string;
+  scheduledAt?: string;
+  limit?: number;
+}
+
 export function useLeadImports(clientId?: string) {
   const { isAuthenticated, canAccessView, getIdToken } = useAuth();
 
@@ -82,25 +110,6 @@ export function useLeadImports(clientId?: string) {
   });
 }
 
-export interface LeadImportItemDetail {
-  id: string;
-  import_id: string;
-  client_id: string;
-  row_number: number;
-  telefone: string | null;
-  normalized_data: Record<string, unknown> | null;
-  imported: boolean;
-  skip_reason: string | null;
-  created_at: string;
-  dispatched: boolean;
-}
-
-interface LeadImportItemsResponse {
-  items: LeadImportItemDetail[];
-  total: number;
-  pendingCount: number;
-}
-
 export function useLeadImportItems(clientId?: string, importId?: string, dispatched?: string) {
   const { isAuthenticated, canAccessView, getIdToken } = useAuth();
 
@@ -128,75 +137,6 @@ export function useLeadImportItems(clientId?: string, importId?: string, dispatc
       return res.json();
     },
     staleTime: 30 * 1000,
-  });
-}
-
-export function useDeleteLeadImport() {
-  const { getIdToken } = useAuth();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (importId: string): Promise<{ success: boolean; deletedId: string }> => {
-      const token = await getIdToken();
-      if (!token) throw new Error("Usuario nao autenticado.");
-
-      const res = await fetch(`${API_BASE_URL}/api/lead-imports/${importId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Delete failed: ${res.status} ${errText}`);
-      }
-
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["lead-imports"] });
-      queryClient.invalidateQueries({ queryKey: ["lead-import-items"] });
-    },
-  });
-}
-
-export interface DispatchCampaignPayload {
-  clientId: string;
-  importId?: string;
-  campaignName?: string;
-  channel?: string;
-  scheduledAt?: string; // ISO datetime for scheduled dispatch
-  limit?: number;
-}
-
-export function useDispatchCampaign() {
-  const { getIdToken } = useAuth();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (payload: DispatchCampaignPayload) => {
-      const token = await getIdToken();
-      if (!token) throw new Error("Usuario nao autenticado.");
-
-      const res = await fetch(`${API_BASE_URL}/api/n8n-dispatches`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Dispatch failed: ${res.status} ${errText}`);
-      }
-
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["lead-import-items"] });
-      queryClient.invalidateQueries({ queryKey: ["lead-imports"] });
-    },
   });
 }
 
@@ -234,17 +174,42 @@ export function useCreateLeadImport() {
   });
 }
 
-export function useCreateN8nDispatch() {
+export function useDeleteLeadImport() {
   const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (
-      payload: CreateN8nDispatchPayload
-    ): Promise<CreateN8nDispatchResponse> => {
+    mutationFn: async (importId: string): Promise<{ success: boolean; deletedId: string }> => {
       const token = await getIdToken();
-      if (!token) {
-        throw new Error("Usuario nao autenticado.");
+      if (!token) throw new Error("Usuario nao autenticado.");
+
+      const res = await fetch(`${API_BASE_URL}/api/lead-imports/${importId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Delete failed: ${res.status} ${errText}`);
       }
+
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lead-imports"] });
+      queryClient.invalidateQueries({ queryKey: ["lead-import-items"] });
+    },
+  });
+}
+
+export function useDispatchCampaign() {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: DispatchCampaignPayload): Promise<CreateN8nDispatchResponse> => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuario nao autenticado.");
 
       const res = await fetch(`${API_BASE_URL}/api/n8n-dispatches`, {
         method: "POST",
@@ -257,10 +222,18 @@ export function useCreateN8nDispatch() {
 
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`N8N dispatch failed: ${res.status} ${errText}`);
+        throw new Error(`Dispatch failed: ${res.status} ${errText}`);
       }
 
       return res.json();
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lead-import-items"] });
+      queryClient.invalidateQueries({ queryKey: ["lead-imports"] });
+    },
   });
+}
+
+export function useCreateN8nDispatch() {
+  return useDispatchCampaign();
 }
