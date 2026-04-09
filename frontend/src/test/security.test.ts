@@ -1,13 +1,6 @@
-import { describe, it, expect } from "vitest";
-import {
-  validatePassword,
-  PasswordStrength,
-} from "@/lib/passwordValidation";
-import {
-  loginSchema,
-  setPasswordSchema,
-  clientSignupSchema,
-} from "@/lib/validationSchemas";
+import { describe, expect, it } from "vitest";
+import { PasswordStrength, validatePassword } from "@/lib/passwordValidation";
+import { clientSignupSchema, loginSchema, setPasswordSchema } from "@/lib/validationSchemas";
 
 describe("Password Validation", () => {
   describe("validatePassword", () => {
@@ -93,7 +86,7 @@ describe("Validation Schemas", () => {
           newPassword: "NewPass123!",
           confirmPassword: "Different123",
         });
-      }).toThrow(/não conferem/);
+      }).toThrow(/nao conferem/i);
     });
 
     it("should accept matching passwords", () => {

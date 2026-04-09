@@ -10,29 +10,52 @@ import {
   registerWithEmail,
 } from "@/lib/firebase";
 import {
+  buildPresetDefaults,
+  getDefaultPresetForRole,
   getDefaultClientRoute,
   getDefaultInternalRoute,
   isFixedAdminAccount,
+  normalizeAccessPreset,
   normalizeAccessRole,
+  normalizeAccessScope,
   normalizeAllowedViews,
+  normalizeApprovalLevel,
   normalizeInternalPages,
+  normalizePermissions,
   normalizeString,
   normalizeStringArray,
+  type AccessPermission,
+  type AccessPreset,
+  type AccessRole,
+  type AccessScope,
   type AccessView,
+  type ApprovalLevel,
   type InternalPage,
 } from "@/lib/access";
 
-export type AccessRole = "internal" | "client" | "pending";
+export type {
+  AccessPermission,
+  AccessPreset,
+  AccessRole,
+  AccessScope,
+  AccessView,
+  ApprovalLevel,
+  InternalPage,
+} from "@/lib/access";
 
 export interface AuthAccessProfile {
   uid: string;
   email: string | null;
   role: AccessRole;
   isAdmin: boolean;
+  accessPreset: AccessPreset;
+  scopeMode: AccessScope;
+  approvalLevel: ApprovalLevel;
   clientId: string | null;
   clientIds: string[];
   allowedViews: AccessView[];
   internalPages: InternalPage[];
+  permissions: AccessPermission[];
   companyName: string | null;
 }
 
@@ -41,10 +64,14 @@ interface AuthContextType {
   firebaseUser: User | null;
   accessProfile: AuthAccessProfile | null;
   accessRole: AccessRole;
+  accessPreset: AccessPreset;
+  scopeMode: AccessScope;
+  approvalLevel: ApprovalLevel;
   clientId: string | null;
   clientIds: string[];
   allowedViews: AccessView[];
   internalPages: InternalPage[];
+  permissions: AccessPermission[];
   loading: boolean;
   isAuthenticated: boolean;
   isInternalUser: boolean;
@@ -64,6 +91,7 @@ interface AuthContextType {
   canAccessClient: (targetClientId: string) => boolean;
   canAccessView: (view: AccessView) => boolean;
   canAccessInternalPage: (page: InternalPage) => boolean;
+  hasPermission: (permission: AccessPermission) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -100,21 +128,44 @@ function buildAccessProfile(user: User, claims: Record<string, unknown> = {}): A
       claims.userType ??
       claims.tipo_usuario
   );
+  const accessPreset = normalizeAccessPreset(claims.accessPreset, requestedRole);
+  const permissions = normalizePermissions(claims.permissions, requestedRole, accessPreset);
   const isAdmin = Boolean(
     claims.isAdmin ||
       claims.admin ||
       claims.is_admin ||
+      accessPreset === "internal_admin" ||
+      permissions.includes("users.manage") ||
       isFixedAdminAccount(user.uid, user.email || claims.email || null)
   );
   const role = isAdmin ? "internal" : requestedRole;
-  const rawClientId = claims.clientId ?? claims.client_id ?? claims.companyId ?? claims.empresaId ?? null;
+  const normalizedPreset = role === requestedRole ? accessPreset : normalizeAccessPreset("internal_admin", role);
+  const scopeMode = normalizeAccessScope(
+    claims.scopeMode ?? claims.tenantScope ?? claims.clientScope,
+    role
+  );
+  const approvalLevel = normalizeApprovalLevel(claims.approvalLevel, role);
+  const rawClientId =
+    claims.clientId ??
+    claims.client_id ??
+    claims.companyId ??
+    claims.empresaId ??
+    claims.tenantId ??
+    null;
   const directClientId = normalizeString(rawClientId);
   const clientIds = Array.from(
-    new Set([directClientId, ...normalizeStringArray(claims.clientIds)].filter(Boolean))
+    new Set([
+      directClientId,
+      ...normalizeStringArray(claims.clientIds),
+      ...normalizeStringArray(claims.tenantIds),
+    ].filter(Boolean))
   );
-  const clientId = role === "client" ? directClientId || clientIds[0] || null : null;
-  const allowedViews = role === "client" ? normalizeAllowedViews(claims.allowedViews, role) : [];
-  const internalPages = role === "internal" ? normalizeInternalPages(claims.internalPages, isAdmin) : [];
+  const clientId =
+    role === "pending" || scopeMode === "no_client_access" ? null : directClientId || clientIds[0] || null;
+  const allowedViews =
+    role === "client" ? normalizeAllowedViews(claims.allowedViews, role, normalizedPreset) : [];
+  const internalPages =
+    role === "internal" ? normalizeInternalPages(claims.internalPages, isAdmin, normalizedPreset) : [];
   const companyName = normalizeString(claims.companyName);
 
   return {
@@ -122,10 +173,14 @@ function buildAccessProfile(user: User, claims: Record<string, unknown> = {}): A
     email: user.email,
     role,
     isAdmin,
+    accessPreset: isAdmin ? "internal_admin" : normalizedPreset,
+    scopeMode: isAdmin ? "all_clients" : scopeMode,
+    approvalLevel: isAdmin ? "director" : approvalLevel,
     clientId,
-    clientIds: role === "client" ? clientIds : [],
+    clientIds: role === "pending" || scopeMode === "no_client_access" ? [] : clientIds,
     allowedViews,
     internalPages,
+    permissions: isAdmin ? [...buildPresetDefaults("internal_admin").permissions] : permissions,
     companyName,
   };
 }
@@ -225,17 +280,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = !!firebaseUser;
   const accessRole = accessProfile?.role || "internal";
+  const accessPreset = accessProfile?.accessPreset || "internal_operator";
+  const scopeMode = accessProfile?.scopeMode || "all_clients";
+  const approvalLevel = accessProfile?.approvalLevel || "none";
   const isAdminUser = accessProfile?.isAdmin || false;
   const clientId = accessProfile?.clientId || null;
   const clientIds = accessProfile?.clientIds || [];
   const allowedViews = accessProfile?.allowedViews || [];
   const internalPages = accessProfile?.internalPages || [];
+  const permissions = accessProfile?.permissions || [];
   const isInternalUser = accessRole === "internal";
   const isClientUser = accessRole === "client";
   const isPendingUser = accessRole === "pending";
   const canAccessClient = useCallback(
-    (targetClientId: string) => isInternalUser || clientIds.includes(targetClientId),
-    [clientIds, isInternalUser]
+    (targetClientId: string) => {
+      if (isAdminUser) return true;
+      if (isInternalUser && scopeMode === "all_clients") return true;
+      return clientIds.includes(targetClientId);
+    },
+    [clientIds, isAdminUser, isInternalUser, scopeMode]
   );
   const canAccessView = useCallback(
     (view: AccessView) => isInternalUser || allowedViews.includes(view),
@@ -244,6 +307,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const canAccessInternalPage = useCallback(
     (page: InternalPage) => isInternalUser && (isAdminUser || internalPages.includes(page)),
     [internalPages, isAdminUser, isInternalUser]
+  );
+  const hasPermission = useCallback(
+    (permission: AccessPermission) => isAdminUser || permissions.includes(permission),
+    [isAdminUser, permissions]
   );
   const defaultRoute = isPendingUser
     ? "/aguardando-aprovacao"
@@ -260,10 +327,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         firebaseUser,
         accessProfile,
         accessRole,
+        accessPreset,
+        scopeMode,
+        approvalLevel,
         clientId,
         clientIds,
         allowedViews,
         internalPages,
+        permissions,
         loading,
         isAuthenticated,
         isInternalUser,
@@ -283,6 +354,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         canAccessClient,
         canAccessView,
         canAccessInternalPage,
+        hasPermission,
       }}
     >
       {children}
