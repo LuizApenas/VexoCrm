@@ -104,6 +104,102 @@
     --chart-4: 239 60% 50%;
     --chart-5: 188 60% 40%;
   }
+
+  .light {
+    --background: 220 43% 96%;
+    --foreground: 230 32% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 230 32% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 230 32% 15%;
+
+    --primary: 226 70% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 94%;
+    --secondary-foreground: 230 32% 15%;
+
+    --muted: 220 25% 91%;
+    --muted-foreground: 225 16% 42%;
+
+    --accent: 214 65% 92%;
+    --accent-foreground: 230 32% 15%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 72% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 43 96% 56%;
+    --warning-foreground: 0 0% 10%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 220 22% 84%;
+    --input: 0 0% 100%;
+    --ring: 226 70% 55%;
+
+    --sidebar-background: 220 39% 98%;
+    --sidebar-foreground: 225 18% 34%;
+    --sidebar-primary: 226 70% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 45% 94%;
+    --sidebar-accent-foreground: 230 32% 15%;
+    --sidebar-border: 220 20% 88%;
+    --sidebar-ring: 226 70% 55%;
+  }
+
+  .dark {
+    --background: 230 84% 4%;
+    --foreground: 210 40% 98%;
+
+    --card: 228 30% 5%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 228 30% 5%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 188 94% 53%;
+    --secondary-foreground: 230 84% 4%;
+
+    --muted: 230 20% 10%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 239 60% 22%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 76% 46%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 43 96% 56%;
+    --warning-foreground: 0 0% 4%;
+
+    --info: 188 94% 53%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 230 20% 14%;
+    --input: 230 20% 10%;
+    --ring: 239 84% 67%;
+
+    --sidebar-background: 230 50% 5%;
+    --sidebar-foreground: 215 20% 65%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 239 40% 14%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 230 20% 12%;
+    --sidebar-ring: 239 84% 67%;
+  }
 }
 
 @layer base {
@@ -120,12 +216,20 @@
     font-family: "Inter", system-ui, sans-serif;
     min-height: 100vh;
     overflow-x: hidden;
+    background-color: #f2f6ff;
+    background-image:
+      radial-gradient(circle at 20% 15%, rgba(59, 130, 246, 0.10), transparent 28%),
+      radial-gradient(circle at 80% 10%, rgba(16, 185, 129, 0.06), transparent 22%),
+      radial-gradient(circle at 50% 85%, rgba(99, 102, 241, 0.06), transparent 30%);
+    background-attachment: fixed;
+  }
+
+  .dark body {
     background-color: #020617;
     background-image:
       radial-gradient(circle at 20% 15%, rgba(99, 102, 241, 0.10), transparent 28%),
       radial-gradient(circle at 80% 10%, rgba(34, 211, 238, 0.06), transparent 22%),
       radial-gradient(circle at 50% 85%, rgba(99, 102, 241, 0.05), transparent 30%);
-    background-attachment: fixed;
   }
 
   body::before {
@@ -141,6 +245,12 @@
     z-index: 0;
   }
 
+  .light body::before {
+    background:
+      linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+  }
+
   body::after {
     content: "";
     position: fixed;
@@ -148,6 +258,10 @@
     pointer-events: none;
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.15), transparent 12%, transparent 88%, rgba(0, 0, 0, 0.25));
     z-index: 1;
+  }
+
+  .light body::after {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), transparent 12%, transparent 88%, rgba(148, 163, 184, 0.18));
   }
 
   #root {
@@ -187,9 +301,13 @@
 
   /* Custom scrollbar */
   ::-webkit-scrollbar { width: 8px; }
-  ::-webkit-scrollbar-track { background: #020617; }
-  ::-webkit-scrollbar-thumb { background: #1e1b4b; border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+  ::-webkit-scrollbar-track { background: #e5eefc; }
+  ::-webkit-scrollbar-thumb { background: #b9c8e7; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #6d8bd6; }
+
+  .dark ::-webkit-scrollbar-track { background: #020617; }
+  .dark ::-webkit-scrollbar-thumb { background: #1e1b4b; }
+  .dark ::-webkit-scrollbar-thumb:hover { background: #6366f1; }
 }
 
 /* ── Floating Particles (bubbles rising) ── */
