@@ -715,13 +715,13 @@ export default function LeadImports({
                   <CardContent className="space-y-5 p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div><p className="text-xl font-extrabold tracking-tight text-foreground">{name}</p><p className="mt-1 font-mono text-[11px] text-muted-foreground">{info}</p></div>
-                      <span className={cn("rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", channel === "WHATSAPP" ? "border-electric-indigo/20 bg-electric-indigo/10 text-electric-indigo" : channel === "SMS" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : "border-primary/20 bg-primary/10 text-primary")}>{channel}</span>
+                      <span className={cn("rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", channel === "WHATSAPP" ? "border-electric-indigo/20 bg-electric-indigo/10 text-electric-indigo" : channel === "SMS" ? "border-amber-500/15 bg-amber-500/8 text-amber-200/80" : "border-primary/20 bg-primary/10 text-primary")}>{channel}</span>
                     </div>
                     <div className="border-t border-border/70 pt-4"><p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Segmento: {segment}</p></div>
                     <div className="grid gap-4 md:grid-cols-3">
-                      <Metric value={delivery} label="Entrega" bar="bg-cyan-400" text="text-cyan-300" />
+                      <Metric value={delivery} label="Entrega" bar="bg-electric-indigo" text="text-electric-indigo" />
                       <Metric value={open} label="Abertura" bar="bg-electric-indigo" text="text-electric-indigo" />
-                      <Metric value={clicks} label={channel === "WHATSAPP" ? "Resposta" : "Cliques"} bar="bg-pink-500" text="text-pink-300" />
+                      <Metric value={clicks} label={channel === "WHATSAPP" ? "Resposta" : "Cliques"} bar="bg-cyan-neon" text="text-cyan-neon" />
                     </div>
                   </CardContent>
                 </Card>
@@ -750,10 +750,10 @@ export default function LeadImports({
                         <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{time}</span>
                       </div>
                     </div>
-                    <span className={cn("rounded-md border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", status === "AGENDADA" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : status === "RECORRENTE" ? "border-pink-500/20 bg-pink-500/10 text-pink-300" : "border-primary/20 bg-primary/10 text-primary")}>{status}</span>
+                    <span className={cn("rounded-md border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", status === "AGENDADA" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : status === "RECORRENTE" ? "border-electric-indigo/20 bg-electric-indigo/10 text-electric-indigo" : "border-primary/20 bg-primary/10 text-primary")}>{status}</span>
                     <div className="flex items-center gap-2">
                       <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-secondary/70 text-muted-foreground transition-colors hover:text-foreground"><Eye className="h-4 w-4" /></button>
-                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-secondary/70 text-pink-400 transition-colors hover:text-pink-300">×</button>
+                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-secondary/70 text-red-400/70 transition-colors hover:text-red-300/80">×</button>
                     </div>
                   </CardContent>
                 </Card>
