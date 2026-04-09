@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import * as XLSX from "xlsx";
 import {
   AlertTriangle,
@@ -72,6 +72,17 @@ const SCHEDULED = [
   ["01", "ABR", "Reativacao Q2 - Leads Frios", "WhatsApp", "420 contatos", "10:30 BRT", "RECORRENTE"],
 ] as const;
 
+const darkFieldClass =
+  "border-white/12 bg-black/45 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_10px_30px_rgba(0,0,0,0.18)] transition-all placeholder:text-white/30 focus-visible:border-primary/35 focus-visible:bg-black/60 focus-visible:ring-1 focus-visible:ring-primary/20 focus-visible:ring-offset-0";
+
+const darkSelectContentClass =
+  "border-white/10 bg-[#090b17]/98 text-white shadow-[0_24px_50px_rgba(0,0,0,0.45)] backdrop-blur-xl";
+
+const darkSelectItemClass =
+  "rounded-md text-white/78 focus:bg-white/[0.06] focus:text-white data-[state=checked]:bg-primary/12 data-[state=checked]:text-white";
+
+const ALL_IMPORTS_VALUE = "all-imports";
+
 function parseSpreadsheetFile(file: File): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -144,6 +155,7 @@ export default function LeadImports({
   const [campaignName, setCampaignName] = useState("");
   const [campaignChannel, setCampaignChannel] = useState("");
   const [selectedImportId, setSelectedImportId] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { data: imports = [], isLoading: importsLoading, error: importsError, refetch } = useLeadImports(selectedClientId);
   const createLeadImport = useCreateLeadImport();
@@ -222,7 +234,7 @@ export default function LeadImports({
       }
       const result = await dispatchCampaign.mutateAsync({
         clientId: selectedClientId,
-        importId: selectedImportId || undefined,
+        importId: !selectedImportId || selectedImportId === ALL_IMPORTS_VALUE ? undefined : selectedImportId,
         campaignName: campaignName || undefined,
         channel: campaignChannel || undefined,
         scheduledAt: scheduledAtIso,
@@ -243,12 +255,12 @@ export default function LeadImports({
     <div className="flex min-w-[220px] items-center gap-2">
       <Building2 className="h-4 w-4 text-muted-foreground" />
       <Select value={selectedClientId} onValueChange={setSelectedClientId} disabled={clientsLoading}>
-        <SelectTrigger className="border-border/80 bg-secondary/80">
+        <SelectTrigger className={cn("h-11 rounded-xl", darkFieldClass)}>
           <SelectValue placeholder="Selecionar empresa" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className={darkSelectContentClass}>
           {clients.map((client) => (
-            <SelectItem key={client.id} value={client.id}>
+            <SelectItem key={client.id} value={client.id} className={darkSelectItemClass}>
               {client.name}
             </SelectItem>
           ))}
@@ -301,16 +313,47 @@ export default function LeadImports({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <ErrorMessage message={parseError} variant="banner" />
-                  <div className="grid gap-4 md:grid-cols-[1fr_auto]">
-                    <Input type="file" accept=".csv,.xls,.xlsx" onChange={handleFileChange} className="border-border/80 bg-secondary/80" />
-                    <Button onClick={handleImport} disabled={!selectedFile || createLeadImport.isPending}>
-                      <Upload className="mr-2 h-4 w-4" />
-                      {createLeadImport.isPending ? "Importando..." : "Importar planilha"}
-                    </Button>
+                  <div className="space-y-3">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".csv,.xls,.xlsx"
+                      onChange={handleFileChange}
+                      className="sr-only"
+                    />
+                    <div className="rounded-2xl border border-white/10 bg-black/35 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-white">Anexar planilha</p>
+                          <p className="mt-1 text-sm text-white/55">Clique no botao abaixo para enviar um arquivo CSV, XLS ou XLSX.</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="h-11 rounded-xl border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06] hover:text-white"
+                        >
+                          <Upload className="h-4 w-4" />
+                          {selectedFile ? "Trocar arquivo" : "Clique para anexar"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+                      <div className={cn("flex min-h-[48px] items-center rounded-xl px-4 text-sm", darkFieldClass)}>
+                        <span className={selectedFile ? "text-white" : "text-white/40"}>
+                          {selectedFile ? selectedFile.name : "Nenhum arquivo selecionado"}
+                        </span>
+                      </div>
+                      <Button onClick={handleImport} disabled={!selectedFile || createLeadImport.isPending} className="h-12 rounded-xl">
+                        <Upload className="mr-2 h-4 w-4" />
+                        {createLeadImport.isPending ? "Importando..." : "Importar planilha"}
+                      </Button>
+                    </div>
                   </div>
 
                   {selectedFile && (
-                    <div className="rounded-xl border border-border/70 bg-secondary/30 p-4 text-sm">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                       <p>Arquivo: {selectedFile.name}</p>
                       <p>Linhas lidas: {parsedRows.length}</p>
                     </div>
@@ -469,13 +512,13 @@ export default function LeadImports({
               </div>
               <div className="flex items-center gap-3">
                 <Select value={pendingFilter} onValueChange={setPendingFilter}>
-                  <SelectTrigger className="w-[180px] border-border/80 bg-secondary/80">
+                  <SelectTrigger className={cn("w-[180px] rounded-xl", darkFieldClass)}>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="false">Nao disparados</SelectItem>
-                    <SelectItem value="true">Ja disparados</SelectItem>
-                    <SelectItem value="all">Todos</SelectItem>
+                  <SelectContent className={darkSelectContentClass}>
+                    <SelectItem value="false" className={darkSelectItemClass}>Nao disparados</SelectItem>
+                    <SelectItem value="true" className={darkSelectItemClass}>Ja disparados</SelectItem>
+                    <SelectItem value="all" className={darkSelectItemClass}>Todos</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button variant="outline" size="sm" onClick={() => refetchPending()} disabled={pendingLoading}>
@@ -603,27 +646,27 @@ export default function LeadImports({
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Nome da Campanha *</p>
-                  <Input placeholder="Ex: Newsletter Marco 2026" className="border-border/80 bg-secondary/70" value={campaignName} onChange={(e) => setCampaignName(e.target.value)} />
+                  <Input placeholder="Ex: Newsletter Marco 2026" className={darkFieldClass} value={campaignName} onChange={(e) => setCampaignName(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Canal de Envio *</p>
                   <Select value={campaignChannel} onValueChange={setCampaignChannel}>
-                    <SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                      <SelectItem value="email">E-mail Marketing</SelectItem>
-                      <SelectItem value="sms">SMS</SelectItem>
+                    <SelectTrigger className={darkFieldClass}><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent className={darkSelectContentClass}>
+                      <SelectItem value="whatsapp" className={darkSelectItemClass}>WhatsApp</SelectItem>
+                      <SelectItem value="email" className={darkSelectItemClass}>E-mail Marketing</SelectItem>
+                      <SelectItem value="sms" className={darkSelectItemClass}>SMS</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Base de Leads (importacao)</p>
                   <Select value={selectedImportId} onValueChange={setSelectedImportId}>
-                    <SelectTrigger className="border-border/80 bg-secondary/70"><SelectValue placeholder="Todas as importacoes" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Todas as importacoes</SelectItem>
+                    <SelectTrigger className={darkFieldClass}><SelectValue placeholder="Todas as importacoes" /></SelectTrigger>
+                    <SelectContent className={darkSelectContentClass}>
+                      <SelectItem value={ALL_IMPORTS_VALUE} className={darkSelectItemClass}>Todas as importacoes</SelectItem>
                       {imports.map((imp) => (
-                        <SelectItem key={imp.id} value={imp.id}>
+                        <SelectItem key={imp.id} value={imp.id} className={darkSelectItemClass}>
                           {imp.source_name} ({imp.imported_rows} leads)
                         </SelectItem>
                       ))}
@@ -632,13 +675,13 @@ export default function LeadImports({
                 </div>
                 <div className="space-y-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Leads pendentes</p>
-                  <div className="flex h-10 items-center rounded-md border border-border/80 bg-secondary/70 px-3 font-mono text-sm text-muted-foreground">
+                  <div className={cn("flex h-10 items-center rounded-md px-3 font-mono text-sm", darkFieldClass, "text-white/62")}>
                     {pendingData ? `${pendingData.pendingCount} aguardando disparo` : "Carregando..."}
                   </div>
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Conteudo da Mensagem</p>
-                  <Textarea placeholder="Digite o conteudo da campanha aqui..." className="min-h-[130px] border-border/80 bg-secondary/70" />
+                  <Textarea placeholder="Digite o conteudo da campanha aqui..." className={cn("min-h-[130px]", darkFieldClass)} />
                 </div>
               </div>
 
@@ -663,7 +706,7 @@ export default function LeadImports({
                         value={scheduleDate}
                         onChange={(e) => setScheduleDate(e.target.value)}
                         min={new Date().toISOString().split("T")[0]}
-                        className="border-border/80 bg-secondary/70"
+                        className={darkFieldClass}
                       />
                     </div>
                     <div className="space-y-2">
@@ -672,7 +715,7 @@ export default function LeadImports({
                         type="time"
                         value={scheduleTime}
                         onChange={(e) => setScheduleTime(e.target.value)}
-                        className="border-border/80 bg-secondary/70"
+                        className={darkFieldClass}
                       />
                     </div>
                   </div>
@@ -705,7 +748,7 @@ export default function LeadImports({
         {activeTab === "enviadas" && (
           <div className="space-y-5">
             <div className="flex flex-wrap gap-3">
-              <div className="relative w-full max-w-xs"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Buscar campanha..." className="border-border/80 bg-secondary/70 pl-9" /></div>
+              <div className="relative w-full max-w-xs"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Buscar campanha..." className={cn("pl-9", darkFieldClass)} /></div>
               <Button variant="outline">Todos os canais</Button>
               <Button variant="outline">Todos os periodos</Button>
             </div>
@@ -752,8 +795,8 @@ export default function LeadImports({
                     </div>
                     <span className={cn("rounded-md border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", status === "AGENDADA" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : status === "RECORRENTE" ? "border-pink-500/20 bg-pink-500/10 text-pink-300" : "border-primary/20 bg-primary/10 text-primary")}>{status}</span>
                     <div className="flex items-center gap-2">
-                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-secondary/70 text-muted-foreground transition-colors hover:text-foreground"><Eye className="h-4 w-4" /></button>
-                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-secondary/70 text-pink-400 transition-colors hover:text-pink-300">×</button>
+                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/40 text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:bg-white/[0.05] hover:text-foreground"><Eye className="h-4 w-4" /></button>
+                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/40 text-pink-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:bg-white/[0.05] hover:text-pink-300">×</button>
                     </div>
                   </CardContent>
                 </Card>
