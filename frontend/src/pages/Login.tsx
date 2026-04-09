@@ -215,7 +215,7 @@ export default function Login() {
       <ErrorMessage message={error} className="text-center" />
 
       {!rateLimit.isLimited && rateLimit.attemptsLeft > 0 && rateLimit.attemptsLeft < 3 && (
-        <div className="text-center text-xs text-amber-600 bg-amber-50 rounded p-2 border border-amber-200">
+        <div className="text-center text-xs text-amber-200/80 bg-amber-500/10 rounded p-2 border border-amber-500/20">
           Aviso: {rateLimit.attemptsLeft} tentativa(s) restante(s)
         </div>
       )}
