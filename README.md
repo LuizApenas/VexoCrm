@@ -9,7 +9,7 @@ Hoje a arquitetura real do projeto e:
 - `n8n` como orquestrador do atendimento e da qualificacao.
 - `frontend/` como CRM web para time interno e portal de clientes.
 - `backend/` como API de apoio do CRM.
-
+ 
 Nao existe mais fluxo operacional baseado em planilhas.
 
 ## Estado atual
