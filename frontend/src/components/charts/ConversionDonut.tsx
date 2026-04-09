@@ -11,7 +11,7 @@ interface ConversionDonutProps {
 export function ConversionDonut({ data }: ConversionDonutProps) {
   return (
     <div className="flex flex-col items-center">
-      <ResponsiveContainer width="100%" height={180}>
+      <ResponsiveContainer width="100%" height={150}>
         <PieChart>
           <Pie data={data} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value" stroke="none">
             {data.map((entry, index) => (
