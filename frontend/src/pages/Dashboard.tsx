@@ -3,7 +3,6 @@ import {
   Building2,
   Clock,
   Flame,
-  MapPin,
   Snowflake,
   Target,
   TrendingUp,
@@ -172,20 +171,13 @@ const Dashboard = ({
             </div>
 
             <TabsContent value="resumo" className="space-y-3">
-              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
+              <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
                 <KpiCard
                   title="Leads qualificados"
                   value={String(summary.qualifiedLeads)}
                   icon={<Target className="h-4 w-4" />}
                   tone="pink"
                   trend="com criterio aplicado"
-                />
-                <KpiCard
-                  title="Cobertura territorial"
-                  value={String(summary.activeCities)}
-                  icon={<MapPin className="h-4 w-4" />}
-                  tone="purple"
-                  trend="presenca ativa"
                 />
                 <KpiCard
                   title="Prioridade quente"
@@ -208,13 +200,6 @@ const Dashboard = ({
                   icon={<Snowflake className="h-4 w-4" />}
                   tone="teal"
                   trend="nutricao ativa"
-                />
-                <KpiCard
-                  title="Cobertura"
-                  value={`${summary.qualificationRate}%`}
-                  icon={<Users className="h-4 w-4" />}
-                  tone="purple"
-                  trend="taxa consolidada"
                 />
               </div>
             </TabsContent>

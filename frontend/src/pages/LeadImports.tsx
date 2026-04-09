@@ -229,6 +229,7 @@ export default function LeadImports({
   const [isDispatching, setIsDispatching] = useState(false);
   const [campaignName, setCampaignName] = useState("");
   const [campaignChannel, setCampaignChannel] = useState("whatsapp");
+  const [dispatchLimit, setDispatchLimit] = useState("");
   const [selectedImportId, setSelectedImportId] = useState(ALL_IMPORTS_VALUE);
   const [importsPage, setImportsPage] = useState(1);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -337,6 +338,12 @@ export default function LeadImports({
       return;
     }
 
+    const parsedLimit = dispatchLimit.trim() ? Number(dispatchLimit) : undefined;
+    if (parsedLimit !== undefined && (!Number.isFinite(parsedLimit) || parsedLimit <= 0 || !Number.isInteger(parsedLimit))) {
+      setDispatchStatus("Informe uma quantidade valida de disparos usando apenas numeros inteiros.");
+      return;
+    }
+
     setIsDispatching(true);
     setDispatchStatus(null);
 
@@ -352,12 +359,13 @@ export default function LeadImports({
         campaignName: campaignName || undefined,
         channel: campaignChannel || undefined,
         scheduledAt: scheduledAtIso,
+        limit: parsedLimit,
       });
 
       setDispatchStatus(
         scheduleEnabled
-          ? `Campanha agendada para ${scheduleDate} as ${scheduleTime}. ${result.total} leads serao disparados.`
-          : `Disparo realizado com sucesso! ${result.total} leads enviados ao n8n.`,
+          ? `Campanha agendada para ${scheduleDate} as ${scheduleTime}. ${result.total} leads serao disparados${parsedLimit ? ` neste lote de ${parsedLimit}` : ""}.`
+          : `Disparo realizado com sucesso! ${result.total} leads enviados ao n8n${parsedLimit ? ` neste lote de ${parsedLimit}` : ""}.`,
       );
       void refetchPending();
     } catch (error) {
@@ -825,6 +833,22 @@ export default function LeadImports({
                   <div className={cn("flex h-10 items-center rounded-md px-3 font-mono text-sm", darkFieldClass, "text-white/62")}>
                     {pendingData ? `${pendingData.pendingCount} aguardando disparo` : "Carregando..."}
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Quantidade por disparo</p>
+                  <Input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    placeholder="Ex: 100"
+                    className={darkFieldClass}
+                    value={dispatchLimit}
+                    onChange={(e) => setDispatchLimit(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Defina um lote para nao disparar todos os leads de uma vez. Em branco, envia toda a base pendente.
+                  </p>
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Conteudo da Mensagem</p>
