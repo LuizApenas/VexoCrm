@@ -1,7 +1,5 @@
 import { useState } from "react";
 import {
-  Copy,
-  ExternalLink,
   Megaphone,
   Pause,
   Play,
@@ -49,31 +47,8 @@ import { ErrorMessage } from "@/components/ErrorMessage";
 import { PageShell } from "@/components/PageShell";
 import { cn } from "@/lib/utils";
 
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      toast.success("Copiado!");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Erro ao copiar.");
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="ml-1 rounded p-1 text-muted-foreground transition-colors hover:text-primary"
-      title="Copiar"
-    >
-      <Copy className={cn("h-3.5 w-3.5", copied && "text-primary")} />
-    </button>
-  );
-}
+const DEFAULT_N8N_CAMPAIGN_WEBHOOK_URL =
+  "https://geracaodigital.app.n8n.cloud/webhook/c1a774a2-2172-4b4f-b557-a75d9561b720";
 
 interface CreateDialogProps {
   open: boolean;
@@ -91,8 +66,6 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
     clientId: "",
     importId: "",
     limitPerRun: "50",
-    webhookUrl: "",
-    webhookToken: "",
   });
 
   const createCampaign = useCreateCampaign();
@@ -106,7 +79,6 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
   const handleSubmit = async () => {
     if (!form.name.trim()) return toast.error("Nome da campanha é obrigatório.");
     if (!form.clientId) return toast.error("Selecione um cliente.");
-    if (!form.webhookUrl.trim()) return toast.error("URL do webhook é obrigatória.");
 
     try {
       await createCampaign.mutateAsync({
@@ -114,12 +86,12 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
         clientId: form.clientId,
         importId: form.importId || null,
         limitPerRun: Number(form.limitPerRun) || 50,
-        webhookUrl: form.webhookUrl.trim(),
-        webhookToken: form.webhookToken.trim() || null,
+        webhookUrl: DEFAULT_N8N_CAMPAIGN_WEBHOOK_URL,
+        webhookToken: null,
       });
       toast.success("Campanha criada!");
       onClose();
-      setForm({ name: "", clientId: "", importId: "", limitPerRun: "50", webhookUrl: "", webhookToken: "" });
+      setForm({ name: "", clientId: "", importId: "", limitPerRun: "50" });
       setSelectedClientId("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao criar campanha.");
@@ -206,33 +178,11 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">
-              URL do Webhook n8n
-              <span className="ml-1 text-primary">*</span>
-            </Label>
-            <Input
-              placeholder="https://seu-n8n.dominio.com/webhook/vexocrm-campanha"
-              value={form.webhookUrl}
-              onChange={(e) => setForm((f) => ({ ...f, webhookUrl: e.target.value }))}
-              className="border-white/10 bg-white/[0.03] font-mono text-xs"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Cole aqui a URL do Webhook Trigger do workflow n8n
+          <div className="rounded-xl border border-primary/20 bg-primary/8 px-3 py-3">
+            <p className="text-sm font-medium text-primary">Webhook n8n configurado automaticamente</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              O CRM usa sempre a integração padrão para criar e disparar campanhas, sem exigir esse campo do usuário.
             </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">
-              Token do Webhook (opcional)
-            </Label>
-            <Input
-              type="password"
-              placeholder="Bearer token para autenticação"
-              value={form.webhookToken}
-              onChange={(e) => setForm((f) => ({ ...f, webhookToken: e.target.value }))}
-              className="border-white/10 bg-white/[0.03]"
-            />
           </div>
         </div>
 
@@ -295,9 +245,6 @@ function CampaignCard({ campaign }: CampaignCardProps) {
     }
   };
 
-  const truncateUrl = (url: string) =>
-    url.length > 52 ? `${url.slice(0, 52)}…` : url;
-
   return (
     <>
       <Card className="border-white/8 bg-[rgba(11,14,20,0.4)] backdrop-blur-sm transition-all hover:border-white/12">
@@ -342,26 +289,12 @@ function CampaignCard({ campaign }: CampaignCardProps) {
             )}
           </div>
 
-          <div className="rounded-md border border-white/8 bg-white/[0.02] px-3 py-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                Webhook URL
-              </span>
-              <div className="flex items-center gap-1">
-                <CopyButton value={campaign.webhook_url} />
-                <a
-                  href={campaign.webhook_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded p-1 text-muted-foreground transition-colors hover:text-primary"
-                  title="Abrir"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              </div>
-            </div>
-            <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-              {truncateUrl(campaign.webhook_url)}
+          <div className="rounded-md border border-primary/15 bg-primary/6 px-3 py-2">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-primary">
+              Integracao automatica
+            </span>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Esta campanha usa o webhook padrao configurado no CRM para disparos via n8n.
             </p>
           </div>
 
