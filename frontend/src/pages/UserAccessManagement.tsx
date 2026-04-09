@@ -20,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { PageShell } from "@/components/PageShell";
-import { useLeadClients } from "@/hooks/useLeadClients";
+import { type LeadClient, useLeadClients } from "@/hooks/useLeadClients";
 import { type AdminUserRecord, useAdminUsers } from "@/hooks/useAdminUsers";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -182,6 +182,33 @@ function toggleItem<T>(items: T[], item: T, checked: boolean) {
   return checked ? Array.from(new Set([...items, item])) : items.filter((entry) => entry !== item);
 }
 
+function filterArray<T extends string>(items: T[], allowed: readonly T[]) {
+  return Array.from(new Set(items.filter((item): item is T => allowed.includes(item))));
+}
+
+function syncInternalCampaignAccess<T extends AccessDraft>(draft: T): T {
+  if (draft.role !== "internal") {
+    return draft;
+  }
+
+  const hasCampaignPage = draft.internalPages.includes("campanhas");
+  const hasCampaignPermission = draft.permissions.includes("campaigns.manage");
+
+  if (!hasCampaignPage && !hasCampaignPermission) {
+    return draft;
+  }
+
+  return {
+    ...draft,
+    internalPages: hasCampaignPermission
+      ? toggleItem(draft.internalPages, "campanhas" as InternalPage, true)
+      : draft.internalPages,
+    permissions: hasCampaignPage
+      ? toggleItem(draft.permissions, "campaigns.manage" as AccessPermission, true)
+      : draft.permissions,
+  };
+}
+
 function normalizeDraft<T extends AccessDraft>(draft: T): T {
   const role = draft.role;
   const accessPreset = ROLE_PRESETS[role].includes(draft.accessPreset)
@@ -205,10 +232,11 @@ function normalizeDraft<T extends AccessDraft>(draft: T): T {
     };
   }
 
-  const clientIds = Array.from(new Set(draft.clientIds.map((value) => value.trim()).filter(Boolean)));
-  const allowedViews = role === "client" ? filterArray(draft.allowedViews, CLIENT_VIEW_ORDER) : [];
-  const internalPages = role === "internal" ? filterArray(draft.internalPages, INTERNAL_PAGE_ORDER) : [];
-  const permissions = filterArray(draft.permissions, ROLE_PERMISSIONS[role]);
+  const synchronizedDraft = syncInternalCampaignAccess(draft);
+  const clientIds = Array.from(new Set(synchronizedDraft.clientIds.map((value) => value.trim()).filter(Boolean)));
+  const allowedViews = role === "client" ? filterArray(synchronizedDraft.allowedViews, CLIENT_VIEW_ORDER) : [];
+  const internalPages = role === "internal" ? filterArray(synchronizedDraft.internalPages, INTERNAL_PAGE_ORDER) : [];
+  const permissions = filterArray(synchronizedDraft.permissions, ROLE_PERMISSIONS[role]);
 
   return {
     ...draft,
