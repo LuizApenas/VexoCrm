@@ -100,7 +100,7 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg border-white/10 bg-[rgba(11,14,20,0.4)]">
+      <DialogContent className="max-w-lg border-slate-200/90 bg-white/98 shadow-[0_30px_90px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-[rgba(11,14,20,0.4)]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-foreground">
             <Megaphone className="h-4 w-4 text-primary" />
@@ -115,7 +115,7 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
               placeholder="Ex: SDR Abertura Maio"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              className="border-white/10 bg-white/[0.03]"
+              className="border-slate-200/90 bg-white/90 dark:border-white/10 dark:bg-white/[0.03]"
             />
           </div>
 
@@ -129,7 +129,7 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
                   setSelectedClientId(v);
                 }}
               >
-                <SelectTrigger className="border-white/10 bg-white/[0.03]">
+                <SelectTrigger className="border-slate-200/90 bg-white/90 dark:border-white/10 dark:bg-white/[0.03]">
                   <SelectValue placeholder="Selecionar" />
                 </SelectTrigger>
                 <SelectContent>
@@ -149,7 +149,7 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
                 onValueChange={(v) => setForm((f) => ({ ...f, importId: v === "__all__" ? "" : v }))}
                 disabled={!form.clientId}
               >
-                <SelectTrigger className="border-white/10 bg-white/[0.03]">
+                <SelectTrigger className="border-slate-200/90 bg-white/90 dark:border-white/10 dark:bg-white/[0.03]">
                   <SelectValue placeholder="Todas as bases" />
                 </SelectTrigger>
                 <SelectContent>
@@ -174,7 +174,7 @@ function CreateCampaignDialog({ open, onClose }: CreateDialogProps) {
               max={500}
               value={form.limitPerRun}
               onChange={(e) => setForm((f) => ({ ...f, limitPerRun: e.target.value }))}
-              className="border-white/10 bg-white/[0.03]"
+              className="border-slate-200/90 bg-white/90 dark:border-white/10 dark:bg-white/[0.03]"
             />
           </div>
 
@@ -247,7 +247,7 @@ function CampaignCard({ campaign }: CampaignCardProps) {
 
   return (
     <>
-      <Card className="border-white/8 bg-[rgba(11,14,20,0.4)] backdrop-blur-sm transition-all hover:border-white/12">
+      <Card className="border-slate-200/90 bg-white/92 backdrop-blur-sm transition-all hover:border-slate-300 dark:border-white/8 dark:bg-[rgba(11,14,20,0.4)] dark:hover:border-white/12">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -323,7 +323,7 @@ function CampaignCard({ campaign }: CampaignCardProps) {
               variant="ghost"
               onClick={handleToggleStatus}
               disabled={updateCampaign.isPending}
-              className="border border-white/10 text-muted-foreground hover:text-foreground"
+              className="border border-slate-200/90 text-muted-foreground hover:bg-slate-50 hover:text-foreground dark:border-white/10 dark:hover:bg-transparent"
               title={isActive ? "Pausar campanha" : "Ativar campanha"}
             >
               {isActive ? (
@@ -337,7 +337,7 @@ function CampaignCard({ campaign }: CampaignCardProps) {
               size="sm"
               variant="ghost"
               onClick={() => setConfirmDelete(true)}
-              className="border border-white/10 text-muted-foreground hover:border-red-500/30 hover:text-red-400"
+              className="border border-slate-200/90 text-muted-foreground hover:border-red-500/30 hover:text-red-400 dark:border-white/10"
               title="Excluir campanha"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -347,7 +347,7 @@ function CampaignCard({ campaign }: CampaignCardProps) {
       </Card>
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <AlertDialogContent className="border-white/10 bg-[rgba(11,14,20,0.4)]">
+        <AlertDialogContent className="border-slate-200/90 bg-white/98 dark:border-white/10 dark:bg-[rgba(11,14,20,0.4)]">
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir campanha?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -399,7 +399,7 @@ export default function Campanhas() {
           {[1, 2, 3].map((i) => (
             <div
               key={i}
-              className="h-48 animate-pulse rounded-lg border border-white/8 bg-white/[0.02]"
+              className="h-48 animate-pulse rounded-lg border border-slate-200/90 bg-white/80 dark:border-white/8 dark:bg-white/[0.02]"
             />
           ))}
         </div>

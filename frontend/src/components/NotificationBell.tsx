@@ -25,7 +25,7 @@ export function NotificationBell({ collapsed }: NotificationBellProps) {
         <button
           className={cn(
             "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
-            "text-sidebar-foreground hover:bg-white/[0.04] hover:text-sidebar-accent-foreground"
+            "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 dark:text-sidebar-foreground dark:hover:bg-white/[0.04] dark:hover:text-sidebar-accent-foreground"
           )}
         >
           <Bell className="h-4 w-4 shrink-0" />
@@ -33,8 +33,8 @@ export function NotificationBell({ collapsed }: NotificationBellProps) {
           {unreadCount > 0 && <span className="absolute right-2 top-2 h-2 min-w-[8px] rounded-full bg-primary shadow-[0_0_10px_rgba(99,102,241,0.8)]" />}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="right" align="end" className="w-80 border-white/10 bg-[rgba(11,14,20,0.4)] p-0 text-foreground">
-        <div className="flex items-center justify-between border-b border-white/8 p-3">
+      <PopoverContent side="right" align="end" className="w-80 border-slate-200/90 bg-white/98 p-0 text-foreground dark:border-white/10 dark:bg-[rgba(11,14,20,0.4)]">
+        <div className="flex items-center justify-between border-b border-slate-200/80 p-3 dark:border-white/8">
           <h4 className="text-sm font-semibold text-foreground">Notificacoes</h4>
           {unreadCount > 0 && (
             <Button variant="ghost" size="sm" className="h-7 rounded-full text-xs" onClick={markAllRead}>
@@ -47,13 +47,13 @@ export function NotificationBell({ collapsed }: NotificationBellProps) {
           {items.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">Nenhuma notificacao</div>
           ) : (
-            <div className="divide-y divide-white/8">
+            <div className="divide-y divide-slate-200/80 dark:divide-white/8">
               {items.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => handleClick(item)}
                   className={cn(
-                    "flex w-full gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03]",
+                    "flex w-full gap-2 px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.03]",
                     !item.read && "bg-primary/6"
                   )}
                 >
