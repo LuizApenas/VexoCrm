@@ -1,5 +1,5 @@
 # VexoCrm
- 
+  
 Monorepo do CRM e da operacao automatizada da Vexo/Infinie.
  
 Hoje a arquitetura real do projeto e:
