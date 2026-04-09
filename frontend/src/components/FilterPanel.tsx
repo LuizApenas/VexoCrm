@@ -14,7 +14,7 @@ const colsMap: Record<number, string> = {
 
 export function FilterPanel({ children, cols = 4 }: FilterPanelProps) {
   return (
-    <div className="space-y-4 rounded-xl border border-white/10 bg-[rgba(11,14,20,0.4)] p-5">
+    <div className="space-y-4 rounded-xl border border-slate-200/90 bg-[rgba(255,255,255,0.88)] p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-[rgba(11,14,20,0.4)] dark:shadow-none">
       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
         <Filter className="h-4 w-4 text-primary" />
         Filtros
