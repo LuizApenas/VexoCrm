@@ -147,7 +147,9 @@ const App = () => (
                 path="usuarios"
                 element={
                   <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="usuarios">
-                    <UserAccessManagement />
+                    <ErrorBoundary>
+                      <UserAccessManagement />
+                    </ErrorBoundary>
                   </ProtectedRoute>
                 }
               />
