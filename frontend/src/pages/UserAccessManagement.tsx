@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  KeyRound,
   LockKeyhole,
   Plus,
   Search,
   ShieldCheck,
+  Trash2,
   UserRound,
-  Workflow,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/EmptyState";
@@ -25,11 +23,7 @@ import { type AdminUserRecord, useAdminUsers } from "@/hooks/useAdminUsers";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
-  ACCESS_PERMISSION_DEFINITIONS,
   ACCESS_PERMISSION_ORDER,
-  ACCESS_PRESET_LABELS,
-  ACCESS_SCOPE_LABELS,
-  APPROVAL_LEVEL_LABELS,
   CLIENT_VIEW_ORDER,
   buildPresetDefaults,
   getDefaultPresetForRole,
@@ -77,7 +71,11 @@ interface CreateUserDraft {
   disabled: boolean;
 }
 
+type AccessDraft = UserDraft | CreateUserDraft;
+type RoleFilter = "all" | ManagedRole;
+
 const DEFAULT_INTERNAL_PAGES: InternalPage[] = ["dashboard"];
+const DEFAULT_CLIENT_VIEWS: AccessView[] = ["dashboard", "leads"];
 
 const ROLE_LABELS: Record<ManagedRole, string> = {
   internal: "Interno",
@@ -122,6 +120,33 @@ const ROLE_PERMISSIONS: Record<ManagedRole, AccessPermission[]> = {
   pending: [],
 };
 
+const VIEW_LABELS: Record<AccessView, string> = {
+  dashboard: "Dashboard",
+  leads: "Leads",
+  planilhas: "Planilhas",
+  whatsapp: "WhatsApp",
+};
+
+const INTERNAL_PAGE_LABELS: Record<InternalPage, string> = {
+  dashboard: "Dashboard",
+  leads: "Leads",
+  planilhas: "Planilhas",
+  whatsapp: "WhatsApp",
+  agente: "Agente",
+  usuarios: "Usuarios",
+  campanhas: "Campanhas",
+};
+
+const CLIENT_PAGE_TABS = [
+  { value: "portal", label: "Portal", items: ["dashboard", "leads", "planilhas"] as AccessView[] },
+  { value: "comunicacao", label: "Comunicacao", items: ["whatsapp"] as AccessView[] },
+];
+
+const INTERNAL_PAGE_TABS = [
+  { value: "operacao", label: "Operacao", items: ["dashboard", "leads", "planilhas", "whatsapp"] as InternalPage[] },
+  { value: "gestao", label: "Gestao", items: ["agente", "usuarios", "campanhas"] as InternalPage[] },
+];
+
 function buildUserDraft(user: AdminUserRecord): UserDraft {
   const role = user.access.role;
   const accessPreset = user.access.accessPreset || getDefaultPresetForRole(role);
@@ -148,24 +173,114 @@ function buildUserDraft(user: AdminUserRecord): UserDraft {
 }
 
 function buildCreateDraft(): CreateUserDraft {
-  const defaults = buildPresetDefaults("internal_operator");
-
-  return {
+  return normalizeCreateDraftForSimpleForm({
     email: "",
     password: "",
     displayName: "",
     role: "internal",
     accessPreset: "internal_operator",
-    scopeMode: defaults.scopeMode,
-    approvalLevel: defaults.approvalLevel,
+    scopeMode: "all_clients",
+    approvalLevel: "operator",
     companyName: "",
     clientIds: [],
-    allowedViews: [...defaults.allowedViews],
+    allowedViews: [],
     internalPages: [...DEFAULT_INTERNAL_PAGES],
-    permissions: [...defaults.permissions],
+    permissions: ["dashboard.view"],
     sendPasswordReset: false,
     disabled: false,
+  });
+}
+
+function derivePermissionsFromClientViews(views: AccessView[]): AccessPermission[] {
+  const permissions: AccessPermission[] = [];
+
+  if (views.includes("dashboard")) permissions.push("dashboard.view");
+  if (views.includes("leads")) permissions.push("leads.view");
+  if (views.includes("planilhas")) permissions.push("imports.manage");
+  if (views.includes("whatsapp")) permissions.push("whatsapp.view", "whatsapp.reply");
+
+  return filterArray(permissions, ACCESS_PERMISSION_ORDER);
+}
+
+function derivePermissionsFromInternalPages(pages: InternalPage[]): AccessPermission[] {
+  const permissions: AccessPermission[] = [];
+
+  if (pages.includes("dashboard")) permissions.push("dashboard.view");
+  if (pages.includes("leads")) permissions.push("leads.view");
+  if (pages.includes("planilhas")) permissions.push("imports.manage");
+  if (pages.includes("whatsapp")) permissions.push("whatsapp.view", "whatsapp.reply");
+  if (pages.includes("agente")) permissions.push("agente.view");
+  if (pages.includes("usuarios")) permissions.push("users.view", "users.manage");
+  if (pages.includes("campanhas")) permissions.push("campaigns.manage");
+
+  return filterArray(permissions, ACCESS_PERMISSION_ORDER);
+}
+
+function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
+  if (draft.role === "pending") {
+    return {
+      ...draft,
+      accessPreset: "pending",
+      scopeMode: "no_client_access",
+      approvalLevel: "none",
+      clientIds: [],
+      allowedViews: [],
+      internalPages: [],
+      permissions: [],
+    };
+  }
+
+  const selectedClientId = draft.clientIds[0]?.trim() || "";
+
+  if (draft.role === "client") {
+    const allowedViews = filterArray(
+      draft.allowedViews.length ? draft.allowedViews : DEFAULT_CLIENT_VIEWS,
+      CLIENT_VIEW_ORDER
+    );
+    const accessPreset: AccessPreset =
+      allowedViews.includes("planilhas") || allowedViews.includes("whatsapp")
+        ? "client_operator"
+        : "client_viewer";
+    const defaults = buildPresetDefaults(accessPreset);
+
+    return {
+      ...draft,
+      role: "client",
+      accessPreset,
+      scopeMode: "assigned_clients",
+      approvalLevel: defaults.approvalLevel,
+      clientIds: selectedClientId ? [selectedClientId] : [],
+      allowedViews,
+      internalPages: [],
+      permissions: derivePermissionsFromClientViews(allowedViews),
+    };
+  }
+
+  const internalPages = filterArray(
+    draft.internalPages.length ? draft.internalPages : DEFAULT_INTERNAL_PAGES,
+    INTERNAL_PAGE_ORDER
+  );
+  const accessPreset: AccessPreset =
+    internalPages.includes("usuarios") || internalPages.includes("campanhas") || internalPages.includes("agente")
+      ? "internal_manager"
+      : "internal_operator";
+  const defaults = buildPresetDefaults(accessPreset);
+
+  return {
+    ...draft,
+    role: "internal",
+    accessPreset,
+    scopeMode: selectedClientId ? "assigned_clients" : "all_clients",
+    approvalLevel: defaults.approvalLevel,
+    clientIds: selectedClientId ? [selectedClientId] : [],
+    allowedViews: [],
+    internalPages,
+    permissions: derivePermissionsFromInternalPages(internalPages),
   };
+}
+
+function normalizeCreateDraftForSimpleForm(draft: CreateUserDraft): CreateUserDraft {
+  return applySimpleAccessModel(draft);
 }
 
 function formatDate(value: string | null) {
@@ -184,29 +299,6 @@ function toggleItem<T>(items: T[], item: T, checked: boolean) {
 
 function filterArray<T extends string>(items: T[], allowed: readonly T[]) {
   return Array.from(new Set(items.filter((item): item is T => allowed.includes(item))));
-}
-
-function syncInternalCampaignAccess<T extends AccessDraft>(draft: T): T {
-  if (draft.role !== "internal") {
-    return draft;
-  }
-
-  const hasCampaignPage = draft.internalPages.includes("campanhas");
-  const hasCampaignPermission = draft.permissions.includes("campaigns.manage");
-
-  if (!hasCampaignPage && !hasCampaignPermission) {
-    return draft;
-  }
-
-  return {
-    ...draft,
-    internalPages: hasCampaignPermission
-      ? toggleItem(draft.internalPages, "campanhas" as InternalPage, true)
-      : draft.internalPages,
-    permissions: hasCampaignPage
-      ? toggleItem(draft.permissions, "campaigns.manage" as AccessPermission, true)
-      : draft.permissions,
-  };
 }
 
 function normalizeDraft<T extends AccessDraft>(draft: T): T {
@@ -232,11 +324,10 @@ function normalizeDraft<T extends AccessDraft>(draft: T): T {
     };
   }
 
-  const synchronizedDraft = syncInternalCampaignAccess(draft);
-  const clientIds = Array.from(new Set(synchronizedDraft.clientIds.map((value) => value.trim()).filter(Boolean)));
-  const allowedViews = role === "client" ? filterArray(synchronizedDraft.allowedViews, CLIENT_VIEW_ORDER) : [];
-  const internalPages = role === "internal" ? filterArray(synchronizedDraft.internalPages, INTERNAL_PAGE_ORDER) : [];
-  const permissions = filterArray(synchronizedDraft.permissions, ROLE_PERMISSIONS[role]);
+  const clientIds = Array.from(new Set(draft.clientIds.map((value) => value.trim()).filter(Boolean)));
+  const allowedViews = role === "client" ? filterArray(draft.allowedViews, CLIENT_VIEW_ORDER) : [];
+  const internalPages = role === "internal" ? filterArray(draft.internalPages, INTERNAL_PAGE_ORDER) : [];
+  const permissions = filterArray(draft.permissions, ROLE_PERMISSIONS[role]);
 
   return {
     ...draft,
@@ -343,7 +434,10 @@ interface ChecklistPanelProps {
   selected: string[];
   disabled: boolean;
   emptyMessage: string;
+  searchPlaceholder?: string;
   onToggle: (item: string, checked: boolean) => void;
+  onSelectAll?: () => void;
+  onClear?: () => void;
   renderLabel: (item: string) => string;
   renderHint?: (item: string) => string | null;
 }
@@ -355,34 +449,75 @@ function ChecklistPanel({
   selected,
   disabled,
   emptyMessage,
+  searchPlaceholder,
   onToggle,
+  onSelectAll,
+  onClear,
   renderLabel,
   renderHint,
 }: ChecklistPanelProps) {
+  const [search, setSearch] = useState("");
+  const term = search.trim().toLowerCase();
+  const filteredItems = items.filter((item) => {
+    if (!term) return true;
+
+    const label = renderLabel(item).toLowerCase();
+    const hint = renderHint?.(item)?.toLowerCase() || "";
+    return label.includes(term) || hint.includes(term);
+  });
+
   return (
-    <div className="rounded-2xl border border-border/80 bg-background/40 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+    <div className="rounded-3xl border border-border/80 bg-background/60 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
           <p className="text-sm font-medium text-foreground">{title}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+          <p className="text-xs leading-5 text-muted-foreground">{description}</p>
         </div>
-        <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
-          {selected.length}
-        </Badge>
+
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+            {selected.length} selecionados
+          </Badge>
+
+          {onSelectAll ? (
+            <Button type="button" size="sm" variant="ghost" disabled={disabled || items.length === 0} onClick={onSelectAll}>
+              Todos
+            </Button>
+          ) : null}
+
+          {onClear ? (
+            <Button type="button" size="sm" variant="ghost" disabled={disabled || selected.length === 0} onClick={onClear}>
+              Limpar
+            </Button>
+          ) : null}
+        </div>
       </div>
 
-      <Separator className="my-4" />
+      {items.length > 6 ? (
+        <div className="relative mt-4">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={searchPlaceholder || "Filtrar itens"}
+            className="pl-9"
+          />
+        </div>
+      ) : null}
 
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+        <p className="mt-4 text-sm text-muted-foreground">{emptyMessage}</p>
+      ) : filteredItems.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground">Nenhum item corresponde ao filtro informado.</p>
       ) : (
-        <ScrollArea className="h-64 pr-3">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((item) => (
+        <ScrollArea className="mt-4 h-72 pr-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            {filteredItems.map((item) => (
               <label
                 key={item}
                 className={cn(
-                  "flex items-start gap-3 rounded-xl border border-border/70 bg-background/70 px-3 py-3 text-sm transition-colors",
+                  "flex items-start gap-3 rounded-2xl border px-3 py-3 text-sm transition-colors",
+                  selected.includes(item) ? "border-primary/30 bg-primary/5" : "border-border/70 bg-background/70",
                   disabled ? "opacity-70" : "hover:border-primary/30 hover:bg-primary/5"
                 )}
               >
@@ -406,6 +541,77 @@ function ChecklistPanel({
   );
 }
 
+interface AccessPagesTabsProps {
+  role: "internal" | "client";
+  selected: string[];
+  disabled: boolean;
+  onChange: (next: string[]) => void;
+}
+
+function AccessPagesTabs({ role, selected, disabled, onChange }: AccessPagesTabsProps) {
+  const tabs = role === "client" ? CLIENT_PAGE_TABS : INTERNAL_PAGE_TABS;
+  const referenceOrder = role === "client" ? CLIENT_VIEW_ORDER : INTERNAL_PAGE_ORDER;
+  const [activeTab, setActiveTab] = useState(tabs[0].value);
+
+  useEffect(() => {
+    setActiveTab(tabs[0].value);
+  }, [role]);
+
+  return (
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <TabsList className="grid w-full grid-cols-2">
+        {tabs.map((tab) => (
+          <TabsTrigger key={tab.value} value={tab.value}>
+            {tab.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+
+      {tabs.map((tab) => (
+        <TabsContent key={tab.value} value={tab.value} className="mt-0">
+          <ChecklistPanel
+            title={role === "client" ? "Paginas do cliente" : "Paginas internas"}
+            description={
+              role === "client"
+                ? "Escolha apenas as paginas que o cliente vai enxergar no portal."
+                : "Escolha apenas os modulos que esse usuario vai acessar no CRM."
+            }
+            items={tab.items}
+            selected={selected}
+            disabled={disabled}
+            emptyMessage="Nenhuma pagina disponivel."
+            onToggle={(item, checked) => onChange(toggleItem(selected, item, checked))}
+            onSelectAll={() =>
+              onChange(filterArray(Array.from(new Set([...selected, ...tab.items])), referenceOrder))
+            }
+            onClear={() => {
+              const tabItems = tab.items as string[];
+              onChange(selected.filter((item) => !tabItems.includes(item)));
+            }}
+            renderLabel={(item) =>
+              role === "client"
+                ? VIEW_LABELS[item as AccessView]
+                : INTERNAL_PAGE_LABELS[item as InternalPage]
+            }
+            renderHint={(item) => {
+              if (role === "client") {
+                if (item === "whatsapp") return "Inbox e conversa do cliente";
+                if (item === "planilhas") return "Importacao e historico";
+                return "Pagina visivel no portal";
+              }
+
+              if (item === "usuarios") return "Governanca de acessos";
+              if (item === "agente") return "Alertas e monitoramento";
+              if (item === "campanhas") return "Disparos e campanhas";
+              return "Modulo do CRM";
+            }}
+          />
+        </TabsContent>
+      ))}
+    </Tabs>
+  );
+}
+
 interface AccessGovernanceProps {
   draft: AccessDraft;
   clients: LeadClient[];
@@ -414,189 +620,95 @@ interface AccessGovernanceProps {
 }
 
 function AccessGovernance({ draft, clients, editable, onChange }: AccessGovernanceProps) {
-  const matrixDisabled = !editable || draft.role === "pending";
+  const normalized = applySimpleAccessModel(draft);
+  const matrixDisabled = !editable || normalized.role === "pending";
+  const roleOptions: ManagedRole[] =
+    normalized.role === "pending" ? ["pending", "internal", "client"] : ["internal", "client"];
+  const applyPatch = (patch: Partial<AccessDraft>) => onChange(applySimpleAccessModel({ ...normalized, ...patch }));
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Preset de acesso</p>
-          <Select
-            value={draft.accessPreset}
-            disabled={!editable}
-            onValueChange={(value: AccessPreset) => onChange({ accessPreset: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecionar preset" />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLE_PRESETS[draft.role].map((preset) => (
-                <SelectItem key={preset} value={preset}>
-                  {ACCESS_PRESET_LABELS[preset]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="rounded-3xl border border-border/80 bg-background/60 p-5">
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Tipo</p>
+            <Select
+              value={normalized.role}
+              disabled={!editable}
+              onValueChange={(value: ManagedRole) => applyPatch({ role: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecionar tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                {roleOptions.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {ROLE_LABELS[role]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Role base</p>
-          <Select
-            value={draft.role}
-            disabled={!editable}
-            onValueChange={(value: ManagedRole) => onChange({ role: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecionar perfil" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="internal">Interno</SelectItem>
-              <SelectItem value="client">Cliente</SelectItem>
-              <SelectItem value="pending">Pendente</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Escopo operacional</p>
-          <Select
-            value={draft.scopeMode}
-            disabled={!editable}
-            onValueChange={(value: AccessScope) => onChange({ scopeMode: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecionar escopo" />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLE_SCOPES[draft.role].map((scope) => (
-                <SelectItem key={scope} value={scope}>
-                  {ACCESS_SCOPE_LABELS[scope]}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Empresa / tenant</p>
+            <Select
+              value={normalized.clientIds[0] || "__none"}
+              disabled={!editable}
+              onValueChange={(value) => {
+                const selectedClient = clients.find((client) => client.id === value);
+                applyPatch({
+                  clientIds: value === "__none" ? [] : [value],
+                  companyName: value === "__none" ? "" : selectedClient?.name || "",
+                });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecionar empresa" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">
+                  {normalized.role === "client" ? "Selecionar empresa" : "Sem empresa vinculada"}
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+                {clients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Alcada</p>
-          <Select
-            value={draft.approvalLevel}
-            disabled={!editable}
-            onValueChange={(value: ApprovalLevel) => onChange({ approvalLevel: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecionar alcada" />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLE_APPROVAL_LEVELS[draft.role].map((level) => (
-                <SelectItem key={level} value={level}>
-                  {APPROVAL_LEVEL_LABELS[level]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Empresa exibida</p>
+            <Input
+              value={normalized.companyName}
+              disabled={!editable}
+              onChange={(event) => applyPatch({ companyName: event.target.value })}
+              placeholder="Nome exibido da empresa"
+            />
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Badge className={ROLE_BADGE_CLASS[draft.role]}>{ROLE_LABELS[draft.role]}</Badge>
-        <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
-          {ACCESS_PRESET_LABELS[draft.accessPreset]}
-        </Badge>
-        <Badge variant="outline">{ACCESS_SCOPE_LABELS[draft.scopeMode]}</Badge>
-        <Badge variant="outline">{APPROVAL_LEVEL_LABELS[draft.approvalLevel]}</Badge>
-        <Badge variant="outline">{draft.permissions.length} permissoes</Badge>
-        <Badge variant="outline">{draft.clientIds.length} tenants</Badge>
-      </div>
+      {normalized.role === "pending" ? (
+        <div className="rounded-3xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          Usuario pendente nao recebe paginas, views nem permissoes operacionais ate a aprovacao.
+        </div>
+      ) : null}
 
-      <Tabs defaultValue="tenants" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="tenants">Tenants</TabsTrigger>
-          <TabsTrigger value="views">Views</TabsTrigger>
-          <TabsTrigger value="pages">Paginas</TabsTrigger>
-          <TabsTrigger value="permissions">Permissoes</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="tenants" className="mt-4">
-          <ChecklistPanel
-            title="Vinculacao de tenants"
-            description="Escolha os clientes/tenants que este usuario pode enxergar ou operar."
-            items={clients.map((client) => client.id)}
-            selected={draft.clientIds}
-            disabled={matrixDisabled}
-            emptyMessage="Nenhum tenant cadastrado em `leads_clients`."
-            onToggle={(item, checked) =>
-              onChange({
-                clientIds: toggleItem(draft.clientIds, item, checked),
-              })
-            }
-            renderLabel={(item) => clients.find((client) => client.id === item)?.name || item}
-          />
-        </TabsContent>
-
-        <TabsContent value="views" className="mt-4">
-          <ChecklistPanel
-            title="Views do portal"
-            description="Controla o que o usuario cliente pode visualizar."
-            items={CLIENT_VIEW_ORDER}
-            selected={draft.allowedViews}
-            disabled={matrixDisabled || draft.role !== "client"}
-            emptyMessage="Views do cliente nao aplicam para usuarios internos."
-            onToggle={(item, checked) =>
-              onChange({
-                allowedViews: toggleItem(draft.allowedViews, item as AccessView, checked),
-              })
-            }
-            renderLabel={(item) => item}
-            renderHint={(item) => {
-              if (item === "whatsapp") return "Libera o inbox do cliente";
-              if (item === "planilhas") return "Libera importacoes e historico";
-              return null;
-            }}
-          />
-        </TabsContent>
-
-        <TabsContent value="pages" className="mt-4">
-          <ChecklistPanel
-            title="Paginas internas"
-            description="Define os modulos do CRM liberados para o usuario interno."
-            items={INTERNAL_PAGE_ORDER}
-            selected={draft.internalPages}
-            disabled={matrixDisabled || draft.role !== "internal"}
-            emptyMessage="Paginas internas nao aplicam para usuarios cliente."
-            onToggle={(item, checked) =>
-              onChange({
-                internalPages: toggleItem(draft.internalPages, item as InternalPage, checked),
-              })
-            }
-            renderLabel={(item) => item}
-            renderHint={(item) => {
-              if (item === "usuarios") return "Painel de governanca";
-              if (item === "agente") return "Monitoramento e alertas";
-              if (item === "campanhas") return "Execucao e disparo";
-              return null;
-            }}
-          />
-        </TabsContent>
-
-        <TabsContent value="permissions" className="mt-4">
-          <ChecklistPanel
-            title="Permissoes granulares"
-            description="Cada permissao se comporta como uma alavanca operacional."
-            items={ROLE_PERMISSIONS[draft.role]}
-            selected={draft.permissions}
-            disabled={matrixDisabled}
-            emptyMessage="Usuarios pendentes nao recebem permissoes operacionais."
-            onToggle={(item, checked) =>
-              onChange({
-                permissions: toggleItem(draft.permissions, item as AccessPermission, checked),
-              })
-            }
-            renderLabel={(item) => ACCESS_PERMISSION_DEFINITIONS[item as AccessPermission].label}
-            renderHint={(item) => ACCESS_PERMISSION_DEFINITIONS[item as AccessPermission].description}
-          />
-        </TabsContent>
-      </Tabs>
+      {normalized.role !== "pending" ? (
+        <AccessPagesTabs
+          role={normalized.role}
+          selected={normalized.role === "client" ? normalized.allowedViews : normalized.internalPages}
+          disabled={matrixDisabled}
+          onChange={(next) =>
+            normalized.role === "client"
+              ? applyPatch({ allowedViews: next as AccessView[] })
+              : applyPatch({ internalPages: next as InternalPage[] })
+          }
+        />
+      ) : null}
     </div>
   );
 }
@@ -605,14 +717,131 @@ function isProtectedAdmin(user: AdminUserRecord) {
   return user.access.isAdmin || isFixedAdminAccount(user.uid, user.email);
 }
 
+function getClientName(clientId: string, clients: LeadClient[]) {
+  return clients.find((client) => client.id === clientId)?.name || clientId;
+}
+
+function summarizeClientAssignments(clientIds: string[], clients: LeadClient[]) {
+  if (clientIds.length === 0) return "Nenhum tenant vinculado";
+
+  const names = clientIds.map((clientId) => getClientName(clientId, clients));
+  if (names.length <= 2) return names.join(", ");
+
+  return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+}
+
+function sortByReferenceOrder<T extends string>(items: T[], referenceOrder: readonly T[]) {
+  const orderMap = new Map(referenceOrder.map((item, index) => [item, index]));
+  return [...items].sort((left, right) => (orderMap.get(left) ?? 999) - (orderMap.get(right) ?? 999));
+}
+
+function buildComparablePayload(draft: AccessDraft) {
+  const payload = buildPayload(draft);
+
+  return {
+    ...payload,
+    clientIds: [...payload.clientIds].sort(),
+    allowedViews: sortByReferenceOrder(payload.allowedViews, CLIENT_VIEW_ORDER),
+    internalPages: sortByReferenceOrder(payload.internalPages, INTERNAL_PAGE_ORDER),
+    permissions: sortByReferenceOrder(payload.permissions, ACCESS_PERMISSION_ORDER),
+  };
+}
+
+function hasDraftChanges(user: AdminUserRecord, draft: UserDraft) {
+  return JSON.stringify(buildComparablePayload(buildUserDraft(user))) !== JSON.stringify(buildComparablePayload(draft));
+}
+
+function buildSearchIndex(user: AdminUserRecord, draft: UserDraft) {
+  return [
+    user.email,
+    user.displayName,
+    draft.companyName,
+    draft.accessPreset,
+    draft.scopeMode,
+    ROLE_LABELS[draft.role],
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+interface UserListItemProps {
+  user: AdminUserRecord;
+  draft: UserDraft;
+  clients: LeadClient[];
+  selected: boolean;
+  protectedAccount: boolean;
+  dirty: boolean;
+  onSelect: () => void;
+}
+
+function UserListItem({
+  user,
+  draft,
+  clients,
+  selected,
+  protectedAccount,
+  dirty,
+  onSelect,
+}: UserListItemProps) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-3xl border p-4 text-left transition-colors",
+        selected
+          ? "border-primary/30 bg-primary/5 shadow-sm"
+          : "border-border/80 bg-background/70 hover:border-primary/20 hover:bg-background"
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <p className="truncate text-sm font-medium text-foreground">
+            {user.displayName || user.email || "Usuario sem nome"}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">{user.email || "Sem e-mail"}</p>
+        </div>
+
+        <Badge className={protectedAccount ? "bg-primary/10 text-primary" : ROLE_BADGE_CLASS[draft.role]}>
+          {protectedAccount ? "Protegido" : ROLE_LABELS[draft.role]}
+        </Badge>
+      </div>
+
+      {draft.disabled || dirty ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {draft.disabled ? (
+            <Badge variant="outline" className="border-amber-500/30 text-amber-600">
+              Login desativado
+            </Badge>
+          ) : null}
+          {dirty ? (
+            <Badge variant="outline" className="border-primary/30 text-primary">
+              Nao salvo
+            </Badge>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+        <p>{draft.companyName || "Sem empresa exibida"}</p>
+        <p>{summarizeClientAssignments(draft.clientIds, clients)}</p>
+      </div>
+    </button>
+  );
+}
+
 export default function UserAccessManagement() {
   const { getIdToken, isAdminUser } = useAuth();
   const { data: users = [], isLoading, error, refetch } = useAdminUsers();
   const { data: clients = [] } = useLeadClients();
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, UserDraft>>({});
   const [createDraft, setCreateDraft] = useState<CreateUserDraft>(() => buildCreateDraft());
   const [savingUid, setSavingUid] = useState<string | null>(null);
+  const [deletingUid, setDeletingUid] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [createError, setCreateError] = useState("");
@@ -623,12 +852,16 @@ export default function UserAccessManagement() {
   const canEditUsers = isAdminUser;
 
   useEffect(() => {
-    if (!users.length) return;
-
     setDrafts((current) => {
-      const next = { ...current };
+      if (!users.length) {
+        return {};
+      }
+
+      const next: Record<string, UserDraft> = {};
       for (const user of users) {
-        next[user.uid] = current[user.uid] || buildUserDraft(user);
+        const existingDraft = current[user.uid];
+        next[user.uid] =
+          existingDraft && hasDraftChanges(user, existingDraft) ? existingDraft : buildUserDraft(user);
       }
       return next;
     });
@@ -645,24 +878,36 @@ export default function UserAccessManagement() {
       return order[a.access.role] - order[b.access.role];
     });
 
-    if (!term) return ordered;
+    return ordered.filter((user) => {
+      const draft = drafts[user.uid] || buildUserDraft(user);
+      if (roleFilter !== "all" && draft.role !== roleFilter) return false;
+      if (!term) return true;
+      return buildSearchIndex(user, draft).includes(term);
+    });
+  }, [drafts, roleFilter, search, users]);
 
-    return ordered.filter((user) =>
-      [user.email, user.displayName, user.access.companyName, user.access.accessPreset, user.access.scopeMode]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(term))
-    );
-  }, [search, users]);
+  useEffect(() => {
+    if (!users.length) {
+      setSelectedUserId(null);
+      return;
+    }
 
-  const stats = useMemo(
-    () => ({
-      total: users.length,
-      pending: users.filter((user) => user.access.role === "pending").length,
-      clients: clients.length,
-      admins: users.filter((user) => user.access.isAdmin).length,
-      scoped: users.filter((user) => user.access.scopeMode === "assigned_clients").length,
-    }),
-    [clients.length, users]
+    if (selectedUserId && users.some((user) => user.uid === selectedUserId)) {
+      return;
+    }
+
+    if (filteredUsers.length > 0) {
+      setSelectedUserId(filteredUsers[0].uid);
+    }
+  }, [filteredUsers, selectedUserId, users]);
+
+  const selectedUser = users.find((user) => user.uid === selectedUserId) || null;
+  const selectedDraft = selectedUser ? drafts[selectedUser.uid] || buildUserDraft(selectedUser) : null;
+  const selectedProtectedAccount = selectedUser ? isProtectedAdmin(selectedUser) : false;
+  const selectedEditable = Boolean(selectedUser && canEditUsers && !selectedProtectedAccount);
+  const selectedHasChanges = selectedUser && selectedDraft ? hasDraftChanges(selectedUser, selectedDraft) : false;
+  const selectedHiddenByFilter = Boolean(
+    selectedUser && selectedDraft && !filteredUsers.some((user) => user.uid === selectedUser.uid)
   );
 
   const updateDraft = (uid: string, patch: Partial<UserDraft>) => {
@@ -687,11 +932,10 @@ export default function UserAccessManagement() {
 
   const updateCreateDraft = (patch: Partial<CreateUserDraft>) => {
     setCreateDraft((current) => {
-      const merged = {
+      return normalizeCreateDraftForSimpleForm({
         ...current,
         ...patch,
-      };
-      return patch.role || patch.accessPreset ? transitionDraft(merged) : normalizeDraft(merged);
+      });
     });
   };
 
@@ -750,7 +994,8 @@ export default function UserAccessManagement() {
   const createUser = async () => {
     if (!canEditUsers) return;
 
-    const validationError = validateDraft(createDraft);
+    const preparedDraft = normalizeCreateDraftForSimpleForm(createDraft);
+    const validationError = validateDraft(preparedDraft);
     if (validationError) {
       setCreateError(validationError);
       return;
@@ -768,11 +1013,11 @@ export default function UserAccessManagement() {
       }
 
       const payload = {
-        ...buildPayload(createDraft),
-        email: createDraft.email.trim().toLowerCase(),
-        password: createDraft.password,
-        displayName: createDraft.displayName.trim() || undefined,
-        sendPasswordReset: createDraft.sendPasswordReset,
+        ...buildPayload(preparedDraft),
+        email: preparedDraft.email.trim().toLowerCase(),
+        password: preparedDraft.password,
+        displayName: preparedDraft.displayName.trim() || undefined,
+        sendPasswordReset: preparedDraft.sendPasswordReset,
       };
 
       const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
@@ -801,58 +1046,89 @@ export default function UserAccessManagement() {
     }
   };
 
+  const deleteUser = async (user: AdminUserRecord) => {
+    if (!canEditUsers || isProtectedAdmin(user)) return;
+
+    const label = user.displayName || user.email || user.uid;
+    const confirmMessage = selectedHasChanges
+      ? `Apagar ${label}? As alteracoes nao salvas tambem serao perdidas.`
+      : `Apagar ${label}? Essa acao nao pode ser desfeita.`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setDeletingUid(user.uid);
+    setSaveError("");
+    setSaveSuccess("");
+
+    try {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Usuario nao autenticado.");
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${encodeURIComponent(user.uid)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const body = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(body?.error?.message || body?.error?.details || "Nao foi possivel apagar este usuario.");
+      }
+
+      setSaveSuccess(`Usuario ${user.email || user.uid} apagado com sucesso.`);
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[user.uid];
+        return next;
+      });
+      setSelectedUserId((current) => (current === user.uid ? null : current));
+      await refetch();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Nao foi possivel apagar este usuario.");
+    } finally {
+      setDeletingUid(null);
+    }
+  };
+
   return (
     <PageShell
       title="Usuarios e Acessos"
-      subtitle="Governanca de acesso, alcadas e tenants para o CRM multi-tenant."
+      subtitle="Cadastro e associacao por tipo, empresa e paginas liberadas."
       headerRight={
-        <div className="relative min-w-[260px]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, e-mail, preset ou empresa"
-            className="pl-9"
-          />
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative min-w-[260px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar por nome, e-mail ou empresa"
+              className="pl-9"
+            />
+          </div>
+
+          <Select value={roleFilter} onValueChange={(value: RoleFilter) => setRoleFilter(value)}>
+            <SelectTrigger className="min-w-[180px]">
+              <SelectValue placeholder="Filtrar perfil" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os perfis</SelectItem>
+              <SelectItem value="internal">Interno</SelectItem>
+              <SelectItem value="client">Cliente</SelectItem>
+              <SelectItem value="pending">Pendente</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       }
       spacing="space-y-6"
     >
-      <div className="grid gap-4 md:grid-cols-5">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardDescription>Total de usuarios</CardDescription>
-            <CardTitle className="text-3xl">{stats.total}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardDescription>Pendentes</CardDescription>
-            <CardTitle className="text-3xl">{stats.pending}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardDescription>Tenants cadastrados</CardDescription>
-            <CardTitle className="text-3xl">{stats.clients}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardDescription>Admins protegidos</CardDescription>
-            <CardTitle className="text-3xl">{stats.admins}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardDescription>Com escopo vinculado</CardDescription>
-            <CardTitle className="text-3xl">{stats.scoped}</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
-
       {!canEditUsers && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-600">
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
           Seu acesso esta em modo leitura. Apenas administradores podem criar ou alterar permissoes.
         </div>
       )}
@@ -862,61 +1138,83 @@ export default function UserAccessManagement() {
       <ErrorMessage message={createError} variant="banner" />
 
       {saveSuccess ? (
-        <div className="rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
+        <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
           {saveSuccess}
         </div>
       ) : null}
 
       {createSuccess ? (
-        <div className="space-y-2 rounded-lg border border-[#1A5CFF]/20 bg-[#1A5CFF]/10 px-4 py-3 text-sm text-[#1A5CFF]">
+        <div className="space-y-2 rounded-2xl border border-[#1A5CFF]/20 bg-[#1A5CFF]/10 px-4 py-3 text-sm text-[#1A5CFF]">
           <p>{createSuccess}</p>
-          {createdPasswordResetLink ? (
-            <p className="break-all text-xs opacity-90">
-              Link de redefinicao: {createdPasswordResetLink}
-            </p>
-          ) : null}
+          {createdPasswordResetLink ? <p className="break-all text-xs opacity-90">Link de redefinicao: {createdPasswordResetLink}</p> : null}
         </div>
       ) : null}
 
       {canEditUsers && (
         <Card className="border-border/80">
-          <CardHeader className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="text-xl">Cadastrar novo usuario</CardTitle>
-              <Badge variant="outline" className="gap-1 border-primary/30 bg-primary/5 text-primary">
-                <Plus className="h-3.5 w-3.5" />
-                Painel
-              </Badge>
-            </div>
-            <CardDescription>
-              Crie acessos internos ou de cliente sem sair do CRM.
-            </CardDescription>
+          <CardHeader className="space-y-1">
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <Plus className="h-4 w-4 text-primary" />
+              Novo usuario
+            </CardTitle>
+            <CardDescription>Defina os dados basicos, a empresa e as paginas liberadas.</CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-5">
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
               <Input
                 value={createDraft.email}
-                onChange={(e) => updateCreateDraft({ email: e.target.value })}
+                onChange={(event) => updateCreateDraft({ email: event.target.value })}
                 placeholder="E-mail do usuario"
                 type="email"
               />
               <Input
                 value={createDraft.password}
-                onChange={(e) => updateCreateDraft({ password: e.target.value })}
+                onChange={(event) => updateCreateDraft({ password: event.target.value })}
                 placeholder="Senha inicial"
                 type="password"
               />
               <Input
                 value={createDraft.displayName}
-                onChange={(e) => updateCreateDraft({ displayName: e.target.value })}
+                onChange={(event) => updateCreateDraft({ displayName: event.target.value })}
                 placeholder="Nome de exibicao"
               />
-              <Input
-                value={createDraft.companyName}
-                onChange={(e) => updateCreateDraft({ companyName: e.target.value })}
-                placeholder="Empresa exibida"
-              />
+              <Select
+                value={createDraft.role}
+                onValueChange={(value: "internal" | "client") => updateCreateDraft({ role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Tipo de usuario" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="internal">Interno</SelectItem>
+                  <SelectItem value="client">Cliente</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={createDraft.clientIds[0] || "__none"}
+                onValueChange={(value) => {
+                  const selectedClient = clients.find((client) => client.id === value);
+                  updateCreateDraft({
+                    clientIds: value === "__none" ? [] : [value],
+                    companyName: value === "__none" ? "" : selectedClient?.name || "",
+                  });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Empresa / tenant" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">
+                    {createDraft.role === "client" ? "Selecionar empresa" : "Sem empresa vinculada"}
+                  </SelectItem>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <label className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -924,18 +1222,21 @@ export default function UserAccessManagement() {
                 checked={createDraft.sendPasswordReset}
                 onCheckedChange={(checked) => updateCreateDraft({ sendPasswordReset: checked === true })}
               />
-              Enviar e-mail de redefinicao de senha
+              Enviar e-mail de redefinicao de senha apos o cadastro
             </label>
 
-            <Separator />
+            <AccessPagesTabs
+              role={createDraft.role}
+              selected={createDraft.role === "client" ? createDraft.allowedViews : createDraft.internalPages}
+              disabled={!canEditUsers}
+              onChange={(next) =>
+                createDraft.role === "client"
+                  ? updateCreateDraft({ allowedViews: next as AccessView[] })
+                  : updateCreateDraft({ internalPages: next as InternalPage[] })
+              }
+            />
 
-            <AccessGovernance draft={createDraft} clients={clients} editable={canEditUsers} onChange={updateCreateDraft} />
-
-            <div className="flex flex-wrap justify-end gap-3">
-              <div className="flex items-center gap-2 rounded-full border border-border/70 px-3 py-2 text-xs text-muted-foreground">
-                <KeyRound className="h-4 w-4 text-primary" />
-                Preset define defaults, mas voce pode ajustar manualmente.
-              </div>
+            <div className="flex justify-end">
               <Button onClick={createUser} disabled={creating}>
                 <UserRound className="h-4 w-4" />
                 {creating ? "Criando..." : "Criar usuario"}
@@ -950,144 +1251,150 @@ export default function UserAccessManagement() {
       {!isLoading && filteredUsers.length === 0 && (
         <EmptyState
           title="Nenhum usuario encontrado"
-          description="Ajuste a busca ou cadastre um novo usuario pelo painel."
+          description="Ajuste a busca, troque o filtro de perfil ou cadastre um novo usuario."
         />
       )}
 
-      <div className="space-y-4">
-        {filteredUsers.map((user) => {
-          const draft = drafts[user.uid] || buildUserDraft(user);
-          const protectedAccount = isProtectedAdmin(user);
-          const editable = canEditUsers && !protectedAccount;
+      {!isLoading && filteredUsers.length > 0 ? (
+        <Card className="border-border/80">
+          <CardHeader className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <CardTitle className="text-xl">Associacoes e acessos</CardTitle>
+                <CardDescription>Edite um usuario por vez com o mesmo fluxo simples do cadastro.</CardDescription>
+              </div>
+              <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+                {filteredUsers.length} usuarios visiveis
+              </Badge>
+            </div>
+          </CardHeader>
 
-          return (
-            <Card key={user.uid} className="border-border/80">
-              <CardHeader className="space-y-4 pb-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <CardTitle className="text-lg">
-                        {user.displayName || user.email || "Usuario sem nome"}
-                      </CardTitle>
-                      {protectedAccount ? (
-                        <Badge className="gap-1 bg-primary/10 text-primary">
-                          <LockKeyhole className="h-3.5 w-3.5" />
-                          Admin protegido
-                        </Badge>
+          <CardContent className="grid gap-5 xl:grid-cols-[340px_1fr]">
+            <div className="space-y-4">
+              <ScrollArea className="h-[720px] pr-3">
+                <div className="space-y-3">
+                  {filteredUsers.map((user) => {
+                    const draft = drafts[user.uid] || buildUserDraft(user);
+
+                    return (
+                      <UserListItem
+                        key={user.uid}
+                        user={user}
+                        draft={draft}
+                        clients={clients}
+                        protectedAccount={isProtectedAdmin(user)}
+                        dirty={hasDraftChanges(user, draft)}
+                        selected={selectedUserId === user.uid}
+                        onSelect={() => setSelectedUserId(user.uid)}
+                      />
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </div>
+
+            <div>
+              {selectedUser && selectedDraft ? (
+                <Card className="border-border/80 bg-background/70">
+                  <CardHeader className="space-y-4">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <CardTitle className="text-xl">
+                            {selectedUser.displayName || selectedUser.email || "Usuario sem nome"}
+                          </CardTitle>
+                          {selectedProtectedAccount ? (
+                            <Badge className="gap-1 bg-primary/10 text-primary">
+                              <LockKeyhole className="h-3.5 w-3.5" />
+                              Admin protegido
+                            </Badge>
+                          ) : (
+                            <Badge className={ROLE_BADGE_CLASS[selectedDraft.role]}>{ROLE_LABELS[selectedDraft.role]}</Badge>
+                          )}
+                          {selectedHasChanges ? (
+                            <Badge variant="outline" className="border-primary/30 text-primary">
+                              Alteracoes nao salvas
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <CardDescription className="text-sm">
+                          {selectedUser.email || "Sem e-mail"} - UID {selectedUser.uid}
+                        </CardDescription>
+                        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                          <span>Criado em {formatDate(selectedUser.createdAt)}</span>
+                          <span>Ultimo login {formatDate(selectedUser.lastSignInAt)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap justify-end gap-3">
+                        <Button
+                          variant="outline"
+                          onClick={() => updateDraft(selectedUser.uid, buildUserDraft(selectedUser))}
+                          disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
+                        >
+                          Restaurar
+                        </Button>
+                        <Button
+                          onClick={() => saveUser(selectedUser)}
+                          disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                          {savingUid === selectedUser.uid ? "Salvando..." : "Salvar acessos"}
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={() => deleteUser(selectedUser)}
+                          disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          {deletingUid === selectedUser.uid ? "Apagando..." : "Apagar usuario"}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-5">
+                    {selectedHiddenByFilter ? (
+                      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+                        O usuario selecionado nao aparece na lista atual por causa da busca ou do filtro ativo, mas permanece aberto para evitar troca silenciosa de contexto.
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-3xl border border-border/80 bg-background/50 p-4">
+                      {selectedProtectedAccount ? (
+                        <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-4 text-sm text-primary">
+                          Esta conta esta protegida por allowlist fixa de admin. A tela permanece apenas como leitura para preservar o acesso raiz do ambiente.
+                        </div>
                       ) : (
-                        <Badge className={ROLE_BADGE_CLASS[user.access.role]}>{ROLE_LABELS[user.access.role]}</Badge>
+                        <AccessGovernance
+                          draft={selectedDraft}
+                          clients={clients}
+                          editable={selectedEditable}
+                          onChange={(patch) => updateDraft(selectedUser.uid, patch)}
+                        />
                       )}
                     </div>
-                    <CardDescription className="text-sm">
-                      {user.email || "Sem e-mail"} · UID {user.uid}
-                    </CardDescription>
-                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                      <span>Criado em {formatDate(user.createdAt)}</span>
-                      <span>Ultimo login {formatDate(user.lastSignInAt)}</span>
-                    </div>
-                  </div>
 
-                  <div className="min-w-[220px] space-y-3">
-                    {editable ? (
-                      <Select
-                        value={draft.role}
-                        onValueChange={(value: ManagedRole) => updateDraft(user.uid, { role: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecionar perfil" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pending">Pendente</SelectItem>
-                          <SelectItem value="client">Cliente</SelectItem>
-                          <SelectItem value="internal">Interno</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <div className="rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm text-muted-foreground">
-                        {protectedAccount ? "Conta protegida" : ROLE_LABELS[user.access.role]}
-                      </div>
-                    )}
-
-                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <label className="flex items-center gap-3 rounded-3xl border border-border/80 bg-background/60 px-4 py-3 text-sm text-muted-foreground">
                       <Checkbox
-                        checked={draft.disabled}
-                        disabled={!editable}
-                        onCheckedChange={(checked) => updateDraft(user.uid, { disabled: checked === true })}
+                        checked={selectedDraft.disabled}
+                        disabled={!selectedEditable}
+                        onCheckedChange={(checked) => updateDraft(selectedUser.uid, { disabled: checked === true })}
                       />
-                      Desativar login
+                      Desativar login deste usuario
                     </label>
-                  </div>
-                </div>
-              </CardHeader>
-
-              <CardContent className="space-y-5">
-                <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-foreground">Empresa exibida</p>
-                    <Input
-                      value={draft.companyName}
-                      onChange={(e) => updateDraft(user.uid, { companyName: e.target.value })}
-                      disabled={!editable}
-                      placeholder="Nome da empresa para identificacao"
-                    />
-                  </div>
-
-                  <div className="rounded-xl border border-border/80 bg-background/40 px-4 py-3 text-sm text-muted-foreground">
-                    <p className="font-medium text-foreground">Resumo operacional</p>
-                    {protectedAccount ? (
-                      <p className="mt-1 leading-6">
-                        Esta conta esta protegida por allowlist fixa de admin. Nao e possivel alterar
-                        permissao, pagina ou status por esta tela.
-                      </p>
-                    ) : draft.role === "internal" ? (
-                      <p className="mt-1 leading-6">
-                        Usuarios internos operam com alcada, escopo e tenants vinculados. O preset serve como
-                        atalho, nao como muleta.
-                      </p>
-                    ) : draft.role === "client" ? (
-                      <p className="mt-1 leading-6">
-                        Usuarios cliente precisam de tenants, views e permissoes coerentes com o preset.
-                      </p>
-                    ) : (
-                      <p className="mt-1 leading-6">
-                        Usuarios pendentes ainda nao acessam modulos operacionais.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {!protectedAccount ? (
-                  <AccessGovernance draft={draft} clients={clients} editable={editable} onChange={(patch) => updateDraft(user.uid, patch)} />
-                ) : null}
-
-                <div className="flex flex-wrap justify-end gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={() => updateDraft(user.uid, buildUserDraft(user))}
-                    disabled={!editable || savingUid === user.uid}
-                  >
-                    Restaurar
-                  </Button>
-                  <Button onClick={() => saveUser(user)} disabled={!editable || savingUid === user.uid}>
-                    <ShieldCheck className="h-4 w-4" />
-                    {savingUid === user.uid ? "Salvando..." : "Salvar acessos"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      <div className="rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-xs text-muted-foreground">
-        <div className="flex items-start gap-2">
-          <Workflow className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <p>
-            Tenants aqui correspondem aos registros em <span className="font-mono">leads_clients</span>. O
-            preset organiza acesso, alcada e permissao sem perder compatibilidade com o backend atual.
-          </p>
-        </div>
-      </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <EmptyState
+                  title="Selecione um usuario"
+                  description="Escolha um registro na coluna da esquerda para editar suas associacoes."
+                />
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
     </PageShell>
   );
 }
