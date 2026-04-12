@@ -1914,6 +1914,52 @@ app.post("/api/admin/users", requireFirebaseAuth, requireAdminAccess, async (req
   }
 });
 
+app.delete("/api/admin/users/:uid", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
+  const uid = normalizeString(req.params?.uid);
+
+  if (!uid) {
+    sendError(res, 400, "INVALID_PARAM", "Missing user uid");
+    return;
+  }
+
+  if (uid === req.authAccess?.uid) {
+    sendError(res, 400, "SELF_DELETE_NOT_ALLOWED", "You cannot delete your own account");
+    return;
+  }
+
+  try {
+    const auth = getAuth();
+    const user = await auth.getUser(uid);
+
+    if (isFixedAdminIdentity({ uid: user.uid, email: user.email })) {
+      sendError(res, 400, "FIXED_ADMIN_DELETE_BLOCKED", "Fixed admin accounts cannot be deleted");
+      return;
+    }
+
+    await auth.deleteUser(uid);
+
+    res.json({
+      success: true,
+      uid,
+    });
+  } catch (error) {
+    console.error("admin user delete error:", error);
+    const code = error?.code || "";
+
+    if (code === "auth/user-not-found") {
+      sendError(res, 404, "USER_NOT_FOUND", "User not found");
+      return;
+    }
+
+    sendError(
+      res,
+      500,
+      "ADMIN_USER_DELETE_FAILED",
+      error instanceof Error ? error.message : "Failed to delete user"
+    );
+  }
+});
+
 app.post("/api/client-signup", async (req, res) => {
   if (!firebaseReady) {
     sendError(
