@@ -12,7 +12,9 @@ export interface Campaign {
   webhook_url: string;
   webhook_token: string | null;
   status: "active" | "paused";
+  scheduled_for: string | null;
   last_triggered_at: string | null;
+  archived_at: string | null;
   created_by_uid: string | null;
   created_by_email: string | null;
   created_at: string;
@@ -23,6 +25,7 @@ export interface CreateCampaignPayload {
   clientId: string;
   importId?: string | null;
   limitPerRun?: number;
+  scheduledFor?: string | null;
   webhookUrl: string;
   webhookToken?: string | null;
 }
@@ -31,6 +34,8 @@ export interface UpdateCampaignPayload {
   name?: string;
   status?: "active" | "paused";
   limitPerRun?: number;
+  scheduledFor?: string | null;
+  archived?: boolean;
   webhookUrl?: string;
   webhookToken?: string | null;
 }

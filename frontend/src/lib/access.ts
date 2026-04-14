@@ -5,6 +5,7 @@ export const INTERNAL_PAGE_ORDER = [
   "whatsapp",
   "agente",
   "usuarios",
+  "empresas",
   "campanhas",
 ] as const;
 
@@ -22,6 +23,7 @@ export type AccessPermission =
   | "whatsapp.reply"
   | "campaigns.manage"
   | "agente.view"
+  | "tenants.manage"
   | "users.view"
   | "users.manage";
 export type SystemAccessPreset =
@@ -56,6 +58,7 @@ export const ACCESS_PERMISSION_ORDER: AccessPermission[] = [
   "whatsapp.reply",
   "campaigns.manage",
   "agente.view",
+  "tenants.manage",
   "users.view",
   "users.manage",
 ];
@@ -140,6 +143,10 @@ export const ACCESS_PERMISSION_DEFINITIONS: Record<
     label: "Agente",
     description: "Pode ler alertas operacionais e notificacoes tecnicas.",
   },
+  "tenants.manage": {
+    label: "Empresas",
+    description: "Pode criar e organizar tenants/empresas que usam o CRM.",
+  },
   "users.view": {
     label: "Usuarios",
     description: "Pode consultar usuarios, acessos e aprovacoes.",
@@ -181,9 +188,19 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
       "whatsapp.reply",
       "campaigns.manage",
       "agente.view",
+      "tenants.manage",
       "users.view",
     ],
-    internalPages: ["dashboard", "leads", "planilhas", "whatsapp", "agente", "campanhas", "usuarios"],
+    internalPages: [
+      "dashboard",
+      "leads",
+      "planilhas",
+      "whatsapp",
+      "agente",
+      "usuarios",
+      "empresas",
+      "campanhas",
+    ],
     allowedViews: [],
   },
   internal_operator: {

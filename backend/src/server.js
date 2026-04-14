@@ -162,6 +162,7 @@ const INTERNAL_PAGE_KEYS = [
   "whatsapp",
   "agente",
   "usuarios",
+  "empresas",
   "campanhas",
 ];
 const ACCESS_SCOPE_KEYS = ["all_clients", "assigned_clients", "no_client_access"];
@@ -175,6 +176,7 @@ const ACCESS_PERMISSION_KEYS = [
   "whatsapp.reply",
   "campaigns.manage",
   "agente.view",
+  "tenants.manage",
   "users.view",
   "users.manage",
 ];
@@ -234,6 +236,7 @@ const ACCESS_PRESET_DEFAULTS = {
       "whatsapp.reply",
       "campaigns.manage",
       "agente.view",
+      "tenants.manage",
       "users.view",
     ],
     internalPages: [...INTERNAL_PAGE_KEYS],
@@ -754,7 +757,7 @@ function requireInternalPageAccess(page) {
       return;
     }
 
-    if (access.isAdmin || access.internalPages?.includes(page)) {
+    if (hasInternalPageAccess(access, page)) {
       next();
       return;
     }
@@ -789,11 +792,40 @@ function requireAnyInternalPageAccess(pages) {
 }
 
 function hasInternalPageAccess(access, page) {
-  return access?.role === "internal" && (access.isAdmin || access.internalPages?.includes(page));
+  if (access?.role !== "internal") {
+    return false;
+  }
+
+  if (access.isAdmin || access.internalPages?.includes(page)) {
+    return true;
+  }
+
+  return (
+    page === "empresas" &&
+    access.accessPreset === "internal_manager" &&
+    access.internalPages?.includes("usuarios")
+  );
 }
 
 function hasClientViewAccess(access, view) {
   return access?.role === "client" && access.allowedViews?.includes(view);
+}
+
+function hasAccessPermission(access, permission) {
+  if (access?.role !== "internal") {
+    return false;
+  }
+
+  if (access.isAdmin || access.permissions?.includes(permission)) {
+    return true;
+  }
+
+  return (
+    permission === "tenants.manage" &&
+    access.accessPreset === "internal_manager" &&
+    access.internalPages?.includes("usuarios") &&
+    access.permissions?.includes("users.view")
+  );
 }
 
 function canAccessAppView(access, view) {
@@ -839,6 +871,37 @@ function normalizeString(value) {
   const str = String(value).trim();
   if (!str) return null;
   return str.startsWith("=") ? str.slice(1).trim() : str;
+}
+
+function normalizeTenantKey(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return null;
+
+  const tenantKey = normalized
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-")
+    .slice(0, 50);
+
+  if (!tenantKey || tenantKey.length < 3) {
+    return null;
+  }
+
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(tenantKey)) {
+    return null;
+  }
+
+  return tenantKey;
+}
+
+function isDuplicateKeyError(error) {
+  const code = normalizeString(error?.code);
+  const message = `${error?.message || ""} ${error?.details || ""}`.toLowerCase();
+
+  return code === "23505" || message.includes("duplicate key");
 }
 
 function normalizeBool(value) {
@@ -2048,6 +2111,75 @@ app.get("/api/lead-clients", requireFirebaseAuth, async (req, res) => {
   } catch (error) {
     console.error("lead clients query error:", error);
     sendError(res, 500, "LEAD_CLIENTS_QUERY_FAILED", "Failed to query lead clients");
+  }
+});
+
+app.post("/api/lead-clients", requireFirebaseAuth, requireInternalPageAccess("empresas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  if (!hasAccessPermission(req.authAccess, "tenants.manage")) {
+    sendError(res, 403, "FORBIDDEN", "Tenant management permission required");
+    return;
+  }
+
+  const name = normalizeString(req.body?.name);
+  const tenantId = normalizeTenantKey(
+    req.body?.id ?? req.body?.tenantId ?? req.body?.clientId ?? name
+  );
+
+  if (!name || name.length < 3) {
+    sendError(res, 400, "INVALID_BODY", "Tenant name must have at least 3 characters");
+    return;
+  }
+
+  if (!tenantId) {
+    sendError(
+      res,
+      400,
+      "INVALID_BODY",
+      "Tenant ID must use lowercase letters, numbers and hyphens"
+    );
+    return;
+  }
+
+  try {
+    const { data: existingTenant, error: existingTenantError } = await supabase
+      .from("leads_clients")
+      .select("id")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    if (existingTenantError) {
+      throw existingTenantError;
+    }
+
+    if (existingTenant) {
+      sendError(res, 409, "TENANT_ALREADY_EXISTS", "A tenant with this ID already exists");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("leads_clients")
+      .insert({
+        id: tenantId,
+        name,
+      })
+      .select("id, name, created_at")
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    res.status(201).json({ item: data });
+  } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      sendError(res, 409, "TENANT_ALREADY_EXISTS", "A tenant with this ID already exists");
+      return;
+    }
+
+    console.error("lead client create error:", error);
+    sendError(res, 500, "LEAD_CLIENT_CREATE_FAILED", "Failed to create tenant");
   }
 });
 
@@ -3490,7 +3622,8 @@ app.get("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("planil
   try {
     const { data, error } = await supabase
       .from("campaigns")
-      .select("id, name, client_id, import_id, limit_per_run, webhook_url, webhook_token, status, last_triggered_at, created_by_uid, created_by_email, created_at")
+      .select("id, name, client_id, import_id, limit_per_run, webhook_url, webhook_token, status, scheduled_for, last_triggered_at, archived_at, created_by_uid, created_by_email, created_at")
+      .is("archived_at", null)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -3531,6 +3664,7 @@ app.post("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("plani
   const importId = normalizeString(req.body?.importId) || null;
   const rawLimit = Number.parseInt(String(req.body?.limitPerRun ?? "50"), 10);
   const limitPerRun = Number.isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 500);
+  const scheduledFor = normalizeString(req.body?.scheduledFor) || null;
   const webhookUrl = normalizeString(req.body?.webhookUrl);
   const webhookToken = normalizeString(req.body?.webhookToken) || null;
 
@@ -3546,13 +3680,14 @@ app.post("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("plani
         client_id: clientId,
         import_id: importId,
         limit_per_run: limitPerRun,
+        scheduled_for: scheduledFor,
         webhook_url: webhookUrl,
         webhook_token: webhookToken,
         status: "active",
         created_by_uid: req.authAccess?.uid || null,
         created_by_email: req.authAccess?.email || null,
       })
-      .select("id, name, client_id, import_id, limit_per_run, webhook_url, status, last_triggered_at, created_at")
+      .select("id, name, client_id, import_id, limit_per_run, webhook_url, status, scheduled_for, last_triggered_at, archived_at, created_at")
       .single();
 
     if (error) {
@@ -3581,6 +3716,9 @@ app.patch("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("
     const v = Number.parseInt(String(req.body.limitPerRun), 10);
     if (!Number.isNaN(v) && v > 0) updates.limit_per_run = Math.min(v, 500);
   }
+  if ("scheduledFor" in req.body) updates.scheduled_for = normalizeString(req.body?.scheduledFor) || null;
+  if (req.body?.archived === true) updates.archived_at = new Date().toISOString();
+  if (req.body?.archived === false) updates.archived_at = null;
   if (req.body?.webhookUrl) updates.webhook_url = normalizeString(req.body.webhookUrl);
   if ("webhookToken" in req.body) updates.webhook_token = normalizeString(req.body.webhookToken);
 
@@ -3594,7 +3732,7 @@ app.patch("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("
       .from("campaigns")
       .update(updates)
       .eq("id", id)
-      .select("id, name, client_id, import_id, limit_per_run, webhook_url, status, last_triggered_at, created_at")
+      .select("id, name, client_id, import_id, limit_per_run, webhook_url, status, scheduled_for, last_triggered_at, archived_at, created_at")
       .single();
 
     if (error) {
@@ -3641,7 +3779,7 @@ app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireInternalPageA
   try {
     const { data: campaign, error: fetchError } = await supabase
       .from("campaigns")
-      .select("id, name, client_id, import_id, limit_per_run, webhook_url, webhook_token, status")
+      .select("id, name, client_id, import_id, limit_per_run, webhook_url, webhook_token, status, scheduled_for, archived_at")
       .eq("id", id)
       .single();
 
@@ -3652,6 +3790,10 @@ app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireInternalPageA
 
     if (campaign.status !== "active") {
       sendError(res, 400, "CAMPAIGN_PAUSED", "Campaign is paused");
+      return;
+    }
+    if (campaign.archived_at) {
+      sendError(res, 400, "CAMPAIGN_ARCHIVED", "Campaign is archived");
       return;
     }
 
@@ -3723,7 +3865,7 @@ app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireInternalPageA
 
     await supabase
       .from("campaigns")
-      .update({ last_triggered_at: new Date().toISOString() })
+      .update({ last_triggered_at: new Date().toISOString(), scheduled_for: null })
       .eq("id", id);
 
     res.json({

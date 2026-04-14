@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import * as XLSX from "xlsx";
 import {
   AlertTriangle,
+  Archive,
   Building2,
   CheckCircle2,
   ChevronLeft,
@@ -19,6 +20,16 @@ import {
   Zap,
   XCircle,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLeadClients } from "@/hooks/useLeadClients";
 import {
@@ -56,6 +67,13 @@ interface LeadImportsProps {
   subtitle?: string;
   headerRight?: ReactNode;
 }
+
+type CampaignActionDialogState =
+  | {
+      action: "delete" | "archive";
+      campaign: Campaign;
+    }
+  | null;
 
 const INTERNAL_TABS: Array<{ id: SheetTab; label: string }> = [
   { id: "dados", label: "Dados Gerais" },
@@ -118,6 +136,14 @@ function parseSpreadsheetFile(file: File): Promise<Record<string, unknown>[]> {
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString("pt-BR");
+}
+
+function formatDateInput(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const timezoneOffset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 16);
 }
 
 function buildPaginationItems(currentPage: number, totalPages: number): Array<number | string> {
@@ -231,10 +257,12 @@ export default function LeadImports({
   const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
   const [isDispatching, setIsDispatching] = useState(false);
   const [campaignName, setCampaignName] = useState("");
+  const [scheduledFor, setScheduledFor] = useState("");
   const [dispatchLimit, setDispatchLimit] = useState("");
   const [campaignSearch, setCampaignSearch] = useState("");
   const [selectedImportId, setSelectedImportId] = useState(ALL_IMPORTS_VALUE);
   const [importsPage, setImportsPage] = useState(1);
+  const [campaignActionDialog, setCampaignActionDialog] = useState<CampaignActionDialogState>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { data: imports = [], isLoading: importsLoading, error: importsError, refetch } = useLeadImports(selectedClientId);
@@ -288,8 +316,9 @@ export default function LeadImports({
     const scoped = selectedClientId
       ? campaigns.filter((campaign) => campaign.client_id === selectedClientId)
       : campaigns;
+    const visible = scoped.filter((campaign) => !campaign.archived_at);
 
-    return scoped.filter((campaign) => {
+    return visible.filter((campaign) => {
       if (!term) return true;
       return [campaign.name, campaign.client_name, campaign.client_id]
         .filter(Boolean)
@@ -299,11 +328,19 @@ export default function LeadImports({
     });
   }, [campaignSearch, campaigns, selectedClientId]);
   const queuedCampaigns = useMemo(
-    () => filteredCampaigns.filter((campaign) => !campaign.last_triggered_at),
+    () =>
+      [...filteredCampaigns.filter((campaign) => !campaign.last_triggered_at)].sort((a, b) => {
+        const left = a.scheduled_for || a.created_at;
+        const right = b.scheduled_for || b.created_at;
+        return new Date(left).getTime() - new Date(right).getTime();
+      }),
     [filteredCampaigns],
   );
   const sentCampaigns = useMemo(
-    () => filteredCampaigns.filter((campaign) => Boolean(campaign.last_triggered_at)),
+    () =>
+      [...filteredCampaigns.filter((campaign) => Boolean(campaign.last_triggered_at))].sort(
+        (a, b) => new Date(b.last_triggered_at || b.created_at).getTime() - new Date(a.last_triggered_at || a.created_at).getTime(),
+      ),
     [filteredCampaigns],
   );
 
@@ -388,12 +425,14 @@ export default function LeadImports({
         clientId: selectedClientId,
         importId: selectedImportId === ALL_IMPORTS_VALUE ? null : selectedImportId || null,
         limitPerRun: parsedLimit ?? 50,
+        scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : null,
         webhookUrl: DEFAULT_N8N_CAMPAIGN_WEBHOOK_URL,
         webhookToken: null,
       });
 
       setDispatchStatus(`Campanha ${campaignName.trim()} criada com sucesso.`);
       setCampaignName("");
+      setScheduledFor("");
       setDispatchLimit("");
       setSelectedImportId(ALL_IMPORTS_VALUE);
       setActiveTab("agendamentos");
@@ -434,16 +473,27 @@ export default function LeadImports({
   }
 
   async function handleDeleteCampaign(campaign: Campaign) {
-    if (!window.confirm(`Apagar a campanha ${campaign.name}? Essa acao nao pode ser desfeita.`)) {
-      return;
-    }
-
     try {
       await deleteCampaign.mutateAsync(campaign.id);
+      setCampaignActionDialog(null);
       setDispatchStatus(`Campanha ${campaign.name} apagada com sucesso.`);
       void refetchCampaigns();
     } catch (error) {
       setDispatchStatus(error instanceof Error ? error.message : "Falha ao apagar campanha.");
+    }
+  }
+
+  async function handleArchiveCampaign(campaign: Campaign) {
+    try {
+      await updateCampaign.mutateAsync({
+        id: campaign.id,
+        archived: true,
+      });
+      setCampaignActionDialog(null);
+      setDispatchStatus(`Campanha ${campaign.name} arquivada com sucesso.`);
+      void refetchCampaigns();
+    } catch (error) {
+      setDispatchStatus(error instanceof Error ? error.message : "Falha ao arquivar campanha.");
     }
   }
 
@@ -469,6 +519,36 @@ export default function LeadImports({
 
   return (
     <PageShell title={title} subtitle={subtitle} headerRight={headerRight ?? clientSelector} spacing="space-y-6">
+      <AlertDialog open={Boolean(campaignActionDialog)} onOpenChange={(open) => (!open ? setCampaignActionDialog(null) : null)}>
+        <AlertDialogContent className="max-w-md rounded-3xl border-border/80 bg-background/95">
+          <AlertDialogHeader className="space-y-3 text-left">
+            <AlertDialogTitle>
+              {campaignActionDialog?.action === "archive" ? "Arquivar campanha" : "Apagar campanha"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm leading-6 text-muted-foreground">
+              {campaignActionDialog?.action === "archive"
+                ? `A campanha ${campaignActionDialog?.campaign.name} sera removida da listagem ativa e ficara fora das tabs de operacao.`
+                : campaignActionDialog?.campaign.last_triggered_at
+                  ? `A campanha ${campaignActionDialog?.campaign.name} ja foi enviada e sera apagada em definitivo. Essa acao nao pode ser desfeita.`
+                  : `A campanha agendada ${campaignActionDialog?.campaign.name} sera removida da fila em definitivo. Essa acao nao pode ser desfeita.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className={campaignActionDialog?.action === "archive" ? "" : "bg-destructive text-destructive-foreground hover:bg-destructive/90"}
+              onClick={() =>
+                campaignActionDialog?.action === "archive"
+                  ? void handleArchiveCampaign(campaignActionDialog.campaign)
+                  : void handleDeleteCampaign(campaignActionDialog!.campaign)
+              }
+            >
+              {campaignActionDialog?.action === "archive" ? "Arquivar" : "Apagar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <section className="space-y-5">
         <div className="flex flex-wrap items-center gap-2 border-b border-border/70">
           {tabs.map((tab) => (
@@ -890,12 +970,19 @@ export default function LeadImports({
                   </Select>
                 </div>
                 <div className="space-y-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Data e hora da campanha</p>
+                  <Input type="datetime-local" className={darkFieldClass} value={scheduledFor} onChange={(e) => setScheduledFor(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">
+                    Deixe em branco para manter a campanha na fila sem data definida.
+                  </p>
+                </div>
+                <div className="space-y-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Leads pendentes</p>
                   <div className={cn("flex h-10 items-center rounded-md px-3 font-mono text-sm text-slate-500 dark:text-white/62", darkFieldClass)}>
                     {pendingData ? `${pendingData.pendingCount} aguardando disparo` : "Carregando..."}
                   </div>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 md:col-span-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Limite por lote</p>
                   <Input
                     type="number"
@@ -971,6 +1058,9 @@ export default function LeadImports({
                       <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
                         Base: {campaign.import_id || "todas as importacoes"} · Lote: {campaign.limit_per_run}
                       </p>
+                      <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                        {campaign.scheduled_for ? `Agendada para ${formatDate(campaign.scheduled_for)}` : "Sem data agendada"}
+                      </p>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
                       <div>
@@ -985,6 +1075,16 @@ export default function LeadImports({
                         <p className="font-mono text-[12px] font-bold text-amber-300">{campaign.limit_per_run} leads</p>
                         <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Lote</p>
                       </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 border-t border-border/70 pt-4">
+                      <Button variant="outline" size="sm" onClick={() => setCampaignActionDialog({ action: "archive", campaign })}>
+                        <Archive className="mr-2 h-4 w-4" />
+                        Arquivar
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => setCampaignActionDialog({ action: "delete", campaign })}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Apagar
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -1014,8 +1114,8 @@ export default function LeadImports({
                 <Card key={campaign.id} className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
                   <CardContent className="flex flex-wrap items-center gap-5 p-5">
                     <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-xl border border-primary/20 bg-primary/5">
-                      <span className="font-mono text-3xl font-bold text-primary">{new Date(campaign.created_at).toLocaleDateString("pt-BR", { day: "2-digit" })}</span>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">{new Date(campaign.created_at).toLocaleDateString("pt-BR", { month: "short" })}</span>
+                      <span className="font-mono text-3xl font-bold text-primary">{new Date(campaign.scheduled_for || campaign.created_at).toLocaleDateString("pt-BR", { day: "2-digit" })}</span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">{new Date(campaign.scheduled_for || campaign.created_at).toLocaleDateString("pt-BR", { month: "short" })}</span>
                     </div>
                     <div className="min-w-[220px] flex-1">
                       <p className="text-xl font-extrabold tracking-tight text-foreground">{campaign.name}</p>
@@ -1023,6 +1123,7 @@ export default function LeadImports({
                         <span className="inline-flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />{campaign.client_name ?? campaign.client_id}</span>
                         <span className="inline-flex items-center gap-1.5"><FileSpreadsheet className="h-3.5 w-3.5" />{campaign.import_id || "todas as bases"}</span>
                         <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />lote {campaign.limit_per_run}</span>
+                        <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{campaign.scheduled_for ? formatDate(campaign.scheduled_for) : "sem data definida"}</span>
                       </div>
                     </div>
                     <span className={cn("rounded-md border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", campaign.status === "active" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : "border-white/10 bg-white/5 text-muted-foreground")}>
@@ -1032,7 +1133,11 @@ export default function LeadImports({
                       <button type="button" onClick={() => void handleTriggerCampaign(campaign)} className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/40 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:bg-white/[0.05] hover:text-primary">
                         <Zap className="h-4 w-4" />
                       </button>
-                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/40 text-pink-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:bg-white/[0.05] hover:text-pink-300">
+                      <button type="button" onClick={() => void handleToggleCampaignStatus(campaign)} className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/40 text-amber-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:bg-white/[0.05] hover:text-amber-200">
+                        {campaign.status === "active" ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                      </button>
+                      <button type="button" onClick={() => setCampaignActionDialog({ action: "delete", campaign })} className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/40 text-[0px] text-pink-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:bg-white/[0.05] hover:text-pink-300">
+                        <Trash2 className="h-4 w-4 text-pink-400" />
                         ×
                       </button>
                     </div>

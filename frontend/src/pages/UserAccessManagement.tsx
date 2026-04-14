@@ -147,6 +147,7 @@ const INTERNAL_PAGE_LABELS: Record<InternalPage, string> = {
   whatsapp: "WhatsApp",
   agente: "Agente",
   usuarios: "Usuarios",
+  empresas: "Empresas",
   campanhas: "Campanhas",
 };
 
@@ -157,7 +158,7 @@ const CLIENT_PAGE_TABS = [
 
 const INTERNAL_PAGE_TABS = [
   { value: "operacao", label: "Operacao", items: ["dashboard", "leads", "planilhas", "whatsapp"] as InternalPage[] },
-  { value: "gestao", label: "Gestao", items: ["agente", "usuarios", "campanhas"] as InternalPage[] },
+  { value: "gestao", label: "Gestao", items: ["agente", "usuarios", "empresas", "campanhas"] as InternalPage[] },
 ];
 
 function findAccessProfile(profiles: AccessProfileRecord[], key: string | null | undefined) {
@@ -358,6 +359,7 @@ function derivePermissionsFromInternalPages(pages: InternalPage[]): AccessPermis
   if (pages.includes("whatsapp")) permissions.push("whatsapp.view", "whatsapp.reply");
   if (pages.includes("agente")) permissions.push("agente.view");
   if (pages.includes("usuarios")) permissions.push("users.view", "users.manage");
+  if (pages.includes("empresas")) permissions.push("tenants.manage");
   if (pages.includes("campanhas")) permissions.push("campaigns.manage");
 
   return filterArray(permissions, ACCESS_PERMISSION_ORDER);

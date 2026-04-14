@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
+  Building2,
   LayoutDashboard,
   Users,
   Bot,
@@ -23,6 +24,7 @@ const navItems = [
   { title: "Campanhas", url: "/crm/planilhas", icon: FileSpreadsheet, page: "planilhas" as const },
   { title: "WhatsApp", url: "/crm/whatsapp", icon: MessageCircle, page: "whatsapp" as const },
   { title: "Agente", url: "/crm/agente", icon: Bot, page: "agente" as const },
+  { title: "Empresas", url: "/crm/empresas", icon: Building2, page: "empresas" as const },
   { title: "Usuarios", url: "/crm/usuarios", icon: ShieldCheck, page: "usuarios" as const },
 ] satisfies Array<{
   title: string;

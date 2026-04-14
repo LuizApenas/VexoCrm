@@ -66,3 +66,22 @@ export const createUserSchema = z.object({
 });
 
 export type CreateUserFormData = z.infer<typeof createUserSchema>;
+
+export const createTenantSchema = z.object({
+  name: z
+    .string()
+    .min(1, "Nome da empresa e obrigatorio")
+    .min(3, "Nome da empresa deve ter no minimo 3 caracteres")
+    .max(80, "Nome da empresa pode ter no maximo 80 caracteres"),
+  id: z
+    .string()
+    .min(1, "Tenant ID e obrigatorio")
+    .min(3, "Tenant ID deve ter no minimo 3 caracteres")
+    .max(50, "Tenant ID pode ter no maximo 50 caracteres")
+    .regex(
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      "Tenant ID deve usar apenas letras minusculas, numeros e hifens"
+    ),
+});
+
+export type CreateTenantFormData = z.infer<typeof createTenantSchema>;
