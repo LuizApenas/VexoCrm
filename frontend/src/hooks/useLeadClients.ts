@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_BASE_URL } from "@/lib/api";
 
@@ -6,6 +6,11 @@ export interface LeadClient {
   id: string;
   name: string;
   created_at?: string;
+}
+
+export interface CreateLeadClientPayload {
+  id: string;
+  name: string;
 }
 
 export function useLeadClients() {
@@ -32,5 +37,47 @@ export function useLeadClients() {
       return Array.isArray(payload.items) ? payload.items : [];
     },
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useCreateLeadClient() {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: CreateLeadClientPayload): Promise<LeadClient> => {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Usuario nao autenticado.");
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/lead-clients`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const responsePayload = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const apiMessage =
+          responsePayload?.error?.message ||
+          responsePayload?.error?.details ||
+          `Lead client create failed: ${res.status}`;
+        throw new Error(apiMessage);
+      }
+
+      if (!responsePayload?.item) {
+        throw new Error("Lead client create failed: missing response payload");
+      }
+
+      return responsePayload.item;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lead-clients"] });
+    },
   });
 }
