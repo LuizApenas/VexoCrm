@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Building2, Database, FileSpreadsheet, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Database, FileSpreadsheet, Filter, RefreshCw } from "lucide-react";
 import { useLeads, type LeadRow } from "@/hooks/useLeads";
-import { useLeadClients } from "@/hooks/useLeadClients";
+import { useCampaignLeads, useCampanhas } from "@/hooks/useCampanhas";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -17,6 +17,7 @@ import { PageShell } from "@/components/PageShell";
 import { SectionHeader } from "@/components/SectionHeader";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { EmptyState } from "@/components/EmptyState";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 
 const COLUMNS = [
   { key: "telefone", label: "Telefone" },
@@ -30,6 +31,7 @@ const COLUMNS = [
   { key: "qualificacao", label: "Qualificacao" },
   { key: "created_at", label: "Criado em" },
 ] as const;
+const COLUMN_OPTIONS = COLUMNS.map((column) => ({ value: column.key, label: column.label }));
 
 interface LeadsProps {
   fixedClientId?: string;
@@ -65,59 +67,54 @@ export default function Leads({
   subtitle = "Tabela alinhada com o schema atual da base leads",
   headerRight,
 }: LeadsProps) {
-  const { data: clients = [], isLoading: clientsLoading } = useLeadClients();
-  const [selectedClientId, setSelectedClientId] = useState(fixedClientId ?? "");
-  const effectiveClientId = fixedClientId || selectedClientId;
+  const crmClient = useOptionalCrmClient();
+  const effectiveClientId = fixedClientId || crmClient?.selectedClientId || "";
   const { data, isLoading, error, refetch } = useLeads(effectiveClientId);
-  const rows = data ?? [];
-  const selectedClient = clients.find((client) => client.id === effectiveClientId);
+  const rows = useMemo(() => data ?? [], [data]);
+  const selectedClient = crmClient?.selectedClient || null;
   const selectedClientName = fixedClientName || selectedClient?.name || effectiveClientId;
-
-  useEffect(() => {
-    if (fixedClientId) {
-      setSelectedClientId(fixedClientId);
-      return;
-    }
-
-    if (!clients.length) {
-      if (selectedClientId) {
-        setSelectedClientId("");
-      }
-      return;
-    }
-
-    const selectedStillExists = clients.some((client) => client.id === selectedClientId);
-    if (!selectedClientId || !selectedStillExists) {
-      setSelectedClientId(clients[0].id);
-    }
-  }, [clients, fixedClientId, selectedClientId]);
-
-  const clientSelector = (
-    <div className="flex min-w-[220px] items-center gap-2">
-      <Building2 className="h-4 w-4 text-muted-foreground" />
-      <Select value={selectedClientId} onValueChange={setSelectedClientId} disabled={clientsLoading}>
-        <SelectTrigger>
-          <SelectValue placeholder="Selecionar empresa" />
-        </SelectTrigger>
-        <SelectContent>
-          {clients.map((client) => (
-            <SelectItem key={client.id} value={client.id}>
-              {client.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+  const [selectedColumn, setSelectedColumn] = useState<(typeof COLUMNS)[number]["key"]>("nome");
+  const [filterTerm, setFilterTerm] = useState("");
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const { data: campaigns = [] } = useCampanhas(effectiveClientId || undefined);
+  const { data: campaignLeads = [], isLoading: campaignLeadsLoading } = useCampaignLeads(
+    selectedCampaignId || undefined,
   );
 
-  const resolvedHeaderRight = headerRight ?? (!fixedClientId ? clientSelector : undefined);
+  useEffect(() => {
+    setSelectedCampaignId("");
+  }, [effectiveClientId]);
+
+  const campaignLeadIds = useMemo(
+    () => new Set(campaignLeads.map((lead) => lead.id)),
+    [campaignLeads],
+  );
+  const filteredRows = useMemo(() => {
+    const normalizedTerm = filterTerm.trim().toLowerCase();
+
+    return rows.filter((row) => {
+      const matchesColumn =
+        !normalizedTerm ||
+        formatCell(row[selectedColumn as keyof LeadRow], selectedColumn)
+          .toLowerCase()
+          .includes(normalizedTerm);
+
+      const matchesCampaign =
+        !selectedCampaignId || campaignLeadIds.size === 0
+          ? !selectedCampaignId || campaignLeadsLoading || campaignLeads.length > 0
+          : campaignLeadIds.has(row.id);
+
+      return matchesColumn && matchesCampaign;
+    });
+  }, [campaignLeadIds, campaignLeads.length, campaignLeadsLoading, filterTerm, rows, selectedCampaignId, selectedColumn]);
 
   return (
     <PageShell
       title={title}
       subtitle={subtitle}
-      headerRight={resolvedHeaderRight}
+      headerRight={headerRight}
       spacing="space-y-6"
+      showGlobalClientSelector={!fixedClientId}
     >
       {selectedClientName && (
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -150,7 +147,7 @@ export default function Leads({
 
             {isLoading && <EmptyState message="Carregando dados..." />}
 
-            {!effectiveClientId && !clientsLoading && (
+            {!effectiveClientId && !(crmClient?.isLoading) && (
               <EmptyState
                 title="Nenhum cliente cadastrado"
                 description="Cadastre um registro em leads_clients para liberar a grade de leads."
@@ -162,7 +159,81 @@ export default function Leads({
             )}
 
             {effectiveClientId && !isLoading && !error && rows.length > 0 && (
-              <div className="overflow-x-auto rounded-md border">
+              <div className="space-y-4">
+                <div className="grid gap-3 rounded-xl border border-border/70 bg-background/60 p-4 lg:grid-cols-[220px_minmax(0,1fr)_260px]">
+                  <div className="space-y-2">
+                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      <Filter className="h-3.5 w-3.5" />
+                      Filtrar por coluna
+                    </p>
+                    <Select value={selectedColumn} onValueChange={(value) => setSelectedColumn(value as (typeof COLUMNS)[number]["key"])}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COLUMN_OPTIONS.map((column) => (
+                          <SelectItem key={column.value} value={column.value}>
+                            {column.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      Valor do filtro
+                    </p>
+                    <Input
+                      value={filterTerm}
+                      onChange={(e) => setFilterTerm(e.target.value)}
+                      placeholder={`Buscar em ${COLUMN_OPTIONS.find((column) => column.value === selectedColumn)?.label || "leads"}`}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      Campanha salva
+                    </p>
+                    <Select value={selectedCampaignId || "__all__"} onValueChange={(value) => setSelectedCampaignId(value === "__all__" ? "" : value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todas as campanhas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">Todas as campanhas</SelectItem>
+                        {campaigns.map((campaign) => (
+                          <SelectItem key={campaign.id} value={campaign.id}>
+                            {campaign.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {campaigns.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {campaigns.map((campaign) => (
+                      <Button
+                        key={campaign.id}
+                        type="button"
+                        size="sm"
+                        variant={selectedCampaignId === campaign.id ? "secondary" : "outline"}
+                        onClick={() => setSelectedCampaignId((current) => (current === campaign.id ? "" : campaign.id))}
+                      >
+                        {campaign.name}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                {selectedCampaignId && !campaignLeadsLoading && campaignLeads.length === 0 ? (
+                  <EmptyState
+                    message="Nenhum lead vinculado a essa campanha no momento. Se ela ainda nao disparou, os leads aparecerao depois do primeiro envio."
+                  />
+                ) : null}
+
+                <div className="overflow-x-auto rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -172,7 +243,7 @@ export default function Leads({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((row) => (
+                    {filteredRows.map((row) => (
                       <TableRow key={row.id}>
                         {COLUMNS.map((column) => (
                           <TableCell key={column.key} className="max-w-[240px] truncate">
@@ -183,6 +254,7 @@ export default function Leads({
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               </div>
             )}
           </CardContent>

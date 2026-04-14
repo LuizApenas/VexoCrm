@@ -3618,13 +3618,22 @@ app.post("/api/whatsapp/messages/direct", requireFirebaseAuth, requireAdminAcces
 // GET /api/campaigns — lista campanhas do usuário
 app.get("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
+  const requestedClientId = normalizeString(req.query.clientId);
+  const clientId = requestedClientId ? resolveAuthorizedClientId(req, res, requestedClientId) : null;
+  if (requestedClientId && !clientId) return;
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from("campaigns")
       .select("id, name, client_id, import_id, limit_per_run, webhook_url, webhook_token, status, scheduled_for, last_triggered_at, archived_at, created_by_uid, created_by_email, created_at")
       .is("archived_at", null)
       .order("created_at", { ascending: false });
+
+    if (clientId) {
+      query = query.eq("client_id", clientId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       sendError(res, 500, "CAMPAIGNS_FETCH_FAILED", "Failed to fetch campaigns", error.message);
@@ -3652,6 +3661,61 @@ app.get("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("planil
   } catch (error) {
     console.error("campaigns fetch error:", error);
     sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+  }
+});
+
+app.get("/api/campaigns/:id/leads", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const id = normalizeString(req.params?.id);
+  if (!id) {
+    sendError(res, 400, "INVALID_PARAM", "Missing campaign id");
+    return;
+  }
+
+  try {
+    const { data: campaign, error: fetchError } = await supabase
+      .from("campaigns")
+      .select("id, client_id, import_id, limit_per_run, phones")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !campaign) {
+      sendError(res, 404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
+      return;
+    }
+
+    const authorizedClientId = resolveAuthorizedClientId(req, res, campaign.client_id);
+    if (!authorizedClientId) return;
+
+    let items = [];
+    const storedPhones = Array.isArray(campaign.phones)
+      ? campaign.phones.filter((phone) => typeof phone === "string" && phone.trim())
+      : [];
+
+    if (storedPhones.length > 0) {
+      const { data: leads, error: leadsError } = await supabase
+        .from("leads")
+        .select("*")
+        .eq("client_id", authorizedClientId)
+        .in("telefone", storedPhones)
+        .order("data_hora", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+
+      if (leadsError) throw leadsError;
+      items = leads || [];
+    } else {
+      items = await buildDispatchLeads({
+        clientId: authorizedClientId,
+        importId: campaign.import_id || null,
+        limit: campaign.limit_per_run,
+      });
+    }
+
+    res.json({ items });
+  } catch (error) {
+    console.error("campaign leads error:", error);
+    sendError(res, 500, "CAMPAIGN_LEADS_FAILED", "Failed to load campaign leads");
   }
 });
 
@@ -3865,7 +3929,11 @@ app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireInternalPageA
 
     await supabase
       .from("campaigns")
-      .update({ last_triggered_at: new Date().toISOString(), scheduled_for: null })
+      .update({
+        last_triggered_at: new Date().toISOString(),
+        scheduled_for: null,
+        phones: leads.map((lead) => lead.telefone).filter(Boolean),
+      })
       .eq("id", id);
 
     res.json({
