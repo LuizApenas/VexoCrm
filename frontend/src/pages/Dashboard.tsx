@@ -1,6 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
-  Building2,
   Clock,
   Flame,
   Snowflake,
@@ -19,9 +18,8 @@ import { DashboardPanel } from "@/components/DashboardPanel";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { EmptyState } from "@/components/EmptyState";
 import { KpiGrid } from "@/components/KpiGrid";
-import { useLeadClients } from "@/hooks/useLeadClients";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useDashboard } from "@/hooks/useDashboard";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -40,29 +38,11 @@ const Dashboard = ({
   subtitle = "Dados reais do Supabase filtrados pela empresa selecionada",
   headerRight,
 }: DashboardProps) => {
-  const { data: clients = [], isLoading: clientsLoading } = useLeadClients();
-  const [selectedClientId, setSelectedClientId] = useState(fixedClientId ?? "");
-  const effectiveClientId = fixedClientId || selectedClientId;
-  const selectedClient = clients.find((client) => client.id === effectiveClientId);
+  const crmClient = useOptionalCrmClient();
+  const effectiveClientId = fixedClientId || crmClient?.selectedClientId || "";
+  const selectedClient = crmClient?.selectedClient || null;
   const resolvedClientName = fixedClientName || selectedClient?.name || effectiveClientId;
   const { data, isLoading, error } = useDashboard(effectiveClientId);
-
-  useEffect(() => {
-    if (fixedClientId) {
-      setSelectedClientId(fixedClientId);
-      return;
-    }
-
-    if (!clients.length) {
-      if (selectedClientId) setSelectedClientId("");
-      return;
-    }
-
-    const selectedStillExists = clients.some((client) => client.id === selectedClientId);
-    if (!selectedClientId || !selectedStillExists) {
-      setSelectedClientId(clients[0].id);
-    }
-  }, [clients, fixedClientId, selectedClientId]);
 
   const summary = data?.summary ?? {
     totalLeads: 0,
@@ -75,37 +55,19 @@ const Dashboard = ({
     coldLeads: 0,
   };
 
-  const clientSelector = (
-    <div className="flex min-w-[220px] items-center gap-3 rounded-full border border-slate-200/90 bg-white/90 px-4 py-2 shadow-[0_18px_34px_rgba(15,23,42,0.10)] dark:border-white/10 dark:bg-white/[0.05] dark:shadow-[0_18px_34px_rgba(0,0,0,0.2)]">
-      <Building2 className="h-4 w-4 text-cyan-600 dark:text-cyan-200" />
-      <Select value={selectedClientId} onValueChange={setSelectedClientId} disabled={clientsLoading}>
-        <SelectTrigger className="h-auto border-0 bg-transparent px-0 text-left shadow-none ring-0 focus:ring-0">
-          <SelectValue placeholder="Selecionar empresa" />
-        </SelectTrigger>
-        <SelectContent>
-          {clients.map((client) => (
-            <SelectItem key={client.id} value={client.id}>
-              {client.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-
-  const resolvedHeaderRight = headerRight ?? (!fixedClientId ? clientSelector : undefined);
   const activeTone = summary.qualificationRate >= 50 ? "text-cyan-700 dark:text-cyan-200" : "text-fuchsia-700 dark:text-fuchsia-200";
 
   return (
     <PageShell
       title={title}
       subtitle={subtitle}
-      headerRight={resolvedHeaderRight}
+      headerRight={headerRight}
       spacing="space-y-4"
       compactHero
       contentClassName="px-4 py-4 lg:px-5 lg:py-4"
+      showGlobalClientSelector={!fixedClientId}
     >
-      {!effectiveClientId && !clientsLoading && (
+      {!effectiveClientId && !(crmClient?.isLoading) && (
         <EmptyState
           title="Nenhum cliente cadastrado"
           description="Cadastre um registro em leads_clients para liberar o dashboard."
