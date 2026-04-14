@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bell, ChevronDown, Moon, Search, Sun } from "lucide-react";
+import { Building2, ChevronDown, Moon, Search, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 interface PageShellProps {
@@ -12,6 +14,7 @@ interface PageShellProps {
   spacing?: string;
   compactHero?: boolean;
   contentClassName?: string;
+  showGlobalClientSelector?: boolean;
 }
 
 export function PageShell({
@@ -22,9 +25,11 @@ export function PageShell({
   spacing = "space-y-5",
   compactHero = false,
   contentClassName,
+  showGlobalClientSelector = false,
 }: PageShellProps) {
   const { resolvedTheme, setTheme } = useTheme();
   const { user, accessProfile } = useAuth();
+  const crmClient = useOptionalCrmClient();
   const [mounted, setMounted] = useState(false);
   const userEmail = user?.email || accessProfile?.email || "";
   const userName =
@@ -38,6 +43,30 @@ export function PageShell({
     .map((part) => part[0]?.toUpperCase())
     .join("");
   const isDark = resolvedTheme !== "light";
+  const shouldShowGlobalClientSelector =
+    showGlobalClientSelector && crmClient && crmClient.clients.length > 0;
+
+  const globalClientSelector = shouldShowGlobalClientSelector ? (
+    <div className="flex min-w-[220px] items-center gap-2">
+      <Building2 className="h-4 w-4 text-muted-foreground" />
+      <Select
+        value={crmClient.selectedClientId}
+        onValueChange={crmClient.setSelectedClientId}
+        disabled={crmClient.isLoading}
+      >
+        <SelectTrigger className="h-11 rounded-xl">
+          <SelectValue placeholder="Selecionar empresa" />
+        </SelectTrigger>
+        <SelectContent>
+          {crmClient.clients.map((client) => (
+            <SelectItem key={client.id} value={client.id}>
+              {client.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  ) : null;
 
   useEffect(() => {
     setMounted(true);
@@ -66,9 +95,6 @@ export function PageShell({
           </div>
 
           <div className="flex items-center gap-3">
-            <button className="hidden h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/85 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white md:flex">
-              <Bell className="h-4 w-4" />
-            </button>
             <button
               type="button"
               onClick={() => mounted && setTheme(isDark ? "light" : "dark")}
@@ -109,7 +135,12 @@ export function PageShell({
             </h1>
             {subtitle && <p className={compactHero ? "mt-1 text-xs text-muted-foreground" : "mt-2 text-sm text-muted-foreground"}>{subtitle}</p>}
           </div>
-          {headerRight && <div className="flex flex-wrap items-center gap-3">{headerRight}</div>}
+          {(globalClientSelector || headerRight) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {globalClientSelector}
+              {headerRight}
+            </div>
+          )}
         </div>
         {children}
       </div>

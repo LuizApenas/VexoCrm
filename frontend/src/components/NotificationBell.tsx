@@ -43,7 +43,7 @@ export function NotificationBell({ collapsed }: NotificationBellProps) {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="right" align="end" className="w-80 border-slate-200/90 bg-white/98 p-0 text-foreground dark:border-white/10 dark:bg-[rgba(11,14,20,0.4)]">
+      <PopoverContent side="right" align="end" className="w-80 border-slate-200/90 bg-white p-0 text-foreground dark:border-white/10 dark:bg-[#090b17]">
         <div className="flex items-center justify-between border-b border-slate-200/80 p-3 dark:border-white/8">
           <h4 className="text-sm font-semibold text-foreground">Notificacoes</h4>
           {unreadCount > 0 && (
