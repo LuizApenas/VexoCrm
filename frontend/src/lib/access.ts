@@ -24,7 +24,7 @@ export type AccessPermission =
   | "agente.view"
   | "users.view"
   | "users.manage";
-export type AccessPreset =
+export type SystemAccessPreset =
   | "internal_admin"
   | "internal_manager"
   | "internal_operator"
@@ -32,6 +32,7 @@ export type AccessPreset =
   | "client_operator"
   | "client_viewer"
   | "pending";
+export type AccessPreset = string;
 
 export const CLIENT_VIEW_ORDER: AccessView[] = ["dashboard", "leads", "planilhas", "whatsapp"];
 export const ACCESS_SCOPE_ORDER: AccessScope[] = [
@@ -93,7 +94,7 @@ export const APPROVAL_LEVEL_LABELS: Record<ApprovalLevel, string> = {
   director: "Diretoria",
 };
 
-export const ACCESS_PRESET_LABELS: Record<AccessPreset, string> = {
+export const ACCESS_PRESET_LABELS: Record<string, string> = {
   internal_admin: "Admin interno",
   internal_manager: "Gestor interno",
   internal_operator: "Operacao interna",
@@ -158,7 +159,7 @@ type PresetDefaults = {
   allowedViews: AccessView[];
 };
 
-const PRESET_DEFAULTS: Record<AccessPreset, PresetDefaults> = {
+const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
   internal_admin: {
     role: "internal",
     scopeMode: "all_clients",
@@ -287,20 +288,38 @@ export function getDefaultPresetForRole(role: AccessRole): AccessPreset {
   return "internal_operator";
 }
 
+function getPresetFallbackKey(preset: string | null | undefined): SystemAccessPreset {
+  const normalized = typeof preset === "string" ? preset.trim().toLowerCase() : "";
+
+  if (normalized === "pending" || normalized.startsWith("pending")) {
+    return "pending";
+  }
+
+  if (normalized.startsWith("client")) {
+    return "client_operator";
+  }
+
+  return "internal_operator";
+}
+
 export function normalizeAccessPreset(value: unknown, role: AccessRole = "internal"): AccessPreset {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
 
   if ((ACCESS_PRESET_ORDER as readonly string[]).includes(normalized)) {
-    const preset = normalized as AccessPreset;
+    const preset = normalized as SystemAccessPreset;
     const presetRole = PRESET_DEFAULTS[preset].role;
     return presetRole === role ? preset : getDefaultPresetForRole(role);
+  }
+
+  if (normalized) {
+    return normalized;
   }
 
   return getDefaultPresetForRole(role);
 }
 
 export function buildPresetDefaults(preset: AccessPreset): PresetDefaults {
-  const defaults = PRESET_DEFAULTS[preset];
+  const defaults = PRESET_DEFAULTS[preset as SystemAccessPreset] || PRESET_DEFAULTS[getPresetFallbackKey(preset)];
 
   return {
     role: defaults.role,
@@ -365,6 +384,21 @@ export function normalizeApprovalLevel(value: unknown, role: AccessRole): Approv
   }
 
   return buildPresetDefaults(getDefaultPresetForRole(role)).approvalLevel;
+}
+
+export function getAccessPresetLabel(value: string | null | undefined): string {
+  const normalized = normalizeString(value)?.toLowerCase();
+
+  if (!normalized) {
+    return "Tipo sem nome";
+  }
+
+  return (
+    ACCESS_PRESET_LABELS[normalized] ||
+    normalized
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  );
 }
 
 export function normalizePermissions(

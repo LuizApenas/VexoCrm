@@ -187,6 +187,15 @@ const ACCESS_PRESET_KEYS = [
   "client_viewer",
   "pending",
 ];
+const ACCESS_PRESET_LABELS = {
+  internal_admin: "Admin interno",
+  internal_manager: "Gestor interno",
+  internal_operator: "Operacao interna",
+  client_manager: "Gestor do cliente",
+  client_operator: "Operador do cliente",
+  client_viewer: "Leitura do cliente",
+  pending: "Aguardando aprovacao",
+};
 const FIXED_ADMIN_UIDS = new Set([
   "IozfnQTmWHQAxopr3FyNb1SdYs52",
   "pKpOKg3Fttf6AnYsTzZD7xjJLaN2",
@@ -279,6 +288,114 @@ const ACCESS_PRESET_DEFAULTS = {
   },
 };
 
+const SYSTEM_ACCESS_PROFILES = [
+  {
+    key: "internal_admin",
+    label: ACCESS_PRESET_LABELS.internal_admin,
+    description: "Acesso total ao CRM e administracao do ambiente.",
+    role: "internal",
+    scopeMode: "all_clients",
+    approvalLevel: "director",
+    permissions: [...ACCESS_PERMISSION_KEYS],
+    internalPages: [...INTERNAL_PAGE_KEYS],
+    allowedViews: [],
+    isSystem: true,
+    isLocked: true,
+  },
+  {
+    key: "internal_manager",
+    label: ACCESS_PRESET_LABELS.internal_manager,
+    description: "Gestao operacional com acesso ampliado aos modulos internos.",
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [...ACCESS_PRESET_DEFAULTS.internal_manager.permissions],
+    internalPages: [...ACCESS_PRESET_DEFAULTS.internal_manager.internalPages],
+    allowedViews: [],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "internal_operator",
+    label: ACCESS_PRESET_LABELS.internal_operator,
+    description: "Operacao padrao do CRM para times internos.",
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: [...ACCESS_PRESET_DEFAULTS.internal_operator.permissions],
+    internalPages: [...ACCESS_PRESET_DEFAULTS.internal_operator.internalPages],
+    allowedViews: [],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "client_manager",
+    label: ACCESS_PRESET_LABELS.client_manager,
+    description: "Perfil de cliente com acesso expandido ao portal.",
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [...ACCESS_PRESET_DEFAULTS.client_manager.permissions],
+    internalPages: [],
+    allowedViews: [...ACCESS_PRESET_DEFAULTS.client_manager.allowedViews],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "client_operator",
+    label: ACCESS_PRESET_LABELS.client_operator,
+    description: "Perfil de cliente operacional para uso diario.",
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: [...ACCESS_PRESET_DEFAULTS.client_operator.permissions],
+    internalPages: [],
+    allowedViews: [...ACCESS_PRESET_DEFAULTS.client_operator.allowedViews],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "client_viewer",
+    label: ACCESS_PRESET_LABELS.client_viewer,
+    description: "Perfil de cliente com acesso de leitura.",
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "none",
+    permissions: [...ACCESS_PRESET_DEFAULTS.client_viewer.permissions],
+    internalPages: [],
+    allowedViews: [...ACCESS_PRESET_DEFAULTS.client_viewer.allowedViews],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "pending",
+    label: ACCESS_PRESET_LABELS.pending,
+    description: "Conta ainda sem liberacao operacional.",
+    role: "pending",
+    scopeMode: "no_client_access",
+    approvalLevel: "none",
+    permissions: [],
+    internalPages: [],
+    allowedViews: [],
+    isSystem: true,
+    isLocked: false,
+  },
+];
+
+function getPresetFallbackKey(preset) {
+  const normalized = normalizeString(preset)?.toLowerCase() || "";
+
+  if (normalized === "pending" || normalized.startsWith("pending")) {
+    return "pending";
+  }
+
+  if (normalized.startsWith("client")) {
+    return "client_operator";
+  }
+
+  return "internal_operator";
+}
+
 function normalizeRole(value) {
   const normalized = normalizeString(value)?.toLowerCase();
 
@@ -314,7 +431,7 @@ function isValidManagedRoleInput(value) {
 
 function isValidManagedPresetInput(value) {
   const normalized = normalizeString(value)?.toLowerCase();
-  return !normalized || ACCESS_PRESET_KEYS.includes(normalized);
+  return !normalized || /^[a-z0-9_-]+$/.test(normalized);
 }
 
 function isValidManagedScopeInput(value) {
@@ -346,11 +463,15 @@ function normalizeAccessPreset(value, role = "internal") {
     return ACCESS_PRESET_DEFAULTS[preset].role === role ? preset : getDefaultPresetForRole(role);
   }
 
+  if (normalized) {
+    return normalized;
+  }
+
   return getDefaultPresetForRole(role);
 }
 
 function buildPresetDefaults(preset) {
-  const defaults = ACCESS_PRESET_DEFAULTS[preset] || ACCESS_PRESET_DEFAULTS.internal_operator;
+  const defaults = ACCESS_PRESET_DEFAULTS[preset] || ACCESS_PRESET_DEFAULTS[getPresetFallbackKey(preset)];
 
   return {
     role: defaults.role,
@@ -1294,6 +1415,219 @@ function mapAdminUserRecord(user) {
   };
 }
 
+function humanizeAccessProfileKey(value) {
+  const normalized = normalizeString(value)?.toLowerCase();
+
+  if (!normalized) {
+    return "Tipo sem nome";
+  }
+
+  return (
+    ACCESS_PRESET_LABELS[normalized] ||
+    normalized
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  );
+}
+
+function normalizeAccessProfileRecord(input = {}) {
+  const role = normalizeRole(input.role);
+  const key = normalizeAccessPreset(input.key ?? input.accessPreset, role);
+  const label = normalizeString(input.label) || humanizeAccessProfileKey(key);
+  const description = normalizeString(input.description);
+
+  if (role === "pending") {
+    return {
+      key,
+      label,
+      description,
+      role: "pending",
+      scopeMode: "no_client_access",
+      approvalLevel: "none",
+      permissions: [],
+      internalPages: [],
+      allowedViews: [],
+      isSystem: Boolean(input.isSystem ?? input.is_system),
+      isLocked: Boolean(input.isLocked ?? input.is_locked),
+      createdAt: input.createdAt ?? input.created_at ?? null,
+      updatedAt: input.updatedAt ?? input.updated_at ?? null,
+    };
+  }
+
+  if (role === "client") {
+    return {
+      key,
+      label,
+      description,
+      role: "client",
+      scopeMode: "assigned_clients",
+      approvalLevel: normalizeApprovalLevel(input.approvalLevel ?? input.approval_level, role),
+      permissions: normalizePermissions(input.permissions, role, key),
+      internalPages: [],
+      allowedViews: normalizeAllowedViews(input.allowedViews ?? input.allowed_views, role, key),
+      isSystem: Boolean(input.isSystem ?? input.is_system),
+      isLocked: Boolean(input.isLocked ?? input.is_locked),
+      createdAt: input.createdAt ?? input.created_at ?? null,
+      updatedAt: input.updatedAt ?? input.updated_at ?? null,
+    };
+  }
+
+  const isAdmin = key === "internal_admin";
+
+  return {
+    key,
+    label,
+    description,
+    role: "internal",
+    scopeMode: isAdmin
+      ? "all_clients"
+      : normalizeScopeMode(input.scopeMode ?? input.scope_mode, role),
+    approvalLevel: isAdmin
+      ? "director"
+      : normalizeApprovalLevel(input.approvalLevel ?? input.approval_level, role),
+    permissions: isAdmin
+      ? [...ACCESS_PERMISSION_KEYS]
+      : normalizePermissions(input.permissions, role, key),
+    internalPages: isAdmin
+      ? [...INTERNAL_PAGE_KEYS]
+      : normalizeInternalPages(input.internalPages ?? input.internal_pages, role, false, key),
+    allowedViews: [],
+    isSystem: Boolean(input.isSystem ?? input.is_system),
+    isLocked: Boolean(input.isLocked ?? input.is_locked),
+    createdAt: input.createdAt ?? input.created_at ?? null,
+    updatedAt: input.updatedAt ?? input.updated_at ?? null,
+  };
+}
+
+function buildSystemAccessProfiles() {
+  return SYSTEM_ACCESS_PROFILES.map((profile) => normalizeAccessProfileRecord(profile));
+}
+
+function isMissingAccessProfilesTable(error) {
+  const code = normalizeString(error?.code);
+  const message = `${error?.message || ""} ${error?.details || ""}`.toLowerCase();
+
+  return code === "42P01" || (message.includes("access_profiles") && message.includes("does not exist"));
+}
+
+async function listAccessProfiles() {
+  const systemProfiles = buildSystemAccessProfiles();
+
+  if (!supabase) {
+    return systemProfiles;
+  }
+
+  const { data, error } = await supabase
+    .from("access_profiles")
+    .select("key, label, description, role, scope_mode, approval_level, permissions, internal_pages, allowed_views, is_system, is_locked, created_at, updated_at")
+    .order("is_system", { ascending: false })
+    .order("label", { ascending: true });
+
+  if (error) {
+    if (isMissingAccessProfilesTable(error)) {
+      return systemProfiles;
+    }
+
+    throw error;
+  }
+
+  return (data || []).map((row) => normalizeAccessProfileRecord(row)).sort((left, right) => {
+    if (left.isSystem !== right.isSystem) {
+      return left.isSystem ? -1 : 1;
+    }
+
+    return left.label.localeCompare(right.label, "pt-BR");
+  });
+}
+
+function findAccessProfileByKey(profiles, key) {
+  const normalizedKey = normalizeString(key)?.toLowerCase();
+  if (!normalizedKey) return null;
+
+  return profiles.find((profile) => profile.key === normalizedKey) || null;
+}
+
+function resolveRequestedAccessProfile(profiles, key, role) {
+  const explicitProfile = findAccessProfileByKey(profiles, key);
+  if (explicitProfile) {
+    return explicitProfile;
+  }
+
+  return findAccessProfileByKey(profiles, getDefaultPresetForRole(role));
+}
+
+function serializeAccessProfileRecord(profile) {
+  return {
+    key: profile.key,
+    label: profile.label,
+    description: profile.description,
+    role: profile.role,
+    scope_mode: profile.scopeMode,
+    approval_level: profile.approvalLevel,
+    permissions: profile.permissions,
+    internal_pages: profile.internalPages,
+    allowed_views: profile.allowedViews,
+    is_system: profile.isSystem,
+    is_locked: profile.isLocked,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function syncUsersWithAccessProfile(profile) {
+  const auth = getAuth();
+  const users = await listAllFirebaseUsers();
+  let updatedUsers = 0;
+  let skippedUsers = 0;
+
+  for (const user of users) {
+    const currentAccess = extractManagedAccessClaims(user.customClaims || {}, {
+      uid: user.uid,
+      email: user.email,
+    });
+
+    if (currentAccess.accessPreset !== profile.key) {
+      continue;
+    }
+
+    if (isFixedAdminIdentity({ uid: user.uid, email: user.email })) {
+      skippedUsers += 1;
+      continue;
+    }
+
+    try {
+      const nextClaims = buildManagedClaims({
+        role: profile.role,
+        accessPreset: profile.key,
+        scopeMode: profile.scopeMode,
+        approvalLevel: profile.approvalLevel,
+        permissions: profile.permissions,
+        clientIds: currentAccess.clientIds,
+        tenantIds: currentAccess.tenantIds,
+        clientId: currentAccess.clientId,
+        tenantId: currentAccess.tenantId,
+        allowedViews: profile.allowedViews,
+        companyName: currentAccess.companyName,
+        internalPages: profile.internalPages,
+      });
+
+      await auth.setCustomUserClaims(
+        user.uid,
+        mergeManagedClaims(user.customClaims || {}, nextClaims)
+      );
+      updatedUsers += 1;
+    } catch (error) {
+      skippedUsers += 1;
+      console.error("access profile sync error:", {
+        key: profile.key,
+        uid: user.uid,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { updatedUsers, skippedUsers };
+}
+
 function resolveAuthorizedClientId(req, res, requestedClientId) {
   const authAccess = req.authAccess || {
     role: "internal",
@@ -1730,6 +2064,209 @@ app.get("/api/admin/users", requireFirebaseAuth, requireInternalPageAccess("usua
   }
 });
 
+app.get("/api/admin/access-profiles", requireFirebaseAuth, requireInternalPageAccess("usuarios"), async (_req, res) => {
+  try {
+    const items = await listAccessProfiles();
+    res.json({ items });
+  } catch (error) {
+    console.error("access profiles query error:", error);
+    sendError(
+      res,
+      500,
+      "ACCESS_PROFILES_QUERY_FAILED",
+      error instanceof Error ? error.message : "Failed to query access profiles"
+    );
+  }
+});
+
+app.post("/api/admin/access-profiles", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const key = normalizeString(req.body?.key)?.toLowerCase();
+  if (!key || !/^[a-z0-9_-]+$/.test(key)) {
+    sendError(res, 400, "INVALID_KEY", "Access profile key must use only lowercase letters, numbers, underscore or hyphen");
+    return;
+  }
+
+  if (!isValidManagedRoleInput(req.body?.role)) {
+    sendError(res, 400, "INVALID_ROLE", "Unsupported role");
+    return;
+  }
+
+  try {
+    const existingProfiles = await listAccessProfiles();
+
+    if (findAccessProfileByKey(existingProfiles, key)) {
+      sendError(res, 409, "ACCESS_PROFILE_EXISTS", "An access profile with this key already exists");
+      return;
+    }
+
+    const profile = normalizeAccessProfileRecord({
+      key,
+      label: req.body?.label,
+      description: req.body?.description,
+      role: req.body?.role,
+      scopeMode: req.body?.scopeMode,
+      approvalLevel: req.body?.approvalLevel,
+      permissions: req.body?.permissions,
+      internalPages: req.body?.internalPages,
+      allowedViews: req.body?.allowedViews,
+      isSystem: false,
+      isLocked: false,
+    });
+
+    const { error } = await supabase.from("access_profiles").insert({
+      ...serializeAccessProfileRecord(profile),
+      is_system: false,
+      is_locked: false,
+      created_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    res.status(201).json({ item: profile });
+  } catch (error) {
+    console.error("access profile create error:", error);
+    sendError(
+      res,
+      500,
+      "ACCESS_PROFILE_CREATE_FAILED",
+      error instanceof Error ? error.message : "Failed to create access profile"
+    );
+  }
+});
+
+app.patch("/api/admin/access-profiles/:key", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const key = normalizeString(req.params?.key)?.toLowerCase();
+  if (!key) {
+    sendError(res, 400, "INVALID_KEY", "Missing access profile key");
+    return;
+  }
+
+  try {
+    const accessProfiles = await listAccessProfiles();
+    const currentProfile = findAccessProfileByKey(accessProfiles, key);
+
+    if (!currentProfile) {
+      sendError(res, 404, "ACCESS_PROFILE_NOT_FOUND", "Access profile not found");
+      return;
+    }
+
+    if (currentProfile.isLocked) {
+      sendError(res, 400, "ACCESS_PROFILE_LOCKED", "This access profile cannot be edited");
+      return;
+    }
+
+    const nextProfile = normalizeAccessProfileRecord({
+      ...currentProfile,
+      label: req.body?.label ?? currentProfile.label,
+      description: req.body?.description ?? currentProfile.description,
+      role: req.body?.role ?? currentProfile.role,
+      scopeMode: req.body?.scopeMode ?? currentProfile.scopeMode,
+      approvalLevel: req.body?.approvalLevel ?? currentProfile.approvalLevel,
+      permissions: req.body?.permissions ?? currentProfile.permissions,
+      internalPages: req.body?.internalPages ?? currentProfile.internalPages,
+      allowedViews: req.body?.allowedViews ?? currentProfile.allowedViews,
+      isSystem: currentProfile.isSystem,
+      isLocked: currentProfile.isLocked,
+      key,
+    });
+
+    const { error } = await supabase
+      .from("access_profiles")
+      .update(serializeAccessProfileRecord(nextProfile))
+      .eq("key", key);
+
+    if (error) {
+      throw error;
+    }
+
+    const syncResult = await syncUsersWithAccessProfile(nextProfile);
+
+    res.json({
+      item: nextProfile,
+      sync: syncResult,
+    });
+  } catch (error) {
+    console.error("access profile update error:", error);
+    sendError(
+      res,
+      500,
+      "ACCESS_PROFILE_UPDATE_FAILED",
+      error instanceof Error ? error.message : "Failed to update access profile"
+    );
+  }
+});
+
+app.delete("/api/admin/access-profiles/:key", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  const key = normalizeString(req.params?.key)?.toLowerCase();
+  if (!key) {
+    sendError(res, 400, "INVALID_KEY", "Missing access profile key");
+    return;
+  }
+
+  try {
+    const accessProfiles = await listAccessProfiles();
+    const currentProfile = findAccessProfileByKey(accessProfiles, key);
+
+    if (!currentProfile) {
+      sendError(res, 404, "ACCESS_PROFILE_NOT_FOUND", "Access profile not found");
+      return;
+    }
+
+    if (currentProfile.isLocked) {
+      sendError(res, 400, "ACCESS_PROFILE_DELETE_BLOCKED", "This access profile cannot be deleted");
+      return;
+    }
+
+    const users = await listAllFirebaseUsers();
+    const assignedUsers = users.filter((user) => {
+      const currentAccess = extractManagedAccessClaims(user.customClaims || {}, {
+        uid: user.uid,
+        email: user.email,
+      });
+
+      return currentAccess.accessPreset === key;
+    });
+
+    if (assignedUsers.length > 0) {
+      sendError(
+        res,
+        409,
+        "ACCESS_PROFILE_IN_USE",
+        "This access profile is still assigned to users",
+        `${assignedUsers.length} users linked`
+      );
+      return;
+    }
+
+    const { error } = await supabase.from("access_profiles").delete().eq("key", key);
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      deletedKey: key,
+    });
+  } catch (error) {
+    console.error("access profile delete error:", error);
+    sendError(
+      res,
+      500,
+      "ACCESS_PROFILE_DELETE_FAILED",
+      error instanceof Error ? error.message : "Failed to delete access profile"
+    );
+  }
+});
+
 app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
   const uid = normalizeString(req.params.uid);
   const rawRole = normalizeString(req.body?.role);
@@ -1745,11 +2282,6 @@ app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAcces
     return;
   }
 
-  if (!isValidManagedPresetInput(req.body?.accessPreset)) {
-    sendError(res, 400, "INVALID_ACCESS_PRESET", "Unsupported access preset");
-    return;
-  }
-
   if (!isValidManagedScopeInput(req.body?.scopeMode ?? req.body?.tenantScope)) {
     sendError(res, 400, "INVALID_SCOPE_MODE", "Unsupported scope mode");
     return;
@@ -1762,6 +2294,14 @@ app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAcces
 
   try {
     const auth = getAuth();
+    const accessProfiles = await listAccessProfiles();
+    const selectedProfile = resolveRequestedAccessProfile(accessProfiles, req.body?.accessPreset, role);
+
+    if (req.body?.accessPreset && !findAccessProfileByKey(accessProfiles, req.body?.accessPreset)) {
+      sendError(res, 400, "INVALID_ACCESS_PRESET", "Unsupported access preset");
+      return;
+    }
+
     const user = await auth.getUser(uid);
     const isTargetFixedAdmin = isFixedAdminIdentity({ uid: user.uid, email: user.email });
     const managedClaims = isTargetFixedAdmin
@@ -1780,18 +2320,18 @@ app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAcces
           internalPages: INTERNAL_PAGE_KEYS,
         })
       : buildManagedClaims({
-          role,
-          accessPreset: req.body?.accessPreset,
-          scopeMode: req.body?.scopeMode ?? req.body?.tenantScope,
-          approvalLevel: req.body?.approvalLevel,
-          permissions: req.body?.permissions,
+          role: selectedProfile?.role || role,
+          accessPreset: selectedProfile?.key || req.body?.accessPreset,
+          scopeMode: req.body?.scopeMode ?? req.body?.tenantScope ?? selectedProfile?.scopeMode,
+          approvalLevel: req.body?.approvalLevel ?? selectedProfile?.approvalLevel,
+          permissions: req.body?.permissions ?? selectedProfile?.permissions,
           clientIds: req.body?.clientIds,
           tenantIds: req.body?.tenantIds,
           clientId: req.body?.clientId,
           tenantId: req.body?.tenantId,
-          allowedViews: req.body?.allowedViews,
+          allowedViews: req.body?.allowedViews ?? selectedProfile?.allowedViews,
           companyName: req.body?.companyName,
-          internalPages: req.body?.internalPages,
+          internalPages: req.body?.internalPages ?? selectedProfile?.internalPages,
         });
 
     if (isTargetFixedAdmin && typeof req.body?.disabled === "boolean" && req.body.disabled) {
@@ -1841,11 +2381,6 @@ app.post("/api/admin/users", requireFirebaseAuth, requireAdminAccess, async (req
     return;
   }
 
-  if (!isValidManagedPresetInput(req.body?.accessPreset)) {
-    sendError(res, 400, "INVALID_ACCESS_PRESET", "Unsupported access preset");
-    return;
-  }
-
   if (!isValidManagedScopeInput(req.body?.scopeMode ?? req.body?.tenantScope)) {
     sendError(res, 400, "INVALID_SCOPE_MODE", "Unsupported scope mode");
     return;
@@ -1863,24 +2398,32 @@ app.post("/api/admin/users", requireFirebaseAuth, requireAdminAccess, async (req
 
   try {
     const auth = getAuth();
+    const accessProfiles = await listAccessProfiles();
+    const selectedProfile = resolveRequestedAccessProfile(accessProfiles, req.body?.accessPreset, role);
+
+    if (req.body?.accessPreset && !findAccessProfileByKey(accessProfiles, req.body?.accessPreset)) {
+      sendError(res, 400, "INVALID_ACCESS_PRESET", "Unsupported access preset");
+      return;
+    }
+
     const user = await auth.createUser({
       email,
       password,
       displayName: displayName || undefined,
     });
     const managedClaims = buildManagedClaims({
-      role,
-      accessPreset: req.body?.accessPreset,
-      scopeMode: req.body?.scopeMode ?? req.body?.tenantScope,
-      approvalLevel: req.body?.approvalLevel,
-      permissions: req.body?.permissions,
+      role: selectedProfile?.role || role,
+      accessPreset: selectedProfile?.key || req.body?.accessPreset,
+      scopeMode: req.body?.scopeMode ?? req.body?.tenantScope ?? selectedProfile?.scopeMode,
+      approvalLevel: req.body?.approvalLevel ?? selectedProfile?.approvalLevel,
+      permissions: req.body?.permissions ?? selectedProfile?.permissions,
       clientIds: req.body?.clientIds,
       tenantIds: req.body?.tenantIds,
       clientId: req.body?.clientId,
       tenantId: req.body?.tenantId,
-      allowedViews: req.body?.allowedViews,
+      allowedViews: req.body?.allowedViews ?? selectedProfile?.allowedViews,
       companyName: req.body?.companyName,
-      internalPages: req.body?.internalPages,
+      internalPages: req.body?.internalPages ?? selectedProfile?.internalPages,
     });
 
     await auth.setCustomUserClaims(user.uid, mergeManagedClaims({}, managedClaims));
@@ -2941,7 +3484,7 @@ app.post("/api/whatsapp/messages/direct", requireFirebaseAuth, requireAdminAcces
 // ─────────────────────────────────────────────────────────────
 
 // GET /api/campaigns — lista campanhas do usuário
-app.get("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+app.get("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   try {
@@ -2980,7 +3523,7 @@ app.get("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("campan
 });
 
 // POST /api/campaigns — cria campanha
-app.post("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+app.post("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   const name = normalizeString(req.body?.name);
@@ -3025,7 +3568,7 @@ app.post("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("campa
 });
 
 // PATCH /api/campaigns/:id — atualiza campanha
-app.patch("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+app.patch("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   const id = normalizeString(req.params?.id);
@@ -3067,7 +3610,7 @@ app.patch("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("
 });
 
 // DELETE /api/campaigns/:id — exclui campanha
-app.delete("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+app.delete("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   const id = normalizeString(req.params?.id);
@@ -3089,7 +3632,7 @@ app.delete("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess(
 });
 
 // POST /api/campaigns/:id/trigger — dispara campanha (chama webhook n8n)
-app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireInternalPageAccess("campanhas"), async (req, res) => {
+app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
   if (!ensureSupabase(res)) return;
 
   const id = normalizeString(req.params?.id);
