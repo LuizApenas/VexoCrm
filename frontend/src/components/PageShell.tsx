@@ -44,7 +44,7 @@ export function PageShell({
   }, []);
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-auto">
+    <div className="flex h-full flex-1 flex-col overflow-hidden">
       <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-[rgba(255,255,255,0.82)] backdrop-blur-2xl dark:border-white/10 dark:bg-[rgba(8,10,34,0.84)]">
         <div className="flex items-center gap-4 px-5 py-4 lg:px-8">
           <div className="hidden items-center gap-2 lg:flex">
@@ -92,7 +92,7 @@ export function PageShell({
         </div>
       </header>
 
-      <div className={cn("px-5 py-4 lg:px-8 lg:py-5", spacing, contentClassName)}>
+      <div className={cn("flex-1 overflow-y-auto px-5 py-4 lg:px-8 lg:py-5", spacing, contentClassName)}>
         <div
           className={
             compactHero

@@ -24,13 +24,23 @@ export function NotificationBell({ collapsed }: NotificationBellProps) {
       <PopoverTrigger asChild>
         <button
           className={cn(
-            "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+            "relative flex w-full text-sm transition-colors",
+            collapsed
+              ? "h-10 items-center justify-center rounded-xl px-0"
+              : "items-center gap-2.5 rounded-xl px-3 py-2.5",
             "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 dark:text-sidebar-foreground dark:hover:bg-white/[0.04] dark:hover:text-sidebar-accent-foreground"
           )}
         >
           <Bell className="h-4 w-4 shrink-0" />
           {!collapsed && <span>Notificacoes</span>}
-          {unreadCount > 0 && <span className="absolute right-2 top-2 h-2 min-w-[8px] rounded-full bg-primary shadow-[0_0_10px_rgba(99,102,241,0.8)]" />}
+          {unreadCount > 0 && (
+            <span
+              className={cn(
+                "absolute h-2 min-w-[8px] rounded-full bg-primary shadow-[0_0_10px_rgba(99,102,241,0.8)]",
+                collapsed ? "right-2 top-2" : "right-2.5 top-2.5"
+              )}
+            />
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent side="right" align="end" className="w-80 border-slate-200/90 bg-white/98 p-0 text-foreground dark:border-white/10 dark:bg-[rgba(11,14,20,0.4)]">

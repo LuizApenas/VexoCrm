@@ -26,7 +26,6 @@ import PendingApproval from "./pages/PendingApproval";
 import ClientSignup from "./pages/ClientSignup";
 import UserAccessManagement from "./pages/UserAccessManagement";
 import WhatsAppInbox from "./pages/WhatsAppInbox";
-import Campanhas from "./pages/Campanhas";
 
 const queryClient = new QueryClient();
 
@@ -92,6 +91,7 @@ const App = () => (
             <Route path="/dashboard" element={<Navigate to="/crm/dashboard" replace />} />
             <Route path="/leads" element={<Navigate to="/crm/leads" replace />} />
             <Route path="/planilhas" element={<Navigate to="/crm/planilhas" replace />} />
+            <Route path="/campanhas" element={<Navigate to="/crm/planilhas" replace />} />
             <Route path="/agente" element={<Navigate to="/crm/agente" replace />} />
             <Route path="/whatsapp" element={<Navigate to="/crm/whatsapp" replace />} />
             <Route
@@ -127,6 +127,7 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              <Route path="campanhas" element={<Navigate to="/crm/planilhas" replace />} />
               <Route
                 path="whatsapp"
                 element={
@@ -150,14 +151,6 @@ const App = () => (
                     <ErrorBoundary>
                       <UserAccessManagement />
                     </ErrorBoundary>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="campanhas"
-                element={
-                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="campanhas">
-                    <Campanhas />
                   </ProtectedRoute>
                 }
               />

@@ -6,7 +6,6 @@ import {
   Users,
   Bot,
   LogOut,
-  Megaphone,
   ShieldCheck,
   PanelLeftClose,
   PanelLeft,
@@ -21,10 +20,9 @@ import { type InternalPage } from "@/lib/access";
 const navItems = [
   { title: "Dashboard", url: "/crm/dashboard", icon: LayoutDashboard, page: "dashboard" as const },
   { title: "Leads", url: "/crm/leads", icon: Users, badge: "CRM", page: "leads" as const },
-  { title: "Planilhas", url: "/crm/planilhas", icon: FileSpreadsheet, page: "planilhas" as const },
+  { title: "Campanhas", url: "/crm/planilhas", icon: FileSpreadsheet, page: "planilhas" as const },
   { title: "WhatsApp", url: "/crm/whatsapp", icon: MessageCircle, page: "whatsapp" as const },
   { title: "Agente", url: "/crm/agente", icon: Bot, page: "agente" as const },
-  { title: "Campanhas", url: "/crm/campanhas", icon: Megaphone, page: "campanhas" as const },
   { title: "Usuarios", url: "/crm/usuarios", icon: ShieldCheck, page: "usuarios" as const },
 ] satisfies Array<{
   title: string;
@@ -56,22 +54,27 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "relative flex min-h-full flex-col overflow-hidden border-r border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,255,0.98),rgba(237,242,255,0.98))] text-slate-700 backdrop-blur-xl transition-all duration-200 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,10,34,0.98),rgba(5,6,24,0.98))] dark:text-slate-100",
-        collapsed ? "w-[92px]" : "w-[240px]"
+        "relative flex h-full shrink-0 flex-col overflow-hidden border-r border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,255,0.98),rgba(237,242,255,0.98))] text-slate-700 backdrop-blur-xl transition-all duration-200 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,10,34,0.98),rgba(5,6,24,0.98))] dark:text-slate-100",
+        collapsed ? "w-[74px]" : "w-[204px]"
       )}
     >
-      <div className="relative shrink-0 border-b border-slate-200/80 px-5 py-6 dark:border-white/10">
+      <div
+        className={cn(
+          "relative shrink-0 border-b border-slate-200/80 dark:border-white/10",
+          collapsed ? "px-3 py-3.5" : "px-3.5 py-4"
+        )}
+      >
         <div className="absolute -left-10 -top-10 h-32 w-32 rounded-full bg-fuchsia-500/10 blur-3xl dark:bg-fuchsia-500/16" />
-        <div className="relative flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/90 shadow-[0_10px_30px_rgba(34,211,238,0.12)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_10px_30px_rgba(34,211,238,0.16)]">
-            <span className="bg-[linear-gradient(135deg,#8b5cf6,#22d3ee)] bg-clip-text text-lg font-black text-transparent">
+        <div className={cn("relative flex items-center", collapsed ? "justify-center" : "gap-3")}>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-white/90 shadow-[0_8px_20px_rgba(34,211,238,0.10)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_8px_20px_rgba(34,211,238,0.14)]">
+            <span className="bg-[linear-gradient(135deg,#8b5cf6,#22d3ee)] bg-clip-text text-base font-black text-transparent">
               V
             </span>
           </div>
           {!collapsed && (
             <div className="overflow-hidden">
-              <p className="text-lg font-extrabold tracking-tight text-foreground">Vexo CRM</p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.26em] text-slate-500 dark:text-white/45">
+              <p className="text-[17px] font-extrabold tracking-tight text-foreground">Vexo CRM</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-slate-500 dark:text-white/45">
                 Control hub
               </p>
             </div>
@@ -79,23 +82,26 @@ export function AppSidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-5">
+      <nav className={cn("flex-1 overflow-y-auto", collapsed ? "px-2 py-3.5" : "px-2 py-3.5")}>
         {!collapsed && (
-          <p className="px-3 pb-3 font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-muted-foreground/70">
+          <p className="px-2.5 pb-2.5 font-mono text-[9px] font-bold uppercase tracking-[0.24em] text-muted-foreground/70">
             Principal
           </p>
         )}
 
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           {visibleNavItems.map((item) => (
             <NavLink
               key={item.url}
               to={item.url}
               className={({ isActive }) =>
                 cn(
-                  "group relative flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition-all",
+                  "group relative flex font-medium transition-all",
+                  collapsed
+                    ? "h-9 items-center justify-center rounded-xl px-0"
+                    : "items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-[13px]",
                   isActive
-                    ? "bg-[linear-gradient(90deg,rgba(99,102,241,0.18),rgba(59,130,246,0.10))] text-slate-900 shadow-[inset_0_0_0_1px_rgba(129,140,248,0.24),0_18px_34px_rgba(15,23,42,0.10)] dark:text-white dark:shadow-[inset_0_0_0_1px_rgba(129,140,248,0.34),0_20px_36px_rgba(15,23,42,0.35)]"
+                    ? "bg-[linear-gradient(90deg,rgba(99,102,241,0.18),rgba(59,130,246,0.10))] text-slate-900 shadow-[inset_0_0_0_1px_rgba(129,140,248,0.24),0_14px_28px_rgba(15,23,42,0.08)] dark:text-white dark:shadow-[inset_0_0_0_1px_rgba(129,140,248,0.34),0_16px_28px_rgba(15,23,42,0.26)]"
                     : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 dark:text-sidebar-foreground dark:hover:bg-white/[0.04] dark:hover:text-foreground"
                 )
               }
@@ -110,12 +116,19 @@ export function AppSidebar() {
                   />
                   {!collapsed && <span className="truncate">{item.title}</span>}
                   {!collapsed && item.badge && (
-                    <span className="ml-auto rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 font-mono text-[10px] font-bold text-cyan-700 dark:text-cyan-200">
+                    <span className="ml-auto rounded-full border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-cyan-700 dark:text-cyan-200">
                       {item.badge}
                     </span>
                   )}
                   {isActive && (
-                    <span className="absolute left-0 top-2 h-[calc(100%-16px)] w-1 rounded-r-full bg-[linear-gradient(180deg,#8b5cf6,#22d3ee)] shadow-[0_0_16px_rgba(139,92,246,0.8)]" />
+                    <span
+                      className={cn(
+                        "absolute bg-[linear-gradient(180deg,#8b5cf6,#22d3ee)] shadow-[0_0_16px_rgba(139,92,246,0.8)]",
+                        collapsed
+                          ? "left-1/2 top-auto h-1 w-6 -translate-x-1/2 rounded-full bottom-0.5"
+                          : "left-0 top-2 h-[calc(100%-16px)] w-1 rounded-r-full"
+                      )}
+                    />
                   )}
                 </>
               )}
@@ -124,16 +137,21 @@ export function AppSidebar() {
         </div>
 
         {!collapsed && (
-          <p className="px-3 pb-3 pt-6 font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-muted-foreground/70">
+          <p className="px-2.5 pb-2.5 pt-5 font-mono text-[9px] font-bold uppercase tracking-[0.24em] text-muted-foreground/70">
             Sistema
           </p>
         )}
 
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           {canSeeAgentNotifications ? <NotificationBell collapsed={collapsed} /> : null}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100/80 hover:text-slate-900 dark:text-sidebar-foreground dark:hover:bg-white/[0.04] dark:hover:text-foreground"
+            className={cn(
+              "flex w-full text-sm font-medium text-slate-600 transition-all hover:bg-slate-100/80 hover:text-slate-900 dark:text-sidebar-foreground dark:hover:bg-white/[0.04] dark:hover:text-foreground",
+              collapsed
+                ? "h-9 items-center justify-center rounded-xl px-0"
+                : "items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-[13px]"
+            )}
           >
             {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             {!collapsed && <span>Recolher</span>}
@@ -141,17 +159,22 @@ export function AppSidebar() {
         </div>
       </nav>
 
-      <div className="shrink-0 border-t border-slate-200/80 px-4 py-4 dark:border-sidebar-border/20">
+      <div
+        className={cn(
+          "shrink-0 border-t border-slate-200/80 dark:border-sidebar-border/20",
+          collapsed ? "px-2 py-2.5" : "px-2.5 py-2.5"
+        )}
+      >
         <div
           className={cn(
-            "mb-3 rounded-2xl border border-slate-200/80 bg-white/80 p-3 dark:border-white/8 dark:bg-white/[0.03]",
+            "mb-2.5 rounded-xl border border-slate-200/80 bg-white/80 p-2.5 dark:border-white/8 dark:bg-white/[0.03]",
             collapsed && "hidden"
           )}
         >
           {!collapsed && (
             <div>
-              <p className="text-sm font-semibold text-foreground">{userName}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Workspace principal</p>
+              <p className="text-[13px] font-semibold text-foreground">{userName}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">Workspace principal</p>
             </div>
           )}
         </div>
@@ -159,7 +182,12 @@ export function AppSidebar() {
         <button
           onClick={handleLogout}
           disabled={isLoggingOut}
-          className="flex w-full items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/80 px-3.5 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 disabled:pointer-events-none disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/72 dark:hover:bg-white/[0.06] dark:hover:text-white"
+          className={cn(
+            "flex w-full border border-slate-200/80 bg-white/80 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 disabled:pointer-events-none disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/72 dark:hover:bg-white/[0.06] dark:hover:text-white",
+            collapsed
+              ? "h-9 items-center justify-center rounded-xl px-0"
+              : "items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-[13px]"
+          )}
         >
           <LogOut className="h-4 w-4 shrink-0" />
           {!collapsed && <span>{isLoggingOut ? "Saindo..." : "Sair"}</span>}

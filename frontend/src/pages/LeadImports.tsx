@@ -3,21 +3,20 @@ import * as XLSX from "xlsx";
 import {
   AlertTriangle,
   Building2,
-  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
-  Eye,
   FileSpreadsheet,
   History,
-  Mail,
-  MessageSquare,
+  Megaphone,
+  Pause,
+  Play,
   RefreshCw,
   Search,
-  Send,
   Trash2,
   Upload,
+  Zap,
   XCircle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,17 +24,22 @@ import { useLeadClients } from "@/hooks/useLeadClients";
 import {
   useCreateLeadImport,
   useDeleteLeadImport,
-  useDispatchCampaign,
   useLeadImports,
   useLeadImportItems,
   type LeadImportPreviewItem,
 } from "@/hooks/useLeadImports";
+import {
+  useCampanhas,
+  useCreateCampaign,
+  useDeleteCampaign,
+  useTriggerCampaign,
+  useUpdateCampaign,
+  type Campaign,
+} from "@/hooks/useCampanhas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorMessage } from "@/components/ErrorMessage";
@@ -82,12 +86,14 @@ const SCHEDULED = [
 
 const IMPORTS_PAGE_SIZE = 10;
 const ALL_IMPORTS_VALUE = "__all__";
+const DEFAULT_N8N_CAMPAIGN_WEBHOOK_URL =
+  "https://geracaodigital.app.n8n.cloud/webhook/c1a774a2-2172-4b4f-b557-a75d9561b720";
 const darkFieldClass =
-  "border-white/12 bg-black/45 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_10px_30px_rgba(0,0,0,0.18)] transition-all placeholder:text-white/30 focus-visible:border-primary/35 focus-visible:bg-black/60 focus-visible:ring-1 focus-visible:ring-primary/20 focus-visible:ring-offset-0";
+  "border-slate-200/90 bg-white text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.08)] transition-all placeholder:text-slate-400 focus-visible:border-primary/35 focus-visible:ring-2 focus-visible:ring-primary/15 focus-visible:ring-offset-0 dark:border-white/12 dark:bg-black/45 dark:text-white dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_10px_30px_rgba(0,0,0,0.18)] dark:placeholder:text-white/30 dark:focus-visible:bg-black/60 dark:focus-visible:ring-1 dark:focus-visible:ring-primary/20";
 const darkSelectContentClass =
-  "border-white/10 bg-[#090b17]/98 text-white shadow-[0_24px_50px_rgba(0,0,0,0.45)] backdrop-blur-xl";
+  "border-slate-200/90 bg-white text-slate-900 shadow-[0_24px_50px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-[#090b17]/98 dark:text-white dark:shadow-[0_24px_50px_rgba(0,0,0,0.45)]";
 const darkSelectItemClass =
-  "rounded-md text-white/78 focus:bg-white/[0.06] focus:text-white data-[state=checked]:bg-primary/12 data-[state=checked]:text-white";
+  "rounded-md text-slate-700 focus:bg-slate-100 focus:text-slate-950 data-[state=checked]:bg-primary/10 data-[state=checked]:text-primary dark:text-white/78 dark:focus:bg-white/[0.06] dark:focus:text-white dark:data-[state=checked]:bg-primary/12 dark:data-[state=checked]:text-white";
 
 function parseSpreadsheetFile(file: File): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
@@ -207,8 +213,8 @@ function Metric({
 export default function LeadImports({
   fixedClientId,
   fixedClientName,
-  title = "Planilhas",
-  subtitle = "Gerencie dados e mantenha a estrutura visual de campanhas dentro do CRM.",
+  title = "Campanhas",
+  subtitle = "Importe bases, crie campanhas e acompanhe o que ja foi disparado no CRM.",
   headerRight,
 }: LeadImportsProps) {
   const { isInternalUser } = useAuth();
@@ -220,16 +226,13 @@ export default function LeadImports({
   const [importPreview, setImportPreview] = useState<LeadImportPreviewItem[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SheetTab>("dados");
-  const [scheduleEnabled, setScheduleEnabled] = useState(false);
-  const [scheduleDate, setScheduleDate] = useState("");
-  const [scheduleTime, setScheduleTime] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [pendingFilter, setPendingFilter] = useState<string>("false");
   const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
   const [isDispatching, setIsDispatching] = useState(false);
   const [campaignName, setCampaignName] = useState("");
-  const [campaignChannel, setCampaignChannel] = useState("whatsapp");
   const [dispatchLimit, setDispatchLimit] = useState("");
+  const [campaignSearch, setCampaignSearch] = useState("");
   const [selectedImportId, setSelectedImportId] = useState(ALL_IMPORTS_VALUE);
   const [importsPage, setImportsPage] = useState(1);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -237,7 +240,11 @@ export default function LeadImports({
   const { data: imports = [], isLoading: importsLoading, error: importsError, refetch } = useLeadImports(selectedClientId);
   const createLeadImport = useCreateLeadImport();
   const deleteLeadImport = useDeleteLeadImport();
-  const dispatchCampaign = useDispatchCampaign();
+  const { data: campaigns = [], isLoading: campaignsLoading, error: campaignsError, refetch: refetchCampaigns } = useCampanhas();
+  const createCampaign = useCreateCampaign();
+  const updateCampaign = useUpdateCampaign();
+  const deleteCampaign = useDeleteCampaign();
+  const triggerCampaign = useTriggerCampaign();
   const { data: pendingData, isLoading: pendingLoading, error: pendingError, refetch: refetchPending } = useLeadImportItems(
     selectedClientId,
     selectedImportId === ALL_IMPORTS_VALUE ? undefined : selectedImportId,
@@ -276,6 +283,29 @@ export default function LeadImports({
     [imports, safeImportsPage],
   );
   const pendingItems = pendingData?.items ?? [];
+  const filteredCampaigns = useMemo(() => {
+    const term = campaignSearch.trim().toLowerCase();
+    const scoped = selectedClientId
+      ? campaigns.filter((campaign) => campaign.client_id === selectedClientId)
+      : campaigns;
+
+    return scoped.filter((campaign) => {
+      if (!term) return true;
+      return [campaign.name, campaign.client_name, campaign.client_id]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term);
+    });
+  }, [campaignSearch, campaigns, selectedClientId]);
+  const queuedCampaigns = useMemo(
+    () => filteredCampaigns.filter((campaign) => !campaign.last_triggered_at),
+    [filteredCampaigns],
+  );
+  const sentCampaigns = useMemo(
+    () => filteredCampaigns.filter((campaign) => Boolean(campaign.last_triggered_at)),
+    [filteredCampaigns],
+  );
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] || null;
@@ -332,15 +362,20 @@ export default function LeadImports({
     }
   }
 
-  async function handleDispatch() {
+  async function handleCreateCampaign() {
     if (!selectedClientId) {
-      setDispatchStatus("Selecione um cliente antes de disparar.");
+      setDispatchStatus("Selecione uma empresa antes de criar a campanha.");
+      return;
+    }
+
+    if (!campaignName.trim()) {
+      setDispatchStatus("Defina um nome para a campanha.");
       return;
     }
 
     const parsedLimit = dispatchLimit.trim() ? Number(dispatchLimit) : undefined;
     if (parsedLimit !== undefined && (!Number.isFinite(parsedLimit) || parsedLimit <= 0 || !Number.isInteger(parsedLimit))) {
-      setDispatchStatus("Informe uma quantidade valida de disparos usando apenas numeros inteiros.");
+      setDispatchStatus("Informe uma quantidade valida por lote usando apenas numeros inteiros.");
       return;
     }
 
@@ -348,32 +383,71 @@ export default function LeadImports({
     setDispatchStatus(null);
 
     try {
-      let scheduledAtIso: string | undefined;
-      if (scheduleEnabled && scheduleDate && scheduleTime) {
-        scheduledAtIso = new Date(`${scheduleDate}T${scheduleTime}:00`).toISOString();
-      }
-
-      const result = await dispatchCampaign.mutateAsync({
+      await createCampaign.mutateAsync({
+        name: campaignName.trim(),
         clientId: selectedClientId,
-        importId: selectedImportId === ALL_IMPORTS_VALUE ? undefined : selectedImportId || undefined,
-        campaignName: campaignName || undefined,
-        channel: campaignChannel || undefined,
-        scheduledAt: scheduledAtIso,
-        limit: parsedLimit,
+        importId: selectedImportId === ALL_IMPORTS_VALUE ? null : selectedImportId || null,
+        limitPerRun: parsedLimit ?? 50,
+        webhookUrl: DEFAULT_N8N_CAMPAIGN_WEBHOOK_URL,
+        webhookToken: null,
       });
 
-      setDispatchStatus(
-        scheduleEnabled
-          ? `Campanha agendada para ${scheduleDate} as ${scheduleTime}. ${result.total} leads serao disparados${parsedLimit ? ` neste lote de ${parsedLimit}` : ""}.`
-          : `Disparo realizado com sucesso! ${result.total} leads enviados ao n8n${parsedLimit ? ` neste lote de ${parsedLimit}` : ""}.`,
-      );
-      void refetchPending();
+      setDispatchStatus(`Campanha ${campaignName.trim()} criada com sucesso.`);
+      setCampaignName("");
+      setDispatchLimit("");
+      setSelectedImportId(ALL_IMPORTS_VALUE);
+      setActiveTab("agendamentos");
+      void refetchCampaigns();
     } catch (error) {
-      setDispatchStatus(error instanceof Error ? error.message : "Falha ao disparar campanha.");
+      setDispatchStatus(error instanceof Error ? error.message : "Falha ao criar campanha.");
     } finally {
       setIsDispatching(false);
     }
   }
+
+  async function handleTriggerCampaign(campaign: Campaign) {
+    try {
+      const result = await triggerCampaign.mutateAsync(campaign.id);
+      setDispatchStatus(`Campanha ${campaign.name} disparada com sucesso. ${result.n8nResponse ?? ""}`.trim());
+      void refetchCampaigns();
+      void refetchPending();
+    } catch (error) {
+      setDispatchStatus(error instanceof Error ? error.message : "Falha ao disparar campanha.");
+    }
+  }
+
+  async function handleToggleCampaignStatus(campaign: Campaign) {
+    try {
+      await updateCampaign.mutateAsync({
+        id: campaign.id,
+        status: campaign.status === "active" ? "paused" : "active",
+      });
+      setDispatchStatus(
+        campaign.status === "active"
+          ? `Campanha ${campaign.name} pausada.`
+          : `Campanha ${campaign.name} reativada.`
+      );
+      void refetchCampaigns();
+    } catch (error) {
+      setDispatchStatus(error instanceof Error ? error.message : "Falha ao atualizar campanha.");
+    }
+  }
+
+  async function handleDeleteCampaign(campaign: Campaign) {
+    if (!window.confirm(`Apagar a campanha ${campaign.name}? Essa acao nao pode ser desfeita.`)) {
+      return;
+    }
+
+    try {
+      await deleteCampaign.mutateAsync(campaign.id);
+      setDispatchStatus(`Campanha ${campaign.name} apagada com sucesso.`);
+      void refetchCampaigns();
+    } catch (error) {
+      setDispatchStatus(error instanceof Error ? error.message : "Falha ao apagar campanha.");
+    }
+  }
+
+  const handleDispatch = handleCreateCampaign;
 
   const clientSelector = fixedClientId ? null : (
     <div className="flex min-w-[220px] items-center gap-2">
@@ -445,17 +519,17 @@ export default function LeadImports({
                       onChange={handleFileChange}
                       className="sr-only"
                     />
-                    <div className="rounded-2xl border border-white/10 bg-black/35 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    <div className="rounded-2xl border border-slate-200/90 bg-slate-50/90 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-black/35 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <p className="text-sm font-semibold text-white">Anexar planilha</p>
-                          <p className="mt-1 text-sm text-white/55">Clique no botao abaixo para enviar um arquivo CSV, XLS ou XLSX.</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">Anexar planilha</p>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-white/55">Clique no botao abaixo para enviar um arquivo CSV, XLS ou XLSX.</p>
                         </div>
                         <Button
                           type="button"
                           variant="outline"
                           onClick={() => fileInputRef.current?.click()}
-                          className="h-11 rounded-xl border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06] hover:text-white"
+                          className="h-11 rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-white/12 dark:bg-white/[0.03] dark:text-white dark:hover:bg-white/[0.06] dark:hover:text-white"
                         >
                           <Upload className="h-4 w-4" />
                           {selectedFile ? "Trocar arquivo" : "Clique para anexar"}
@@ -465,7 +539,7 @@ export default function LeadImports({
 
                     <div className="grid gap-4 md:grid-cols-[1fr_auto]">
                       <div className={cn("flex min-h-[48px] items-center rounded-xl px-4 text-sm", darkFieldClass)}>
-                        <span className={selectedFile ? "text-white" : "text-white/40"}>
+                        <span className={selectedFile ? "text-slate-900 dark:text-white" : "text-slate-400 dark:text-white/40"}>
                           {selectedFile ? selectedFile.name : "Nenhum arquivo selecionado"}
                         </span>
                       </div>
@@ -477,7 +551,7 @@ export default function LeadImports({
                   </div>
 
                   {selectedFile && (
-                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    <div className="rounded-xl border border-slate-200/90 bg-slate-50/80 p-4 text-sm text-slate-600 shadow-[0_10px_24px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/78 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                       <p>Arquivo: {selectedFile.name}</p>
                       <p>Linhas lidas: {parsedRows.length}</p>
                     </div>
@@ -778,7 +852,7 @@ export default function LeadImports({
             <CardContent className="space-y-6 p-6">
               <div>
                 <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Criar Nova Campanha</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Configure os parametros de envio e segmentacao da campanha.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Crie um registro real na base de campanhas usando uma empresa e uma importacao existente.</p>
               </div>
 
               {dispatchStatus && (
@@ -800,19 +874,6 @@ export default function LeadImports({
                   <Input placeholder="Ex: Newsletter Marco 2026" className={darkFieldClass} value={campaignName} onChange={(e) => setCampaignName(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Canal de Envio *</p>
-                  <Select value={campaignChannel} onValueChange={setCampaignChannel}>
-                    <SelectTrigger className={darkFieldClass}>
-                      <SelectValue placeholder="Selecione..." />
-                    </SelectTrigger>
-                    <SelectContent className={darkSelectContentClass}>
-                      <SelectItem value="whatsapp" className={darkSelectItemClass}>WhatsApp</SelectItem>
-                      <SelectItem value="email" className={darkSelectItemClass}>E-mail Marketing</SelectItem>
-                      <SelectItem value="sms" className={darkSelectItemClass}>SMS</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Base de Leads (importacao)</p>
                   <Select value={selectedImportId} onValueChange={setSelectedImportId}>
                     <SelectTrigger className={darkFieldClass}>
@@ -830,12 +891,12 @@ export default function LeadImports({
                 </div>
                 <div className="space-y-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Leads pendentes</p>
-                  <div className={cn("flex h-10 items-center rounded-md px-3 font-mono text-sm", darkFieldClass, "text-white/62")}>
+                  <div className={cn("flex h-10 items-center rounded-md px-3 font-mono text-sm text-slate-500 dark:text-white/62", darkFieldClass)}>
                     {pendingData ? `${pendingData.pendingCount} aguardando disparo` : "Carregando..."}
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Quantidade por disparo</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Limite por lote</p>
                   <Input
                     type="number"
                     min="1"
@@ -847,49 +908,25 @@ export default function LeadImports({
                     onChange={(e) => setDispatchLimit(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Defina um lote para nao disparar todos os leads de uma vez. Em branco, envia toda a base pendente.
+                    Em branco, a campanha sera criada com o lote padrao de 50 leads por execucao.
                   </p>
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Conteudo da Mensagem</p>
-                  <Textarea placeholder="Digite o conteudo da campanha aqui..." className={cn("min-h-[130px]", darkFieldClass)} />
                 </div>
               </div>
 
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
-                <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-primary">
-                  <CalendarDays className="h-4 w-4" />
-                  Horario de Disparo
+                <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary">
+                  <Megaphone className="h-4 w-4" />
+                  Fluxo real
                 </div>
-                <div className="mb-4 flex items-center gap-3">
-                  <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
-                  <span className="text-sm text-muted-foreground">
-                    {scheduleEnabled ? "Disparo agendado, o n8n sera notificado do horario." : "Disparo imediato, sera enviado agora."}
-                  </span>
-                </div>
-                {scheduleEnabled && (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Data do disparo *</p>
-                      <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} min={new Date().toISOString().split("T")[0]} className={darkFieldClass} />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Horario do disparo *</p>
-                      <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} className={darkFieldClass} />
-                    </div>
-                  </div>
-                )}
-                {scheduleEnabled && scheduleDate && scheduleTime && (
-                  <p className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2 font-mono text-[11px] text-primary">
-                    O disparo sera realizado em {new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString("pt-BR")} (horario local).
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground">
+                  Esta aba cria uma campanha real na tabela <code>campaigns</code>. Depois disso, a operacao continua nas tabs <strong>Agendamentos</strong> e <strong>Campanhas Enviadas</strong>.
+                </p>
               </div>
 
               <div className="flex flex-wrap gap-3 border-t border-border/70 pt-5">
                 <Button onClick={() => void handleDispatch()} disabled={isDispatching || !selectedClientId}>
-                  <Send className="mr-2 h-4 w-4" />
-                  {isDispatching ? "Enviando..." : scheduleEnabled ? "Agendar Disparo" : "Disparar Agora"}
+                  <Megaphone className="mr-2 h-4 w-4" />
+                  {isDispatching ? "Criando..." : "Criar campanha"}
                 </Button>
               </div>
             </CardContent>
@@ -901,31 +938,53 @@ export default function LeadImports({
             <div className="flex flex-wrap gap-3">
               <div className="relative w-full max-w-xs">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input placeholder="Buscar campanha..." className={cn("pl-9", darkFieldClass)} />
+                <Input value={campaignSearch} onChange={(e) => setCampaignSearch(e.target.value)} placeholder="Buscar campanha..." className={cn("pl-9", darkFieldClass)} />
               </div>
-              <Button variant="outline">Todos os canais</Button>
-              <Button variant="outline">Todos os periodos</Button>
+              <Button variant="outline" onClick={() => refetchCampaigns()} disabled={campaignsLoading}>
+                <RefreshCw className={cn("mr-1 h-4 w-4", campaignsLoading && "animate-spin")} />
+                Atualizar
+              </Button>
             </div>
+            <ErrorMessage message={campaignsError ? (campaignsError as Error).message : null} variant="banner" />
+            {!campaignsLoading && sentCampaigns.length === 0 ? (
+              <EmptyState
+                title="Nenhuma campanha enviada"
+                description="As campanhas com disparo realizado aparecem aqui."
+              />
+            ) : null}
             <div className="grid gap-4 xl:grid-cols-3">
-              {CAMPAIGNS.map(([name, info, segment, channel, delivery, open, clicks]) => (
-                <Card key={name} className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
+              {sentCampaigns.map((campaign) => (
+                <Card key={campaign.id} className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
                   <CardContent className="space-y-5 p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-xl font-extrabold tracking-tight text-foreground">{name}</p>
-                        <p className="mt-1 font-mono text-[11px] text-muted-foreground">{info}</p>
+                        <p className="text-xl font-extrabold tracking-tight text-foreground">{campaign.name}</p>
+                        <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                          {campaign.last_triggered_at ? formatDate(campaign.last_triggered_at) : "Sem disparo"} · {campaign.client_name ?? campaign.client_id}
+                        </p>
                       </div>
-                      <span className={cn("rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", channel === "WHATSAPP" ? "border-primary/20 bg-primary/10 text-primary" : channel === "SMS" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-sky-400/20 bg-sky-400/10 text-sky-300")}>
-                        {channel}
+                      <span className={cn("rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", campaign.status === "active" ? "border-primary/20 bg-primary/10 text-primary" : "border-amber-500/20 bg-amber-500/10 text-amber-300")}>
+                        {campaign.status === "active" ? "ATIVA" : "PAUSADA"}
                       </span>
                     </div>
                     <div className="border-t border-border/70 pt-4">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Segmento: {segment}</p>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                        Base: {campaign.import_id || "todas as importacoes"} · Lote: {campaign.limit_per_run}
+                      </p>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                      <Metric value={delivery} label="Entrega" barClassName="bg-primary" textClassName="text-primary" />
-                      <Metric value={open} label="Abertura" barClassName="bg-sky-400" textClassName="text-sky-300" />
-                      <Metric value={clicks} label={channel === "WHATSAPP" ? "Resposta" : "Cliques"} barClassName="bg-amber-400" textClassName="text-amber-300" />
+                      <div>
+                        <p className="font-mono text-[12px] font-bold text-primary">{campaign.client_name ?? campaign.client_id}</p>
+                        <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Empresa</p>
+                      </div>
+                      <div>
+                        <p className="font-mono text-[12px] font-bold text-sky-300">{campaign.import_id || "todas"}</p>
+                        <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Base</p>
+                      </div>
+                      <div>
+                        <p className="font-mono text-[12px] font-bold text-amber-300">{campaign.limit_per_run} leads</p>
+                        <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Lote</p>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -938,36 +997,40 @@ export default function LeadImports({
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Campanhas Agendadas</h2>
-                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">3 aguardando envio</p>
+                <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Fila de Campanhas</h2>
+                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{queuedCampaigns.length} aguardando disparo</p>
               </div>
-              <Button>+ Agendar Nova</Button>
+              <Button onClick={() => setActiveTab("campanha")}>+ Nova Campanha</Button>
             </div>
+            <ErrorMessage message={campaignsError ? (campaignsError as Error).message : null} variant="banner" />
+            {!campaignsLoading && queuedCampaigns.length === 0 && (
+              <EmptyState
+                title="Nenhuma campanha na fila"
+                description="As campanhas criadas e ainda nao disparadas aparecem aqui."
+              />
+            )}
             <div className="space-y-4">
-              {SCHEDULED.map(([day, month, name, channel, contacts, time, status]) => (
-                <Card key={name} className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
+              {queuedCampaigns.map((campaign) => (
+                <Card key={campaign.id} className="rounded-2xl border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
                   <CardContent className="flex flex-wrap items-center gap-5 p-5">
                     <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-xl border border-primary/20 bg-primary/5">
-                      <span className="font-mono text-3xl font-bold text-primary">{day}</span>
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">{month}</span>
+                      <span className="font-mono text-3xl font-bold text-primary">{new Date(campaign.created_at).toLocaleDateString("pt-BR", { day: "2-digit" })}</span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">{new Date(campaign.created_at).toLocaleDateString("pt-BR", { month: "short" })}</span>
                     </div>
                     <div className="min-w-[220px] flex-1">
-                      <p className="text-xl font-extrabold tracking-tight text-foreground">{name}</p>
+                      <p className="text-xl font-extrabold tracking-tight text-foreground">{campaign.name}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-4 font-mono text-[11px] text-muted-foreground">
-                        <span className="inline-flex items-center gap-1.5">
-                          {channel === "WhatsApp" ? <MessageSquare className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
-                          {channel}
-                        </span>
-                        <span className="inline-flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />{contacts}</span>
-                        <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{time}</span>
+                        <span className="inline-flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />{campaign.client_name ?? campaign.client_id}</span>
+                        <span className="inline-flex items-center gap-1.5"><FileSpreadsheet className="h-3.5 w-3.5" />{campaign.import_id || "todas as bases"}</span>
+                        <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />lote {campaign.limit_per_run}</span>
                       </div>
                     </div>
-                    <span className={cn("rounded-md border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", status === "AGENDADA" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : status === "RECORRENTE" ? "border-primary/20 bg-primary/10 text-primary" : "border-sky-400/20 bg-sky-400/10 text-sky-300")}>
-                      {status}
+                    <span className={cn("rounded-md border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em]", campaign.status === "active" ? "border-amber-400/20 bg-amber-400/10 text-amber-300" : "border-white/10 bg-white/5 text-muted-foreground")}>
+                      {campaign.status === "active" ? "PRONTA" : "PAUSADA"}
                     </span>
                     <div className="flex items-center gap-2">
-                      <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/40 text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:bg-white/[0.05] hover:text-foreground">
-                        <Eye className="h-4 w-4" />
+                      <button type="button" onClick={() => void handleTriggerCampaign(campaign)} className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/40 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:bg-white/[0.05] hover:text-primary">
+                        <Zap className="h-4 w-4" />
                       </button>
                       <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/40 text-pink-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:bg-white/[0.05] hover:text-pink-300">
                         ×

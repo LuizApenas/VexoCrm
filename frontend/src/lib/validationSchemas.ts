@@ -56,22 +56,7 @@ export const createUserSchema = z.object({
   role: z.enum(["internal", "client", "pending"], {
     errorMap: () => ({ message: "Role invalido" }),
   }),
-  accessPreset: z
-    .enum(
-      [
-        "internal_admin",
-        "internal_manager",
-        "internal_operator",
-        "client_manager",
-        "client_operator",
-        "client_viewer",
-        "pending",
-      ],
-      {
-        errorMap: () => ({ message: "Preset de acesso invalido" }),
-      }
-    )
-    .optional(),
+  accessPreset: z.string().min(1, "Preset de acesso invalido").optional(),
   scopeMode: z.enum(["all_clients", "assigned_clients", "no_client_access"]).optional(),
   approvalLevel: z.enum(["none", "operator", "supervisor", "manager", "director"]).optional(),
   clientIds: z.array(z.string()).optional(),

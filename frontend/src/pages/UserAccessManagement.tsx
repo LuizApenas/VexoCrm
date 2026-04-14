@@ -13,19 +13,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { PageShell } from "@/components/PageShell";
+import { type AccessProfileRecord, useAccessProfiles } from "@/hooks/useAccessProfiles";
 import { type LeadClient, useLeadClients } from "@/hooks/useLeadClients";
 import { type AdminUserRecord, useAdminUsers } from "@/hooks/useAdminUsers";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
+  ACCESS_PERMISSION_DEFINITIONS,
   ACCESS_PERMISSION_ORDER,
   CLIENT_VIEW_ORDER,
   buildPresetDefaults,
+  getAccessPresetLabel,
   getDefaultPresetForRole,
   INTERNAL_PAGE_ORDER,
   isFixedAdminAccount,
@@ -73,6 +84,14 @@ interface CreateUserDraft {
 
 type AccessDraft = UserDraft | CreateUserDraft;
 type RoleFilter = "all" | ManagedRole;
+type ActionFeedbackTone = "success" | "error";
+
+interface ActionFeedbackState {
+  tone: ActionFeedbackTone;
+  title: string;
+  message: string;
+  details?: string | null;
+}
 
 const DEFAULT_INTERNAL_PAGES: InternalPage[] = ["dashboard"];
 const DEFAULT_CLIENT_VIEWS: AccessView[] = ["dashboard", "leads"];
@@ -87,12 +106,6 @@ const ROLE_BADGE_CLASS: Record<ManagedRole, string> = {
   internal: "bg-primary/10 text-primary",
   client: "bg-[#1A5CFF]/10 text-[#1A5CFF]",
   pending: "bg-amber-500/10 text-amber-500",
-};
-
-const ROLE_PRESETS: Record<ManagedRole, AccessPreset[]> = {
-  internal: ["internal_admin", "internal_manager", "internal_operator"],
-  client: ["client_manager", "client_operator", "client_viewer"],
-  pending: ["pending"],
 };
 
 const ROLE_SCOPES: Record<ManagedRole, AccessScope[]> = {
@@ -147,6 +160,128 @@ const INTERNAL_PAGE_TABS = [
   { value: "gestao", label: "Gestao", items: ["agente", "usuarios", "campanhas"] as InternalPage[] },
 ];
 
+function findAccessProfile(profiles: AccessProfileRecord[], key: string | null | undefined) {
+  const normalizedKey = key?.trim().toLowerCase();
+  if (!normalizedKey) return null;
+
+  return profiles.find((profile) => profile.key === normalizedKey) || null;
+}
+
+function applyAccessProfileToDraft<T extends AccessDraft>(draft: T, profile: AccessProfileRecord | null): T {
+  if (!profile) {
+    return draft;
+  }
+
+  if (profile.role === "pending") {
+    return {
+      ...draft,
+      role: "pending",
+      accessPreset: profile.key,
+      scopeMode: "no_client_access",
+      approvalLevel: "none",
+      allowedViews: [],
+      internalPages: [],
+      permissions: [],
+      clientIds: [],
+    };
+  }
+
+  if (profile.role === "client") {
+    return {
+      ...draft,
+      role: "client",
+      accessPreset: profile.key,
+      scopeMode: "assigned_clients",
+      approvalLevel: profile.approvalLevel,
+      allowedViews: [...profile.allowedViews],
+      internalPages: [],
+      permissions: [...profile.permissions],
+    };
+  }
+
+  return {
+    ...draft,
+    role: "internal",
+    accessPreset: profile.key,
+    scopeMode: profile.scopeMode,
+    approvalLevel: profile.approvalLevel,
+    allowedViews: [],
+    internalPages: [...profile.internalPages],
+    permissions: [...profile.permissions],
+  };
+}
+
+function buildAccessProfileDraft(profile?: AccessProfileRecord | null): AccessProfileDraft {
+  if (!profile) {
+    return {
+      key: "",
+      label: "",
+      description: "",
+      role: "internal",
+      scopeMode: "assigned_clients",
+      approvalLevel: "operator",
+      allowedViews: [],
+      internalPages: [...DEFAULT_INTERNAL_PAGES],
+      permissions: derivePermissionsFromInternalPages(DEFAULT_INTERNAL_PAGES),
+    };
+  }
+
+  return {
+    key: profile.key,
+    label: profile.label,
+    description: profile.description || "",
+    role: profile.role,
+    scopeMode: profile.scopeMode,
+    approvalLevel: profile.approvalLevel,
+    allowedViews: [...profile.allowedViews],
+    internalPages: [...profile.internalPages],
+    permissions: [...profile.permissions],
+  };
+}
+
+const FALLBACK_ACCESS_PROFILE_DESCRIPTIONS: Record<string, string> = {
+  internal_admin: "Acesso total ao CRM e administracao do ambiente.",
+  internal_manager: "Gestao operacional com acesso ampliado aos modulos internos.",
+  internal_operator: "Operacao padrao do CRM para times internos.",
+  client_manager: "Tipo de cliente com acesso expandido ao portal.",
+  client_operator: "Tipo de cliente operacional para uso diario.",
+  client_viewer: "Tipo de cliente com acesso de leitura.",
+  pending: "Conta ainda sem liberacao operacional.",
+};
+
+function buildFallbackAccessProfiles(): AccessProfileRecord[] {
+  const fallbackKeys: AccessPreset[] = [
+    "internal_admin",
+    "internal_manager",
+    "internal_operator",
+    "client_manager",
+    "client_operator",
+    "client_viewer",
+    "pending",
+  ];
+
+  return fallbackKeys.map((key) => {
+    const defaults = buildPresetDefaults(key);
+    const role = defaults.role;
+
+    return {
+      key,
+      label: getAccessPresetLabel(key),
+      description: FALLBACK_ACCESS_PROFILE_DESCRIPTIONS[key] || null,
+      role,
+      scopeMode: defaults.scopeMode,
+      approvalLevel: defaults.approvalLevel,
+      permissions: [...defaults.permissions],
+      internalPages: [...defaults.internalPages],
+      allowedViews: [...defaults.allowedViews],
+      isSystem: true,
+      isLocked: key === "internal_admin",
+      createdAt: null,
+      updatedAt: null,
+    };
+  });
+}
+
 function buildUserDraft(user: AdminUserRecord): UserDraft {
   const role = user.access.role;
   const accessPreset = user.access.accessPreset || getDefaultPresetForRole(role);
@@ -191,6 +326,18 @@ function buildCreateDraft(): CreateUserDraft {
   });
 }
 
+interface AccessProfileDraft {
+  key: string;
+  label: string;
+  description: string;
+  role: ManagedRole;
+  scopeMode: AccessScope;
+  approvalLevel: ApprovalLevel;
+  allowedViews: AccessView[];
+  internalPages: InternalPage[];
+  permissions: AccessPermission[];
+}
+
 function derivePermissionsFromClientViews(views: AccessView[]): AccessPermission[] {
   const permissions: AccessPermission[] = [];
 
@@ -220,7 +367,7 @@ function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
   if (draft.role === "pending") {
     return {
       ...draft,
-      accessPreset: "pending",
+      accessPreset: draft.accessPreset || "pending",
       scopeMode: "no_client_access",
       approvalLevel: "none",
       clientIds: [],
@@ -237,10 +384,7 @@ function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
       draft.allowedViews.length ? draft.allowedViews : DEFAULT_CLIENT_VIEWS,
       CLIENT_VIEW_ORDER
     );
-    const accessPreset: AccessPreset =
-      allowedViews.includes("planilhas") || allowedViews.includes("whatsapp")
-        ? "client_operator"
-        : "client_viewer";
+    const accessPreset = draft.accessPreset || getDefaultPresetForRole("client");
     const defaults = buildPresetDefaults(accessPreset);
 
     return {
@@ -248,11 +392,14 @@ function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
       role: "client",
       accessPreset,
       scopeMode: "assigned_clients",
-      approvalLevel: defaults.approvalLevel,
+      approvalLevel: draft.approvalLevel || defaults.approvalLevel,
       clientIds: selectedClientId ? [selectedClientId] : [],
       allowedViews,
       internalPages: [],
-      permissions: derivePermissionsFromClientViews(allowedViews),
+      permissions: filterArray(
+        draft.permissions.length ? draft.permissions : derivePermissionsFromClientViews(allowedViews),
+        ACCESS_PERMISSION_ORDER
+      ),
     };
   }
 
@@ -260,10 +407,7 @@ function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
     draft.internalPages.length ? draft.internalPages : DEFAULT_INTERNAL_PAGES,
     INTERNAL_PAGE_ORDER
   );
-  const accessPreset: AccessPreset =
-    internalPages.includes("usuarios") || internalPages.includes("campanhas") || internalPages.includes("agente")
-      ? "internal_manager"
-      : "internal_operator";
+  const accessPreset = draft.accessPreset || getDefaultPresetForRole("internal");
   const defaults = buildPresetDefaults(accessPreset);
 
   return {
@@ -271,11 +415,14 @@ function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
     role: "internal",
     accessPreset,
     scopeMode: selectedClientId ? "assigned_clients" : "all_clients",
-    approvalLevel: defaults.approvalLevel,
+    approvalLevel: draft.approvalLevel || defaults.approvalLevel,
     clientIds: selectedClientId ? [selectedClientId] : [],
     allowedViews: [],
     internalPages,
-    permissions: derivePermissionsFromInternalPages(internalPages),
+    permissions: filterArray(
+      draft.permissions.length ? draft.permissions : derivePermissionsFromInternalPages(internalPages),
+      ACCESS_PERMISSION_ORDER
+    ),
   };
 }
 
@@ -303,9 +450,7 @@ function filterArray<T extends string>(items: T[], allowed: readonly T[]) {
 
 function normalizeDraft<T extends AccessDraft>(draft: T): T {
   const role = draft.role;
-  const accessPreset = ROLE_PRESETS[role].includes(draft.accessPreset)
-    ? draft.accessPreset
-    : getDefaultPresetForRole(role);
+  const accessPreset = draft.accessPreset?.trim() || getDefaultPresetForRole(role);
   const defaults = buildPresetDefaults(accessPreset);
 
   if (role === "pending") {
@@ -427,6 +572,96 @@ function validateDraft(draft: AccessDraft) {
   return null;
 }
 
+
+function normalizeAccessProfileDraft(draft: AccessProfileDraft): AccessProfileDraft {
+  if (draft.role === "pending") {
+    return {
+      ...draft,
+      role: "pending",
+      scopeMode: "no_client_access",
+      approvalLevel: "none",
+      allowedViews: [],
+      internalPages: [],
+      permissions: [],
+    };
+  }
+
+  if (draft.role === "client") {
+    const allowedViews = filterArray(
+      draft.allowedViews.length ? draft.allowedViews : DEFAULT_CLIENT_VIEWS,
+      CLIENT_VIEW_ORDER
+    );
+
+    return {
+      ...draft,
+      role: "client",
+      scopeMode: "assigned_clients",
+      approvalLevel: ROLE_APPROVAL_LEVELS.client.includes(draft.approvalLevel)
+        ? draft.approvalLevel
+        : "operator",
+      allowedViews,
+      internalPages: [],
+      permissions: filterArray(
+        draft.permissions.length ? draft.permissions : derivePermissionsFromClientViews(allowedViews),
+        ROLE_PERMISSIONS.client
+      ),
+    };
+  }
+
+  const internalPages = filterArray(
+    draft.internalPages.length ? draft.internalPages : DEFAULT_INTERNAL_PAGES,
+    INTERNAL_PAGE_ORDER
+  );
+
+  return {
+    ...draft,
+    role: "internal",
+    scopeMode: ROLE_SCOPES.internal.includes(draft.scopeMode) ? draft.scopeMode : "assigned_clients",
+    approvalLevel: ROLE_APPROVAL_LEVELS.internal.includes(draft.approvalLevel)
+      ? draft.approvalLevel
+      : "operator",
+    allowedViews: [],
+    internalPages,
+    permissions: filterArray(
+      draft.permissions.length ? draft.permissions : derivePermissionsFromInternalPages(internalPages),
+      ROLE_PERMISSIONS.internal
+    ),
+  };
+}
+
+function validateAccessProfileDraft(draft: AccessProfileDraft, isNew: boolean) {
+  const normalized = normalizeAccessProfileDraft(draft);
+
+  if (isNew) {
+    const normalizedKey = normalized.key.trim().toLowerCase();
+    if (!normalizedKey) {
+      return "Informe uma chave para o tipo.";
+    }
+
+    if (!/^[a-z0-9_-]+$/.test(normalizedKey)) {
+      return "A chave do tipo deve usar apenas letras minusculas, numeros, underline ou hifen.";
+    }
+  }
+
+  if (!normalized.label.trim()) {
+    return "Informe um nome para o tipo.";
+  }
+
+  if (normalized.role === "client" && normalized.allowedViews.length === 0) {
+    return "Selecione ao menos uma pagina para o tipo de cliente.";
+  }
+
+  if (normalized.role === "internal" && normalized.internalPages.length === 0) {
+    return "Selecione ao menos uma pagina para o tipo interno.";
+  }
+
+  if (normalized.role !== "pending" && normalized.permissions.length === 0) {
+    return "Selecione ao menos uma permissao para o tipo.";
+  }
+
+  return null;
+}
+
 interface ChecklistPanelProps {
   title: string;
   description: string;
@@ -510,8 +745,8 @@ function ChecklistPanel({
       ) : filteredItems.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">Nenhum item corresponde ao filtro informado.</p>
       ) : (
-        <ScrollArea className="mt-4 h-72 pr-3">
-          <div className="grid gap-3 md:grid-cols-2">
+        <ScrollArea className="mt-4 max-h-56 pr-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {filteredItems.map((item) => (
               <label
                 key={item}
@@ -612,38 +847,212 @@ function AccessPagesTabs({ role, selected, disabled, onChange }: AccessPagesTabs
   );
 }
 
+interface AccessProfileFormProps {
+  draft: AccessProfileDraft;
+  isNew: boolean;
+  editable: boolean;
+  onChange: (next: AccessProfileDraft) => void;
+}
+
+function AccessProfileForm({ draft, isNew, editable, onChange }: AccessProfileFormProps) {
+  const normalized = normalizeAccessProfileDraft(draft);
+  const permissionItems = ROLE_PERMISSIONS[normalized.role];
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-3xl border border-border/80 bg-background/60 p-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Chave</p>
+            <Input
+              value={normalized.key}
+              disabled={!editable || !isNew}
+              onChange={(event) => onChange({ ...normalized, key: event.target.value.toLowerCase() })}
+              placeholder="ex: comercial_cliente"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Nome</p>
+            <Input
+              value={normalized.label}
+              disabled={!editable}
+              onChange={(event) => onChange({ ...normalized, label: event.target.value })}
+              placeholder="Nome do tipo"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Categoria</p>
+            <Select
+              value={normalized.role}
+              disabled={!editable}
+              onValueChange={(value: ManagedRole) =>
+                onChange(
+                  normalizeAccessProfileDraft({
+                    ...normalized,
+                    role: value,
+                    approvalLevel:
+                      value === "internal" ? "operator" : value === "client" ? "operator" : "none",
+                  })
+                )
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecionar categoria" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="internal">Interno</SelectItem>
+                <SelectItem value="client">Cliente</SelectItem>
+                <SelectItem value="pending">Pendente</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {normalized.role === "internal" ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">Escopo</p>
+              <Select
+                value={normalized.scopeMode}
+                disabled={!editable}
+                onValueChange={(value: AccessScope) => onChange({ ...normalized, scopeMode: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecionar escopo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_clients">Todos os tenants</SelectItem>
+                  <SelectItem value="assigned_clients">Tenants vinculados</SelectItem>
+                  <SelectItem value="no_client_access">Sem escopo operacional</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-[220px_minmax(0,1fr)]">
+          {normalized.role !== "pending" ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">Aprovacao</p>
+              <Select
+                value={normalized.approvalLevel}
+                disabled={!editable}
+                onValueChange={(value: ApprovalLevel) => onChange({ ...normalized, approvalLevel: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecionar nivel" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_APPROVAL_LEVELS[normalized.role].map((level) => (
+                    <SelectItem key={level} value={level}>
+                      {level}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Descricao</p>
+            <Input
+              value={normalized.description}
+              disabled={!editable}
+              onChange={(event) => onChange({ ...normalized, description: event.target.value })}
+              placeholder="Resumo rapido do uso desse tipo"
+            />
+          </div>
+        </div>
+      </div>
+
+      {normalized.role !== "pending" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+          <AccessPagesTabs
+            role={normalized.role === "pending" ? "internal" : normalized.role}
+            selected={normalized.role === "client" ? normalized.allowedViews : normalized.internalPages}
+            disabled={!editable}
+            onChange={(next) =>
+              onChange(
+                normalizeAccessProfileDraft(
+                  normalized.role === "client"
+                    ? { ...normalized, allowedViews: next as AccessView[] }
+                    : { ...normalized, internalPages: next as InternalPage[] }
+                )
+              )
+            }
+          />
+
+          <ChecklistPanel
+            title="Permissoes do tipo"
+            description="Ajuste as permissoes operacionais que esse tipo vai carregar por padrao."
+            items={permissionItems}
+            selected={normalized.permissions}
+            disabled={!editable || normalized.role === "pending"}
+            emptyMessage="Nenhuma permissao disponivel."
+            onToggle={(item, checked) =>
+              onChange({
+                ...normalized,
+                permissions: toggleItem(normalized.permissions, item as AccessPermission, checked),
+              })
+            }
+            onSelectAll={() => onChange({ ...normalized, permissions: [...permissionItems] })}
+            onClear={() => onChange({ ...normalized, permissions: [] })}
+            renderLabel={(item) => ACCESS_PERMISSION_DEFINITIONS[item as AccessPermission]?.label || item}
+            renderHint={(item) => ACCESS_PERMISSION_DEFINITIONS[item as AccessPermission]?.description || null}
+          />
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          Tipos pendentes nao recebem paginas nem permissoes operacionais.
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface AccessGovernanceProps {
   draft: AccessDraft;
+  accessProfiles: AccessProfileRecord[];
   clients: LeadClient[];
   editable: boolean;
   onChange: (patch: Partial<AccessDraft>) => void;
 }
 
-function AccessGovernance({ draft, clients, editable, onChange }: AccessGovernanceProps) {
+function AccessGovernance({ draft, accessProfiles, clients, editable, onChange }: AccessGovernanceProps) {
   const normalized = applySimpleAccessModel(draft);
   const matrixDisabled = !editable || normalized.role === "pending";
-  const roleOptions: ManagedRole[] =
-    normalized.role === "pending" ? ["pending", "internal", "client"] : ["internal", "client"];
   const applyPatch = (patch: Partial<AccessDraft>) => onChange(applySimpleAccessModel({ ...normalized, ...patch }));
+  const selectedType = findAccessProfile(accessProfiles, normalized.accessPreset);
 
   return (
     <div className="space-y-5">
       <div className="rounded-3xl border border-border/80 bg-background/60 p-5">
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           <div className="space-y-2">
-            <p className="text-sm font-medium text-foreground">Tipo</p>
+            <p className="text-sm font-medium text-foreground">Tipo de usuario</p>
             <Select
-              value={normalized.role}
+              value={normalized.accessPreset}
               disabled={!editable}
-              onValueChange={(value: ManagedRole) => applyPatch({ role: value })}
+              onValueChange={(value) => {
+                const profile = findAccessProfile(accessProfiles, value);
+                onChange(
+                  applyAccessProfileToDraft(
+                    {
+                      ...normalized,
+                      accessPreset: value,
+                    },
+                    profile
+                  )
+                );
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Selecionar tipo" />
               </SelectTrigger>
               <SelectContent>
-                {roleOptions.map((role) => (
-                  <SelectItem key={role} value={role}>
-                    {ROLE_LABELS[role]}
+                {accessProfiles.map((profile) => (
+                  <SelectItem key={profile.key} value={profile.key}>
+                    {profile.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -689,6 +1098,15 @@ function AccessGovernance({ draft, clients, editable, onChange }: AccessGovernan
             />
           </div>
         </div>
+
+        {selectedType?.description ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs leading-5 text-muted-foreground">
+            <Badge variant="outline" className="border-border/80 bg-background/60 text-foreground">
+              {ROLE_LABELS[selectedType.role]}
+            </Badge>
+            <span>{selectedType.description}</span>
+          </div>
+        ) : null}
       </div>
 
       {normalized.role === "pending" ? (
@@ -834,8 +1252,10 @@ function UserListItem({
 export default function UserAccessManagement() {
   const { getIdToken, isAdminUser } = useAuth();
   const { data: users = [], isLoading, error, refetch } = useAdminUsers();
+  const { data: accessProfiles = [], refetch: refetchAccessProfiles } = useAccessProfiles();
   const { data: clients = [] } = useLeadClients();
   const [search, setSearch] = useState("");
+  const [activeSectionTab, setActiveSectionTab] = useState("usuarios");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, UserDraft>>({});
@@ -843,11 +1263,36 @@ export default function UserAccessManagement() {
   const [savingUid, setSavingUid] = useState<string | null>(null);
   const [deletingUid, setDeletingUid] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [createError, setCreateError] = useState("");
-  const [saveSuccess, setSaveSuccess] = useState("");
-  const [createSuccess, setCreateSuccess] = useState("");
-  const [createdPasswordResetLink, setCreatedPasswordResetLink] = useState<string | null>(null);
+  const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
+  const [profileDraft, setProfileDraft] = useState<AccessProfileDraft>(() => buildAccessProfileDraft());
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [deletingProfile, setDeletingProfile] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedbackState | null>(null);
+  const resolvedAccessProfiles = useMemo(() => {
+    const sourceProfiles = accessProfiles.length > 0 ? accessProfiles : buildFallbackAccessProfiles();
+
+    return sourceProfiles
+      .map((profile) => ({
+        ...profile,
+        label: profile.label || getAccessPresetLabel(profile.key),
+        description: profile.description ?? FALLBACK_ACCESS_PROFILE_DESCRIPTIONS[profile.key] ?? null,
+      }))
+      .sort((left, right) => {
+      if (left.isSystem !== right.isSystem) {
+        return left.isSystem ? -1 : 1;
+      }
+
+      return left.label.localeCompare(right.label, "pt-BR");
+      });
+  }, [accessProfiles]);
+  const systemAccessProfiles = useMemo(
+    () => resolvedAccessProfiles.filter((profile) => profile.isSystem),
+    [resolvedAccessProfiles]
+  );
+  const customAccessProfiles = useMemo(
+    () => resolvedAccessProfiles.filter((profile) => !profile.isSystem),
+    [resolvedAccessProfiles]
+  );
 
   const canEditUsers = isAdminUser;
 
@@ -866,6 +1311,31 @@ export default function UserAccessManagement() {
       return next;
     });
   }, [users]);
+
+  useEffect(() => {
+    if (!resolvedAccessProfiles.length) {
+      return;
+    }
+
+    setSelectedProfileKey((current) => {
+      if (current && resolvedAccessProfiles.some((profile) => profile.key === current)) {
+        return current;
+      }
+
+      return resolvedAccessProfiles[0]?.key || null;
+    });
+  }, [resolvedAccessProfiles]);
+
+  useEffect(() => {
+    if (!selectedProfileKey) {
+      return;
+    }
+
+    const selectedProfile = findAccessProfile(resolvedAccessProfiles, selectedProfileKey);
+    if (selectedProfile) {
+      setProfileDraft(buildAccessProfileDraft(selectedProfile));
+    }
+  }, [resolvedAccessProfiles, selectedProfileKey]);
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -903,12 +1373,25 @@ export default function UserAccessManagement() {
 
   const selectedUser = users.find((user) => user.uid === selectedUserId) || null;
   const selectedDraft = selectedUser ? drafts[selectedUser.uid] || buildUserDraft(selectedUser) : null;
+  const selectedCreateType = findAccessProfile(resolvedAccessProfiles, createDraft.accessPreset);
+  const selectedProfile = selectedProfileKey ? findAccessProfile(resolvedAccessProfiles, selectedProfileKey) : null;
+  const selectedProfileAssignedUsers = selectedProfile
+    ? users.filter((user) => user.access.accessPreset === selectedProfile.key).length
+    : 0;
   const selectedProtectedAccount = selectedUser ? isProtectedAdmin(selectedUser) : false;
   const selectedEditable = Boolean(selectedUser && canEditUsers && !selectedProtectedAccount);
   const selectedHasChanges = selectedUser && selectedDraft ? hasDraftChanges(selectedUser, selectedDraft) : false;
   const selectedHiddenByFilter = Boolean(
     selectedUser && selectedDraft && !filteredUsers.some((user) => user.uid === selectedUser.uid)
   );
+
+  const showActionFeedback = ({ tone, title, message, details }: ActionFeedbackState) => {
+    setActionFeedback({ tone, title, message, details: details || null });
+  };
+
+  const clearActionFeedback = () => {
+    setActionFeedback(null);
+  };
 
   const updateDraft = (uid: string, patch: Partial<UserDraft>) => {
     setDrafts((current) => {
@@ -947,13 +1430,16 @@ export default function UserAccessManagement() {
 
     const validationError = validateDraft(draft);
     if (validationError) {
-      setSaveError(validationError);
+      showActionFeedback({
+        tone: "error",
+        title: "Nao foi possivel salvar",
+        message: validationError,
+      });
       return;
     }
 
     setSavingUid(user.uid);
-    setSaveError("");
-    setSaveSuccess("");
+    clearActionFeedback();
 
     try {
       const token = await getIdToken();
@@ -978,14 +1464,22 @@ export default function UserAccessManagement() {
         throw new Error(body?.error?.message || body?.error?.details || "Nao foi possivel salvar este usuario.");
       }
 
-      setSaveSuccess(`Acessos atualizados para ${user.email || user.uid}.`);
+      showActionFeedback({
+        tone: "success",
+        title: "Acessos atualizados",
+        message: `As alteracoes de ${user.email || user.uid} foram salvas com sucesso.`,
+      });
       setDrafts((current) => ({
         ...current,
         [user.uid]: buildUserDraft(body.item || user),
       }));
       await refetch();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Nao foi possivel salvar este usuario.");
+      showActionFeedback({
+        tone: "error",
+        title: "Nao foi possivel salvar",
+        message: err instanceof Error ? err.message : "Nao foi possivel salvar este usuario.",
+      });
     } finally {
       setSavingUid(null);
     }
@@ -997,14 +1491,16 @@ export default function UserAccessManagement() {
     const preparedDraft = normalizeCreateDraftForSimpleForm(createDraft);
     const validationError = validateDraft(preparedDraft);
     if (validationError) {
-      setCreateError(validationError);
+      showActionFeedback({
+        tone: "error",
+        title: "Nao foi possivel criar o usuario",
+        message: validationError,
+      });
       return;
     }
 
     setCreating(true);
-    setCreateError("");
-    setCreateSuccess("");
-    setCreatedPasswordResetLink(null);
+    clearActionFeedback();
 
     try {
       const token = await getIdToken();
@@ -1035,14 +1531,108 @@ export default function UserAccessManagement() {
         throw new Error(body?.error?.message || body?.error?.details || "Nao foi possivel criar este usuario.");
       }
 
-      setCreateSuccess(`Usuario ${body.item?.email || payload.email} criado com sucesso.`);
-      setCreatedPasswordResetLink(body.passwordResetLink || null);
+      showActionFeedback({
+        tone: "success",
+        title: "Usuario criado",
+        message: `O usuario ${body.item?.email || payload.email} foi criado com sucesso.`,
+        details: body.passwordResetLink ? `Link de redefinicao: ${body.passwordResetLink}` : null,
+      });
       setCreateDraft(buildCreateDraft());
+      setActiveSectionTab("usuarios");
       await refetch();
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Nao foi possivel criar este usuario.");
+      showActionFeedback({
+        tone: "error",
+        title: "Nao foi possivel criar o usuario",
+        message: err instanceof Error ? err.message : "Nao foi possivel criar este usuario.",
+      });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const resetNewProfileDraft = () => {
+    setSelectedProfileKey("__new__");
+    setProfileDraft(buildAccessProfileDraft());
+    clearActionFeedback();
+  };
+
+  const saveAccessProfile = async () => {
+    if (!canEditUsers) return;
+
+    const isNew = selectedProfileKey === "__new__";
+    const preparedDraft = normalizeAccessProfileDraft(profileDraft);
+    const validationError = validateAccessProfileDraft(preparedDraft, isNew);
+    if (validationError) {
+      showActionFeedback({
+        tone: "error",
+        title: "Nao foi possivel salvar o tipo",
+        message: validationError,
+      });
+      return;
+    }
+
+    setSavingProfile(true);
+    clearActionFeedback();
+
+    try {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Usuario nao autenticado.");
+      }
+
+      const endpoint = isNew
+        ? `${API_BASE_URL}/api/admin/access-profiles`
+        : `${API_BASE_URL}/api/admin/access-profiles/${encodeURIComponent(preparedDraft.key)}`;
+      const res = await fetch(endpoint, {
+        method: isNew ? "POST" : "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          key: preparedDraft.key.trim().toLowerCase(),
+          label: preparedDraft.label.trim(),
+          description: preparedDraft.description.trim() || undefined,
+          role: preparedDraft.role,
+          scopeMode: preparedDraft.scopeMode,
+          approvalLevel: preparedDraft.approvalLevel,
+          allowedViews: preparedDraft.allowedViews,
+          internalPages: preparedDraft.internalPages,
+          permissions: preparedDraft.permissions,
+        }),
+      });
+
+      const body = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(body?.error?.message || body?.error?.details || "Nao foi possivel salvar este tipo de usuario.");
+      }
+
+      const savedProfile = body?.item as AccessProfileRecord | undefined;
+      const syncMessage =
+        body?.sync?.updatedUsers || body?.sync?.skippedUsers
+          ? ` ${body.sync.updatedUsers || 0} usuarios atualizados${body.sync.skippedUsers ? `, ${body.sync.skippedUsers} ignorados` : ""}.`
+          : "";
+
+      showActionFeedback({
+        tone: "success",
+        title: isNew ? "Tipo criado" : "Tipo atualizado",
+        message: isNew
+          ? `O tipo ${savedProfile?.label || preparedDraft.label} foi criado com sucesso.${syncMessage}`
+          : `O tipo ${savedProfile?.label || preparedDraft.label} foi atualizado com sucesso.${syncMessage}`,
+      });
+      await refetchAccessProfiles();
+      await refetch();
+      setSelectedProfileKey(savedProfile?.key || preparedDraft.key);
+    } catch (err) {
+      showActionFeedback({
+        tone: "error",
+        title: "Nao foi possivel salvar o tipo",
+        message: err instanceof Error ? err.message : "Nao foi possivel salvar este tipo de usuario.",
+      });
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -1059,8 +1649,7 @@ export default function UserAccessManagement() {
     }
 
     setDeletingUid(user.uid);
-    setSaveError("");
-    setSaveSuccess("");
+    clearActionFeedback();
 
     try {
       const token = await getIdToken();
@@ -1081,7 +1670,11 @@ export default function UserAccessManagement() {
         throw new Error(body?.error?.message || body?.error?.details || "Nao foi possivel apagar este usuario.");
       }
 
-      setSaveSuccess(`Usuario ${user.email || user.uid} apagado com sucesso.`);
+      showActionFeedback({
+        tone: "success",
+        title: "Usuario apagado",
+        message: `O usuario ${user.email || user.uid} foi apagado com sucesso.`,
+      });
       setDrafts((current) => {
         const next = { ...current };
         delete next[user.uid];
@@ -1090,9 +1683,81 @@ export default function UserAccessManagement() {
       setSelectedUserId((current) => (current === user.uid ? null : current));
       await refetch();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Nao foi possivel apagar este usuario.");
+      showActionFeedback({
+        tone: "error",
+        title: "Nao foi possivel apagar o usuario",
+        message: err instanceof Error ? err.message : "Nao foi possivel apagar este usuario.",
+      });
     } finally {
       setDeletingUid(null);
+    }
+  };
+
+  const deleteAccessProfile = async () => {
+    if (!canEditUsers || !selectedProfile || selectedProfileKey === "__new__") return;
+
+    if (selectedProfile.isLocked) {
+      showActionFeedback({
+        tone: "error",
+        title: "Tipo protegido",
+        message: "Este tipo esta protegido e nao pode ser apagado.",
+      });
+      return;
+    }
+
+    const label = selectedProfile.label || selectedProfile.key;
+    const confirmMessage =
+      selectedProfileAssignedUsers > 0
+        ? `Nao da para apagar ${label} agora. Existem ${selectedProfileAssignedUsers} usuarios usando esse tipo.`
+        : `Apagar o tipo ${label}? Essa acao nao pode ser desfeita.`;
+
+    if (selectedProfileAssignedUsers > 0) {
+      window.alert(confirmMessage);
+      return;
+    }
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setDeletingProfile(true);
+    clearActionFeedback();
+
+    try {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Usuario nao autenticado.");
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/admin/access-profiles/${encodeURIComponent(selectedProfile.key)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const body = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(body?.error?.message || body?.error?.details || "Nao foi possivel apagar este tipo de usuario.");
+      }
+
+      showActionFeedback({
+        tone: "success",
+        title: "Tipo apagado",
+        message: `O tipo ${label} foi apagado com sucesso.`,
+      });
+      setSelectedProfileKey(null);
+      await refetchAccessProfiles();
+      await refetch();
+    } catch (err) {
+      showActionFeedback({
+        tone: "error",
+        title: "Nao foi possivel apagar o tipo",
+        message: err instanceof Error ? err.message : "Nao foi possivel apagar este tipo de usuario.",
+      });
+    } finally {
+      setDeletingProfile(false);
     }
   };
 
@@ -1100,32 +1765,8 @@ export default function UserAccessManagement() {
     <PageShell
       title="Usuarios e Acessos"
       subtitle="Cadastro e associacao por tipo, empresa e paginas liberadas."
-      headerRight={
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="relative min-w-[260px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar por nome, e-mail ou empresa"
-              className="pl-9"
-            />
-          </div>
-
-          <Select value={roleFilter} onValueChange={(value: RoleFilter) => setRoleFilter(value)}>
-            <SelectTrigger className="min-w-[180px]">
-              <SelectValue placeholder="Filtrar perfil" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os perfis</SelectItem>
-              <SelectItem value="internal">Interno</SelectItem>
-              <SelectItem value="client">Cliente</SelectItem>
-              <SelectItem value="pending">Pendente</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      }
       spacing="space-y-6"
+      compactHero
     >
       {!canEditUsers && (
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
@@ -1134,267 +1775,565 @@ export default function UserAccessManagement() {
       )}
 
       <ErrorMessage message={error ? (error as Error).message : null} variant="dashboard" />
-      <ErrorMessage message={saveError} variant="banner" />
-      <ErrorMessage message={createError} variant="banner" />
 
-      {saveSuccess ? (
-        <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
-          {saveSuccess}
-        </div>
-      ) : null}
-
-      {createSuccess ? (
-        <div className="space-y-2 rounded-2xl border border-[#1A5CFF]/20 bg-[#1A5CFF]/10 px-4 py-3 text-sm text-[#1A5CFF]">
-          <p>{createSuccess}</p>
-          {createdPasswordResetLink ? <p className="break-all text-xs opacity-90">Link de redefinicao: {createdPasswordResetLink}</p> : null}
-        </div>
-      ) : null}
-
-      {canEditUsers && (
-        <Card className="border-border/80">
-          <CardHeader className="space-y-1">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <Plus className="h-4 w-4 text-primary" />
-              Novo usuario
-            </CardTitle>
-            <CardDescription>Defina os dados basicos, a empresa e as paginas liberadas.</CardDescription>
-          </CardHeader>
-
-          <CardContent className="space-y-5">
-            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
-              <Input
-                value={createDraft.email}
-                onChange={(event) => updateCreateDraft({ email: event.target.value })}
-                placeholder="E-mail do usuario"
-                type="email"
-              />
-              <Input
-                value={createDraft.password}
-                onChange={(event) => updateCreateDraft({ password: event.target.value })}
-                placeholder="Senha inicial"
-                type="password"
-              />
-              <Input
-                value={createDraft.displayName}
-                onChange={(event) => updateCreateDraft({ displayName: event.target.value })}
-                placeholder="Nome de exibicao"
-              />
-              <Select
-                value={createDraft.role}
-                onValueChange={(value: "internal" | "client") => updateCreateDraft({ role: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Tipo de usuario" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="internal">Interno</SelectItem>
-                  <SelectItem value="client">Cliente</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={createDraft.clientIds[0] || "__none"}
-                onValueChange={(value) => {
-                  const selectedClient = clients.find((client) => client.id === value);
-                  updateCreateDraft({
-                    clientIds: value === "__none" ? [] : [value],
-                    companyName: value === "__none" ? "" : selectedClient?.name || "",
-                  });
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Empresa / tenant" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none">
-                    {createDraft.role === "client" ? "Selecionar empresa" : "Sem empresa vinculada"}
-                  </SelectItem>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      <Dialog open={Boolean(actionFeedback)} onOpenChange={(open) => (!open ? clearActionFeedback() : null)}>
+        <DialogContent className="max-w-md rounded-3xl border-border/80 bg-background/95">
+          <DialogHeader className="space-y-3 text-left">
+            <div
+              className={cn(
+                "inline-flex w-fit rounded-full px-3 py-1 text-xs font-medium",
+                actionFeedback?.tone === "error"
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-emerald-500/10 text-emerald-600"
+              )}
+            >
+              {actionFeedback?.tone === "error" ? "Falha na acao" : "Acao concluida"}
             </div>
-
-            <label className="flex items-center gap-3 text-sm text-muted-foreground">
-              <Checkbox
-                checked={createDraft.sendPasswordReset}
-                onCheckedChange={(checked) => updateCreateDraft({ sendPasswordReset: checked === true })}
-              />
-              Enviar e-mail de redefinicao de senha apos o cadastro
-            </label>
-
-            <AccessPagesTabs
-              role={createDraft.role}
-              selected={createDraft.role === "client" ? createDraft.allowedViews : createDraft.internalPages}
-              disabled={!canEditUsers}
-              onChange={(next) =>
-                createDraft.role === "client"
-                  ? updateCreateDraft({ allowedViews: next as AccessView[] })
-                  : updateCreateDraft({ internalPages: next as InternalPage[] })
-              }
-            />
-
-            <div className="flex justify-end">
-              <Button onClick={createUser} disabled={creating}>
-                <UserRound className="h-4 w-4" />
-                {creating ? "Criando..." : "Criar usuario"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {isLoading && <EmptyState message="Carregando usuarios..." />}
-
-      {!isLoading && filteredUsers.length === 0 && (
-        <EmptyState
-          title="Nenhum usuario encontrado"
-          description="Ajuste a busca, troque o filtro de perfil ou cadastre um novo usuario."
-        />
-      )}
-
-      {!isLoading && filteredUsers.length > 0 ? (
-        <Card className="border-border/80">
-          <CardHeader className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
-                <CardTitle className="text-xl">Associacoes e acessos</CardTitle>
-                <CardDescription>Edite um usuario por vez com o mesmo fluxo simples do cadastro.</CardDescription>
+            <DialogTitle>{actionFeedback?.title}</DialogTitle>
+            <DialogDescription className="text-sm leading-6 text-muted-foreground">
+              {actionFeedback?.message}
+            </DialogDescription>
+            {actionFeedback?.details ? (
+              <div className="rounded-2xl border border-border/80 bg-background/60 px-4 py-3 text-xs leading-5 text-muted-foreground">
+                {actionFeedback.details}
               </div>
-              <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
-                {filteredUsers.length} usuarios visiveis
-              </Badge>
-            </div>
-          </CardHeader>
+            ) : null}
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={clearActionFeedback}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          <CardContent className="grid gap-5 xl:grid-cols-[340px_1fr]">
-            <div className="space-y-4">
-              <ScrollArea className="h-[720px] pr-3">
-                <div className="space-y-3">
-                  {filteredUsers.map((user) => {
-                    const draft = drafts[user.uid] || buildUserDraft(user);
+      <Tabs value={activeSectionTab} onValueChange={setActiveSectionTab} className="space-y-6">
+        <TabsList className={cn("grid w-full", canEditUsers ? "grid-cols-3" : "grid-cols-1")}>
+          <TabsTrigger value="usuarios">Usuarios cadastrados</TabsTrigger>
+          {canEditUsers ? <TabsTrigger value="novo">Novo usuario</TabsTrigger> : null}
+          {canEditUsers ? <TabsTrigger value="tipos">Tipos de usuario</TabsTrigger> : null}
+        </TabsList>
 
-                    return (
-                      <UserListItem
-                        key={user.uid}
-                        user={user}
-                        draft={draft}
-                        clients={clients}
-                        protectedAccount={isProtectedAdmin(user)}
-                        dirty={hasDraftChanges(user, draft)}
-                        selected={selectedUserId === user.uid}
-                        onSelect={() => setSelectedUserId(user.uid)}
-                      />
-                    );
-                  })}
+        <TabsContent value="usuarios" className="mt-0 space-y-6">
+          <Card className="border-border/80">
+            <CardHeader className="space-y-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="text-xl">Associacoes e acessos</CardTitle>
+                  <CardDescription>Edite um usuario por vez com o mesmo fluxo simples do cadastro.</CardDescription>
                 </div>
-              </ScrollArea>
-            </div>
 
-            <div>
-              {selectedUser && selectedDraft ? (
-                <Card className="border-border/80 bg-background/70">
-                  <CardHeader className="space-y-4">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <CardTitle className="text-xl">
-                            {selectedUser.displayName || selectedUser.email || "Usuario sem nome"}
-                          </CardTitle>
-                          {selectedProtectedAccount ? (
-                            <Badge className="gap-1 bg-primary/10 text-primary">
-                              <LockKeyhole className="h-3.5 w-3.5" />
-                              Admin protegido
-                            </Badge>
-                          ) : (
-                            <Badge className={ROLE_BADGE_CLASS[selectedDraft.role]}>{ROLE_LABELS[selectedDraft.role]}</Badge>
-                          )}
-                          {selectedHasChanges ? (
-                            <Badge variant="outline" className="border-primary/30 text-primary">
-                              Alteracoes nao salvas
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <CardDescription className="text-sm">
-                          {selectedUser.email || "Sem e-mail"} - UID {selectedUser.uid}
-                        </CardDescription>
-                        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                          <span>Criado em {formatDate(selectedUser.createdAt)}</span>
-                          <span>Ultimo login {formatDate(selectedUser.lastSignInAt)}</span>
-                        </div>
-                      </div>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                  <div className="relative min-w-[260px]">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Buscar por nome, e-mail ou empresa"
+                      className="pl-9"
+                    />
+                  </div>
 
-                      <div className="flex flex-wrap justify-end gap-3">
-                        <Button
-                          variant="outline"
-                          onClick={() => updateDraft(selectedUser.uid, buildUserDraft(selectedUser))}
-                          disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
-                        >
-                          Restaurar
-                        </Button>
-                        <Button
-                          onClick={() => saveUser(selectedUser)}
-                          disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
-                        >
-                          <ShieldCheck className="h-4 w-4" />
-                          {savingUid === selectedUser.uid ? "Salvando..." : "Salvar acessos"}
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          onClick={() => deleteUser(selectedUser)}
-                          disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          {deletingUid === selectedUser.uid ? "Apagando..." : "Apagar usuario"}
-                        </Button>
-                      </div>
+                  <Select value={roleFilter} onValueChange={(value: RoleFilter) => setRoleFilter(value)}>
+                    <SelectTrigger className="min-w-[180px]">
+                      <SelectValue placeholder="Filtrar categoria" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas as categorias</SelectItem>
+                      <SelectItem value="internal">Interno</SelectItem>
+                      <SelectItem value="client">Cliente</SelectItem>
+                      <SelectItem value="pending">Pendente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+            </CardHeader>
+
+            <CardContent className="space-y-5">
+              {isLoading ? <EmptyState message="Carregando usuarios..." /> : null}
+
+              {!isLoading && filteredUsers.length === 0 ? (
+                <EmptyState
+                  title="Nenhum usuario encontrado"
+                  description="Ajuste a busca, troque o filtro de categoria ou cadastre um novo usuario."
+                />
+              ) : null}
+
+              {!isLoading && filteredUsers.length > 0 ? (
+                <>
+                  <div className="flex justify-end">
+                    <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+                      {filteredUsers.length} usuarios visiveis
+                    </Badge>
+                  </div>
+
+                  <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
+                    <div className="space-y-4">
+                      <ScrollArea className="h-[720px] pr-3">
+                        <div className="space-y-3">
+                          {filteredUsers.map((user) => {
+                            const draft = drafts[user.uid] || buildUserDraft(user);
+
+                            return (
+                              <UserListItem
+                                key={user.uid}
+                                user={user}
+                                draft={draft}
+                                clients={clients}
+                                protectedAccount={isProtectedAdmin(user)}
+                                dirty={hasDraftChanges(user, draft)}
+                                selected={selectedUserId === user.uid}
+                                onSelect={() => setSelectedUserId(user.uid)}
+                              />
+                            );
+                          })}
+                        </div>
+                      </ScrollArea>
                     </div>
-                  </CardHeader>
 
-                  <CardContent className="space-y-5">
-                    {selectedHiddenByFilter ? (
-                      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
-                        O usuario selecionado nao aparece na lista atual por causa da busca ou do filtro ativo, mas permanece aberto para evitar troca silenciosa de contexto.
-                      </div>
-                    ) : null}
+                    <div>
+                      {selectedUser && selectedDraft ? (
+                        <Card className="border-border/80 bg-background/70">
+                          <CardHeader className="space-y-4">
+                            <div className="flex flex-wrap items-start justify-between gap-4">
+                              <div className="space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <CardTitle className="text-xl">
+                                    {selectedUser.displayName || selectedUser.email || "Usuario sem nome"}
+                                  </CardTitle>
+                                  {selectedProtectedAccount ? (
+                                    <Badge className="gap-1 bg-primary/10 text-primary">
+                                      <LockKeyhole className="h-3.5 w-3.5" />
+                                      Admin protegido
+                                    </Badge>
+                                  ) : (
+                                    <Badge className={ROLE_BADGE_CLASS[selectedDraft.role]}>{ROLE_LABELS[selectedDraft.role]}</Badge>
+                                  )}
+                                  {selectedHasChanges ? (
+                                    <Badge variant="outline" className="border-primary/30 text-primary">
+                                      Alteracoes nao salvas
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                <CardDescription className="text-sm">
+                                  {selectedUser.email || "Sem e-mail"}
+                                </CardDescription>
+                                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                                  <span>Criado em {formatDate(selectedUser.createdAt)}</span>
+                                  <span>Ultimo login {formatDate(selectedUser.lastSignInAt)}</span>
+                                </div>
+                              </div>
 
-                    <div className="rounded-3xl border border-border/80 bg-background/50 p-4">
-                      {selectedProtectedAccount ? (
-                        <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-4 text-sm text-primary">
-                          Esta conta esta protegida por allowlist fixa de admin. A tela permanece apenas como leitura para preservar o acesso raiz do ambiente.
-                        </div>
+                              <div className="flex flex-wrap justify-end gap-3">
+                                <Button
+                                  variant="outline"
+                                  onClick={() => updateDraft(selectedUser.uid, buildUserDraft(selectedUser))}
+                                  disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
+                                >
+                                  Restaurar
+                                </Button>
+                                <Button
+                                  onClick={() => saveUser(selectedUser)}
+                                  disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
+                                >
+                                  <ShieldCheck className="h-4 w-4" />
+                                  {savingUid === selectedUser.uid ? "Salvando..." : "Salvar acessos"}
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  onClick={() => deleteUser(selectedUser)}
+                                  disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  {deletingUid === selectedUser.uid ? "Apagando..." : "Apagar usuario"}
+                                </Button>
+                              </div>
+                            </div>
+                          </CardHeader>
+
+                          <CardContent className="space-y-5">
+                            {selectedHiddenByFilter ? (
+                              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+                                O usuario selecionado nao aparece na lista atual por causa da busca ou do filtro ativo, mas permanece aberto para evitar troca silenciosa de contexto.
+                              </div>
+                            ) : null}
+
+                            <div className="rounded-3xl border border-border/80 bg-background/50 p-4">
+                              {selectedProtectedAccount ? (
+                                <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-4 text-sm text-primary">
+                                  Esta conta esta protegida por allowlist fixa de admin. A tela permanece apenas como leitura para preservar o acesso raiz do ambiente.
+                                </div>
+                              ) : (
+                                <AccessGovernance
+                                  draft={selectedDraft}
+                                  accessProfiles={resolvedAccessProfiles}
+                                  clients={clients}
+                                  editable={selectedEditable}
+                                  onChange={(patch) => updateDraft(selectedUser.uid, patch)}
+                                />
+                              )}
+                            </div>
+
+                            <label className="flex items-center gap-3 rounded-3xl border border-border/80 bg-background/60 px-4 py-3 text-sm text-muted-foreground">
+                              <Checkbox
+                                checked={selectedDraft.disabled}
+                                disabled={!selectedEditable}
+                                onCheckedChange={(checked) => updateDraft(selectedUser.uid, { disabled: checked === true })}
+                              />
+                              Desativar login deste usuario
+                            </label>
+                          </CardContent>
+                        </Card>
                       ) : (
-                        <AccessGovernance
-                          draft={selectedDraft}
-                          clients={clients}
-                          editable={selectedEditable}
-                          onChange={(patch) => updateDraft(selectedUser.uid, patch)}
+                        <EmptyState
+                          title="Selecione um usuario"
+                          description="Escolha um registro na coluna da esquerda para editar suas associacoes."
                         />
                       )}
                     </div>
+                  </div>
+                </>
+              ) : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                    <label className="flex items-center gap-3 rounded-3xl border border-border/80 bg-background/60 px-4 py-3 text-sm text-muted-foreground">
-                      <Checkbox
-                        checked={selectedDraft.disabled}
-                        disabled={!selectedEditable}
-                        onCheckedChange={(checked) => updateDraft(selectedUser.uid, { disabled: checked === true })}
+        {canEditUsers ? (
+          <>
+            <TabsContent value="novo" className="mt-0">
+            <Card className="border-border/80">
+              <CardHeader className="space-y-1">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Plus className="h-4 w-4 text-primary" />
+                  Novo usuario
+                </CardTitle>
+                <CardDescription>Defina os dados basicos, escolha o tipo, vincule a empresa e ajuste as paginas.</CardDescription>
+              </CardHeader>
+
+              <CardContent className="space-y-5">
+                <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
+                  <Input
+                    value={createDraft.email}
+                    onChange={(event) => updateCreateDraft({ email: event.target.value })}
+                    placeholder="E-mail do usuario"
+                    type="email"
+                  />
+                  <Input
+                    value={createDraft.password}
+                    onChange={(event) => updateCreateDraft({ password: event.target.value })}
+                    placeholder="Senha inicial"
+                    type="password"
+                  />
+                  <Input
+                    value={createDraft.displayName}
+                    onChange={(event) => updateCreateDraft({ displayName: event.target.value })}
+                    placeholder="Nome de exibicao"
+                  />
+                  <Select
+                    value={createDraft.accessPreset}
+                    onValueChange={(value) => {
+                      const profile = findAccessProfile(resolvedAccessProfiles, value);
+                      setCreateDraft((current) =>
+                        normalizeCreateDraftForSimpleForm(
+                          applyAccessProfileToDraft(
+                            {
+                              ...current,
+                              accessPreset: value,
+                            },
+                            profile
+                          )
+                        )
+                      );
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tipo de usuario" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {resolvedAccessProfiles.map((profile) => (
+                        <SelectItem key={profile.key} value={profile.key}>
+                          {profile.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={createDraft.clientIds[0] || "__none"}
+                    onValueChange={(value) => {
+                      const selectedClient = clients.find((client) => client.id === value);
+                      updateCreateDraft({
+                        clientIds: value === "__none" ? [] : [value],
+                        companyName: value === "__none" ? "" : selectedClient?.name || "",
+                      });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Empresa / tenant" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">
+                        {createDraft.role === "client" ? "Selecionar empresa" : "Sem empresa vinculada"}
+                      </SelectItem>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>
+                        {client.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                </div>
+
+                {selectedCreateType ? (
+                  <div className="flex flex-wrap items-center gap-2 text-xs leading-5 text-muted-foreground">
+                    <Badge variant="outline" className={cn("border-border/80 bg-background/60", ROLE_BADGE_CLASS[selectedCreateType.role])}>
+                      {ROLE_LABELS[selectedCreateType.role]}
+                    </Badge>
+                    {selectedCreateType.description ? <span>{selectedCreateType.description}</span> : null}
+                  </div>
+                ) : null}
+
+                <label className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={createDraft.sendPasswordReset}
+                    onCheckedChange={(checked) => updateCreateDraft({ sendPasswordReset: checked === true })}
+                  />
+                  Enviar e-mail de redefinicao de senha apos o cadastro
+                </label>
+
+                {createDraft.role === "pending" ? (
+                  <div className="rounded-3xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+                    Usuario pendente nao recebe paginas, views nem permissoes operacionais ate a aprovacao.
+                  </div>
+                ) : (
+                  <AccessPagesTabs
+                    role={createDraft.role}
+                    selected={createDraft.role === "client" ? createDraft.allowedViews : createDraft.internalPages}
+                    disabled={!canEditUsers}
+                    onChange={(next) =>
+                      createDraft.role === "client"
+                        ? updateCreateDraft({ allowedViews: next as AccessView[] })
+                        : updateCreateDraft({ internalPages: next as InternalPage[] })
+                    }
+                  />
+                )}
+
+                <div className="flex justify-end">
+                  <Button onClick={createUser} disabled={creating}>
+                    <UserRound className="h-4 w-4" />
+                    {creating ? "Criando..." : "Criar usuario"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+            </TabsContent>
+
+            <TabsContent value="tipos" className="mt-0">
+              <Card className="border-border/80">
+                <CardHeader className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <CardTitle className="text-xl">Tipos de usuario</CardTitle>
+                      <CardDescription>Crie e ajuste os tipos que podem ser escolhidos ao cadastrar ou editar usuarios.</CardDescription>
+                    </div>
+
+                  <Button variant="outline" onClick={resetNewProfileDraft}>
+                      <Plus className="h-4 w-4" />
+                      Novo tipo
+                  </Button>
+                </div>
+              </CardHeader>
+
+                <CardContent className="space-y-5">
+                  <div className="space-y-5">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Tipos padrao</p>
+                          <p className="text-xs text-muted-foreground">Modelos base do sistema para interno, cliente e pendente.</p>
+                        </div>
+                        <Badge variant="outline">{systemAccessProfiles.length}</Badge>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        {systemAccessProfiles.map((profile) => {
+                          const assignedUsers = users.filter((user) => user.access.accessPreset === profile.key).length;
+                          const selected = selectedProfileKey === profile.key;
+
+                          return (
+                            <button
+                              key={profile.key}
+                              type="button"
+                              onClick={() => {
+                                setSelectedProfileKey(profile.key);
+                                clearActionFeedback();
+                              }}
+                              className={cn(
+                                "w-full rounded-2xl border p-3 text-left transition-colors",
+                                selected
+                                  ? "border-primary/30 bg-primary/5 shadow-sm"
+                                  : "border-border/80 bg-background/70 hover:border-primary/20 hover:bg-background"
+                              )}
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="space-y-1">
+                                  <p className="text-sm font-medium text-foreground">{profile.label}</p>
+                                  <p className="text-xs text-muted-foreground">{profile.key}</p>
+                                </div>
+                                <Badge className={ROLE_BADGE_CLASS[profile.role]}>{ROLE_LABELS[profile.role]}</Badge>
+                              </div>
+
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {profile.isLocked ? (
+                                  <Badge variant="outline" className="border-primary/30 text-primary">
+                                    Protegido
+                                  </Badge>
+                                ) : null}
+                                <Badge variant="outline">{assignedUsers} usuarios</Badge>
+                              </div>
+
+                              {profile.description ? (
+                                <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{profile.description}</p>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Tipos customizados</p>
+                          <p className="text-xs text-muted-foreground">Tipos criados pela operacao para casos especificos.</p>
+                        </div>
+                        <Badge variant="outline">{customAccessProfiles.length}</Badge>
+                      </div>
+
+                      {customAccessProfiles.length > 0 ? (
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                          {customAccessProfiles.map((profile) => {
+                            const assignedUsers = users.filter((user) => user.access.accessPreset === profile.key).length;
+                            const selected = selectedProfileKey === profile.key;
+
+                            return (
+                              <button
+                                key={profile.key}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedProfileKey(profile.key);
+                                  clearActionFeedback();
+                                }}
+                                className={cn(
+                                  "w-full rounded-2xl border p-3 text-left transition-colors",
+                                  selected
+                                    ? "border-primary/30 bg-primary/5 shadow-sm"
+                                    : "border-border/80 bg-background/70 hover:border-primary/20 hover:bg-background"
+                                )}
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-medium text-foreground">{profile.label}</p>
+                                    <p className="text-xs text-muted-foreground">{profile.key}</p>
+                                  </div>
+                                  <Badge className={ROLE_BADGE_CLASS[profile.role]}>{ROLE_LABELS[profile.role]}</Badge>
+                                </div>
+
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <Badge variant="outline">{assignedUsers} usuarios</Badge>
+                                </div>
+
+                                {profile.description ? (
+                                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{profile.description}</p>
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-border/80 bg-background/50 px-4 py-4 text-sm text-muted-foreground">
+                          Nenhum tipo customizado criado ainda.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <Card className="border-border/80 bg-background/70">
+                    <CardHeader className="space-y-1">
+                      <CardTitle className="text-xl">
+                        {selectedProfileKey === "__new__"
+                          ? "Novo tipo"
+                          : getAccessPresetLabel(selectedProfileKey)}
+                      </CardTitle>
+                      <CardDescription>
+                        {selectedProfileKey === "__new__"
+                          ? "Monte um novo tipo com paginas e permissoes padrao."
+                          : "Editar este tipo atualiza os usuarios vinculados a ele."}
+                      </CardDescription>
+                    </CardHeader>
+
+                    <CardContent className="space-y-5">
+                      <AccessProfileForm
+                        draft={profileDraft}
+                        isNew={selectedProfileKey === "__new__"}
+                        editable={!savingProfile && (selectedProfileKey === "__new__" || !findAccessProfile(resolvedAccessProfiles, selectedProfileKey)?.isLocked)}
+                        onChange={setProfileDraft}
                       />
-                      Desativar login deste usuario
-                    </label>
-                  </CardContent>
-                </Card>
-              ) : (
-                <EmptyState
-                  title="Selecione um usuario"
-                  description="Escolha um registro na coluna da esquerda para editar suas associacoes."
-                />
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="text-xs text-muted-foreground">
+                          {selectedProfile && selectedProfileKey !== "__new__" ? (
+                            selectedProfile.isLocked ? (
+                              "Este tipo e protegido pelo sistema."
+                            ) : selectedProfileAssignedUsers > 0 ? (
+                              `${selectedProfileAssignedUsers} usuarios ainda usam este tipo.`
+                            ) : (
+                              "Tipo pronto para edicao ou exclusao."
+                            )
+                          ) : (
+                            "Crie um novo tipo customizado para regras especificas."
+                          )}
+                        </div>
+
+                        <div className="flex justify-end gap-3">
+                          {selectedProfileKey !== "__new__" ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={deleteAccessProfile}
+                              disabled={
+                                deletingProfile ||
+                                savingProfile ||
+                                !selectedProfile ||
+                                selectedProfile.isLocked ||
+                                selectedProfileAssignedUsers > 0
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              {deletingProfile ? "Apagando tipo..." : "Apagar tipo"}
+                            </Button>
+                          ) : null}
+
+                        <Button
+                          onClick={saveAccessProfile}
+                          disabled={
+                            savingProfile ||
+                            deletingProfile ||
+                            !selectedProfileKey ||
+                            (selectedProfileKey !== "__new__" && Boolean(findAccessProfile(resolvedAccessProfiles, selectedProfileKey)?.isLocked))
+                          }
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                          {savingProfile ? "Salvando tipo..." : "Salvar tipo"}
+                        </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </>
+        ) : null}
+      </Tabs>
     </PageShell>
   );
 }
