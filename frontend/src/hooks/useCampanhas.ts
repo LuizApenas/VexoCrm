@@ -20,6 +20,22 @@ export interface Campaign {
   created_at: string;
 }
 
+export interface CampaignLead {
+  id: string;
+  client_id: string;
+  telefone: string | null;
+  nome: string | null;
+  tipo_cliente: string | null;
+  faixa_consumo: string | null;
+  cidade: string | null;
+  estado: string | null;
+  status: string | null;
+  data_hora: string | null;
+  qualificacao: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CreateCampaignPayload {
   name: string;
   clientId: string;
@@ -48,23 +64,52 @@ export interface TriggerCampaignResponse {
   n8nResponse: string | null;
 }
 
-export function useCampanhas() {
+export function useCampanhas(clientId?: string) {
   const { isAuthenticated, canAccessInternalPage, getIdToken } = useAuth();
 
   return useQuery({
-    queryKey: ["campaigns"],
+    queryKey: ["campaigns", clientId || "all"],
     enabled: isAuthenticated && canAccessInternalPage("planilhas"),
     queryFn: async (): Promise<Campaign[]> => {
       const token = await getIdToken();
       if (!token) throw new Error("Usuário não autenticado.");
 
-      const res = await fetch(`${API_BASE_URL}/api/campaigns`, {
+      const params = new URLSearchParams();
+      if (clientId) params.set("clientId", clientId);
+
+      const res = await fetch(`${API_BASE_URL}/api/campaigns${params.toString() ? `?${params}` : ""}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!res.ok) {
         const err = await res.text();
         throw new Error(`Erro ao buscar campanhas: ${res.status} ${err}`);
+      }
+
+      const payload = await res.json();
+      return Array.isArray(payload.items) ? payload.items : [];
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCampaignLeads(campaignId?: string) {
+  const { isAuthenticated, canAccessInternalPage, getIdToken } = useAuth();
+
+  return useQuery({
+    queryKey: ["campaign-leads", campaignId],
+    enabled: isAuthenticated && canAccessInternalPage("planilhas") && !!campaignId,
+    queryFn: async (): Promise<CampaignLead[]> => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+
+      const res = await fetch(`${API_BASE_URL}/api/campaigns/${campaignId}/leads`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Erro ao buscar leads da campanha: ${res.status} ${err}`);
       }
 
       const payload = await res.json();

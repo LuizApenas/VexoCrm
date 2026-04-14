@@ -3,7 +3,6 @@ import * as XLSX from "xlsx";
 import {
   AlertTriangle,
   Archive,
-  Building2,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -31,7 +30,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/contexts/AuthContext";
-import { useLeadClients } from "@/hooks/useLeadClients";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import {
   useCreateLeadImport,
   useDeleteLeadImport,
@@ -244,8 +243,8 @@ export default function LeadImports({
   headerRight,
 }: LeadImportsProps) {
   const { isInternalUser } = useAuth();
-  const { data: clients = [], isLoading: clientsLoading } = useLeadClients();
-  const [selectedClientId, setSelectedClientId] = useState(fixedClientId || "");
+  const crmClient = useOptionalCrmClient();
+  const selectedClientId = fixedClientId || crmClient?.selectedClientId || "";
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<Record<string, unknown>[]>([]);
   const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
@@ -268,7 +267,7 @@ export default function LeadImports({
   const { data: imports = [], isLoading: importsLoading, error: importsError, refetch } = useLeadImports(selectedClientId);
   const createLeadImport = useCreateLeadImport();
   const deleteLeadImport = useDeleteLeadImport();
-  const { data: campaigns = [], isLoading: campaignsLoading, error: campaignsError, refetch: refetchCampaigns } = useCampanhas();
+  const { data: campaigns = [], isLoading: campaignsLoading, error: campaignsError, refetch: refetchCampaigns } = useCampanhas(selectedClientId || undefined);
   const createCampaign = useCreateCampaign();
   const updateCampaign = useUpdateCampaign();
   const deleteCampaign = useDeleteCampaign();
@@ -280,17 +279,6 @@ export default function LeadImports({
   );
 
   useEffect(() => {
-    if (fixedClientId) {
-      setSelectedClientId(fixedClientId);
-      return;
-    }
-
-    if (clients.length > 0 && !selectedClientId) {
-      setSelectedClientId(clients[0].id);
-    }
-  }, [clients, fixedClientId, selectedClientId]);
-
-  useEffect(() => {
     if (!isInternalUser && !["dados", "pendentes"].includes(activeTab)) {
       setActiveTab("dados");
     }
@@ -300,7 +288,7 @@ export default function LeadImports({
     setImportsPage(1);
   }, [selectedClientId, pendingFilter, selectedImportId]);
 
-  const selectedClient = clients.find((client) => client.id === selectedClientId);
+  const selectedClient = crmClient?.selectedClient || null;
   const resolvedClientName = fixedClientName || selectedClient?.name || selectedClientId;
   const tabs = isInternalUser ? INTERNAL_TABS : CLIENT_TABS;
 
@@ -499,26 +487,8 @@ export default function LeadImports({
 
   const handleDispatch = handleCreateCampaign;
 
-  const clientSelector = fixedClientId ? null : (
-    <div className="flex min-w-[220px] items-center gap-2">
-      <Building2 className="h-4 w-4 text-muted-foreground" />
-      <Select value={selectedClientId} onValueChange={setSelectedClientId} disabled={clientsLoading}>
-        <SelectTrigger className={cn("h-11 rounded-xl", darkFieldClass)}>
-          <SelectValue placeholder="Selecionar empresa" />
-        </SelectTrigger>
-        <SelectContent className={darkSelectContentClass}>
-          {clients.map((client) => (
-            <SelectItem key={client.id} value={client.id} className={darkSelectItemClass}>
-              {client.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-
   return (
-    <PageShell title={title} subtitle={subtitle} headerRight={headerRight ?? clientSelector} spacing="space-y-6">
+    <PageShell title={title} subtitle={subtitle} headerRight={headerRight} spacing="space-y-6" showGlobalClientSelector={!fixedClientId}>
       <AlertDialog open={Boolean(campaignActionDialog)} onOpenChange={(open) => (!open ? setCampaignActionDialog(null) : null)}>
         <AlertDialogContent className="max-w-md rounded-3xl border-border/80 bg-background/95">
           <AlertDialogHeader className="space-y-3 text-left">
