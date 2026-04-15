@@ -11,6 +11,7 @@ export interface DashboardSummary {
   hotLeads: number;
   warmLeads: number;
   coldLeads: number;
+  noSignalLeads: number;
 }
 
 export interface DashboardChartPoint {

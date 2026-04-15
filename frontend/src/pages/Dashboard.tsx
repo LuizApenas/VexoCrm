@@ -53,6 +53,7 @@ const Dashboard = ({
     hotLeads: 0,
     warmLeads: 0,
     coldLeads: 0,
+    noSignalLeads: 0,
   };
 
   const activeTone = summary.qualificationRate >= 50 ? "text-cyan-700 dark:text-cyan-200" : "text-fuchsia-700 dark:text-fuchsia-200";
@@ -224,6 +225,14 @@ const Dashboard = ({
                       <div className="rounded-[1rem] border border-slate-200/90 bg-slate-50/90 p-3 dark:border-white/10 dark:bg-white/[0.04]">
                         <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/45">Mornos</p>
                         <p className="mt-1.5 text-xl font-bold text-foreground">{summary.warmLeads}</p>
+                      </div>
+                      <div className="rounded-[1rem] border border-slate-200/90 bg-slate-50/90 p-3 dark:border-white/10 dark:bg-white/[0.04]">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/45">Frios</p>
+                        <p className="mt-1.5 text-xl font-bold text-foreground">{summary.coldLeads}</p>
+                      </div>
+                      <div className="rounded-[1rem] border border-slate-200/90 bg-slate-50/90 p-3 dark:border-white/10 dark:bg-white/[0.04]">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-white/45">Sem sinal</p>
+                        <p className="mt-1.5 text-xl font-bold text-foreground">{summary.noSignalLeads}</p>
                       </div>
                     </div>
                   </div>
