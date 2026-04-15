@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageShell } from "@/components/PageShell";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -76,8 +77,12 @@ export default function Leads({
   const [selectedColumn, setSelectedColumn] = useState<(typeof COLUMNS)[number]["key"]>("nome");
   const [filterTerm, setFilterTerm] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
-  const { data: campaigns = [] } = useCampanhas(effectiveClientId || undefined);
-  const { data: campaignLeads = [], isLoading: campaignLeadsLoading } = useCampaignLeads(
+  const { data: campaigns = [], error: campaignsError } = useCampanhas(effectiveClientId || undefined);
+  const {
+    data: campaignLeads = [],
+    isLoading: campaignLeadsLoading,
+    error: campaignLeadsError,
+  } = useCampaignLeads(
     selectedCampaignId || undefined,
   );
 
@@ -144,6 +149,14 @@ export default function Leads({
           </CardHeader>
           <CardContent>
             <ErrorMessage message={error ? (error as Error).message : null} variant="banner" />
+            <ErrorMessage
+              message={campaignsError ? "Nao foi possivel carregar as campanhas salvas. Os leads continuam disponiveis normalmente." : null}
+              variant="banner"
+            />
+            <ErrorMessage
+              message={campaignLeadsError ? "Nao foi possivel carregar os leads da campanha selecionada. Tente novamente ou limpe o filtro de campanha." : null}
+              variant="banner"
+            />
 
             {isLoading && <EmptyState message="Carregando dados..." />}
 
