@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Database, FileSpreadsheet, Filter, RefreshCw } from "lucide-react";
+import { CalendarClock, Database, FileSpreadsheet, Filter, RefreshCw, SendHorizontal } from "lucide-react";
 import { useLeads, type LeadRow } from "@/hooks/useLeads";
 import { useCampaignLeads, useCampanhas } from "@/hooks/useCampanhas";
 import { Button } from "@/components/ui/button";
@@ -90,28 +90,41 @@ export default function Leads({
     setSelectedCampaignId("");
   }, [effectiveClientId]);
 
-  const campaignLeadIds = useMemo(
-    () => new Set(campaignLeads.map((lead) => lead.id)),
-    [campaignLeads],
+  useEffect(() => {
+    if (selectedCampaignId && !campaigns.some((campaign) => campaign.id === selectedCampaignId)) {
+      setSelectedCampaignId("");
+    }
+  }, [campaigns, selectedCampaignId]);
+
+  const activeCampaign = useMemo(
+    () => campaigns.find((campaign) => campaign.id === selectedCampaignId) ?? null,
+    [campaigns, selectedCampaignId],
   );
+  const sourceRows = useMemo(() => {
+    if (selectedCampaignId) {
+      return campaignLeads;
+    }
+
+    if (campaigns.length > 0) {
+      return [];
+    }
+
+    return rows;
+  }, [campaignLeads, campaigns.length, rows, selectedCampaignId]);
+
   const filteredRows = useMemo(() => {
     const normalizedTerm = filterTerm.trim().toLowerCase();
 
-    return rows.filter((row) => {
+    return sourceRows.filter((row) => {
       const matchesColumn =
         !normalizedTerm ||
         formatCell(row[selectedColumn as keyof LeadRow], selectedColumn)
           .toLowerCase()
           .includes(normalizedTerm);
 
-      const matchesCampaign =
-        !selectedCampaignId || campaignLeadIds.size === 0
-          ? !selectedCampaignId || campaignLeadsLoading || campaignLeads.length > 0
-          : campaignLeadIds.has(row.id);
-
-      return matchesColumn && matchesCampaign;
+      return matchesColumn;
     });
-  }, [campaignLeadIds, campaignLeads.length, campaignLeadsLoading, filterTerm, rows, selectedCampaignId, selectedColumn]);
+  }, [filterTerm, selectedColumn, sourceRows]);
 
   return (
     <PageShell
@@ -173,7 +186,7 @@ export default function Leads({
 
             {effectiveClientId && !isLoading && !error && rows.length > 0 && (
               <div className="space-y-4">
-                <div className="grid gap-3 rounded-xl border border-border/70 bg-background/60 p-4 lg:grid-cols-[220px_minmax(0,1fr)_260px]">
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-950 lg:grid-cols-[220px_minmax(0,1fr)]">
                   <div className="space-y-2">
                     <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                       <Filter className="h-3.5 w-3.5" />
@@ -203,42 +216,81 @@ export default function Leads({
                       placeholder={`Buscar em ${COLUMN_OPTIONS.find((column) => column.value === selectedColumn)?.label || "leads"}`}
                     />
                   </div>
-
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                      Campanha salva
-                    </p>
-                    <Select value={selectedCampaignId || "__all__"} onValueChange={(value) => setSelectedCampaignId(value === "__all__" ? "" : value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Todas as campanhas" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__all__">Todas as campanhas</SelectItem>
-                        {campaigns.map((campaign) => (
-                          <SelectItem key={campaign.id} value={campaign.id}>
-                            {campaign.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
 
                 {campaigns.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          Campanhas com leads organizados
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Clique em uma campanha para abrir somente os leads gerados por ela.
+                        </p>
+                      </div>
+                      {selectedCampaignId && (
+                        <Button type="button" variant="outline" size="sm" onClick={() => setSelectedCampaignId("")}>
+                          Limpar selecao
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {campaigns.map((campaign) => (
-                      <Button
+                      <button
                         key={campaign.id}
                         type="button"
-                        size="sm"
-                        variant={selectedCampaignId === campaign.id ? "secondary" : "outline"}
                         onClick={() => setSelectedCampaignId((current) => (current === campaign.id ? "" : campaign.id))}
+                        className={[
+                          "rounded-2xl border p-4 text-left transition-all",
+                          selectedCampaignId === campaign.id
+                            ? "border-cyan-400 bg-cyan-50 shadow-[0_16px_40px_rgba(34,211,238,0.14)] dark:border-cyan-400/60 dark:bg-cyan-500/10"
+                            : "border-slate-200 bg-white shadow-sm hover:border-cyan-200 hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-950",
+                        ].join(" ")}
                       >
-                        {campaign.name}
-                      </Button>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-foreground">{campaign.name}</p>
+                            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                              {campaign.status === "paused" ? "Pausada" : "Ativa"}
+                            </p>
+                          </div>
+                          <div className="rounded-full border border-slate-200 bg-white p-2 text-slate-600 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200">
+                            <SendHorizontal className="h-4 w-4" />
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            <CalendarClock className="h-3.5 w-3.5" />
+                            <span>
+                              {campaign.last_triggered_at
+                                ? `Ultimo disparo em ${new Date(campaign.last_triggered_at).toLocaleString("pt-BR")}`
+                                : "Ainda sem disparo registrado"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Filter className="h-3.5 w-3.5" />
+                            <span>
+                              {campaign.limit_per_run > 0
+                                ? `Limite de ${campaign.limit_per_run} leads por execucao`
+                                : "Sem limite por execucao"}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
                     ))}
+                    </div>
                   </div>
                 )}
+
+                {campaigns.length > 0 && !selectedCampaignId ? (
+                  <EmptyState
+                    title="Selecione uma campanha"
+                    description="Os leads ficam organizados por campanha. Clique em uma das caixas acima para abrir a lista correta."
+                  />
+                ) : null}
 
                 {selectedCampaignId && !campaignLeadsLoading && campaignLeads.length === 0 ? (
                   <EmptyState
@@ -246,28 +298,41 @@ export default function Leads({
                   />
                 ) : null}
 
-                <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {COLUMNS.map((column) => (
-                        <TableHead key={column.key}>{column.label}</TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredRows.map((row) => (
-                      <TableRow key={row.id}>
-                        {COLUMNS.map((column) => (
-                          <TableCell key={column.key} className="max-w-[240px] truncate">
-                            {formatCell(row[column.key as keyof LeadRow], column.key)}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                </div>
+                {(!campaigns.length || selectedCampaignId) && (
+                  <div className="space-y-3">
+                    {activeCampaign && (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-slate-950">
+                        <p className="text-sm font-semibold text-foreground">{activeCampaign.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Leads exibidos somente desta campanha.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="overflow-x-auto rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            {COLUMNS.map((column) => (
+                              <TableHead key={column.key}>{column.label}</TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredRows.map((row) => (
+                            <TableRow key={row.id}>
+                              {COLUMNS.map((column) => (
+                                <TableCell key={column.key} className="max-w-[240px] truncate">
+                                  {formatCell(row[column.key as keyof LeadRow], column.key)}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
