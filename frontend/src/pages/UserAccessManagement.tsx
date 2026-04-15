@@ -49,6 +49,7 @@ import {
   type InternalPage,
 } from "@/lib/access";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 
 type ManagedRole = AccessRole;
 
@@ -1253,6 +1254,7 @@ function UserListItem({
 
 export default function UserAccessManagement() {
   const { getIdToken, isAdminUser } = useAuth();
+  const crmClient = useOptionalCrmClient();
   const { data: users = [], isLoading, error, refetch } = useAdminUsers();
   const { data: accessProfiles = [], refetch: refetchAccessProfiles } = useAccessProfiles();
   const { data: clients = [] } = useLeadClients();
@@ -1297,6 +1299,7 @@ export default function UserAccessManagement() {
   );
 
   const canEditUsers = isAdminUser;
+  const selectedClientId = crmClient?.selectedClientId || "";
 
   useEffect(() => {
     setDrafts((current) => {
@@ -1339,9 +1342,20 @@ export default function UserAccessManagement() {
     }
   }, [resolvedAccessProfiles, selectedProfileKey]);
 
+  const clientScopedUsers = useMemo(() => {
+    if (!selectedClientId) {
+      return users;
+    }
+
+    return users.filter((user) => {
+      const draft = drafts[user.uid] || buildUserDraft(user);
+      return draft.clientIds.includes(selectedClientId);
+    });
+  }, [drafts, selectedClientId, users]);
+
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const ordered = [...users].sort((a, b) => {
+    const ordered = [...clientScopedUsers].sort((a, b) => {
       if (a.access.isAdmin !== b.access.isAdmin) {
         return a.access.isAdmin ? -1 : 1;
       }
@@ -1356,24 +1370,24 @@ export default function UserAccessManagement() {
       if (!term) return true;
       return buildSearchIndex(user, draft).includes(term);
     });
-  }, [drafts, roleFilter, search, users]);
+  }, [clientScopedUsers, drafts, roleFilter, search]);
 
   useEffect(() => {
-    if (!users.length) {
+    if (!clientScopedUsers.length) {
       setSelectedUserId(null);
       return;
     }
 
-    if (selectedUserId && users.some((user) => user.uid === selectedUserId)) {
+    if (selectedUserId && clientScopedUsers.some((user) => user.uid === selectedUserId)) {
       return;
     }
 
     if (filteredUsers.length > 0) {
       setSelectedUserId(filteredUsers[0].uid);
     }
-  }, [filteredUsers, selectedUserId, users]);
+  }, [clientScopedUsers, filteredUsers, selectedUserId]);
 
-  const selectedUser = users.find((user) => user.uid === selectedUserId) || null;
+  const selectedUser = clientScopedUsers.find((user) => user.uid === selectedUserId) || null;
   const selectedDraft = selectedUser ? drafts[selectedUser.uid] || buildUserDraft(selectedUser) : null;
   const selectedCreateType = findAccessProfile(resolvedAccessProfiles, createDraft.accessPreset);
   const selectedProfile = selectedProfileKey ? findAccessProfile(resolvedAccessProfiles, selectedProfileKey) : null;
@@ -1769,6 +1783,7 @@ export default function UserAccessManagement() {
       subtitle="Cadastro e associacao por tipo, empresa e paginas liberadas."
       spacing="space-y-6"
       compactHero
+      showGlobalClientSelector
     >
       {!canEditUsers && (
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
@@ -1856,7 +1871,11 @@ export default function UserAccessManagement() {
               {!isLoading && filteredUsers.length === 0 ? (
                 <EmptyState
                   title="Nenhum usuario encontrado"
-                  description="Ajuste a busca, troque o filtro de categoria ou cadastre um novo usuario."
+                  description={
+                    selectedClientId
+                      ? "Nao existem usuarios vinculados a empresa selecionada ou os filtros atuais esconderam os resultados."
+                      : "Ajuste a busca, troque o filtro de categoria ou cadastre um novo usuario."
+                  }
                 />
               ) : null}
 
