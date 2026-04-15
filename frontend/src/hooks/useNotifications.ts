@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { toast } from "sonner";
 import { API_BASE_URL } from "@/lib/api";
 
@@ -17,13 +18,35 @@ const API_URL = `${API_BASE_URL}/api/notifications`;
 const POLL_INTERVAL = 15000;
 const LAST_SEEN_KEY = "notifications_lastSeenCreatedAt";
 
+function matchesSelectedClient(
+  item: Notification,
+  selectedClientName: string | null,
+) {
+  if (!selectedClientName) {
+    return true;
+  }
+
+  const haystack = `${item.title} ${item.description || ""}`.toLowerCase();
+  return haystack.includes(selectedClientName.toLowerCase());
+}
+
 export function useNotifications() {
   const { user, getIdToken, canAccessInternalPage } = useAuth();
+  const crmClient = useOptionalCrmClient();
   const [items, setItems] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const lastSeenRef = useRef(localStorage.getItem(LAST_SEEN_KEY) || "");
   const canReadNotifications = canAccessInternalPage("agente");
+  const selectedClientName = crmClient?.selectedClient?.name || null;
+
+  const filteredItems = useMemo(
+    () => items.filter((item) => matchesSelectedClient(item, selectedClientName)),
+    [items, selectedClientName],
+  );
+  const unreadCount = useMemo(
+    () => filteredItems.filter((item) => !item.read).length,
+    [filteredItems],
+  );
 
   const fetchNotifications = useCallback(async () => {
     if (!user || !canReadNotifications) return;
@@ -39,7 +62,6 @@ export function useNotifications() {
 
       const data = await res.json();
       setItems(data.items || []);
-      setUnreadCount(data.unreadCount || 0);
 
       // Toast for new notifications
       const newItems = (data.items || []).filter(
@@ -65,7 +87,6 @@ export function useNotifications() {
   useEffect(() => {
     if (!user || !canReadNotifications) {
       setItems([]);
-      setUnreadCount(0);
       setLoading(false);
       return;
     }
@@ -111,5 +132,5 @@ export function useNotifications() {
     await fetchNotifications();
   }, [canReadNotifications, fetchNotifications, getIdToken]);
 
-  return { items, unreadCount, loading, markAsRead, markAllRead };
+  return { items: filteredItems, unreadCount, loading, markAsRead, markAllRead };
 }

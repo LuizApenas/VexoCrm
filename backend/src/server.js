@@ -1299,6 +1299,7 @@ function buildDashboardPayload(client, leads) {
       hotLeads: temperatureCounts.hot,
       warmLeads: temperatureCounts.warm,
       coldLeads: temperatureCounts.cold,
+      noSignalLeads: temperatureCounts.unknown,
     },
     leadsByDay: recentDays,
     temperatureBreakdown: [
