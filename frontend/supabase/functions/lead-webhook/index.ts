@@ -8,13 +8,19 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const EXPECTED_BEARER_TOKEN = "[REDACTED]";
-
 const getEnv = (primary: string, fallback?: string): string | null => {
   const value = Deno.env.get(primary);
   if (value) return value;
   if (!fallback) return null;
   return Deno.env.get(fallback);
+};
+
+const getExpectedBearerToken = (): string | null =>
+  getEnv("EDGE_FUNCTION_BEARER_TOKEN", "BEARER_TOKEN");
+
+const getBearerTokenFromRequest = (req: Request): string | null => {
+  const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+  return authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
 };
 
 const normalizeString = (value: unknown): string | null => {
@@ -80,8 +86,17 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (authHeader !== `Bearer ${EXPECTED_BEARER_TOKEN}`) {
+    const expectedBearerToken = getExpectedBearerToken();
+    if (!expectedBearerToken) {
+      return errorResponse(
+        500,
+        "Missing bearer token",
+        "Configure EDGE_FUNCTION_BEARER_TOKEN",
+      );
+    }
+
+    const token = getBearerTokenFromRequest(req);
+    if (token !== expectedBearerToken) {
       return errorResponse(401, "Unauthorized");
     }
 
