@@ -9,15 +9,25 @@ const cabecalhosCors = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Token fixo esperado no header Authorization/Bearer.
-const TOKEN_BEARER_ESPERADO = "[REDACTED]";
-
 // Le uma variavel de ambiente principal e, se nao existir, tenta uma alternativa.
 const obterEnv = (principal: string, alternativa?: string): string | null => {
   const valor = Deno.env.get(principal);
   if (valor) return valor;
   if (!alternativa) return null;
   return Deno.env.get(alternativa) ?? null;
+};
+
+// Le o token de autenticacao configurado no ambiente da funcao.
+const obterTokenBearerEsperado = (): string | null =>
+  obterEnv("EDGE_FUNCTION_BEARER_TOKEN", "BEARER_TOKEN");
+
+// Extrai o token Bearer do header Authorization.
+const obterTokenBearerDaRequisicao = (req: Request): string | null => {
+  const headerAutorizacao =
+    req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+  return headerAutorizacao.startsWith("Bearer ")
+    ? headerAutorizacao.slice(7).trim()
+    : null;
 };
 
 // Normaliza qualquer valor para texto, removendo espacos e um possivel "=" inicial.
@@ -84,11 +94,17 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Aceita Authorization em minusculo ou maiusculo.
-    const headerAutorizacao =
-      req.headers.get("authorization") ?? req.headers.get("Authorization");
+    const tokenBearerEsperado = obterTokenBearerEsperado();
+    if (!tokenBearerEsperado) {
+      return respostaErro(
+        500,
+        "Missing bearer token",
+        "Configure EDGE_FUNCTION_BEARER_TOKEN",
+      );
+    }
 
-    if (headerAutorizacao !== `Bearer ${TOKEN_BEARER_ESPERADO}`) {
+    const tokenBearer = obterTokenBearerDaRequisicao(req);
+    if (tokenBearer !== tokenBearerEsperado) {
       return respostaErro(401, "Unauthorized");
     }
 
