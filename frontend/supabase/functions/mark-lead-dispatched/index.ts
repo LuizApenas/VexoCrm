@@ -8,7 +8,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const EXPECTED_BEARER_TOKEN = "@Vexo2026";
 const SKIP_REASON = "disparo_realizado";
 
 const getEnv = (primary: string, fallback?: string): string | null => {
@@ -16,6 +15,14 @@ const getEnv = (primary: string, fallback?: string): string | null => {
   if (value) return value;
   if (!fallback) return null;
   return Deno.env.get(fallback);
+};
+
+const getExpectedBearerToken = (): string | null =>
+  getEnv("EDGE_FUNCTION_BEARER_TOKEN", "BEARER_TOKEN");
+
+const getBearerTokenFromRequest = (req: Request): string | null => {
+  const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+  return authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
 };
 
 const jsonResponse = (payload: unknown, status = 200) =>
@@ -43,12 +50,17 @@ Deno.serve(async (req: Request) => {
     return errorResponse(405, "Method not allowed");
   }
 
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const token = authHeader.startsWith("Bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
+  const expectedBearerToken = getExpectedBearerToken();
+  if (!expectedBearerToken) {
+    return errorResponse(
+      500,
+      "Missing bearer token",
+      "Configure EDGE_FUNCTION_BEARER_TOKEN",
+    );
+  }
 
-  if (token !== EXPECTED_BEARER_TOKEN) {
+  const token = getBearerTokenFromRequest(req);
+  if (token !== expectedBearerToken) {
     return errorResponse(401, "Unauthorized");
   }
 
