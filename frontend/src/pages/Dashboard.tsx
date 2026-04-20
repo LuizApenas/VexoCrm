@@ -182,7 +182,7 @@ const Dashboard = ({
                   value="revenue"
                   className="rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] data-[state=active]:bg-cyan-500/12 data-[state=active]:text-cyan-700 dark:data-[state=active]:bg-cyan-300/12 dark:data-[state=active]:text-cyan-200"
                 >
-                  Revenue Ops
+                  Inteligencia Comercial
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -317,7 +317,7 @@ const Dashboard = ({
 
             <TabsContent value="revenue" className="space-y-3">
               {revenueLoading ? (
-                <EmptyState message="Carregando metricas de Revenue Ops..." />
+                <EmptyState message="Carregando inteligencia comercial..." />
               ) : revenueOps ? (
                 <>
                   <KpiGrid cols={3} className="gap-2.5">

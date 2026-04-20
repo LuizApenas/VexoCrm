@@ -1339,8 +1339,16 @@ function isMissingSchemaError(error) {
   return (
     code === "42P01" ||
     code === "42703" ||
+    code === "PGRST204" ||
+    code === "PGRST205" ||
+    code === "PGRST100" ||
+    code === "42704" ||
+    message.includes("schema cache") ||
+    message.includes("could not find the") ||
+    message.includes("relation") && message.includes("does not exist") ||
     message.includes("does not exist") ||
-    message.includes("column") && message.includes("does not exist")
+    message.includes("column") && message.includes("does not exist") ||
+    message.includes("table") && message.includes("does not exist")
   );
 }
 
@@ -1533,7 +1541,7 @@ function buildRevenueOpsPayload({
   });
 
   const qualifiedLeads = sanitizedLeads.filter((lead) =>
-    isQualifiedStatus(lead.status) || normalizeString(lead.qualificacao)?.toLowerCase().includes("qualific")
+    isQualifiedStatus(lead.status) || (normalizeString(lead.qualificacao)?.toLowerCase() || "").includes("qualific")
   );
 
   const wonConversions = (conversions || []).filter((item) => normalizeWonStatus(item.conversion_status));
@@ -3578,9 +3586,8 @@ app.get("/api/revenue-ops", requireFirebaseAuth, async (req, res) => {
       optionalQuery(() =>
         supabase
           .from("campaigns")
-          .select("id, name, client_id, import_id, limit_per_run, status, last_triggered_at, created_at, phones")
+          .select("id, name, client_id, import_id, limit_per_run, status, last_triggered_at, created_at")
           .eq("client_id", clientId)
-          .is("archived_at", null)
       ),
       leadPhones.length
         ? optionalQuery(() =>
@@ -3666,7 +3673,7 @@ app.get("/api/revenue-ops", requireFirebaseAuth, async (req, res) => {
     res.json(payload);
   } catch (error) {
     console.error("revenue ops query error:", error);
-    sendError(res, 500, "REVENUE_OPS_QUERY_FAILED", "Failed to build revenue operations analytics");
+    sendError(res, 500, "REVENUE_OPS_QUERY_FAILED", "Falha ao montar a inteligencia comercial");
   }
 });
 
