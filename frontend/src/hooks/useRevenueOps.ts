@@ -105,8 +105,12 @@ export function useRevenueOps(clientId: string) {
       });
 
       if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Revenue Ops fetch failed: ${res.status} ${errText}`);
+        const payload = await res.json().catch(() => null);
+        const message =
+          payload?.error?.message ||
+          payload?.error?.details ||
+          "Falha ao carregar a inteligencia comercial.";
+        throw new Error(message);
       }
 
       return res.json();
