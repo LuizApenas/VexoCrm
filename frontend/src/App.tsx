@@ -27,6 +27,7 @@ import ClientSignup from "./pages/ClientSignup";
 import UserAccessManagement from "./pages/UserAccessManagement";
 import WhatsAppInbox from "./pages/WhatsAppInbox";
 import Tenants from "./pages/Tenants";
+import CommercialIntelligence from "./pages/CommercialIntelligence";
 
 const queryClient = new QueryClient();
 
@@ -93,6 +94,7 @@ const App = () => (
             <Route path="/leads" element={<Navigate to="/crm/leads" replace />} />
             <Route path="/planilhas" element={<Navigate to="/crm/planilhas" replace />} />
             <Route path="/campanhas" element={<Navigate to="/crm/planilhas" replace />} />
+            <Route path="/inteligencia-comercial" element={<Navigate to="/crm/inteligencia-comercial" replace />} />
             <Route path="/agente" element={<Navigate to="/crm/agente" replace />} />
             <Route path="/whatsapp" element={<Navigate to="/crm/whatsapp" replace />} />
             <Route path="/empresas" element={<Navigate to="/crm/empresas" replace />} />
@@ -130,6 +132,14 @@ const App = () => (
                 }
               />
               <Route path="campanhas" element={<Navigate to="/crm/planilhas" replace />} />
+              <Route
+                path="inteligencia-comercial"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="dashboard">
+                    <CommercialIntelligence />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="whatsapp"
                 element={

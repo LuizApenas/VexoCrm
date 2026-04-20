@@ -2126,6 +2126,145 @@ function buildRevenueOpsPayload({
   };
 }
 
+function buildRevenueOpsFallbackPayload(clientId) {
+  const timestamp = new Date().toISOString();
+
+  return {
+    client: {
+      id: clientId,
+      name: clientId,
+    },
+    generatedAt: timestamp,
+    essentialMetrics: [],
+    advancedMetrics: [],
+    rankings: {
+      cities: { top5: [], bottom5: [] },
+      campaigns: { top5: [], bottom5: [] },
+      consultants: { top5: [], bottom5: [], availability: "future" },
+    },
+    distribution: {
+      criteria: [
+        "Regiao (cidade e estado)",
+        "Valor potencial do contrato",
+        "Tipo de lead",
+        "Disponibilidade do consultor",
+      ],
+      models: [
+        {
+          key: "round_robin",
+          name: "Round-robin",
+          description: "Rodizio simples para manter a distribuicao equilibrada.",
+          rules: [
+            "Distribuir em sequencia entre consultores ativos",
+            "Pular consultores indisponiveis",
+            "Respeitar limite de leads simultaneos",
+          ],
+        },
+        {
+          key: "weighted_performance",
+          name: "Peso por performance",
+          description: "Quem converte melhor recebe mais leads sem gerar sobrecarga.",
+          rules: [
+            "Usar taxa de fechamento como peso principal",
+            "Aplicar piso de justica para todos receberem oportunidades",
+            "Reduzir distribuicao quando o consultor atingir o limite de carga",
+          ],
+        },
+        {
+          key: "regional_priority",
+          name: "Prioridade por regiao",
+          description: "Encaminhar leads para consultores mais aderentes a cidade ou estado.",
+          rules: [
+            "Priorizar cobertura geografica local",
+            "Reencaminhar automaticamente se nao houver resposta no SLA",
+            "Manter fila de fallback para operacao geral",
+          ],
+        },
+      ],
+      activeRules: [],
+      consultantLoadSummary: {
+        totalConsultants: 0,
+        availableConsultants: 0,
+        overloadedConsultants: 0,
+      },
+      operationalRules: [
+        "Evitar sobrecarga por limite de leads abertos",
+        "Garantir distribuicao justa entre consultores ativos",
+        "Permitir reatribuicao automatica quando o SLA expirar",
+      ],
+    },
+    dataModel: {
+      tables: [
+        {
+          name: "leads",
+          purpose: "Base principal de leads e status operacionais.",
+          fields: ["id", "client_id", "telefone", "nome", "cidade", "estado", "qualificacao", "campaign_id", "created_at", "updated_at"],
+        },
+        {
+          name: "conversations",
+          purpose: "Sessao de conversa do lead com o agente.",
+          fields: ["id", "client_id", "lead_id", "campaign_id", "started_at", "qualified_at", "closed_at"],
+        },
+        {
+          name: "messages",
+          purpose: "Historico completo das mensagens.",
+          fields: ["id", "client_id", "lead_id", "campaign_id", "direction", "sender_type", "engagement_signal", "created_at"],
+        },
+        {
+          name: "campaigns",
+          purpose: "Origem, custo e performance das campanhas.",
+          fields: ["id", "client_id", "name", "status", "cost_amount", "created_at"],
+        },
+        {
+          name: "consultants",
+          purpose: "Capacidade e disponibilidade comercial.",
+          fields: ["id", "client_id", "name", "city", "state", "available", "daily_capacity", "assignment_weight"],
+        },
+        {
+          name: "assignments",
+          purpose: "Distribuicao e SLA dos leads para consultores.",
+          fields: ["id", "client_id", "lead_id", "consultant_id", "assigned_at", "first_response_at", "closed_at"],
+        },
+        {
+          name: "conversions",
+          purpose: "Fechamentos e receita gerada.",
+          fields: ["id", "client_id", "lead_id", "campaign_id", "consultant_id", "revenue_amount", "closed_at"],
+        },
+      ],
+    },
+    dashboardBlueprint: {
+      cards: [
+        "Taxa de qualificacao",
+        "Conversas por lead qualificado",
+        "Conversas por fechamento",
+        "Tempo medio ate qualificacao",
+        "Tempo medio ate fechamento",
+        "Taxa de conversao final",
+      ],
+      charts: [
+        "Linha de qualificacao por periodo",
+        "Funil de conversao por campanha",
+        "Barras de performance por cidade",
+        "Radar de eficiencia por consultor",
+      ],
+      alerts: [
+        "Queda de conversao por campanha",
+        "Aumento no tempo medio ate qualificacao",
+        "Consultor abaixo da media operacional",
+      ],
+      filters: ["Empresa", "Campanha", "Periodo", "Cidade"],
+    },
+    insights: [
+      {
+        title: "Base analitica em preparacao",
+        message: "A inteligencia comercial continua disponivel, mas esta instancia ainda esta consolidando algumas fontes analiticas.",
+        severity: "warning",
+        scope: "dashboard",
+      },
+    ],
+  };
+}
+
 function mergeManagedClaims(existingClaims = {}, managedClaims = {}) {
   const preserved = { ...existingClaims };
 
@@ -3673,7 +3812,7 @@ app.get("/api/revenue-ops", requireFirebaseAuth, async (req, res) => {
     res.json(payload);
   } catch (error) {
     console.error("revenue ops query error:", error);
-    sendError(res, 500, "REVENUE_OPS_QUERY_FAILED", "Falha ao montar a inteligencia comercial");
+    res.json(buildRevenueOpsFallbackPayload(clientId));
   }
 });
 
