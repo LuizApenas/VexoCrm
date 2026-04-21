@@ -45,6 +45,10 @@ As rotas abaixo ainda existem no codigo, mas nao sao a interface principal do wo
 | `CORS_ORIGINS` | origens permitidas |
 | `SUPABASE_URL` | URL do projeto Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | service role do Supabase |
+| `SUPABASE_ACCESS_TOKEN` | token da CLI para aplicar migrations no startup do container |
+| `SUPABASE_DB_PASSWORD` | senha do banco remoto usada pelo Supabase CLI |
+| `SUPABASE_DB_URL` | string de conexao alternativa para aplicar migrations sem `link` |
+| `RUN_SUPABASE_MIGRATIONS_ON_START` | habilita ou desabilita migrations automaticas no boot |
 | `FIREBASE_PROJECT_ID` | projeto Firebase |
 | `FIREBASE_CLIENT_EMAIL` | service account Firebase |
 | `FIREBASE_PRIVATE_KEY` | chave privada Firebase |
@@ -91,10 +95,34 @@ docker run --env-file .env -p 3001:3001 vexo-api
 
 ```bash
 cd backend
-git pull origin main
-docker compose -f docker-compose.prod.yml build --no-cache
-docker compose -f docker-compose.prod.yml up -d
-docker logs -f vexo-api
+bash ./deploy.sh
+```
+
+No EasyPanel com auto deploy, o comportamento automatico agora vem da propria imagem do backend:
+
+- o container sobe;
+- executa `backend/scripts/apply-supabase-migrations.sh`;
+- aplica as migrations de `backend/supabase/migrations`;
+- e so depois inicia a API com `npm start`.
+
+Para isso funcionar no EasyPanel, configure no service as variaveis:
+
+- `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`
+- ou `SUPABASE_DB_URL`
+- opcionalmente `SUPABASE_PROJECT_ID` se quiser sobrescrever `backend/supabase/config.toml`
+
+Se essas variaveis nao estiverem presentes e `RUN_SUPABASE_MIGRATIONS_ON_START=1`, o container falha antes de publicar uma versao possivelmente incompativel com o schema.
+
+Use 1 replica no service se voce quiser evitar duas instancias tentando aplicar migrations ao mesmo tempo durante um deploy.
+
+## Migrations no auto deploy
+
+O auto deploy do backend no EasyPanel usa apenas o contexto `backend/`. Por isso, as migrations que entram na imagem ficam em `backend/supabase/migrations`.
+
+Quando voce criar ou alterar migrations em `frontend/supabase`, sincronize a copia do backend antes do commit:
+
+```bash
+node scripts/sync-supabase-assets.mjs
 ```
 
 ## Posicionamento deste modulo

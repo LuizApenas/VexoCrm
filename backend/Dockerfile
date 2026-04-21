@@ -9,6 +9,7 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
     chromium \
     ca-certificates \
     fonts-liberation \
@@ -42,6 +43,9 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY src ./src
+COPY scripts ./scripts
+COPY supabase ./supabase
+COPY start.sh ./start.sh
 
 RUN groupadd --gid 1001 appgroup && \
     useradd --uid 1001 --gid appgroup --create-home appuser && \
@@ -54,4 +58,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-3001}/health || exit 1
 
-CMD ["npm", "start"]
+CMD ["bash", "./start.sh"]

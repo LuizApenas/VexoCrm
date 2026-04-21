@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "supabase:sync-backend": "node ../scripts/sync-supabase-assets.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

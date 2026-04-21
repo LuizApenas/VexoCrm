@@ -106,6 +106,24 @@ npm install
 npm run dev
 ```
 
+## Deploy com migrations
+
+O auto deploy do backend no EasyPanel agora pode aplicar migrations automaticamente no startup do container.
+
+Como o service do backend builda a imagem a partir de `backend/`, a copia usada no deploy automatico fica em `backend/supabase/migrations`.
+
+Quando surgir migration nova em `frontend/supabase`, sincronize antes do commit:
+
+```bash
+node scripts/sync-supabase-assets.mjs
+```
+
+No EasyPanel, deixe configurado no service do backend:
+
+- `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`
+- ou `SUPABASE_DB_URL`
+- `RUN_SUPABASE_MIGRATIONS_ON_START=1`
+
 ## Observacao importante
 
 Se voce for apresentar o projeto para cliente, parceiro ou time interno, use primeiro os arquivos em `docs/` e os PDFs gerados a partir deles. Os READMEs ficaram como referencia tecnica do repositorio.
