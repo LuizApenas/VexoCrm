@@ -1367,6 +1367,30 @@ async function optionalQuery(factory, fallback = []) {
   return { data: data || fallback, available: true };
 }
 
+async function queryWithSchemaFallback(factories, fallback = []) {
+  let lastError = null;
+
+  for (const factory of factories) {
+    const { data, error } = await factory();
+    if (!error) {
+      return { data: data || fallback, available: true };
+    }
+
+    if (isMissingSchemaError(error)) {
+      lastError = error;
+      continue;
+    }
+
+    throw error;
+  }
+
+  if (lastError) {
+    return { data: fallback, available: false };
+  }
+
+  return { data: fallback, available: false };
+}
+
 function safePercent(numerator, denominator) {
   if (!denominator) return 0;
   return Number(((numerator / denominator) * 100).toFixed(1));
@@ -3863,12 +3887,29 @@ app.get("/api/commercial-intelligence", requireFirebaseAuth, async (req, res) =>
       importItemsQuery,
       settingsQuery,
     ] = await Promise.all([
-      supabase
-        .from("leads")
-        .select("id, client_id, telefone, nome, tipo_cliente, faixa_consumo, cidade, estado, status, bot_ativo, historico, data_hora, qualificacao, created_at, updated_at, source_campaign_id, lead_score, potential_contract_value, first_contact_at, qualified_at, closed_at, lead_temperature, lead_origin, behavior_meta")
-        .eq("client_id", clientId)
-        .order("data_hora", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false }),
+      queryWithSchemaFallback([
+        () =>
+          supabase
+            .from("leads")
+            .select("id, client_id, telefone, nome, tipo_cliente, faixa_consumo, cidade, estado, status, bot_ativo, historico, data_hora, qualificacao, created_at, updated_at, source_campaign_id, lead_score, potential_contract_value, first_contact_at, qualified_at, closed_at, lead_temperature, lead_origin, behavior_meta")
+            .eq("client_id", clientId)
+            .order("data_hora", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+        () =>
+          supabase
+            .from("leads")
+            .select("id, client_id, telefone, nome, tipo_cliente, faixa_consumo, cidade, estado, status, bot_ativo, historico, data_hora, qualificacao, created_at, updated_at, source_campaign_id, lead_score, potential_contract_value, first_contact_at, qualified_at, closed_at")
+            .eq("client_id", clientId)
+            .order("data_hora", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+        () =>
+          supabase
+            .from("leads")
+            .select("id, client_id, telefone, nome, tipo_cliente, faixa_consumo, cidade, estado, status, bot_ativo, historico, data_hora, qualificacao, created_at, updated_at")
+            .eq("client_id", clientId)
+            .order("data_hora", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+      ]),
       optionalQuery(() =>
         supabase
           .from("campaigns")
