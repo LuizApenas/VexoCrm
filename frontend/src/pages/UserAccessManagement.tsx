@@ -314,15 +314,15 @@ function buildCreateDraft(): CreateUserDraft {
     email: "",
     password: "",
     displayName: "",
-    role: "internal",
-    accessPreset: "internal_operator",
-    scopeMode: "all_clients",
-    approvalLevel: "operator",
+    role: "pending",
+    accessPreset: "pending",
+    scopeMode: "no_client_access",
+    approvalLevel: "none",
     companyName: "",
     clientIds: [],
     allowedViews: [],
-    internalPages: [...DEFAULT_INTERNAL_PAGES],
-    permissions: ["dashboard.view"],
+    internalPages: [],
+    permissions: [],
     sendPasswordReset: false,
     disabled: false,
   });
@@ -367,21 +367,19 @@ function derivePermissionsFromInternalPages(pages: InternalPage[]): AccessPermis
 }
 
 function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
+  const selectedClientId = draft.clientIds[0]?.trim() || "";
   if (draft.role === "pending") {
     return {
       ...draft,
       accessPreset: draft.accessPreset || "pending",
       scopeMode: "no_client_access",
       approvalLevel: "none",
-      clientIds: [],
+      clientIds: selectedClientId ? [selectedClientId] : [],
       allowedViews: [],
       internalPages: [],
       permissions: [],
     };
   }
-
-  const selectedClientId = draft.clientIds[0]?.trim() || "";
-
   if (draft.role === "client") {
     const allowedViews = filterArray(
       draft.allowedViews.length ? draft.allowedViews : DEFAULT_CLIENT_VIEWS,
@@ -455,6 +453,7 @@ function normalizeDraft<T extends AccessDraft>(draft: T): T {
   const role = draft.role;
   const accessPreset = draft.accessPreset?.trim() || getDefaultPresetForRole(role);
   const defaults = buildPresetDefaults(accessPreset);
+  const clientIds = Array.from(new Set(draft.clientIds.map((value) => value.trim()).filter(Boolean)));
 
   if (role === "pending") {
     return {
@@ -464,15 +463,13 @@ function normalizeDraft<T extends AccessDraft>(draft: T): T {
       scopeMode: "no_client_access",
       approvalLevel: "none",
       companyName: draft.companyName,
-      clientIds: [],
+      clientIds,
       allowedViews: [],
       internalPages: [],
       permissions: [],
       disabled: draft.disabled,
     };
   }
-
-  const clientIds = Array.from(new Set(draft.clientIds.map((value) => value.trim()).filter(Boolean)));
   const allowedViews = role === "client" ? filterArray(draft.allowedViews, CLIENT_VIEW_ORDER) : [];
   const internalPages = role === "internal" ? filterArray(draft.internalPages, INTERNAL_PAGE_ORDER) : [];
   const permissions = filterArray(draft.permissions, ROLE_PERMISSIONS[role]);
@@ -787,13 +784,16 @@ interface AccessPagesTabsProps {
 }
 
 function AccessPagesTabs({ role, selected, disabled, onChange }: AccessPagesTabsProps) {
-  const tabs = role === "client" ? CLIENT_PAGE_TABS : INTERNAL_PAGE_TABS;
+  const tabs = useMemo(
+    () => (role === "client" ? CLIENT_PAGE_TABS : INTERNAL_PAGE_TABS),
+    [role]
+  );
   const referenceOrder = role === "client" ? CLIENT_VIEW_ORDER : INTERNAL_PAGE_ORDER;
   const [activeTab, setActiveTab] = useState(tabs[0].value);
 
   useEffect(() => {
     setActiveTab(tabs[0].value);
-  }, [role]);
+  }, [tabs]);
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -1302,6 +1302,29 @@ export default function UserAccessManagement() {
   const selectedClientId = crmClient?.selectedClientId || "";
 
   useEffect(() => {
+    if (!selectedClientId || clients.length === 0) {
+      return;
+    }
+
+    const selectedClient = clients.find((client) => client.id === selectedClientId);
+    if (!selectedClient) {
+      return;
+    }
+
+    setCreateDraft((current) => {
+      if (current.clientIds.length > 0 || current.companyName.trim()) {
+        return current;
+      }
+
+      return normalizeCreateDraftForSimpleForm({
+        ...current,
+        clientIds: [selectedClient.id],
+        companyName: selectedClient.name,
+      });
+    });
+  }, [clients, selectedClientId]);
+
+  useEffect(() => {
     setDrafts((current) => {
       if (!users.length) {
         return {};
@@ -1347,11 +1370,27 @@ export default function UserAccessManagement() {
       return users;
     }
 
+    const selectedClient = clients.find((client) => client.id === selectedClientId);
+    const selectedClientName = selectedClient?.name.trim().toLowerCase() || "";
+
     return users.filter((user) => {
       const draft = drafts[user.uid] || buildUserDraft(user);
-      return draft.clientIds.includes(selectedClientId);
+
+      if (draft.clientIds.includes(selectedClientId)) {
+        return true;
+      }
+
+      if (draft.role !== "pending") {
+        return false;
+      }
+
+      if (!selectedClientName) {
+        return true;
+      }
+
+      return draft.companyName.trim().toLowerCase() === selectedClientName;
     });
-  }, [drafts, selectedClientId, users]);
+  }, [clients, drafts, selectedClientId, users]);
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
