@@ -835,12 +835,15 @@ function AccessPagesTabs({ role, selected, disabled, onChange }: AccessPagesTabs
               if (role === "client") {
                 if (item === "whatsapp") return "Inbox e conversa do cliente";
                 if (item === "planilhas") return "Importacao e historico";
+                if (item === "dashboard") return "Dashboard e indicadores liberados para o cliente";
                 return "Pagina visivel no portal";
               }
 
+              if (item === "dashboard") return "Dashboard geral e analise da Inteligencia Comercial";
               if (item === "usuarios") return "Governanca de acessos";
               if (item === "agente") return "Alertas e monitoramento";
               if (item === "campanhas") return "Disparos e campanhas";
+              if (item === "empresas") return "Gestao das empresas e vinculacoes do CRM";
               return "Modulo do CRM";
             }}
           />
@@ -1026,6 +1029,26 @@ function AccessGovernance({ draft, accessProfiles, clients, editable, onChange }
   const matrixDisabled = !editable || normalized.role === "pending";
   const applyPatch = (patch: Partial<AccessDraft>) => onChange(applySimpleAccessModel({ ...normalized, ...patch }));
   const selectedType = findAccessProfile(accessProfiles, normalized.accessPreset);
+  const approvalProfiles = useMemo(
+    () => accessProfiles.filter((profile) => profile.role !== "pending"),
+    [accessProfiles]
+  );
+  const internalApprovalProfile = approvalProfiles.find((profile) => profile.role === "internal") || null;
+  const clientApprovalProfile = approvalProfiles.find((profile) => profile.role === "client") || null;
+  const applyApprovalProfile = (profileKey: string) => {
+    const profile = findAccessProfile(accessProfiles, profileKey);
+    if (!profile) return;
+
+    onChange(
+      applyAccessProfileToDraft(
+        {
+          ...normalized,
+          accessPreset: profileKey,
+        },
+        profile
+      )
+    );
+  };
 
   return (
     <div className="space-y-5">
@@ -1113,8 +1136,64 @@ function AccessGovernance({ draft, accessProfiles, clients, editable, onChange }
       </div>
 
       {normalized.role === "pending" ? (
-        <div className="rounded-3xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
-          Usuario pendente nao recebe paginas, views nem permissoes operacionais ate a aprovacao.
+        <div className="rounded-3xl border border-primary/15 bg-primary/5 p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">Liberar cadastro</p>
+              <p className="text-sm text-muted-foreground">
+                Escolha como esse usuario vai operar no CRM para liberar modulos como Campanhas e a analise da Inteligencia Comercial.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {internalApprovalProfile ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!editable}
+                  onClick={() => applyApprovalProfile(internalApprovalProfile.key)}
+                >
+                  Liberar como interno
+                </Button>
+              ) : null}
+              {clientApprovalProfile ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!editable}
+                  onClick={() => applyApprovalProfile(clientApprovalProfile.key)}
+                >
+                  Liberar como cliente
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">Tipo para liberacao</p>
+              <Select
+                value={normalized.accessPreset}
+                disabled={!editable}
+                onValueChange={applyApprovalProfile}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecionar tipo para liberar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {approvalProfiles.map((profile) => (
+                    <SelectItem key={profile.key} value={profile.key}>
+                      {profile.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+              Usuario pendente nao recebe paginas, views nem permissoes operacionais ate a aprovacao. Ao trocar o tipo, a tela libera a configuracao do que ele pode acessar.
+            </div>
+          </div>
         </div>
       ) : null}
 

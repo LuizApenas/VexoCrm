@@ -113,7 +113,7 @@ export const ACCESS_PERMISSION_DEFINITIONS: Record<
 > = {
   "dashboard.view": {
     label: "Dashboard",
-    description: "Pode consultar indicadores e paineis do CRM.",
+    description: "Pode consultar indicadores, paineis do CRM e a aba Inteligencia Comercial.",
   },
   "leads.view": {
     label: "Leads",
@@ -137,7 +137,7 @@ export const ACCESS_PERMISSION_DEFINITIONS: Record<
   },
   "campaigns.manage": {
     label: "Campanhas",
-    description: "Pode configurar e disparar campanhas.",
+    description: "Pode criar, configurar, agendar e disparar campanhas.",
   },
   "agente.view": {
     label: "Agente",
