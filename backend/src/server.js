@@ -477,6 +477,28 @@ function normalizeAccessPreset(value, role = "internal") {
   return getDefaultPresetForRole(role);
 }
 
+function getAccessPresetLabel(preset) {
+  const normalized = normalizeString(preset)?.toLowerCase() || "";
+  if (!normalized) return "Tipo sem nome";
+
+  const labels = {
+    internal_admin: "Admin interno",
+    internal_manager: "Gestor interno",
+    internal_operator: "Operacao interna",
+    client_manager: "Gestor do cliente",
+    client_operator: "Operador do cliente",
+    client_viewer: "Leitura do cliente",
+    pending: "Aguardando aprovacao",
+  };
+
+  return (
+    labels[normalized] ||
+    normalized
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  );
+}
+
 function buildPresetDefaults(preset) {
   const defaults = ACCESS_PRESET_DEFAULTS[preset] || ACCESS_PRESET_DEFAULTS[getPresetFallbackKey(preset)];
 
@@ -640,7 +662,12 @@ function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
       ...normalizeStringArray(rawClaims.tenantIds),
     ].filter(Boolean))
   );
-  const clientId = scopeMode === "no_client_access" ? null : directClientId || clientIds[0] || null;
+  const preserveClientAssignments = role === "pending";
+  const clientId = preserveClientAssignments
+    ? directClientId || clientIds[0] || null
+    : scopeMode === "no_client_access"
+      ? null
+      : directClientId || clientIds[0] || null;
   const allowedViews = role === "client"
     ? normalizeAllowedViews(rawClaims.allowedViews, role, normalizedPreset)
     : [];
@@ -658,9 +685,9 @@ function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
     scopeMode,
     approvalLevel,
     clientId,
-    clientIds: scopeMode === "no_client_access" ? [] : clientIds,
+    clientIds: preserveClientAssignments || scopeMode !== "no_client_access" ? clientIds : [],
     tenantId: clientId,
-    tenantIds: scopeMode === "no_client_access" ? [] : clientIds,
+    tenantIds: preserveClientAssignments || scopeMode !== "no_client_access" ? clientIds : [],
     allowedViews,
     internalPages,
     permissions,
@@ -2356,10 +2383,10 @@ function buildManagedClaims({
       scopeMode: "no_client_access",
       approvalLevel: "none",
       permissions: [],
-      clientId: null,
-      clientIds: [],
-      tenantId: null,
-      tenantIds: [],
+      clientId: normalizedClientIds[0] || null,
+      clientIds: normalizedClientIds,
+      tenantId: normalizedClientIds[0] || null,
+      tenantIds: normalizedClientIds,
       allowedViews: [],
       internalPages: [],
       companyName: normalizedCompanyName,
@@ -2661,7 +2688,6 @@ async function syncUsersWithAccessProfile(profile) {
 
   return { updatedUsers, skippedUsers };
 }
-
 function resolveAuthorizedClientId(req, res, requestedClientId) {
   const authAccess = req.authAccess || {
     role: "internal",
@@ -3182,194 +3208,6 @@ app.get("/api/admin/access-profiles", requireFirebaseAuth, requireInternalPageAc
   }
 });
 
-app.post("/api/admin/access-profiles", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
-  if (!ensureSupabase(res)) return;
-
-  const key = normalizeString(req.body?.key)?.toLowerCase();
-  if (!key || !/^[a-z0-9_-]+$/.test(key)) {
-    sendError(res, 400, "INVALID_KEY", "Access profile key must use only lowercase letters, numbers, underscore or hyphen");
-    return;
-  }
-
-  if (!isValidManagedRoleInput(req.body?.role)) {
-    sendError(res, 400, "INVALID_ROLE", "Unsupported role");
-    return;
-  }
-
-  try {
-    const existingProfiles = await listAccessProfiles();
-
-    if (findAccessProfileByKey(existingProfiles, key)) {
-      sendError(res, 409, "ACCESS_PROFILE_EXISTS", "An access profile with this key already exists");
-      return;
-    }
-
-    const profile = normalizeAccessProfileRecord({
-      key,
-      label: req.body?.label,
-      description: req.body?.description,
-      role: req.body?.role,
-      scopeMode: req.body?.scopeMode,
-      approvalLevel: req.body?.approvalLevel,
-      permissions: req.body?.permissions,
-      internalPages: req.body?.internalPages,
-      allowedViews: req.body?.allowedViews,
-      isSystem: false,
-      isLocked: false,
-    });
-
-    const { error } = await supabase.from("access_profiles").insert({
-      ...serializeAccessProfileRecord(profile),
-      is_system: false,
-      is_locked: false,
-      created_at: new Date().toISOString(),
-    });
-
-    if (error) {
-      throw error;
-    }
-
-    res.status(201).json({ item: profile });
-  } catch (error) {
-    console.error("access profile create error:", error);
-    sendError(
-      res,
-      500,
-      "ACCESS_PROFILE_CREATE_FAILED",
-      error instanceof Error ? error.message : "Failed to create access profile"
-    );
-  }
-});
-
-app.patch("/api/admin/access-profiles/:key", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
-  if (!ensureSupabase(res)) return;
-
-  const key = normalizeString(req.params?.key)?.toLowerCase();
-  if (!key) {
-    sendError(res, 400, "INVALID_KEY", "Missing access profile key");
-    return;
-  }
-
-  try {
-    const accessProfiles = await listAccessProfiles();
-    const currentProfile = findAccessProfileByKey(accessProfiles, key);
-
-    if (!currentProfile) {
-      sendError(res, 404, "ACCESS_PROFILE_NOT_FOUND", "Access profile not found");
-      return;
-    }
-
-    if (currentProfile.isLocked) {
-      sendError(res, 400, "ACCESS_PROFILE_LOCKED", "This access profile cannot be edited");
-      return;
-    }
-
-    const nextProfile = normalizeAccessProfileRecord({
-      ...currentProfile,
-      label: req.body?.label ?? currentProfile.label,
-      description: req.body?.description ?? currentProfile.description,
-      role: req.body?.role ?? currentProfile.role,
-      scopeMode: req.body?.scopeMode ?? currentProfile.scopeMode,
-      approvalLevel: req.body?.approvalLevel ?? currentProfile.approvalLevel,
-      permissions: req.body?.permissions ?? currentProfile.permissions,
-      internalPages: req.body?.internalPages ?? currentProfile.internalPages,
-      allowedViews: req.body?.allowedViews ?? currentProfile.allowedViews,
-      isSystem: currentProfile.isSystem,
-      isLocked: currentProfile.isLocked,
-      key,
-    });
-
-    const { error } = await supabase
-      .from("access_profiles")
-      .update(serializeAccessProfileRecord(nextProfile))
-      .eq("key", key);
-
-    if (error) {
-      throw error;
-    }
-
-    const syncResult = await syncUsersWithAccessProfile(nextProfile);
-
-    res.json({
-      item: nextProfile,
-      sync: syncResult,
-    });
-  } catch (error) {
-    console.error("access profile update error:", error);
-    sendError(
-      res,
-      500,
-      "ACCESS_PROFILE_UPDATE_FAILED",
-      error instanceof Error ? error.message : "Failed to update access profile"
-    );
-  }
-});
-
-app.delete("/api/admin/access-profiles/:key", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
-  if (!ensureSupabase(res)) return;
-
-  const key = normalizeString(req.params?.key)?.toLowerCase();
-  if (!key) {
-    sendError(res, 400, "INVALID_KEY", "Missing access profile key");
-    return;
-  }
-
-  try {
-    const accessProfiles = await listAccessProfiles();
-    const currentProfile = findAccessProfileByKey(accessProfiles, key);
-
-    if (!currentProfile) {
-      sendError(res, 404, "ACCESS_PROFILE_NOT_FOUND", "Access profile not found");
-      return;
-    }
-
-    if (currentProfile.isLocked) {
-      sendError(res, 400, "ACCESS_PROFILE_DELETE_BLOCKED", "This access profile cannot be deleted");
-      return;
-    }
-
-    const users = await listAllFirebaseUsers();
-    const assignedUsers = users.filter((user) => {
-      const currentAccess = extractManagedAccessClaims(user.customClaims || {}, {
-        uid: user.uid,
-        email: user.email,
-      });
-
-      return currentAccess.accessPreset === key;
-    });
-
-    if (assignedUsers.length > 0) {
-      sendError(
-        res,
-        409,
-        "ACCESS_PROFILE_IN_USE",
-        "This access profile is still assigned to users",
-        `${assignedUsers.length} users linked`
-      );
-      return;
-    }
-
-    const { error } = await supabase.from("access_profiles").delete().eq("key", key);
-
-    if (error) {
-      throw error;
-    }
-
-    res.json({
-      success: true,
-      deletedKey: key,
-    });
-  } catch (error) {
-    console.error("access profile delete error:", error);
-    sendError(
-      res,
-      500,
-      "ACCESS_PROFILE_DELETE_FAILED",
-      error instanceof Error ? error.message : "Failed to delete access profile"
-    );
-  }
-});
-
 app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
   const uid = normalizeString(req.params.uid);
   const rawRole = normalizeString(req.body?.role);
@@ -3596,7 +3434,6 @@ app.delete("/api/admin/users/:uid", requireFirebaseAuth, requireAdminAccess, asy
       sendError(res, 404, "USER_NOT_FOUND", "User not found");
       return;
     }
-
     sendError(
       res,
       500,
