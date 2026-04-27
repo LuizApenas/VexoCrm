@@ -349,6 +349,28 @@ function normalizeAccessPreset(value, role = "internal") {
   return getDefaultPresetForRole(role);
 }
 
+function getAccessPresetLabel(preset) {
+  const normalized = normalizeString(preset)?.toLowerCase() || "";
+  if (!normalized) return "Tipo sem nome";
+
+  const labels = {
+    internal_admin: "Admin interno",
+    internal_manager: "Gestor interno",
+    internal_operator: "Operacao interna",
+    client_manager: "Gestor do cliente",
+    client_operator: "Operador do cliente",
+    client_viewer: "Leitura do cliente",
+    pending: "Aguardando aprovacao",
+  };
+
+  return (
+    labels[normalized] ||
+    normalized
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  );
+}
+
 function buildPresetDefaults(preset) {
   const defaults = ACCESS_PRESET_DEFAULTS[preset] || ACCESS_PRESET_DEFAULTS.internal_operator;
 
@@ -512,7 +534,12 @@ function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
       ...normalizeStringArray(rawClaims.tenantIds),
     ].filter(Boolean))
   );
-  const clientId = scopeMode === "no_client_access" ? null : directClientId || clientIds[0] || null;
+  const preserveClientAssignments = role === "pending";
+  const clientId = preserveClientAssignments
+    ? directClientId || clientIds[0] || null
+    : scopeMode === "no_client_access"
+      ? null
+      : directClientId || clientIds[0] || null;
   const allowedViews = role === "client"
     ? normalizeAllowedViews(rawClaims.allowedViews, role, normalizedPreset)
     : [];
@@ -530,9 +557,9 @@ function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
     scopeMode,
     approvalLevel,
     clientId,
-    clientIds: scopeMode === "no_client_access" ? [] : clientIds,
+    clientIds: preserveClientAssignments || scopeMode !== "no_client_access" ? clientIds : [],
     tenantId: clientId,
-    tenantIds: scopeMode === "no_client_access" ? [] : clientIds,
+    tenantIds: preserveClientAssignments || scopeMode !== "no_client_access" ? clientIds : [],
     allowedViews,
     internalPages,
     permissions,
@@ -1201,10 +1228,10 @@ function buildManagedClaims({
       scopeMode: "no_client_access",
       approvalLevel: "none",
       permissions: [],
-      clientId: null,
-      clientIds: [],
-      tenantId: null,
-      tenantIds: [],
+      clientId: normalizedClientIds[0] || null,
+      clientIds: normalizedClientIds,
+      tenantId: normalizedClientIds[0] || null,
+      tenantIds: normalizedClientIds,
       allowedViews: [],
       internalPages: [],
       companyName: normalizedCompanyName,
@@ -1291,6 +1318,26 @@ function mapAdminUserRecord(user) {
     createdAt: user.metadata.creationTime || null,
     lastSignInAt: user.metadata.lastSignInTime || null,
     access,
+  };
+}
+
+function buildSystemAccessProfileRecord(key) {
+  const defaults = buildPresetDefaults(key);
+
+  return {
+    key,
+    label: getAccessPresetLabel(key),
+    description: null,
+    role: defaults.role,
+    scopeMode: defaults.scopeMode,
+    approvalLevel: defaults.approvalLevel,
+    permissions: [...defaults.permissions],
+    internalPages: [...defaults.internalPages],
+    allowedViews: [...defaults.allowedViews],
+    isSystem: true,
+    isLocked: key === "internal_admin",
+    createdAt: null,
+    updatedAt: null,
   };
 }
 
@@ -1730,6 +1777,17 @@ app.get("/api/admin/users", requireFirebaseAuth, requireInternalPageAccess("usua
   }
 });
 
+app.get("/api/admin/access-profiles", requireFirebaseAuth, requireInternalPageAccess("usuarios"), async (_req, res) => {
+  try {
+    res.json({
+      items: ACCESS_PRESET_KEYS.map(buildSystemAccessProfileRecord),
+    });
+  } catch (error) {
+    console.error("access profiles query error:", error);
+    sendError(res, 500, "ACCESS_PROFILES_QUERY_FAILED", "Failed to query access profiles");
+  }
+});
+
 app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
   const uid = normalizeString(req.params.uid);
   const rawRole = normalizeString(req.body?.role);
@@ -1910,6 +1968,37 @@ app.post("/api/admin/users", requireFirebaseAuth, requireAdminAccess, async (req
       500,
       "ADMIN_USER_CREATE_FAILED",
       error instanceof Error ? error.message : "Failed to create user"
+    );
+  }
+});
+
+app.delete("/api/admin/users/:uid", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
+  const uid = normalizeString(req.params.uid);
+
+  if (!uid) {
+    sendError(res, 400, "INVALID_UID", "Missing uid");
+    return;
+  }
+
+  try {
+    const auth = getAuth();
+    const user = await auth.getUser(uid);
+
+    if (isFixedAdminIdentity({ uid: user.uid, email: user.email })) {
+      sendError(res, 400, "PROTECTED_USER", "Fixed admin accounts cannot be deleted");
+      return;
+    }
+
+    await auth.deleteUser(uid);
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("admin user delete error:", error);
+    sendError(
+      res,
+      500,
+      "ADMIN_USER_DELETE_FAILED",
+      error instanceof Error ? error.message : "Failed to delete user"
     );
   }
 });
