@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  FileSpreadsheet,
   LockKeyhole,
+  LineChart,
   Plus,
   Search,
   ShieldCheck,
@@ -13,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -160,6 +163,28 @@ const CLIENT_PAGE_TABS = [
 const INTERNAL_PAGE_TABS = [
   { value: "operacao", label: "Operacao", items: ["dashboard", "leads", "planilhas", "whatsapp"] as InternalPage[] },
   { value: "gestao", label: "Gestao", items: ["agente", "usuarios", "empresas", "campanhas"] as InternalPage[] },
+];
+
+type InternalShortcutKey = "campaigns" | "commercial";
+
+const INTERNAL_SHORTCUTS: Array<{
+  key: InternalShortcutKey;
+  title: string;
+  description: string;
+  icon: typeof FileSpreadsheet;
+}> = [
+  {
+    key: "campaigns",
+    title: "Criar campanhas",
+    description: "Libera a operacao de campanhas, disparos e agendamentos no modulo principal do CRM.",
+    icon: FileSpreadsheet,
+  },
+  {
+    key: "commercial",
+    title: "Dashboard + Inteligencia Comercial",
+    description: "Libera o dashboard operacional e a analise da Inteligencia Comercial no menu lateral.",
+    icon: LineChart,
+  },
 ];
 
 function findAccessProfile(profiles: AccessProfileRecord[], key: string | null | undefined) {
@@ -364,6 +389,57 @@ function derivePermissionsFromInternalPages(pages: InternalPage[]): AccessPermis
   if (pages.includes("campanhas")) permissions.push("campaigns.manage");
 
   return filterArray(permissions, ACCESS_PERMISSION_ORDER);
+}
+
+function hasInternalShortcutAccess(draft: AccessDraft, shortcut: InternalShortcutKey) {
+  if (draft.role !== "internal") {
+    return false;
+  }
+
+  if (shortcut === "campaigns") {
+    return draft.permissions.includes("campaigns.manage");
+  }
+
+  return draft.internalPages.includes("dashboard") && draft.permissions.includes("dashboard.view");
+}
+
+function buildInternalShortcutPatch(
+  draft: AccessDraft,
+  shortcut: InternalShortcutKey,
+  enabled: boolean
+): Partial<AccessDraft> {
+  const normalized = applySimpleAccessModel(draft);
+  if (normalized.role !== "internal") {
+    return {};
+  }
+
+  let internalPages = [...normalized.internalPages];
+  let permissions = [...normalized.permissions];
+
+  if (shortcut === "campaigns") {
+    if (enabled) {
+      internalPages = filterArray([...internalPages, "planilhas", "campanhas"], INTERNAL_PAGE_ORDER);
+      permissions = filterArray([...permissions, "campaigns.manage"], ACCESS_PERMISSION_ORDER);
+    } else {
+      internalPages = internalPages.filter((page) => page !== "campanhas");
+      permissions = permissions.filter((permission) => permission !== "campaigns.manage");
+    }
+  }
+
+  if (shortcut === "commercial") {
+    if (enabled) {
+      internalPages = filterArray([...internalPages, "dashboard"], INTERNAL_PAGE_ORDER);
+      permissions = filterArray([...permissions, "dashboard.view"], ACCESS_PERMISSION_ORDER);
+    } else {
+      internalPages = internalPages.filter((page) => page !== "dashboard");
+      permissions = permissions.filter((permission) => permission !== "dashboard.view");
+    }
+  }
+
+  return {
+    internalPages,
+    permissions,
+  };
 }
 
 function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
@@ -842,7 +918,8 @@ function AccessPagesTabs({ role, selected, disabled, onChange }: AccessPagesTabs
               if (item === "dashboard") return "Dashboard geral e analise da Inteligencia Comercial";
               if (item === "usuarios") return "Governanca de acessos";
               if (item === "agente") return "Alertas e monitoramento";
-              if (item === "campanhas") return "Disparos e campanhas";
+              if (item === "campanhas") return "Permite criar, agendar e disparar campanhas";
+              if (item === "planilhas") return "Importacao de base, historico e operacao da area Campanhas";
               if (item === "empresas") return "Gestao das empresas e vinculacoes do CRM";
               return "Modulo do CRM";
             }}
@@ -1197,6 +1274,44 @@ function AccessGovernance({ draft, accessProfiles, clients, editable, onChange }
         </div>
       ) : null}
 
+      {normalized.role === "internal" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {INTERNAL_SHORTCUTS.map((shortcut) => {
+            const enabled = hasInternalShortcutAccess(normalized, shortcut.key);
+            const ShortcutIcon = shortcut.icon;
+
+            return (
+              <div
+                key={shortcut.key}
+                className={cn(
+                  "rounded-3xl border p-4 transition-colors",
+                  enabled ? "border-primary/25 bg-primary/5" : "border-border/80 bg-background/60"
+                )}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+                      <ShortcutIcon className="h-4 w-4" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground">{shortcut.title}</p>
+                      <p className="text-sm leading-6 text-muted-foreground">{shortcut.description}</p>
+                    </div>
+                  </div>
+
+                  <Switch
+                    checked={enabled}
+                    disabled={!editable}
+                    onCheckedChange={(checked) => applyPatch(buildInternalShortcutPatch(normalized, shortcut.key, checked))}
+                    aria-label={shortcut.title}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
       {normalized.role !== "pending" ? (
         <AccessPagesTabs
           role={normalized.role}
@@ -1515,6 +1630,12 @@ export default function UserAccessManagement() {
   const selectedProtectedAccount = selectedUser ? isProtectedAdmin(selectedUser) : false;
   const selectedEditable = Boolean(selectedUser && canEditUsers && !selectedProtectedAccount);
   const selectedHasChanges = selectedUser && selectedDraft ? hasDraftChanges(selectedUser, selectedDraft) : false;
+  const selectedActivationReady = Boolean(
+    selectedUser &&
+      selectedDraft &&
+      selectedUser.access.role === "pending" &&
+      selectedDraft.role !== "pending"
+  );
   const selectedHiddenByFilter = Boolean(
     selectedUser && selectedDraft && !filteredUsers.some((user) => user.uid === selectedUser.uid)
   );
@@ -1600,8 +1721,11 @@ export default function UserAccessManagement() {
 
       showActionFeedback({
         tone: "success",
-        title: "Acessos atualizados",
-        message: `As alteracoes de ${user.email || user.uid} foram salvas com sucesso.`,
+        title: user.access.role === "pending" && draft.role !== "pending" ? "Usuario ativado" : "Acessos atualizados",
+        message:
+          user.access.role === "pending" && draft.role !== "pending"
+            ? `${user.email || user.uid} foi liberado(a) com sucesso e ja pode acessar os modulos selecionados.`
+            : `As alteracoes de ${user.email || user.uid} foram salvas com sucesso.`,
       });
       setDrafts((current) => ({
         ...current,
@@ -2075,7 +2199,13 @@ export default function UserAccessManagement() {
                                   disabled={!selectedEditable || savingUid === selectedUser.uid || deletingUid === selectedUser.uid}
                                 >
                                   <ShieldCheck className="h-4 w-4" />
-                                  {savingUid === selectedUser.uid ? "Salvando..." : "Salvar acessos"}
+                                  {savingUid === selectedUser.uid
+                                    ? selectedActivationReady
+                                      ? "Ativando..."
+                                      : "Salvando..."
+                                    : selectedActivationReady
+                                      ? "Ativar usuario"
+                                      : "Salvar acessos"}
                                 </Button>
                                 <Button
                                   variant="destructive"
@@ -2093,6 +2223,12 @@ export default function UserAccessManagement() {
                             {selectedHiddenByFilter ? (
                               <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
                                 O usuario selecionado nao aparece na lista atual por causa da busca ou do filtro ativo, mas permanece aberto para evitar troca silenciosa de contexto.
+                              </div>
+                            ) : null}
+
+                            {selectedActivationReady ? (
+                              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
+                                O cadastro ja esta pronto para liberacao. Revise os acessos como Campanhas e Dashboard + Inteligencia Comercial, depois clique em <strong>Ativar usuario</strong>.
                               </div>
                             ) : null}
 
