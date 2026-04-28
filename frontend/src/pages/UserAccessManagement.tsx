@@ -1097,11 +1097,50 @@ interface AccessGovernanceProps {
   draft: AccessDraft;
   accessProfiles: AccessProfileRecord[];
   clients: LeadClient[];
+  selectedClientId: string;
   editable: boolean;
   onChange: (patch: Partial<AccessDraft>) => void;
 }
 
-function AccessGovernance({ draft, accessProfiles, clients, editable, onChange }: AccessGovernanceProps) {
+function resolveDraftClientBinding(draft: AccessDraft, clients: LeadClient[], selectedClientId: string) {
+  if (draft.clientIds.length > 0) {
+    const currentId = draft.clientIds[0];
+    const currentClient = clients.find((client) => client.id === currentId);
+
+    return {
+      clientIds: [currentId],
+      companyName: draft.companyName || currentClient?.name || "",
+    };
+  }
+
+  if (selectedClientId) {
+    const selectedClient = clients.find((client) => client.id === selectedClientId);
+    if (selectedClient) {
+      return {
+        clientIds: [selectedClient.id],
+        companyName: draft.companyName || selectedClient.name,
+      };
+    }
+  }
+
+  const normalizedCompany = draft.companyName.trim().toLowerCase();
+  if (normalizedCompany) {
+    const matchedClient = clients.find((client) => client.name.trim().toLowerCase() === normalizedCompany);
+    if (matchedClient) {
+      return {
+        clientIds: [matchedClient.id],
+        companyName: draft.companyName || matchedClient.name,
+      };
+    }
+  }
+
+  return {
+    clientIds: [],
+    companyName: draft.companyName,
+  };
+}
+
+function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, editable, onChange }: AccessGovernanceProps) {
   const normalized = applySimpleAccessModel(draft);
   const matrixDisabled = !editable || normalized.role === "pending";
   const applyPatch = (patch: Partial<AccessDraft>) => onChange(applySimpleAccessModel({ ...normalized, ...patch }));
@@ -1115,17 +1154,21 @@ function AccessGovernance({ draft, accessProfiles, clients, editable, onChange }
   const applyApprovalProfile = (profileKey: string) => {
     const profile = findAccessProfile(accessProfiles, profileKey);
     if (!profile) return;
+    const binding = resolveDraftClientBinding(normalized, clients, selectedClientId);
 
     onChange(
       applyAccessProfileToDraft(
         {
           ...normalized,
           accessPreset: profileKey,
+          clientIds: binding.clientIds,
+          companyName: binding.companyName,
         },
         profile
       )
     );
   };
+  const resolvedBinding = resolveDraftClientBinding(normalized, clients, selectedClientId);
 
   return (
     <div className="space-y-5">
@@ -1165,7 +1208,7 @@ function AccessGovernance({ draft, accessProfiles, clients, editable, onChange }
           <div className="space-y-2">
             <p className="text-sm font-medium text-foreground">Empresa / tenant</p>
             <Select
-              value={normalized.clientIds[0] || "__none"}
+              value={normalized.clientIds[0] || resolvedBinding.clientIds[0] || "__none"}
               disabled={!editable}
               onValueChange={(value) => {
                 const selectedClient = clients.find((client) => client.id === value);
@@ -1453,7 +1496,6 @@ export default function UserAccessManagement() {
   const { data: accessProfiles = [], refetch: refetchAccessProfiles } = useAccessProfiles();
   const { data: clients = [] } = useLeadClients();
   const [search, setSearch] = useState("");
-  const [activeSectionTab, setActiveSectionTab] = useState("usuarios");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, UserDraft>>({});
@@ -1571,6 +1613,10 @@ export default function UserAccessManagement() {
       const draft = drafts[user.uid] || buildUserDraft(user);
 
       if (draft.clientIds.includes(selectedClientId)) {
+        return true;
+      }
+
+       if (selectedClientName && draft.companyName.trim().toLowerCase() === selectedClientName) {
         return true;
       }
 
@@ -1796,7 +1842,6 @@ export default function UserAccessManagement() {
         details: body.passwordResetLink ? `Link de redefinicao: ${body.passwordResetLink}` : null,
       });
       setCreateDraft(buildCreateDraft());
-      setActiveSectionTab("usuarios");
       await refetch();
     } catch (err) {
       showActionFeedback({
@@ -2064,14 +2109,7 @@ export default function UserAccessManagement() {
         </DialogContent>
       </Dialog>
 
-      <Tabs value={activeSectionTab} onValueChange={setActiveSectionTab} className="space-y-6">
-        <TabsList className={cn("grid w-full", canEditUsers ? "grid-cols-3" : "grid-cols-1")}>
-          <TabsTrigger value="usuarios">Usuarios cadastrados</TabsTrigger>
-          {canEditUsers ? <TabsTrigger value="novo">Novo usuario</TabsTrigger> : null}
-          {canEditUsers ? <TabsTrigger value="tipos">Tipos de usuario</TabsTrigger> : null}
-        </TabsList>
-
-        <TabsContent value="usuarios" className="mt-0 space-y-6">
+      <div className="space-y-6">
           <Card className="border-border/80">
             <CardHeader className="space-y-3">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -2242,6 +2280,7 @@ export default function UserAccessManagement() {
                                   draft={selectedDraft}
                                   accessProfiles={resolvedAccessProfiles}
                                   clients={clients}
+                                  selectedClientId={selectedClientId}
                                   editable={selectedEditable}
                                   onChange={(patch) => updateDraft(selectedUser.uid, patch)}
                                 />
@@ -2270,11 +2309,9 @@ export default function UserAccessManagement() {
               ) : null}
             </CardContent>
           </Card>
-        </TabsContent>
 
         {canEditUsers ? (
           <>
-            <TabsContent value="novo" className="mt-0">
             <Card className="border-border/80">
               <CardHeader className="space-y-1">
                 <CardTitle className="flex items-center gap-2 text-xl">
@@ -2399,15 +2436,13 @@ export default function UserAccessManagement() {
                 </div>
               </CardContent>
             </Card>
-            </TabsContent>
 
-            <TabsContent value="tipos" className="mt-0">
-              <Card className="border-border/80">
+            <Card className="border-border/80">
                 <CardHeader className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="space-y-1">
                       <CardTitle className="text-xl">Tipos de usuario</CardTitle>
-                      <CardDescription>Crie e ajuste os tipos que podem ser escolhidos ao cadastrar ou editar usuarios.</CardDescription>
+                      <CardDescription>Ajuste os tipos padrao sem sair da tela de usuarios. Esta area e opcional e fica abaixo do fluxo principal para manter a operacao mais enxuta.</CardDescription>
                     </div>
 
                   <Button variant="outline" onClick={resetNewProfileDraft}>
@@ -2605,10 +2640,9 @@ export default function UserAccessManagement() {
                   </Card>
                 </CardContent>
               </Card>
-            </TabsContent>
           </>
         ) : null}
-      </Tabs>
+      </div>
     </PageShell>
   );
 }
