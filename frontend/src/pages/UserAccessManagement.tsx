@@ -35,6 +35,7 @@ import { type AdminUserRecord, useAdminUsers } from "@/hooks/useAdminUsers";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
+  ACCESS_PRESET_ORDER,
   ACCESS_PERMISSION_DEFINITIONS,
   ACCESS_PERMISSION_ORDER,
   CLIENT_VIEW_ORDER,
@@ -43,6 +44,7 @@ import {
   getDefaultPresetForRole,
   INTERNAL_PAGE_ORDER,
   isFixedAdminAccount,
+  USER_MANAGEMENT_PRESETS,
   type AccessPermission,
   type AccessPreset,
   type AccessRole,
@@ -270,6 +272,11 @@ const FALLBACK_ACCESS_PROFILE_DESCRIPTIONS: Record<string, string> = {
   internal_admin: "Acesso total ao CRM e administracao do ambiente.",
   internal_manager: "Gestao operacional com acesso ampliado aos modulos internos.",
   internal_operator: "Operacao padrao do CRM para times internos.",
+  consultor: "Atende leads, acompanha conversas e opera a rotina comercial.",
+  gerente: "Gerencia operacao, acessos de usuarios e performance comercial.",
+  sdr: "Qualifica leads, conversa com contatos e alimenta a operacao.",
+  gestor: "Libera usuarios, organiza empresas e conduz a operacao do CRM.",
+  parceiro: "Acompanha a operacao com leitura e conversa limitada no ambiente do cliente.",
   client_manager: "Tipo de cliente com acesso expandido ao portal.",
   client_operator: "Tipo de cliente operacional para uso diario.",
   client_viewer: "Tipo de cliente com acesso de leitura.",
@@ -281,6 +288,11 @@ function buildFallbackAccessProfiles(): AccessProfileRecord[] {
     "internal_admin",
     "internal_manager",
     "internal_operator",
+    "consultor",
+    "gerente",
+    "sdr",
+    "gestor",
+    "parceiro",
     "client_manager",
     "client_operator",
     "client_viewer",
@@ -1140,6 +1152,28 @@ function resolveDraftClientBinding(draft: AccessDraft, clients: LeadClient[], se
   };
 }
 
+function prepareDraftForPersistence<T extends AccessDraft>(
+  draft: T,
+  clients: LeadClient[],
+  selectedClientId: string
+): T {
+  const normalized = applySimpleAccessModel(draft);
+  if (normalized.role === "pending" || normalized.clientIds.length > 0) {
+    return normalized;
+  }
+
+  const binding = resolveDraftClientBinding(normalized, clients, selectedClientId);
+  if (binding.clientIds.length === 0) {
+    return normalized;
+  }
+
+  return applySimpleAccessModel({
+    ...normalized,
+    clientIds: binding.clientIds,
+    companyName: binding.companyName,
+  }) as T;
+}
+
 function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, editable, onChange }: AccessGovernanceProps) {
   const normalized = applySimpleAccessModel(draft);
   const matrixDisabled = !editable || normalized.role === "pending";
@@ -1490,7 +1524,7 @@ function UserListItem({
 }
 
 export default function UserAccessManagement() {
-  const { getIdToken, isAdminUser } = useAuth();
+  const { accessPreset, getIdToken, isAdminUser } = useAuth();
   const crmClient = useOptionalCrmClient();
   const { data: users = [], isLoading, error, refetch } = useAdminUsers();
   const { data: accessProfiles = [], refetch: refetchAccessProfiles } = useAccessProfiles();
@@ -1510,6 +1544,7 @@ export default function UserAccessManagement() {
   const [actionFeedback, setActionFeedback] = useState<ActionFeedbackState | null>(null);
   const resolvedAccessProfiles = useMemo(() => {
     const sourceProfiles = accessProfiles.length > 0 ? accessProfiles : buildFallbackAccessProfiles();
+    const presetIndex = new Map(ACCESS_PRESET_ORDER.map((key, index) => [key, index]));
 
     return sourceProfiles
       .map((profile) => ({
@@ -1520,6 +1555,10 @@ export default function UserAccessManagement() {
       .sort((left, right) => {
       if (left.isSystem !== right.isSystem) {
         return left.isSystem ? -1 : 1;
+      }
+
+      if (left.isSystem && right.isSystem) {
+        return (presetIndex.get(left.key) ?? 999) - (presetIndex.get(right.key) ?? 999);
       }
 
       return left.label.localeCompare(right.label, "pt-BR");
@@ -1534,7 +1573,7 @@ export default function UserAccessManagement() {
     [resolvedAccessProfiles]
   );
 
-  const canEditUsers = isAdminUser;
+  const canEditUsers = isAdminUser || USER_MANAGEMENT_PRESETS.includes(accessPreset);
   const selectedClientId = crmClient?.selectedClientId || "";
 
   useEffect(() => {
@@ -1729,7 +1768,8 @@ export default function UserAccessManagement() {
     const draft = drafts[user.uid];
     if (!draft) return;
 
-    const validationError = validateDraft(draft);
+    const preparedDraft = prepareDraftForPersistence(draft, clients, selectedClientId);
+    const validationError = validateDraft(preparedDraft);
     if (validationError) {
       showActionFeedback({
         tone: "error",
@@ -1748,7 +1788,7 @@ export default function UserAccessManagement() {
         throw new Error("Usuario nao autenticado.");
       }
 
-      const payload = buildPayload(draft);
+      const payload = buildPayload(preparedDraft);
 
       const res = await fetch(`${API_BASE_URL}/api/admin/users/${encodeURIComponent(user.uid)}/access`, {
         method: "PATCH",
@@ -1792,7 +1832,11 @@ export default function UserAccessManagement() {
   const createUser = async () => {
     if (!canEditUsers) return;
 
-    const preparedDraft = normalizeCreateDraftForSimpleForm(createDraft);
+    const preparedDraft = prepareDraftForPersistence(
+      normalizeCreateDraftForSimpleForm(createDraft),
+      clients,
+      selectedClientId
+    );
     const validationError = validateDraft(preparedDraft);
     if (validationError) {
       showActionFeedback({
@@ -2074,7 +2118,7 @@ export default function UserAccessManagement() {
     >
       {!canEditUsers && (
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
-          Seu acesso esta em modo leitura. Apenas administradores podem criar ou alterar permissoes.
+          Seu acesso esta em modo leitura. Apenas gestor, gerente ou admin interno podem criar usuarios, liberar cadastros e alterar permissoes.
         </div>
       )}
 

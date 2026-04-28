@@ -188,15 +188,31 @@ const ACCESS_PRESET_KEYS = [
   "internal_admin",
   "internal_manager",
   "internal_operator",
+  "consultor",
+  "gerente",
+  "sdr",
+  "gestor",
+  "parceiro",
   "client_manager",
   "client_operator",
   "client_viewer",
   "pending",
 ];
+const USER_MANAGEMENT_PRESET_KEYS = [
+  "internal_admin",
+  "internal_manager",
+  "gestor",
+  "gerente",
+];
 const ACCESS_PRESET_LABELS = {
   internal_admin: "Admin interno",
   internal_manager: "Gestor interno",
   internal_operator: "Operacao interna",
+  consultor: "Consultor",
+  gerente: "Gerente",
+  sdr: "SDR",
+  gestor: "Gestor",
+  parceiro: "Parceiro",
   client_manager: "Gestor do cliente",
   client_operator: "Operador do cliente",
   client_viewer: "Leitura do cliente",
@@ -240,8 +256,8 @@ const ACCESS_PRESET_DEFAULTS = {
       "whatsapp.reply",
       "campaigns.manage",
       "agente.view",
-      "tenants.manage",
       "users.view",
+      "users.manage",
     ],
     internalPages: [...INTERNAL_PAGE_KEYS],
     allowedViews: [],
@@ -253,6 +269,69 @@ const ACCESS_PRESET_DEFAULTS = {
     permissions: ["dashboard.view", "leads.view", "imports.manage", "whatsapp.view", "whatsapp.reply"],
     internalPages: ["dashboard", "leads", "planilhas", "whatsapp"],
     allowedViews: [],
+  },
+  consultor: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: ["dashboard.view", "leads.view", "whatsapp.view", "whatsapp.reply"],
+    internalPages: ["dashboard", "leads", "whatsapp"],
+    allowedViews: [],
+  },
+  gerente: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "leads.export",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+      "campaigns.manage",
+      "agente.view",
+      "users.view",
+      "users.manage",
+    ],
+    internalPages: ["dashboard", "leads", "planilhas", "whatsapp", "agente", "usuarios", "campanhas"],
+    allowedViews: [],
+  },
+  sdr: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: ["dashboard.view", "leads.view", "imports.manage", "whatsapp.view", "whatsapp.reply"],
+    internalPages: ["dashboard", "leads", "planilhas", "whatsapp"],
+    allowedViews: [],
+  },
+  gestor: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "leads.export",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+      "campaigns.manage",
+      "agente.view",
+      "tenants.manage",
+      "users.view",
+      "users.manage",
+    ],
+    internalPages: [...INTERNAL_PAGE_KEYS],
+    allowedViews: [],
+  },
+  parceiro: {
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "supervisor",
+    permissions: ["dashboard.view", "leads.view", "whatsapp.view"],
+    internalPages: [],
+    allowedViews: ["dashboard", "leads", "whatsapp"],
   },
   client_manager: {
     role: "client",
@@ -332,6 +411,71 @@ const SYSTEM_ACCESS_PROFILES = [
     permissions: [...ACCESS_PRESET_DEFAULTS.internal_operator.permissions],
     internalPages: [...ACCESS_PRESET_DEFAULTS.internal_operator.internalPages],
     allowedViews: [],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "consultor",
+    label: ACCESS_PRESET_LABELS.consultor,
+    description: "Atende leads, acompanha conversas e opera a rotina comercial.",
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: [...ACCESS_PRESET_DEFAULTS.consultor.permissions],
+    internalPages: [...ACCESS_PRESET_DEFAULTS.consultor.internalPages],
+    allowedViews: [],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "gerente",
+    label: ACCESS_PRESET_LABELS.gerente,
+    description: "Gerencia operacao, acessos de usuarios e performance comercial.",
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [...ACCESS_PRESET_DEFAULTS.gerente.permissions],
+    internalPages: [...ACCESS_PRESET_DEFAULTS.gerente.internalPages],
+    allowedViews: [],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "sdr",
+    label: ACCESS_PRESET_LABELS.sdr,
+    description: "Qualifica leads, conversa com contatos e alimenta a operacao.",
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: [...ACCESS_PRESET_DEFAULTS.sdr.permissions],
+    internalPages: [...ACCESS_PRESET_DEFAULTS.sdr.internalPages],
+    allowedViews: [],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "gestor",
+    label: ACCESS_PRESET_LABELS.gestor,
+    description: "Libera usuarios, organiza empresas e conduz a operacao do CRM.",
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [...ACCESS_PRESET_DEFAULTS.gestor.permissions],
+    internalPages: [...ACCESS_PRESET_DEFAULTS.gestor.internalPages],
+    allowedViews: [],
+    isSystem: true,
+    isLocked: false,
+  },
+  {
+    key: "parceiro",
+    label: ACCESS_PRESET_LABELS.parceiro,
+    description: "Acompanha a operacao com leitura e conversa limitada no ambiente do cliente.",
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "supervisor",
+    permissions: [...ACCESS_PRESET_DEFAULTS.parceiro.permissions],
+    internalPages: [],
+    allowedViews: [...ACCESS_PRESET_DEFAULTS.parceiro.allowedViews],
     isSystem: true,
     isLocked: false,
   },
@@ -485,6 +629,11 @@ function getAccessPresetLabel(preset) {
     internal_admin: "Admin interno",
     internal_manager: "Gestor interno",
     internal_operator: "Operacao interna",
+    consultor: "Consultor",
+    gerente: "Gerente",
+    sdr: "SDR",
+    gestor: "Gestor",
+    parceiro: "Parceiro",
     client_manager: "Gestor do cliente",
     client_operator: "Operador do cliente",
     client_viewer: "Leitura do cliente",
@@ -777,6 +926,23 @@ function requireAdminAccess(req, res, next) {
   }
 
   next();
+}
+
+function requireUserManagementAccess(req, res, next) {
+  if (req.authAccess?.role !== "internal") {
+    sendError(res, 403, "FORBIDDEN", "Internal access required");
+    return;
+  }
+
+  if (
+    req.authAccess?.isAdmin ||
+    USER_MANAGEMENT_PRESET_KEYS.includes(req.authAccess?.accessPreset)
+  ) {
+    next();
+    return;
+  }
+
+  sendError(res, 403, "FORBIDDEN", "User management permission required");
 }
 
 function requireInternalPageAccess(page) {
@@ -2592,7 +2758,14 @@ async function listAccessProfiles() {
     throw error;
   }
 
-  return (data || []).map((row) => normalizeAccessProfileRecord(row)).sort((left, right) => {
+  const mergedProfiles = new Map(systemProfiles.map((profile) => [profile.key, profile]));
+
+  for (const row of data || []) {
+    const normalizedRow = normalizeAccessProfileRecord(row);
+    mergedProfiles.set(normalizedRow.key, normalizedRow);
+  }
+
+  return Array.from(mergedProfiles.values()).sort((left, right) => {
     if (left.isSystem !== right.isSystem) {
       return left.isSystem ? -1 : 1;
     }
@@ -3208,7 +3381,7 @@ app.get("/api/admin/access-profiles", requireFirebaseAuth, requireInternalPageAc
   }
 });
 
-app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
+app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireUserManagementAccess, async (req, res) => {
   const uid = normalizeString(req.params.uid);
   const rawRole = normalizeString(req.body?.role);
   const role = normalizeRole(rawRole);
@@ -3304,7 +3477,7 @@ app.patch("/api/admin/users/:uid/access", requireFirebaseAuth, requireAdminAcces
   }
 });
 
-app.post("/api/admin/users", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
+app.post("/api/admin/users", requireFirebaseAuth, requireUserManagementAccess, async (req, res) => {
   const email = normalizeString(req.body?.email)?.toLowerCase();
   const password = normalizeString(req.body?.password);
   const displayName = normalizeString(req.body?.displayName);
@@ -3398,7 +3571,7 @@ app.post("/api/admin/users", requireFirebaseAuth, requireAdminAccess, async (req
   }
 });
 
-app.delete("/api/admin/users/:uid", requireFirebaseAuth, requireAdminAccess, async (req, res) => {
+app.delete("/api/admin/users/:uid", requireFirebaseAuth, requireUserManagementAccess, async (req, res) => {
   const uid = normalizeString(req.params?.uid);
 
   if (!uid) {

@@ -10,50 +10,10 @@ import { FormField } from "@/components/FormField";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { LogoBlock } from "@/components/LogoBlock";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { Building2, ShieldCheck } from "lucide-react";
 import { loginSchema } from "@/lib/validationSchemas";
 import { useRateLimit } from "@/hooks/useRateLimit";
 import { toast } from "@/components/ui/sonner";
 import { ZodError } from "zod";
-
-type LoginMode = "client" | "admin";
-
-const loginModeCopy: Record<
-  LoginMode,
-  {
-    title: string;
-    description: string;
-    emailPlaceholder: string;
-    passwordPlaceholder: string;
-  }
-> = {
-  client: {
-    title: "Acesso do cliente",
-    description: "Empresas atendidas pela Vexo entram aqui para consultar seus dados no CRM.",
-    emailPlaceholder: "cliente@empresa.com",
-    passwordPlaceholder: "Digite sua senha",
-  },
-  admin: {
-    title: "Acesso administrativo",
-    description: "Gestores e equipe interna da plataforma entram por este acesso.",
-    emailPlaceholder: "gestor@vexo.com",
-    passwordPlaceholder: "Digite sua senha",
-  },
-};
-
-function normalizeAccessRole(value: unknown): "client" | "pending" | "internal" {
-  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-
-  if (normalized === "client" || normalized === "cliente" || normalized === "customer") {
-    return "client";
-  }
-
-  if (normalized === "pending" || normalized === "pendente" || normalized === "pending_client") {
-    return "pending";
-  }
-
-  return "internal";
-}
 
 export default function Login() {
   const location = useLocation();
@@ -77,9 +37,6 @@ export default function Login() {
     "pathname" in location.state.from
       ? String(location.state.from.pathname || "")
       : "";
-  const [loginMode, setLoginMode] = useState<LoginMode>(
-    requestedPath.startsWith("/clientes/") ? "client" : "admin"
-  );
   const redirectTo = mustChangePassword ? "/set-password" : requestedPath || defaultRoute;
 
   if (loading) return <LoadingScreen />;
@@ -107,24 +64,8 @@ export default function Login() {
       });
 
       await login(validData.email, validData.password);
-      const tokenResult = await getCurrentIdTokenResult(true);
-      const accessRole = normalizeAccessRole(tokenResult?.claims?.role);
-      const validForSelectedMode =
-        loginMode === "client"
-          ? accessRole === "client" || accessRole === "pending"
-          : accessRole === "internal";
-
-      if (!validForSelectedMode) {
-        rateLimit.recordAttempt(false);
-        await logout();
-        setError(
-          loginMode === "client"
-            ? "Este acesso e exclusivo para clientes. Use o login administrativo."
-            : "Este acesso e exclusivo para admin e gestores. Use o login de cliente."
-        );
-      } else {
-        rateLimit.recordAttempt(true);
-      }
+      await getCurrentIdTokenResult(true);
+      rateLimit.recordAttempt(true);
     } catch (err: unknown) {
       rateLimit.recordAttempt(false);
 
@@ -197,37 +138,10 @@ export default function Login() {
       <LogoBlock icon="V" />
 
       <div className="w-full space-y-3">
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setLoginMode("client")}
-            className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-              loginMode === "client"
-                ? "bg-primary text-primary-foreground"
-                : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <Building2 className="h-4 w-4" />
-            Clientes
-          </button>
-          <button
-            type="button"
-            onClick={() => setLoginMode("admin")}
-            className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-              loginMode === "admin"
-                ? "bg-primary text-primary-foreground"
-                : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Admin / Gestores
-          </button>
-        </div>
-
         <div className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm">
-          <p className="text-sm font-medium text-foreground">{loginModeCopy[loginMode].title}</p>
+          <p className="text-sm font-medium text-foreground">Login</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {loginModeCopy[loginMode].description}
+            Entre com seu e-mail e senha. Os acessos liberados para cada usuario sao definidos internamente pela gestao do CRM.
           </p>
         </div>
       </div>
@@ -237,7 +151,7 @@ export default function Login() {
           <Input
             id="email"
             type="email"
-            placeholder={loginModeCopy[loginMode].emailPlaceholder}
+            placeholder="seuemail@empresa.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -247,7 +161,7 @@ export default function Login() {
           <Input
             id="password"
             type="password"
-            placeholder={loginModeCopy[loginMode].passwordPlaceholder}
+            placeholder="Digite sua senha"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
