@@ -30,6 +30,11 @@ export type SystemAccessPreset =
   | "internal_admin"
   | "internal_manager"
   | "internal_operator"
+  | "consultor"
+  | "gerente"
+  | "sdr"
+  | "gestor"
+  | "parceiro"
   | "client_manager"
   | "client_operator"
   | "client_viewer"
@@ -66,10 +71,22 @@ export const ACCESS_PRESET_ORDER: AccessPreset[] = [
   "internal_admin",
   "internal_manager",
   "internal_operator",
+  "gestor",
+  "gerente",
+  "consultor",
+  "sdr",
+  "parceiro",
   "client_manager",
   "client_operator",
   "client_viewer",
   "pending",
+];
+
+export const USER_MANAGEMENT_PRESETS: AccessPreset[] = [
+  "internal_admin",
+  "internal_manager",
+  "gestor",
+  "gerente",
 ];
 
 export const FIXED_ADMIN_ACCOUNTS = [
@@ -101,6 +118,11 @@ export const ACCESS_PRESET_LABELS: Record<string, string> = {
   internal_admin: "Admin interno",
   internal_manager: "Gestor interno",
   internal_operator: "Operacao interna",
+  consultor: "Consultor",
+  gerente: "Gerente",
+  sdr: "SDR",
+  gestor: "Gestor",
+  parceiro: "Parceiro",
   client_manager: "Gestor do cliente",
   client_operator: "Operador do cliente",
   client_viewer: "Leitura do cliente",
@@ -188,8 +210,8 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
       "whatsapp.reply",
       "campaigns.manage",
       "agente.view",
-      "tenants.manage",
       "users.view",
+      "users.manage",
     ],
     internalPages: [
       "dashboard",
@@ -198,7 +220,6 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
       "whatsapp",
       "agente",
       "usuarios",
-      "empresas",
       "campanhas",
     ],
     allowedViews: [],
@@ -216,6 +237,84 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
     ],
     internalPages: ["dashboard", "leads", "planilhas", "whatsapp"],
     allowedViews: [],
+  },
+  consultor: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: ["dashboard.view", "leads.view", "whatsapp.view", "whatsapp.reply"],
+    internalPages: ["dashboard", "leads", "whatsapp"],
+    allowedViews: [],
+  },
+  gerente: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "leads.export",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+      "campaigns.manage",
+      "agente.view",
+      "users.view",
+      "users.manage",
+    ],
+    internalPages: ["dashboard", "leads", "planilhas", "whatsapp", "agente", "usuarios", "campanhas"],
+    allowedViews: [],
+  },
+  sdr: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "operator",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+    ],
+    internalPages: ["dashboard", "leads", "planilhas", "whatsapp"],
+    allowedViews: [],
+  },
+  gestor: {
+    role: "internal",
+    scopeMode: "assigned_clients",
+    approvalLevel: "manager",
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "leads.export",
+      "imports.manage",
+      "whatsapp.view",
+      "whatsapp.reply",
+      "campaigns.manage",
+      "agente.view",
+      "users.view",
+      "users.manage",
+      "tenants.manage",
+    ],
+    internalPages: [
+      "dashboard",
+      "leads",
+      "planilhas",
+      "whatsapp",
+      "agente",
+      "usuarios",
+      "empresas",
+      "campanhas",
+    ],
+    allowedViews: [],
+  },
+  parceiro: {
+    role: "client",
+    scopeMode: "assigned_clients",
+    approvalLevel: "supervisor",
+    permissions: ["dashboard.view", "leads.view", "whatsapp.view"],
+    internalPages: [],
+    allowedViews: ["dashboard", "leads", "whatsapp"],
   },
   client_manager: {
     role: "client",

@@ -135,7 +135,6 @@ function buildAccessProfile(user: User, claims: Record<string, unknown> = {}): A
       claims.admin ||
       claims.is_admin ||
       accessPreset === "internal_admin" ||
-      permissions.includes("users.manage") ||
       isFixedAdminAccount(user.uid, user.email || claims.email || null)
   );
   const role = isAdmin ? "internal" : requestedRole;
