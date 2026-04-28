@@ -17,7 +17,7 @@ import { ZodError } from "zod";
 
 export default function Login() {
   const location = useLocation();
-  const { isAuthenticated, mustChangePassword, loading, login, logout, defaultRoute } = useAuth();
+  const { isAuthenticated, mustChangePassword, loading, login, defaultRoute } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -201,17 +201,15 @@ export default function Login() {
         {submitting ? "Entrando..." : "Entrar"}
       </Button>
 
-      {loginMode === "client" && (
-        <p className="text-center text-sm text-muted-foreground">
-          Ainda nao tem acesso?{" "}
-          <Link
-            to="/cadastro-cliente"
-            className="font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Criar conta de cliente
-          </Link>
-        </p>
-      )}
+      <p className="text-center text-sm text-muted-foreground">
+        Ainda nao tem acesso?{" "}
+        <Link
+          to="/cadastro-cliente"
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Criar conta
+        </Link>
+      </p>
     </AuthLayout>
   );
 }
