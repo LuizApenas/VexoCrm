@@ -3353,7 +3353,7 @@ app.post("/api/lead-clients", requireFirebaseAuth, requireInternalPageAccess("em
   }
 });
 
-app.delete("/api/lead-clients/:tenantId", requireFirebaseAuth, requireInternalPageAccess("empresas"), async (req, res) => {
+async function deleteLeadClientHandler(req, res, explicitTenantId) {
   if (!ensureSupabase(res)) return;
 
   if (!hasAccessPermission(req.authAccess, "tenants.manage")) {
@@ -3361,7 +3361,13 @@ app.delete("/api/lead-clients/:tenantId", requireFirebaseAuth, requireInternalPa
     return;
   }
 
-  const tenantId = normalizeTenantKey(req.params?.tenantId);
+  const tenantId = normalizeTenantKey(
+    explicitTenantId ??
+      req.params?.tenantId ??
+      req.body?.tenantId ??
+      req.body?.id ??
+      req.body?.clientId
+  );
 
   if (!tenantId) {
     sendError(
@@ -3434,6 +3440,14 @@ app.delete("/api/lead-clients/:tenantId", requireFirebaseAuth, requireInternalPa
     console.error("lead client delete error:", error);
     sendError(res, 500, "LEAD_CLIENT_DELETE_FAILED", "Failed to delete tenant");
   }
+}
+
+app.delete("/api/lead-clients/:tenantId", requireFirebaseAuth, requireInternalPageAccess("empresas"), async (req, res) => {
+  await deleteLeadClientHandler(req, res);
+});
+
+app.post("/api/lead-clients/delete", requireFirebaseAuth, requireInternalPageAccess("empresas"), async (req, res) => {
+  await deleteLeadClientHandler(req, res);
 });
 
 app.get("/api/admin/users", requireFirebaseAuth, requireInternalPageAccess("usuarios"), async (_req, res) => {
