@@ -81,3 +81,39 @@ export function useCreateLeadClient() {
     },
   });
 }
+
+export function useDeleteLeadClient() {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (tenantId: string): Promise<{ id: string; name?: string }> => {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Usuario nao autenticado.");
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/lead-clients/${encodeURIComponent(tenantId)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const responsePayload = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const apiMessage =
+          responsePayload?.error?.message ||
+          responsePayload?.error?.details ||
+          `Lead client delete failed: ${res.status}`;
+        throw new Error(apiMessage);
+      }
+
+      return responsePayload?.item || { id: tenantId };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lead-clients"] });
+    },
+  });
+}
