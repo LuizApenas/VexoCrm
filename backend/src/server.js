@@ -3353,6 +3353,89 @@ app.post("/api/lead-clients", requireFirebaseAuth, requireInternalPageAccess("em
   }
 });
 
+app.delete("/api/lead-clients/:tenantId", requireFirebaseAuth, requireInternalPageAccess("empresas"), async (req, res) => {
+  if (!ensureSupabase(res)) return;
+
+  if (!hasAccessPermission(req.authAccess, "tenants.manage")) {
+    sendError(res, 403, "FORBIDDEN", "Tenant management permission required");
+    return;
+  }
+
+  const tenantId = normalizeTenantKey(req.params?.tenantId);
+
+  if (!tenantId) {
+    sendError(
+      res,
+      400,
+      "INVALID_TENANT_ID",
+      "Tenant ID must use lowercase letters, numbers and hyphens"
+    );
+    return;
+  }
+
+  try {
+    const { data: tenant, error: tenantError } = await supabase
+      .from("leads_clients")
+      .select("id, name")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    if (tenantError) {
+      throw tenantError;
+    }
+
+    if (!tenant) {
+      sendError(res, 404, "TENANT_NOT_FOUND", "Tenant not found");
+      return;
+    }
+
+    const users = await listAllFirebaseUsers();
+    const linkedUsers = users.filter((user) => {
+      const access = extractManagedAccessClaims(user.customClaims || {}, {
+        uid: user.uid,
+        email: user.email,
+      });
+
+      return (
+        access.clientId === tenantId ||
+        access.tenantId === tenantId ||
+        access.clientIds?.includes(tenantId) ||
+        access.tenantIds?.includes(tenantId)
+      );
+    });
+
+    if (linkedUsers.length > 0) {
+      sendError(
+        res,
+        409,
+        "TENANT_HAS_LINKED_USERS",
+        "Existem usuarios vinculados a esta empresa. Remova ou altere esses acessos antes de excluir."
+      );
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("leads_clients")
+      .delete()
+      .eq("id", tenantId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    res.json({
+      success: true,
+      item: {
+        id: tenant.id,
+        name: tenant.name,
+      },
+    });
+  } catch (error) {
+    console.error("lead client delete error:", error);
+    sendError(res, 500, "LEAD_CLIENT_DELETE_FAILED", "Failed to delete tenant");
+  }
+});
+
 app.get("/api/admin/users", requireFirebaseAuth, requireInternalPageAccess("usuarios"), async (_req, res) => {
   try {
     const users = await listAllFirebaseUsers();

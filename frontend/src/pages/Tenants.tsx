@@ -1,16 +1,27 @@
 import { useEffect, useState } from "react";
-import { Building2, CheckCircle2, KeyRound, Plus, Search, ShieldCheck } from "lucide-react";
+import { Building2, CheckCircle2, KeyRound, Plus, Search, ShieldCheck, Trash2 } from "lucide-react";
 import { ZodError } from "zod";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { PageShell } from "@/components/PageShell";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { useCreateLeadClient, useLeadClients } from "@/hooks/useLeadClients";
+import { useCreateLeadClient, useDeleteLeadClient, useLeadClients } from "@/hooks/useLeadClients";
 import { createTenantSchema } from "@/lib/validationSchemas";
 
 function buildTenantKey(value: string) {
@@ -39,12 +50,14 @@ function formatCreatedAt(value?: string) {
 export default function Tenants() {
   const { data: tenants = [], isLoading, error } = useLeadClients();
   const createTenant = useCreateLeadClient();
+  const deleteTenant = useDeleteLeadClient();
   const { hasPermission } = useAuth();
   const [name, setName] = useState("");
   const [tenantId, setTenantId] = useState("");
   const [search, setSearch] = useState("");
   const [formError, setFormError] = useState("");
   const [tenantIdEdited, setTenantIdEdited] = useState(false);
+  const [tenantPendingDelete, setTenantPendingDelete] = useState<string | null>(null);
   const canManageTenants = hasPermission("tenants.manage");
 
   useEffect(() => {
@@ -115,6 +128,28 @@ export default function Tenants() {
       setFormError(
         submissionError instanceof Error ? submissionError.message : "Nao foi possivel criar o tenant."
       );
+    }
+  };
+
+  const handleDeleteTenant = async (tenant: { id: string; name: string }) => {
+    try {
+      await deleteTenant.mutateAsync(tenant.id);
+
+      toast({
+        title: "Empresa excluida",
+        description: `A empresa ${tenant.name} foi removida do cadastro.`,
+      });
+
+      setTenantPendingDelete(null);
+    } catch (deleteError) {
+      toast({
+        title: "Nao foi possivel excluir",
+        description:
+          deleteError instanceof Error
+            ? deleteError.message
+            : "O tenant nao pode ser removido agora.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -319,6 +354,56 @@ export default function Tenants() {
                           <p className="mt-1 font-mono">/clientes/{tenant.id}/dashboard</p>
                         </div>
                       </div>
+                      {canManageTenants ? (
+                        <div className="mt-4 flex justify-end">
+                          <AlertDialog
+                            open={tenantPendingDelete === tenant.id}
+                            onOpenChange={(open) => {
+                              setTenantPendingDelete(open ? tenant.id : null);
+                            }}
+                          >
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                disabled={deleteTenant.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Excluir empresa
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Excluir empresa cadastrada?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Vamos remover <strong>{tenant.name}</strong> ({tenant.id}). Se
+                                  esse tenant tiver leads, campanhas ou dados operacionais, eles
+                                  tambem serao apagados. Se houver usuarios vinculados, a exclusao
+                                  sera bloqueada automaticamente.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel disabled={deleteTenant.isPending}>
+                                  Cancelar
+                                </AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  disabled={deleteTenant.isPending}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    void handleDeleteTenant(tenant);
+                                  }}
+                                >
+                                  {deleteTenant.isPending && tenantPendingDelete === tenant.id
+                                    ? "Excluindo..."
+                                    : "Confirmar exclusao"}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
