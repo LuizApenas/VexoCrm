@@ -19,8 +19,8 @@ import { API_BASE_URL } from "@/lib/api";
 // O PRIMEIRO segmento é curto de propósito: o operador precisa ver texto
 // aparecendo em segundos para confiar que está funcionando. Antes era 120s para
 // todos, então o primeiro trecho só surgia depois de dois minutos inteiros.
-const SEGUNDOS_PRIMEIRO_SEGMENTO = 20;
-const SEGUNDOS_POR_SEGMENTO = 60;
+const SEGUNDOS_PRIMEIRO_SEGMENTO = 12;
+const SEGUNDOS_POR_SEGMENTO = 25;
 
 // Qualidade de áudio para TRANSCRIÇÃO, que não é a mesma coisa que para uma
 // chamada de voz. Opus mono a 64 kbps já é bem acima do que o Whisper precisa e
@@ -44,7 +44,13 @@ export function useBriefingRecorder(aoTranscrever: (trecho: string) => void) {
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const pararRef = useRef(false);
-  const timerRef = useRef<number | null>(null);
+  // Ticker num Web Worker. O corte dos segmentos NÃO pode depender de
+  // setInterval/setTimeout da página: durante a reunião a aba do Vexo fica em
+  // segundo plano (o Meet está na frente) e o Chrome congela os timers de abas
+  // em segundo plano. Era por isso que a transcrição só aparecia depois de
+  // parar: o corte nunca disparava e o primeiro segmento gravava a reunião
+  // toda. Timer de Worker continua rodando em segundo plano.
+  const workerRef = useRef<Worker | null>(null);
   const aoTranscreverRef = useRef(aoTranscrever);
   aoTranscreverRef.current = aoTranscrever;
 
@@ -99,9 +105,9 @@ export function useBriefingRecorder(aoTranscrever: (trecho: string) => void) {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     recorderRef.current = null;
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
+    if (workerRef.current) {
+      workerRef.current.terminate();
+      workerRef.current = null;
     }
     setGravando(false);
   }, []);
@@ -139,14 +145,24 @@ export function useBriefingRecorder(aoTranscrever: (trecho: string) => void) {
       pararRef.current = false;
       setGravando(true);
       setSegundos(0);
-      timerRef.current = window.setInterval(() => setSegundos((s) => s + 1), 1000);
 
       const mime = escolherMime();
       const token = await obterToken();
 
-      // Um MediaRecorder por segmento, encadeados: ao fechar um, envia e abre o
-      // próximo, até o operador parar.
+      // Worker que emite um "tick" por segundo mesmo com a aba em segundo plano.
+      const worker = new Worker(
+        URL.createObjectURL(
+          new Blob(["setInterval(()=>postMessage(0),1000)"], { type: "application/javascript" })
+        )
+      );
+      workerRef.current = worker;
+
+      // Um MediaRecorder por segmento, encadeados: cada segmento é um arquivo
+      // completo (com cabeçalho), decodificável sozinho pela transcrição.
       let primeiro = true;
+      let segAtual = 0;
+      let limiteAtual = SEGUNDOS_PRIMEIRO_SEGMENTO;
+
       const gravarSegmento = () => {
         if (pararRef.current || !streamRef.current) return;
         const rec = new MediaRecorder(streamRef.current, {
@@ -155,7 +171,6 @@ export function useBriefingRecorder(aoTranscrever: (trecho: string) => void) {
         });
         recorderRef.current = rec;
         const pedacos: BlobPart[] = [];
-
         rec.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) pedacos.push(e.data);
         };
@@ -164,13 +179,19 @@ export function useBriefingRecorder(aoTranscrever: (trecho: string) => void) {
           void enviarSegmento(blob, token);
           if (!pararRef.current) gravarSegmento();
         };
-
         rec.start();
-        const duracao = primeiro ? SEGUNDOS_PRIMEIRO_SEGMENTO : SEGUNDOS_POR_SEGMENTO;
+        segAtual = 0;
+        limiteAtual = primeiro ? SEGUNDOS_PRIMEIRO_SEGMENTO : SEGUNDOS_POR_SEGMENTO;
         primeiro = false;
-        window.setTimeout(() => {
-          if (rec.state !== "inactive") rec.stop();
-        }, duracao * 1000);
+      };
+
+      worker.onmessage = () => {
+        setSegundos((s) => s + 1);
+        segAtual += 1;
+        const rec = recorderRef.current;
+        if (rec && rec.state !== "inactive" && segAtual >= limiteAtual) {
+          rec.stop(); // dispara onstop -> envia e abre o próximo segmento
+        }
       };
 
       gravarSegmento();

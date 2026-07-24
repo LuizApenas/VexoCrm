@@ -309,7 +309,6 @@ export const AI_PROCESSING_STEPS: { t: string; fId: string | null }[] = [
       { t: "Definindo a segmentação geográfica de anúncios...", fId: "localizacao" },
       { t: "Mapeando o perfil demográfico do público-alvo...", fId: "publico_alvo" },
       { t: "Levantando ticket médio e margem do negócio...", fId: "ticket_margem" },
-      { t: "Identificando o diferencial competitivo...", fId: "diferencial" },
       { t: "Verificando histórico de investimento em mídia...", fId: "ja_rodou_trafego" },
       { t: "Resgatando o que já foi feito e os resultados obtidos...", fId: "trafego_historico" },
       { t: "Mapeando dores e necessidades do público...", fId: "dores_publico" },

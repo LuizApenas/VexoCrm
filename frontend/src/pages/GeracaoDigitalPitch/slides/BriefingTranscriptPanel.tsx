@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { Mic, RefreshCw, Bot, Square, Loader2, ShieldAlert } from "lucide-react";
+import { Mic, RefreshCw, Bot, Square, Loader2, ShieldAlert, Trash2 } from "lucide-react";
 import { useBriefingRecorder } from "@/hooks/useBriefingRecorder";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -106,7 +106,7 @@ export function BriefingTranscriptPanel({
 
                           <p className="text-[11px] text-slate-500 leading-relaxed">
                             Grava o microfone e vai escrevendo a transcrição aqui embaixo durante a reunião.
-                            O primeiro trecho aparece em cerca de 20 segundos. O áudio não é armazenado.
+                            O primeiro trecho aparece em cerca de 12 segundos. O áudio não é armazenado.
                           </p>
                           <ul className="text-[11px] text-slate-500 leading-relaxed list-disc pl-4 space-y-0.5">
                             <li>Deixe a caixa de som aberta: com fone, só a sua voz é gravada.</li>
@@ -132,7 +132,19 @@ export function BriefingTranscriptPanel({
 
                         {/* Textarea */}
                         <div className="space-y-3">
-                          <Label className="text-sm text-slate-600 uppercase font-mono font-bold" htmlFor="transcript-area">Cole a Transcrição da Reunião Aqui</Label>
+                          <div className="flex items-center justify-between gap-2">
+                            <Label className="text-sm text-slate-600 uppercase font-mono font-bold" htmlFor="transcript-area">Cole a Transcrição da Reunião Aqui</Label>
+                            {transcriptText.trim() && !gravador.gravando && (
+                              <button
+                                type="button"
+                                onClick={() => setTranscriptText("")}
+                                className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-rose-600 transition-colors"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Limpar
+                              </button>
+                            )}
+                          </div>
                           <textarea
                             id="transcript-area"
                             value={transcriptText}

@@ -41,10 +41,9 @@ export const DEFAULT_BRIEFING_FIELDS: BriefingField[] = [
     { id: "whatsapp", label: "WhatsApp Business", placeholder: "Número comercial completo com DDD", status: "pending", value: "", confidence: 0, type: "text" },
     { id: "concorrentes", label: "Principais concorrentes diretos", placeholder: "Quais empresas competem diretamente com o seu negócio?", status: "pending", value: "", confidence: 0, type: "text" },
     { id: "inspiracao", label: "Perfis de inspiração", placeholder: "Quais marcas inspiram sua estética?", status: "pending", value: "", confidence: 0, type: "text" },
-    { id: "servicos", label: "Produtos e serviços", placeholder: "Descreva o core business do negócio", status: "pending", value: "", confidence: 0, type: "text" },
+    { id: "servicos", label: "Produtos, serviços e diferencial", placeholder: "Core business, produtos vendidos e o que diferencia a empresa do concorrente", status: "pending", value: "", confidence: 0, type: "textarea" },
     // --- Sobre o negócio / produto -------------------------------------------
     { id: "ticket_margem", label: "Ticket médio e margem", placeholder: "Ex: ticket médio de R$ 800 com margem de 40%", status: "pending", value: "", confidence: 0, type: "text" },
-    { id: "diferencial", label: "Diferencial competitivo", placeholder: "O que faz o cliente escolher este negócio e não o concorrente?", status: "pending", value: "", confidence: 0, type: "textarea" },
     { id: "ja_rodou_trafego", label: "Já rodou tráfego pago antes?", placeholder: "Histórico de investimento em mídia", status: "pending", value: "", confidence: 0, type: "radio", options: ["Sim", "Não", "Não sei"] },
     { id: "trafego_historico", label: "Se sim: com quem, resultados, o que funcionou e o que não funcionou", placeholder: "Agência ou gestor anterior, verba, retorno obtido e aprendizados", status: "pending", value: "", confidence: 0, type: "textarea" },
     { id: "localizacao", label: "Localização", placeholder: "Região, bairros ou abrangência nacional", status: "pending", value: "", confidence: 0, type: "text" },
