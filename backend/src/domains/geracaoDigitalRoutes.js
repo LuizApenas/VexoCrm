@@ -339,7 +339,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           const data = await evRes.json();
           if (!evRes.ok) {
             console.error("[GeracaoDigital] Group Create Error:", data);
-            return { status: `failed_${evRes.status}` };
+            return { status: `failed_${evRes.status}`, error: (data?.response?.message || data?.message || JSON.stringify(data) || "").toString().slice(0, 300) };
           }
           // The API returns the group ID, usually as data.id or data.groupId
           // Structure varies by Evolution API version, but typically data.id
@@ -350,7 +350,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           return { status: "created_no_id", data };
         } catch (e) {
           console.error("[GeracaoDigital] Evolution Group Network Error:", e.message);
-          return { status: "failed_network" };
+          return { status: "failed_network", error: e.message };
         }
       };
 
@@ -358,12 +358,16 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
 
       let whatsappGroupStatus = "not_configured";
       let whatsappGroupId = null;
+      let whatsappGroupError = null;
+      // Instância que será usada, para o front dizer qual quando o grupo falha.
+      const instanciaUsada = dynamicInstanceName || process.env.GD_EVOLUTION_INSTANCE || "Teste";
 
       // Create WhatsApp Group
       if (createWhatsappGroup) {
          const subject = whatsappGroupName || `GD & ${prospectName}`;
          const groupRes = await createEvolutionGroup(subject, whatsappGroupMembers || sectorsWhatsapp || "");
          whatsappGroupStatus = groupRes.status;
+         whatsappGroupError = groupRes.error || null;
          if (groupRes.groupId) {
            whatsappGroupId = groupRes.groupId;
            // Mandar o dossiê direto pro grupo também!
@@ -454,6 +458,9 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         evolutionStatus,
         whatsappGroupStatus,
         whatsappGroupId,
+        whatsappGroupError,
+        instanciaUsada,
+        evolutionConfigured: !!(process.env.GD_EVOLUTION_URL && process.env.GD_EVOLUTION_TOKEN),
         slackStatus,
         slackError,
         emailStatus,
