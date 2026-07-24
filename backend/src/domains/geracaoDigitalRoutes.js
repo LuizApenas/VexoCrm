@@ -63,39 +63,51 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           body: JSON.stringify({ name }),
         });
         const createData = await createRes.json();
-        if (!createData.ok) {
-          if (createData.error === "name_taken") {
-            // O canal já existe (reuso do mesmo nome entre testes). Busca o id
-            // dele. Antes a busca pegava só a PRIMEIRA página da conversations.list
-            // e não checava erro: quando o canal estava fora da página, arquivado,
-            // ou o token faltava escopo, o find falhava e o handoff INTEIRO era
-            // abortado. Agora pagina, inclui arquivados e reporta o erro real.
-            let cursor = "";
-            let achado = null;
-            let erroLista = null;
-            for (let i = 0; i < 20 && !achado; i++) {
-              const url =
-                "https://slack.com/api/conversations.list?limit=1000&exclude_archived=false" +
-                "&types=public_channel,private_channel" +
-                (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
-              const listRes = await fetch(url, { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } });
-              const listData = await listRes.json();
-              if (!listData.ok) { erroLista = listData.error; break; }
-              achado = (listData.channels || []).find((c) => c.name === name);
-              cursor = listData.response_metadata?.next_cursor || "";
-              if (!cursor) break;
-            }
-            if (achado) return achado.id;
-            throw new Error(
-              erroLista
-                ? `O bot não conseguiu listar os canais do Slack (${erroLista}). Verifique os escopos channels:read e groups:read.`
-                : `O canal "${name}" já existe mas o bot não o encontra. Se for privado, adicione o bot ao canal, ou use outro nome.`
-            );
-          } else {
-            throw new Error(`Erro ao criar canal ${name}: ${createData.error}`);
-          }
+        if (createData.ok) return createData.channel.id;
+
+        if (createData.error !== "name_taken") {
+          throw new Error(`Erro ao criar canal ${name}: ${createData.error}`);
         }
-        return createData.channel.id;
+
+        // name_taken: o canal já existe (reuso do mesmo nome entre testes).
+        // 1ª tentativa: achar o id via conversations.list (paginado, com
+        // arquivados). Precisa dos escopos channels:read / groups:read.
+        let cursor = "";
+        let achado = null;
+        let erroLista = null;
+        for (let i = 0; i < 20 && !achado; i++) {
+          const url =
+            "https://slack.com/api/conversations.list?limit=1000&exclude_archived=false" +
+            "&types=public_channel,private_channel" +
+            (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+          const listRes = await fetch(url, { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } });
+          const listData = await listRes.json();
+          if (!listData.ok) { erroLista = listData.error; break; }
+          achado = (listData.channels || []).find((c) => c.name === name);
+          cursor = listData.response_metadata?.next_cursor || "";
+          if (!cursor) break;
+        }
+        if (achado) return achado.id;
+
+        // 2ª tentativa (desbloqueio): não deu para achar o canal existente
+        // (bot sem escopo de leitura, ou canal privado sem o bot). Em vez de
+        // abortar o handoff inteiro, cria um canal novo com sufixo curto. O
+        // handoff completa e o dossiê é postado; o operador vê o nome usado.
+        const sufixo = new Date().toISOString().slice(5, 16).replace(/[-T:]/g, "");
+        const nomeAlt = `${name}-${sufixo}`.slice(0, 80);
+        const retryRes = await fetch("https://slack.com/api/conversations.create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
+          body: JSON.stringify({ name: nomeAlt }),
+        });
+        const retryData = await retryRes.json();
+        if (retryData.ok) {
+          console.warn(`[gd-setup] "${name}" já existia e o bot não o encontrou (${erroLista || "sem escopo de leitura"}). Criado "${nomeAlt}".`);
+          return retryData.channel.id;
+        }
+        throw new Error(
+          `O canal "${name}" já existe e o bot não consegue acessá-lo (${erroLista || "faltam os escopos channels:read e groups:read"}). Adicione esses escopos ao app do Slack ou use um nome de canal novo.`
+        );
       }
 
       async function inviteToChannel(channelId, userIds) {
