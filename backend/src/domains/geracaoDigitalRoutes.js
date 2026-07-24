@@ -4,6 +4,7 @@ import { getSlackQueue } from "../geracaoDigital/slackQueue.js";
 import { processEvolutionMessageToSlack } from "../geracaoDigital/slackMirrorIn.js";
 import { processSlackMessageToEvolution } from "../geracaoDigital/slackMirrorOut.js";
 import { extractBriefingFields } from "./geracaoDigital/briefingExtract.js";
+import { transcribeBriefingAudio } from "./geracaoDigital/briefingTranscribe.js";
 
 // Recorrência: dois vocabulários para a mesma ideia. O catálogo (gd_products)
 // grava "pontual"; o wizard grava "unico". Comparar por string solta fazia todo
@@ -524,6 +525,10 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   // Extração do briefing por IA. Substitui a heurística por palavra-chave que
   // rodava no front e devolvia pergunta, nome de falante e trecho de resumo.
   app.post("/api/geracao-digital/briefing/extract", requireFirebaseAuth, extractBriefingFields);
+
+  // Transcrição de UM segmento do áudio da reunião. O áudio não é persistido:
+  // chega, vira texto e é descartado.
+  app.post("/api/geracao-digital/briefing/transcribe", requireFirebaseAuth, transcribeBriefingAudio);
 
   app.get("/api/geracao-digital/slack-users", requireFirebaseAuth, async (req, res) => {
     try {

@@ -1,5 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
-import { Mic, RefreshCw, Bot } from "lucide-react";
+import { Mic, RefreshCw, Bot, Square, Loader2, ShieldAlert } from "lucide-react";
+import { useBriefingRecorder } from "@/hooks/useBriefingRecorder";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -23,6 +25,34 @@ export function BriefingTranscriptPanel({
   selectTranscriptPreset,
   processBriefingWithGemini,
 }: BriefingTranscriptPanelProps) {
+  const { user } = useAuth();
+
+  // Cada trecho transcrito é ANEXADO ao que já existe, para o operador poder
+  // editar o texto durante a reunião sem perder o que vem depois.
+  const gravador = useBriefingRecorder((trecho) =>
+    setTranscriptText((atual) => (atual ? `${atual.trimEnd()} ${trecho}` : trecho))
+  );
+
+  const mmss = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+  const alternarGravacao = async () => {
+    if (gravador.gravando) {
+      gravador.parar();
+      return;
+    }
+    // Aviso de consentimento antes da primeira captura. Gravar reunião com
+    // cliente sem avisar não é aceitável, então o passo é obrigatório.
+    const ok = window.confirm(
+      "Você vai gravar o áudio do microfone para gerar a transcrição.\n\n" +
+        "Avise as pessoas na reunião de que a conversa está sendo transcrita.\n\n" +
+        "O áudio não é armazenado: vira texto e é descartado. Só a transcrição fica na tela.\n\n" +
+        "Começar a gravar?"
+    );
+    if (!ok) return;
+    await gravador.iniciar(async () => (await user?.getIdToken()) || "");
+  };
+
   return (
                   <div className="md:col-span-2 space-y-6">
                     <Card className="border-slate-200 bg-white shadow-lg shadow-slate-200/50 rounded-3xl overflow-hidden">
@@ -34,6 +64,65 @@ export function BriefingTranscriptPanel({
                       </CardHeader>
                       <CardContent className="space-y-6 pt-6">
                         
+                        {/* Gravação da reunião */}
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <Button
+                              type="button"
+                              onClick={alternarGravacao}
+                              disabled={!gravador.suportado}
+                              className={
+                                gravador.gravando
+                                  ? "gap-2 bg-rose-600 hover:bg-rose-700 text-white font-bold h-11 rounded-xl px-5"
+                                  : "gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-11 rounded-xl px-5"
+                              }
+                            >
+                              {gravador.gravando ? (
+                                <>
+                                  <Square className="h-4 w-4" />
+                                  Parar gravação · {mmss(gravador.segundos)}
+                                </>
+                              ) : (
+                                <>
+                                  <Mic className="h-4 w-4" />
+                                  Gravar a reunião
+                                </>
+                              )}
+                            </Button>
+
+                            {gravador.gravando && (
+                              <span className="flex items-center gap-2 text-xs font-bold text-rose-600">
+                                <span className="h-2.5 w-2.5 rounded-full bg-rose-600 animate-pulse" />
+                                Gravando o microfone
+                              </span>
+                            )}
+                            {gravador.transcrevendo && (
+                              <span className="flex items-center gap-2 text-xs font-bold text-indigo-600">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Transcrevendo o trecho...
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            Grava o microfone e vai escrevendo a transcrição aqui embaixo durante a reunião.
+                            O áudio não é armazenado. Com fone de ouvido só a sua voz é captada, então
+                            deixe a caixa de som aberta para gravar também o cliente.
+                          </p>
+
+                          {!gravador.suportado && (
+                            <p className="text-[11px] font-bold text-amber-600">
+                              Este navegador não permite gravar áudio. Use o Chrome no computador.
+                            </p>
+                          )}
+                          {gravador.erro && (
+                            <p className="flex items-start gap-1.5 text-[11px] font-bold text-rose-600">
+                              <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-px" />
+                              {gravador.erro}
+                            </p>
+                          )}
+                        </div>
+
                         {/* Textarea */}
                         <div className="space-y-3">
                           <Label className="text-sm text-slate-600 uppercase font-mono font-bold" htmlFor="transcript-area">Cole a Transcrição da Reunião Aqui</Label>
