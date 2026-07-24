@@ -49,33 +49,68 @@ async function processSlackJob(job) {
     .replace(/-+/g, "-")
     .slice(0, 21);
   // Helper para criar canal e retornar ID
-  async function createSlackChannel(name) {
+  async function createSlackChannel(rawName) {
+    const name = (rawName || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-_]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
     const createRes = await fetch("https://slack.com/api/conversations.create", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
       body: JSON.stringify({ name }),
     });
     const createData = await createRes.json();
-    
-    if (!createData.ok) {
-      if (createData.error === "name_taken") {
-        const listRes = await fetch("https://slack.com/api/conversations.list?types=public_channel,private_channel", {
-          headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` }
-        });
-        const listData = await listRes.json();
-        const existingChannel = listData.channels?.find(c => c.name === name);
-        if (!existingChannel) {
-          throw new Error(`Canal ${name} existe mas não foi encontrado na listagem.`);
-        }
-        return existingChannel.id;
-      } else {
-        throw new Error(`Erro ao criar canal ${name}: ${createData.error}`);
-      }
+    if (createData.ok) return createData.channel.id;
+
+    if (createData.error !== "name_taken") {
+      throw new Error(`Erro ao criar canal ${name}: ${createData.error}`);
     }
-    return createData.channel.id;
+
+    let cursor = "";
+    let achado = null;
+    let erroLista = null;
+    for (let i = 0; i < 20 && !achado; i++) {
+      const url =
+        "https://slack.com/api/conversations.list?limit=1000&exclude_archived=false" +
+        "&types=public_channel" +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+      const listRes = await fetch(url, { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } });
+      const listData = await listRes.json();
+      if (!listData.ok) { erroLista = listData.error; break; }
+      achado = (listData.channels || []).find((c) => c.name === name);
+      cursor = listData.response_metadata?.next_cursor || "";
+      if (!cursor) break;
+    }
+    if (achado) return achado.id;
+
+    const sufixo = new Date().toISOString().slice(5, 16).replace(/[-T:]/g, "");
+    const nomeAlt = `${name}-${sufixo}`.slice(0, 80);
+    const retryRes = await fetch("https://slack.com/api/conversations.create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
+      body: JSON.stringify({ name: nomeAlt }),
+    });
+    const retryData = await retryRes.json();
+    if (retryData.ok) {
+      console.warn(`[gd-setup] "${name}" já existia e o bot não o encontrou (${erroLista || "sem escopo de leitura"}). Criado "${nomeAlt}".`);
+      return retryData.channel.id;
+    }
+    throw new Error(
+      `O canal "${name}" já existe e o bot não consegue acessá-lo (${erroLista || "falta o escopo channels:read"}). Adicione o escopo ao app do Slack ou use um nome de canal novo.`
+    );
+  }
+
+  async function joinSlackChannel(channelId) {
+    try {
+      const res = await fetch("https://slack.com/api/conversations.join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
+        body: JSON.stringify({ channel: channelId }),
+      });
+      const data = await res.json();
+      if (!data.ok && data.error !== "already_in_channel") {
+        console.warn(`[gd-setup] Aviso ao entrar no canal ${channelId}:`, data.error);
+      }
+    } catch (err) {
+      console.warn(`[gd-setup] Erro ao entrar no canal ${channelId}:`, err.message);
+    }
   }
 
   // Helper para convidar pessoas
@@ -97,12 +132,14 @@ async function processSlackJob(job) {
 
   const channelName = slackChannelName || `cli-${slug}`;
   const channelId = await createSlackChannel(channelName);
+  await joinSlackChannel(channelId);
   await inviteToChannel(channelId, slackMembers);
 
   // Criar canais extras se houver
   for (const extraName of slackExtraChannels) {
     try {
       const extraId = await createSlackChannel(extraName);
+      await joinSlackChannel(extraId);
       await inviteToChannel(extraId, slackMembers);
     } catch (err) {
       console.warn(`[gd-setup] Aviso: Não foi possível criar canal extra ${extraName}`, err);

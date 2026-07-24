@@ -43,6 +43,21 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
 
       const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
       if (!SLACK_BOT_TOKEN) throw new Error("SLACK_BOT_TOKEN não configurado no servidor.");
+      
+      try {
+        const testRes = await fetch("https://slack.com/api/auth.test", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
+        });
+        const testData = await testRes.json();
+        if (testData.ok) {
+          console.log(`[gd-setup] Slack token ativo no workspace "${testData.team}" (bot: ${testData.user}, team_id: ${testData.team_id})`);
+        } else {
+          console.error(`[gd-setup] Erro de autenticação no Slack: ${testData.error}`);
+        }
+      } catch (e) {
+        console.warn("[gd-setup] Não foi possível verificar auth.test do Slack:", e.message);
+      }
 
       const normalizeWhatsapp = (num) => {
         let clean = (num || "").replace(/\D/g, "");
@@ -114,6 +129,22 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         );
       }
 
+      async function joinSlackChannel(channelId) {
+        try {
+          const res = await fetch("https://slack.com/api/conversations.join", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
+            body: JSON.stringify({ channel: channelId }),
+          });
+          const data = await res.json();
+          if (!data.ok && data.error !== "already_in_channel") {
+            console.warn(`[gd-setup] Aviso ao entrar no canal ${channelId}:`, data.error);
+          }
+        } catch (err) {
+          console.warn(`[gd-setup] Erro ao entrar no canal ${channelId}:`, err.message);
+        }
+      }
+
       async function inviteToChannel(channelId, userIds) {
         if (!userIds || userIds.length === 0) return;
         const res = await fetch("https://slack.com/api/conversations.invite", {
@@ -127,11 +158,13 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
 
       const channelName = slackChannelName || `cli-${slug}`;
       const channelId = await createSlackChannel(channelName);
+      await joinSlackChannel(channelId);
       await inviteToChannel(channelId, slackMembers);
 
       for (const extraName of slackExtraChannels) {
         try {
           const extraId = await createSlackChannel(extraName);
+          await joinSlackChannel(extraId);
           await inviteToChannel(extraId, slackMembers);
         } catch (err) {
           console.warn(`[gd-setup] Aviso: Não foi possível criar canal extra ${extraName}`, err);
