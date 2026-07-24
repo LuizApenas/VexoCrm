@@ -101,3 +101,58 @@ describe("extração da transcrição preenche os subcampos do público", () => 
     expect(() => deriveExtractedValues("")).not.toThrow();
   });
 });
+
+describe("qualidade da extração (bugs relatados pelo Conrado)", () => {
+  const real = `
+Comercial Geração Digital: Hoje, quem são os maiores concorrentes de vocês?
+Gilvane Borba: Nossos concorrentes são a Alfa Contabilidade e a Beta Contadores.
+Comercial Geração Digital: Qual o público-alvo de vocês?
+Gilvane Borba: O gênero é mais mulheres, faixa etária de 30 a 50 anos, classe B.
+Comercial Geração Digital: Vocês têm site?
+Gilvane Borba: Não possui site ainda.
+[Gilvane Borba] Compartilhar Referências: Enviar perfis de inspiração por WhatsApp.
+[Comercial Geração Digital] Analisar Contrato: Revisar cláusulas do contrato.
+`;
+  const v = deriveExtractedValues(real);
+
+  it("não traz o nome do falante colado na resposta", () => {
+    const nomes = ["gilvane", "comercial geração digital", "borba"];
+    Object.entries(v).forEach(([campo, valor]) => {
+      const t = String(valor).toLowerCase();
+      nomes.forEach((n) =>
+        expect(t.includes(n), `campo ${campo} trouxe o falante: ${valor}`).toBe(false)
+      );
+    });
+  });
+
+  it("traz a resposta, não a pergunta", () => {
+    expect(v.concorrentes).toContain("Alfa Contabilidade");
+    expect(v.concorrentes).not.toContain("quem são");
+    Object.entries(v).forEach(([campo, valor]) =>
+      expect(String(valor).trim().endsWith("?"), `campo ${campo} recebeu pergunta`).toBe(false)
+    );
+  });
+
+  it("ignora itens de ação do resumo da reunião", () => {
+    Object.entries(v).forEach(([campo, valor]) =>
+      expect(String(valor).includes("Compartilhar Referências"), `campo ${campo}`).toBe(false)
+    );
+  });
+
+  it("casa palavra inteira: 'idade' não pode casar dentro de 'Contabilidade'", () => {
+    expect(v["publico_alvo.idade"]).not.toContain("Contabilidade");
+    expect(v["publico_alvo.idade"]).toContain("30 a 50");
+  });
+
+  it("cada subcampo recebe só a sua cláusula", () => {
+    expect(v["publico_alvo.genero"]).toContain("mulheres");
+    expect(v["publico_alvo.genero"]).not.toContain("classe B");
+    expect(v["publico_alvo.classe"]).toContain("classe B");
+  });
+
+  it("campos distintos não recebem exatamente o mesmo texto", () => {
+    const principais = ["concorrentes", "servicos", "inspiracao", "temas"];
+    const vistos = principais.map((k) => v[k]).filter((x) => x && x !== "Não preenchido");
+    expect(new Set(vistos).size).toBe(vistos.length);
+  });
+});
