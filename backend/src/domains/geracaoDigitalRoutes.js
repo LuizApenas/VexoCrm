@@ -71,14 +71,17 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
 
         // name_taken: o canal já existe (reuso do mesmo nome entre testes).
         // 1ª tentativa: achar o id via conversations.list (paginado, com
-        // arquivados). Precisa dos escopos channels:read / groups:read.
+        // arquivados). Só canais públicos, então basta channels:read.
         let cursor = "";
         let achado = null;
         let erroLista = null;
         for (let i = 0; i < 20 && !achado; i++) {
+          // Só canais PÚBLICOS. Pedir private_channel exige o escopo groups:read,
+          // que o bot não tem; os canais do handoff (gd-*) são públicos, então
+          // channels:read basta. Isso evita o missing_scope na listagem.
           const url =
             "https://slack.com/api/conversations.list?limit=1000&exclude_archived=false" +
-            "&types=public_channel,private_channel" +
+            "&types=public_channel" +
             (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
           const listRes = await fetch(url, { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } });
           const listData = await listRes.json();
@@ -106,7 +109,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           return retryData.channel.id;
         }
         throw new Error(
-          `O canal "${name}" já existe e o bot não consegue acessá-lo (${erroLista || "faltam os escopos channels:read e groups:read"}). Adicione esses escopos ao app do Slack ou use um nome de canal novo.`
+          `O canal "${name}" já existe e o bot não consegue acessá-lo (${erroLista || "falta o escopo channels:read"}). Adicione o escopo ao app do Slack ou use um nome de canal novo.`
         );
       }
 
