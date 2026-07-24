@@ -115,18 +115,24 @@ async function processSlackJob(job) {
 
   // Helper para convidar pessoas
   async function inviteToChannel(channelId, userIds) {
-    if (!userIds || userIds.length === 0) return;
-    const res = await fetch("https://slack.com/api/conversations.invite", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
-      },
-      body: JSON.stringify({ channel: channelId, users: userIds.join(",") }),
-    });
-    const data = await res.json();
-    if (!data.ok && data.error !== "already_in_channel") {
-      console.warn(`[gd-setup] Erro ao convidar para o canal ${channelId}:`, data.error);
+    if (!userIds || userIds.length === 0) {
+      console.log(`[gd-setup] Nenhum integrante do Slack selecionado para o canal ${channelId}.`);
+      return;
+    }
+    try {
+      const res = await fetch("https://slack.com/api/conversations.invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
+        body: JSON.stringify({ channel: channelId, users: userIds.join(",") }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        console.log(`[gd-setup] ${userIds.length} integrante(s) convidado(s) com sucesso para o canal ${channelId}.`);
+      } else if (data.error !== "already_in_channel") {
+        console.warn(`[gd-setup] Aviso ao convidar para o canal ${channelId}: ${data.error}.`);
+      }
+    } catch (err) {
+      console.warn(`[gd-setup] Erro ao convidar integrantes:`, err.message);
     }
   }
 
