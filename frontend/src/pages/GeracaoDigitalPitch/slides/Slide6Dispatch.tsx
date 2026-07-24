@@ -519,8 +519,17 @@ export function Slide6Dispatch({
                               }
 
                               const responseData = await response.json();
+                              // Falha do Slack não aborta mais o handoff: o grupo
+                              // do WhatsApp é criado no servidor ANTES do Slack, e
+                              // dar throw aqui escondia esse sucesso e travava a
+                              // finalização inteira por causa de um canal que já
+                              // existia. Agora é aviso, e o fluxo segue.
                               if (responseData.slackStatus === "failed") {
-                                throw new Error(responseData.slackError || "Falha ao criar os canais no Slack. Verifique os tokens do bot.");
+                                toast({
+                                  title: "Canais do Slack não criados",
+                                  description: responseData.slackError || "Verifique os escopos e o token do bot do Slack.",
+                                  variant: "destructive",
+                                });
                               }
                               // A falha do grupo de WhatsApp era SILENCIOSA: o
                               // front só checava o Slack. Se o grupo foi pedido e
