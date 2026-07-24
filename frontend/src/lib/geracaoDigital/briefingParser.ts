@@ -12,55 +12,110 @@ export function deriveExtractedValues(transcriptText: string): Record<string, st
       // Heuristic parsing on custom transcript text
       const text = transcriptText;
       
-      // We split into speaker turns, and then split each turn into sentences
-      const turns = text.split("\n").map(l => l.trim()).filter(Boolean);
-      const sentences: { speaker: string; text: string; turnIdx: number }[] = [];
-      
-      turns.forEach((turn, turnIdx) => {
-        const cleanTurn = turn.replace(/\*/g, "").trim();
-        const speakerMatch = cleanTurn.match(/^(caio|cliente):\s*/i);
-        const speaker = speakerMatch ? speakerMatch[1].toLowerCase() : "";
-        const content = speakerMatch ? cleanTurn.replace(/^(caio|cliente):\s*/i, "") : cleanTurn;
-        
-        // Split content into sentences, keeping the speaker context
-        const parts = content.split(/\.\s+/);
-        parts.forEach(part => {
-          if (part.trim()) {
-            sentences.push({
-              speaker,
-              text: part.trim(),
-              turnIdx
-            });
-          }
+      // ---------------------------------------------------------------------
+      // Quebra a transcrição em falas, identificando o falante de forma
+      // GENÉRICA. Antes o reconhecimento era fixo em /^(caio|cliente):/, então
+      // numa transcrição real ("Gilvane Borba:", "Comercial Geração Digital:")
+      // o falante saía vazio, a lógica de pergunta -> resposta não rodava e o
+      // campo era preenchido com a própria PERGUNTA, com o nome colado junto.
+      // ---------------------------------------------------------------------
+
+      // "Fulano:", "FULANO DE TAL:" ou "[Fulano] Ação:" no começo da linha.
+      const RE_FALANTE = /^\s*\[?([\p{Lu}][\p{L}.'\- ]{1,40})\]?\s*:\s*/u;
+      // Itens de ação do resumo automático da reunião ("[Fulano] Enviar X: ...").
+      // Não são resposta de ninguém e poluíam campos como Perfis de inspiração.
+      const RE_ITEM_ACAO = /^\s*\[[^\]]+\]\s*[^:]{2,60}:/;
+
+      const limparFalante = (t: string) => t.replace(RE_FALANTE, "").trim();
+
+      // Casamento por PALAVRA INTEIRA. Com `includes` solto, "idade" casava
+      // dentro de "Contabilidade" e o campo Faixa etária recebia a frase dos
+      // concorrentes. Lookarounds unicode porque \b não lida com acento.
+      const escaparRegex = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const contemPalavra = (texto: string, kw: string) => {
+        try {
+          return new RegExp(`(?<!\\p{L})${escaparRegex(kw)}(?!\\p{L})`, "iu").test(texto);
+        } catch {
+          return texto.toLowerCase().includes(kw.toLowerCase());
+        }
+      };
+
+      const ehPergunta = (t: string) => {
+        const x = t.trim().toLowerCase();
+        if (x.endsWith("?")) return true;
+        return /^(qual|quais|quanto|quantos|quem|onde|como|por que|porque|voc[êe]s?|tem |possui|j[áa] )/.test(x);
+      };
+
+      // Uma resposta só costuma trazer vários subcampos ("o gênero é mulheres,
+      // faixa etária de 30 a 50, classe B"). Recorta a cláusula da palavra-chave
+      // para cada subcampo receber só o pedaço que lhe diz respeito.
+      const recortarClausula = (texto: string, keywords: string[]) => {
+        if (!texto) return texto;
+        const partes = texto.split(/[,;]| e (?=[a-zà-ú])/i).map((x) => x.trim()).filter(Boolean);
+        if (partes.length < 2) return texto;
+        const achou = partes.find((parte) => keywords.some((kw) => contemPalavra(parte, kw)));
+        return achou || texto;
+      };
+
+      const falas: { falante: string; text: string; pergunta: boolean }[] = [];
+      text.split("\n").map((l) => l.trim()).filter(Boolean).forEach((linhaBruta) => {
+        const linha = linhaBruta.replace(/\*/g, "").trim();
+        if (RE_ITEM_ACAO.test(linha)) return; // descarta item de ação do resumo
+        const m = linha.match(RE_FALANTE);
+        const falante = m ? m[1].trim().toLowerCase() : "";
+        const conteudo = limparFalante(linha);
+        if (!conteudo) return;
+        conteudo.split(/(?<=[.?!])\s+/).forEach((parte) => {
+          const t = parte.trim();
+          if (t.length < 2) return;
+          falas.push({ falante, text: t, pergunta: ehPergunta(t) });
         });
       });
 
-      const getAnswerForKeywords = (keywords: string[], fallback: string): string => {
-        for (let i = 0; i < sentences.length; i++) {
-          const item = sentences[i];
-          const hasKeyword = keywords.some(kw => item.text.toLowerCase().includes(kw));
-          if (hasKeyword) {
-            // If this is Caio asking, look for the next client sentence
-            if (item.speaker === "caio") {
-              for (let j = i + 1; j < sentences.length; j++) {
-                if (sentences[j].speaker === "cliente") {
-                  const hasKw = keywords.some(kw => sentences[j].text.toLowerCase().includes(kw));
-                  if (hasKw) {
-                    return sentences[j].text;
-                  }
-                }
-              }
-              for (let j = i + 1; j < sentences.length; j++) {
-                if (sentences[j].speaker === "cliente") {
-                  return sentences[j].text;
-                }
-              }
+      // Quem mais pergunta é o entrevistador; as respostas vêm dos outros.
+      const perguntasPorFalante = new Map<string, number>();
+      falas.forEach((f) => {
+        if (!f.falante) return;
+        perguntasPorFalante.set(f.falante, (perguntasPorFalante.get(f.falante) || 0) + (f.pergunta ? 1 : 0));
+      });
+      let entrevistador = "";
+      let maisPerguntas = 0;
+      perguntasPorFalante.forEach((qtd, nome) => {
+        if (qtd > maisPerguntas) { maisPerguntas = qtd; entrevistador = nome; }
+      });
+
+      // Uma mesma frase não pode preencher dois campos diferentes: era assim
+      // que Gênero e Classe social recebiam exatamente o mesmo texto.
+      const jaUsadas = new Set<number>();
+
+      const respostaValida = (t: string) =>
+        t.length >= 3 && !ehPergunta(t) && !/^(sim|não|nao|certo|ok|t[áa]|bom dia|boa tarde|obrigad)/i.test(t);
+
+      // `reusar`: permite que a MESMA frase alimente mais de um campo. Necessário
+      // para os subcampos do público, que costumam sair todos de uma resposta só
+      // ("o gênero é mulheres, faixa etária de 30 a 50, classe B").
+      const getAnswerForKeywords = (keywords: string[], fallback: string, reusar = false): string => {
+        for (let i = 0; i < falas.length; i++) {
+          const item = falas[i];
+          if (!keywords.some((kw) => contemPalavra(item.text, kw))) continue;
+
+          // Keyword numa pergunta (ou na fala do entrevistador): a resposta é a
+          // próxima fala de OUTRA pessoa que não seja pergunta.
+          if (item.pergunta || (entrevistador && item.falante === entrevistador)) {
+            for (let j = i + 1; j < falas.length && j <= i + 6; j++) {
+              if (!reusar && jaUsadas.has(j)) continue;
+              const cand = falas[j];
+              if (cand.falante && cand.falante === item.falante) continue;
+              if (!respostaValida(cand.text)) continue;
+              if (!reusar) jaUsadas.add(j);
+              return cand.text;
             }
-            if (item.speaker === "cliente") {
-              return item.text;
-            }
-            return item.text;
+            continue;
           }
+
+          if ((!reusar && jaUsadas.has(i)) || !respostaValida(item.text)) continue;
+          if (!reusar) jaUsadas.add(i);
+          return item.text;
         }
         return fallback;
       };
@@ -155,11 +210,11 @@ export function deriveExtractedValues(transcriptText: string): Record<string, st
       // faixa etária, classe, interesses, outros). Sem chave por subcampo eles
       // ficavam vazios mesmo com a transcrição colada. As chaves usam o formato
       // "publico_alvo.<id>" e são aplicadas em GeracaoDigitalPitch.
-      const genero = getAnswerForKeywords(["gênero", "genero", "homens", "mulheres"], "");
-      const idade = getAnswerForKeywords(["idade", "faixa etária", "faixa etaria", "anos"], "");
-      const classe = getAnswerForKeywords(["classe social", "classe", "poder aquisitivo"], "");
-      const interesses = getAnswerForKeywords(["interesses", "comportamento", "comportamentos", "hobbies"], "");
-      const outros_detalhes = getAnswerForKeywords(["outros detalhes", "detalhes do público", "detalhes do publico"], "");
+      const genero = recortarClausula(getAnswerForKeywords(["gênero", "genero", "homens", "mulheres"], "", true), ["gênero", "genero", "homens", "mulheres"]);
+      const idade = recortarClausula(getAnswerForKeywords(["idade", "faixa etária", "faixa etaria", "anos"], "", true), ["idade", "faixa etária", "faixa etaria", "anos"]);
+      const classe = recortarClausula(getAnswerForKeywords(["classe social", "classe", "poder aquisitivo"], "", true), ["classe social", "classe", "poder aquisitivo"]);
+      const interesses = recortarClausula(getAnswerForKeywords(["interesses", "comportamento", "comportamentos", "hobbies"], "", true), ["interesses", "comportamento", "comportamentos", "hobbies"]);
+      const outros_detalhes = getAnswerForKeywords(["outros detalhes", "detalhes do público", "detalhes do publico"], "", true);
 
       // Campos novos do briefing expandido.
       const ticket_margem = getAnswerForKeywords(["ticket médio", "ticket medio", "ticket", "margem"], "Não preenchido");
