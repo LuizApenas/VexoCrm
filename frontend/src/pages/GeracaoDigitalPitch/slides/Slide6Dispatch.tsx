@@ -87,7 +87,7 @@ export function Slide6Dispatch({
       .replace(/[^a-z0-9]/g, "-")
       .replace(/-+/g, "-")
       .slice(0, 21);
-    setSlackChannelName(`cli-${slug}`);
+    setSlackChannelName(`gd-${slug}`);
     
     // Default WhatsApp Group Name
     const firstName = (theme.prospectName || "Cliente").split(" ")[0];
@@ -390,7 +390,7 @@ export function Slide6Dispatch({
                                   <Input
                                     value={newExtraChannel}
                                     onChange={(e) => setNewExtraChannel(e.target.value)}
-                                    placeholder="Ex: cli-nome-design"
+                                    placeholder="Ex: gd-nome-design"
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
                                         e.preventDefault();

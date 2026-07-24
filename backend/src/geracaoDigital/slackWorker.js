@@ -130,7 +130,7 @@ async function processSlackJob(job) {
     }
   }
 
-  const channelName = slackChannelName || `cli-${slug}`;
+  const channelName = slackChannelName || `gd-${slug}`;
   const channelId = await createSlackChannel(channelName);
   await joinSlackChannel(channelId);
   await inviteToChannel(channelId, slackMembers);

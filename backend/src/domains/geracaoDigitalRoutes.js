@@ -156,7 +156,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         if (!data.ok && data.error !== "already_in_channel") console.warn(`[gd-setup] Erro ao convidar para o canal ${channelId}:`, data.error);
       }
 
-      const channelName = slackChannelName || `cli-${slug}`;
+      const channelName = slackChannelName || `gd-${slug}`;
       const channelId = await createSlackChannel(channelName);
       await joinSlackChannel(channelId);
       await inviteToChannel(channelId, slackMembers);
