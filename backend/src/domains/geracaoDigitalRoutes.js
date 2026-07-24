@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { getSlackQueue } from "../geracaoDigital/slackQueue.js";
 import { processEvolutionMessageToSlack } from "../geracaoDigital/slackMirrorIn.js";
 import { processSlackMessageToEvolution } from "../geracaoDigital/slackMirrorOut.js";
+import { extractBriefingFields } from "./geracaoDigital/briefingExtract.js";
 
 // Recorrência: dois vocabulários para a mesma ideia. O catálogo (gd_products)
 // grava "pontual"; o wizard grava "unico". Comparar por string solta fazia todo
@@ -520,6 +521,10 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   });
 
   // GET /api/geracao-digital/slack-users
+  // Extração do briefing por IA. Substitui a heurística por palavra-chave que
+  // rodava no front e devolvia pergunta, nome de falante e trecho de resumo.
+  app.post("/api/geracao-digital/briefing/extract", requireFirebaseAuth, extractBriefingFields);
+
   app.get("/api/geracao-digital/slack-users", requireFirebaseAuth, async (req, res) => {
     try {
       const token = process.env.SLACK_BOT_TOKEN;

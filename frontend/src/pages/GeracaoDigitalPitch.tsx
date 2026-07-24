@@ -141,7 +141,7 @@ export default function GeracaoDigitalPitch() {
     });
   };
 
-  const processBriefingWithGemini = () => {
+  const processBriefingWithGemini = async () => {
     if (!transcriptText.trim()) {
       toast({
         title: "Transcrição vazia",
@@ -165,7 +165,43 @@ export default function GeracaoDigitalPitch() {
       }))
     );
 
-    const extractedValues = deriveExtractedValues(transcriptText);
+    // Extração pela IA no servidor. A heurística por palavra-chave que rodava
+    // aqui não dava conta de conversa real: devolvia a pergunta em vez da
+    // resposta, o nome de quem falou e trechos do resumo da reunião. Ela fica
+    // como rede de segurança apenas se a IA estiver indisponível.
+    let extractedValues: Record<string, string> = {};
+    let usouIA = false;
+    try {
+      const token = (await user?.getIdToken()) || "";
+      const resp = await fetch(`${API_BASE_URL}/api/geracao-digital/briefing/extract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ transcricao: transcriptText }),
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json?.success && json?.data) {
+          extractedValues = json.data;
+          usouIA = true;
+        }
+      } else {
+        const detalhe = await resp.json().catch(() => null);
+        toast({
+          title: "IA indisponível",
+          description: detalhe?.error || "Preenchendo com a leitura básica da transcrição. Revise os campos.",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "IA indisponível",
+        description: "Preenchendo com a leitura básica da transcrição. Revise os campos.",
+        variant: "destructive",
+      });
+    }
+    if (!usouIA) {
+      extractedValues = deriveExtractedValues(transcriptText);
+    }
 
     let currentStepIndex = 0;
 
@@ -199,15 +235,17 @@ export default function GeracaoDigitalPitch() {
                 value: extractedValues[`${f.id}.${sf.id}`] || sf.value,
               }));
               const temSub = !!subfields?.some((sf) => sf.value);
-              const val =
-                extractedValues[fieldId] ||
-                (temSub ? "" : "Preenchido com base nas respostas do briefing comercial.");
+              const val = extractedValues[fieldId] || "";
+              const achou = !!val || temSub;
               return {
                 ...f,
-                status: "completed",
+                // Campo sem informação na transcrição continua pendente em vez
+                // de receber texto de preenchimento genérico, que dava a falsa
+                // impressão de dado coletado.
+                status: achou ? "completed" : "pending",
                 value: val,
                 subfields,
-                confidence: Math.round(85 + Math.random() * 14)
+                confidence: achou ? Math.round(85 + Math.random() * 14) : 0
               };
             }
             return f;

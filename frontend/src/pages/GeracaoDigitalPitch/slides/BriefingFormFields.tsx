@@ -22,10 +22,10 @@ export function BriefingFormFields({ briefingFields, setBriefingFields, handleSe
                       <CardHeader className="pb-4 border-b border-slate-100 flex flex-row items-center justify-between sticky top-0 bg-slate-50 z-20">
                         <div>
                           <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-700">Requisitos do Briefing da Agência</CardTitle>
-                          <CardDescription className="text-xs text-slate-500">20 dados chaves coletados e validados pelo robô.</CardDescription>
+                          <CardDescription className="text-xs text-slate-500">Dados chaves coletados e validados pelo robô.</CardDescription>
                         </div>
                         <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 font-bold font-mono px-3 py-1 text-xs">
-                          {briefingFields.filter(f => f.value).length} / 20 Completos
+                          {briefingFields.filter(f => f.value).length} / {briefingFields.length} Completos
                         </Badge>
                       </CardHeader>
                       <CardContent className="p-6 space-y-4">
