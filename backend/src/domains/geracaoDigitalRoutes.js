@@ -56,7 +56,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
         .replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 21);
 
-      async function createSlackChannel(name) {
+      async function createSlackChannel(rawName) {
+        const name = (rawName || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-_]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
         const createRes = await fetch("https://slack.com/api/conversations.create", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
@@ -366,6 +367,9 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
 
         // Unique participants
         const uniqueParticipants = [...new Set(participants)];
+        if (uniqueParticipants.length === 0) {
+          return { status: "failed_400", error: "Nenhum participante válido foi fornecido (o WhatsApp do cliente e os setores estão vazios)." };
+        }
 
         const payload = {
           subject: subject.substring(0, 25), // WhatsApp group name limit
@@ -407,7 +411,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       // Create WhatsApp Group
       if (createWhatsappGroup) {
          const subject = whatsappGroupName || `GD & ${prospectName}`;
-         const groupRes = await createEvolutionGroup(subject, whatsappGroupMembers || sectorsWhatsapp || "");
+         const groupRes = await createEvolutionGroup(subject, [whatsappGroupMembers, sectorsWhatsapp].filter(Boolean).join(","));
          whatsappGroupStatus = groupRes.status;
          whatsappGroupError = groupRes.error || null;
          if (groupRes.groupId) {
