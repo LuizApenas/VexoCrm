@@ -16,7 +16,16 @@ import { API_BASE_URL } from "@/lib/api";
 // O áudio nunca é guardado. Vira texto e é descartado, no navegador e no
 // servidor.
 
-const SEGUNDOS_POR_SEGMENTO = 120;
+// O PRIMEIRO segmento é curto de propósito: o operador precisa ver texto
+// aparecendo em segundos para confiar que está funcionando. Antes era 120s para
+// todos, então o primeiro trecho só surgia depois de dois minutos inteiros.
+const SEGUNDOS_PRIMEIRO_SEGMENTO = 20;
+const SEGUNDOS_POR_SEGMENTO = 60;
+
+// Qualidade de áudio para TRANSCRIÇÃO, que não é a mesma coisa que para uma
+// chamada de voz. Opus mono a 64 kbps já é bem acima do que o Whisper precisa e
+// evita o bitrate baixo que o navegador escolhe sozinho.
+const BITS_POR_SEGUNDO = 64000;
 
 export interface EstadoGravacao {
   gravando: boolean;
@@ -107,7 +116,19 @@ export function useBriefingRecorder(aoTranscrever: (trecho: string) => void) {
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true },
+          audio: {
+            // echoCancellation REMOVE o que sai das caixas de som. Como a voz do
+            // cliente vem justamente das caixas, deixá-lo ligado apagava a
+            // metade mais importante da reunião. Este track é só para gravar; o
+            // Meet continua com o track dele, com cancelamento ativo, então a
+            // chamada não passa a ecoar para o outro lado.
+            echoCancellation: false,
+            // Estes dois ajudam no que o Conrado relatou: ruído em volta e voz
+            // distante saindo baixa.
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+          },
         });
       } catch {
         setErro("Permissão de microfone negada. Libere o acesso e tente de novo.");
@@ -125,9 +146,13 @@ export function useBriefingRecorder(aoTranscrever: (trecho: string) => void) {
 
       // Um MediaRecorder por segmento, encadeados: ao fechar um, envia e abre o
       // próximo, até o operador parar.
+      let primeiro = true;
       const gravarSegmento = () => {
         if (pararRef.current || !streamRef.current) return;
-        const rec = new MediaRecorder(streamRef.current, mime ? { mimeType: mime } : undefined);
+        const rec = new MediaRecorder(streamRef.current, {
+          ...(mime ? { mimeType: mime } : {}),
+          audioBitsPerSecond: BITS_POR_SEGUNDO,
+        });
         recorderRef.current = rec;
         const pedacos: BlobPart[] = [];
 
@@ -141,9 +166,11 @@ export function useBriefingRecorder(aoTranscrever: (trecho: string) => void) {
         };
 
         rec.start();
+        const duracao = primeiro ? SEGUNDOS_PRIMEIRO_SEGMENTO : SEGUNDOS_POR_SEGMENTO;
+        primeiro = false;
         window.setTimeout(() => {
           if (rec.state !== "inactive") rec.stop();
-        }, SEGUNDOS_POR_SEGMENTO * 1000);
+        }, duracao * 1000);
       };
 
       gravarSegmento();

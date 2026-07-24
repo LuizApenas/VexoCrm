@@ -106,9 +106,16 @@ export function BriefingTranscriptPanel({
 
                           <p className="text-[11px] text-slate-500 leading-relaxed">
                             Grava o microfone e vai escrevendo a transcrição aqui embaixo durante a reunião.
-                            O áudio não é armazenado. Com fone de ouvido só a sua voz é captada, então
-                            deixe a caixa de som aberta para gravar também o cliente.
+                            O primeiro trecho aparece em cerca de 20 segundos. O áudio não é armazenado.
                           </p>
+                          <ul className="text-[11px] text-slate-500 leading-relaxed list-disc pl-4 space-y-0.5">
+                            <li>Deixe a caixa de som aberta: com fone, só a sua voz é gravada.</li>
+                            <li>
+                              Grave em <strong>um computador só</strong>. Duas máquinas na mesma sala se
+                              realimentam e a transcrição embaralha.
+                            </li>
+                            <li>Quanto menos conversa paralela e ruído em volta, melhor o resultado.</li>
+                          </ul>
 
                           {!gravador.suportado && (
                             <p className="text-[11px] font-bold text-amber-600">
