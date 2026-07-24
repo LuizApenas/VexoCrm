@@ -200,8 +200,14 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       }
       briefingHtml += '</ul>';
 
-      // 1.5 Fetch dynamic instance name
+      // 1.5 Fetch dynamic instance name + base URL da instância.
+      // A base e o nome saem da MESMA fonte que as features de WhatsApp que
+      // funcionam (followup, campanhas): a dispatch_webhook_url da instância no
+      // banco. Antes o handoff dependia só de GD_EVOLUTION_URL/TOKEN, nomes de
+      // env exclusivos deste fluxo; se sumissem do servidor, o grupo caía em
+      // "not_configured" sem erro. Agora o env é apenas fallback.
       let dynamicInstanceName = null;
+      let dynamicBaseUrl = null;
       try {
         let queryStr = `SELECT dispatch_webhook_url, name, client_id FROM public.lead_client_evolution_instances WHERE active = true ORDER BY is_default DESC`;
         let queryParams = [];
@@ -232,6 +238,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
                  const messageIndex = pathParts.findIndex((part) => part === "message");
                  const instance = messageIndex >= 0 ? decodeURIComponent(pathParts[messageIndex + 2] || "") : "";
                  dynamicInstanceName = instance || row.name;
+                 dynamicBaseUrl = `${url.protocol}//${url.host}`;
                } catch (e) {
                  dynamicInstanceName = row.name;
                }
@@ -243,9 +250,10 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           console.error("[GeracaoDigital] Error fetching dynamic instance:", dbErr);
         }
 
-      // 2. Evolution config
-      const evolutionUrl = process.env.GD_EVOLUTION_URL;
-      const evolutionToken = process.env.GD_EVOLUTION_TOKEN;
+      // 2. Evolution config. Ordem: base da instância (banco) > GD_EVOLUTION_URL
+      // (env antigo) > EVOLUTION_API_URL (env que o resto do sistema usa).
+      const evolutionUrl = dynamicBaseUrl || process.env.GD_EVOLUTION_URL || process.env.EVOLUTION_API_URL;
+      const evolutionToken = process.env.GD_EVOLUTION_TOKEN || process.env.EVOLUTION_API_KEY;
       let evolutionStatus = "not_configured";
       let emailStatus = "not_configured";
       let sectorsStatus = "not_configured";
@@ -460,7 +468,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         whatsappGroupId,
         whatsappGroupError,
         instanciaUsada,
-        evolutionConfigured: !!(process.env.GD_EVOLUTION_URL && process.env.GD_EVOLUTION_TOKEN),
+        evolutionConfigured: !!(evolutionUrl && evolutionToken),
         slackStatus,
         slackError,
         emailStatus,
