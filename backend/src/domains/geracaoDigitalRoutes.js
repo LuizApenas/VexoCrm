@@ -65,13 +65,32 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         const createData = await createRes.json();
         if (!createData.ok) {
           if (createData.error === "name_taken") {
-            const listRes = await fetch("https://slack.com/api/conversations.list?types=public_channel,private_channel", {
-              headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` }
-            });
-            const listData = await listRes.json();
-            const existingChannel = listData.channels?.find(c => c.name === name);
-            if (!existingChannel) throw new Error(`Canal ${name} existe mas não foi encontrado.`);
-            return existingChannel.id;
+            // O canal já existe (reuso do mesmo nome entre testes). Busca o id
+            // dele. Antes a busca pegava só a PRIMEIRA página da conversations.list
+            // e não checava erro: quando o canal estava fora da página, arquivado,
+            // ou o token faltava escopo, o find falhava e o handoff INTEIRO era
+            // abortado. Agora pagina, inclui arquivados e reporta o erro real.
+            let cursor = "";
+            let achado = null;
+            let erroLista = null;
+            for (let i = 0; i < 20 && !achado; i++) {
+              const url =
+                "https://slack.com/api/conversations.list?limit=1000&exclude_archived=false" +
+                "&types=public_channel,private_channel" +
+                (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+              const listRes = await fetch(url, { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } });
+              const listData = await listRes.json();
+              if (!listData.ok) { erroLista = listData.error; break; }
+              achado = (listData.channels || []).find((c) => c.name === name);
+              cursor = listData.response_metadata?.next_cursor || "";
+              if (!cursor) break;
+            }
+            if (achado) return achado.id;
+            throw new Error(
+              erroLista
+                ? `O bot não conseguiu listar os canais do Slack (${erroLista}). Verifique os escopos channels:read e groups:read.`
+                : `O canal "${name}" já existe mas o bot não o encontra. Se for privado, adicione o bot ao canal, ou use outro nome.`
+            );
           } else {
             throw new Error(`Erro ao criar canal ${name}: ${createData.error}`);
           }
