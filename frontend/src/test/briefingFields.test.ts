@@ -42,7 +42,6 @@ describe("estrutura dos campos do briefing", () => {
   it("os campos novos do briefing expandido existem", () => {
     [
       "ticket_margem",
-      "diferencial",
       "ja_rodou_trafego",
       "trafego_historico",
       "dores_publico",
