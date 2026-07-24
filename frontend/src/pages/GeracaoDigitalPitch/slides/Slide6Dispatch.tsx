@@ -522,6 +522,22 @@ export function Slide6Dispatch({
                               if (responseData.slackStatus === "failed") {
                                 throw new Error(responseData.slackError || "Falha ao criar os canais no Slack. Verifique os tokens do bot.");
                               }
+                              // A falha do grupo de WhatsApp era SILENCIOSA: o
+                              // front só checava o Slack. Se o grupo foi pedido e
+                              // não nasceu, avisa com o motivo real da Evolution.
+                              if (createWhatsappGroup && responseData.whatsappGroupStatus &&
+                                  !String(responseData.whatsappGroupStatus).startsWith("created")) {
+                                const motivo = !responseData.evolutionConfigured
+                                  ? "a Evolution API não está configurada no servidor (GD_EVOLUTION_URL / GD_EVOLUTION_TOKEN)."
+                                  : responseData.whatsappGroupError
+                                    ? `${responseData.whatsappGroupError} (instância "${responseData.instanciaUsada}").`
+                                    : `status ${responseData.whatsappGroupStatus}, instância "${responseData.instanciaUsada}".`;
+                                toast({
+                                  title: "Grupo do WhatsApp não foi criado",
+                                  description: `Motivo: ${motivo}`,
+                                  variant: "destructive",
+                                });
+                              }
                               setDispatchResult(responseData);
                               setDispatchSuccess(true);
                               
