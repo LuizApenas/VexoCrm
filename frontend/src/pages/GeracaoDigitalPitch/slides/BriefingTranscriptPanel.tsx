@@ -27,11 +27,9 @@ export function BriefingTranscriptPanel({
 }: BriefingTranscriptPanelProps) {
   const { user } = useAuth();
 
-  // Cada trecho transcrito é ANEXADO ao que já existe, para o operador poder
-  // editar o texto durante a reunião sem perder o que vem depois.
-  const gravador = useBriefingRecorder((trecho) =>
-    setTranscriptText((atual) => (atual ? `${atual.trimEnd()} ${trecho}` : trecho))
-  );
+  // O gravador devolve o texto COMPLETO da transcrição (o que estava colado
+  // antes + tudo o que foi falado), então aqui é substituição, não concatenação.
+  const gravador = useBriefingRecorder((textoCompleto) => setTranscriptText(textoCompleto));
 
   const mmss = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -50,7 +48,7 @@ export function BriefingTranscriptPanel({
         "Começar a gravar?"
     );
     if (!ok) return;
-    await gravador.iniciar(async () => (await user?.getIdToken()) || "");
+    await gravador.iniciar(async () => (await user?.getIdToken()) || "", transcriptText);
   };
 
   return (
@@ -106,7 +104,7 @@ export function BriefingTranscriptPanel({
 
                           <p className="text-[11px] text-slate-500 leading-relaxed">
                             Grava o microfone e vai escrevendo a transcrição aqui embaixo durante a reunião.
-                            O primeiro trecho aparece em cerca de 12 segundos. O áudio não é armazenado.
+                            O primeiro trecho aparece em poucos segundos. O áudio não é armazenado.
                           </p>
                           <ul className="text-[11px] text-slate-500 leading-relaxed list-disc pl-4 space-y-0.5">
                             <li>Deixe a caixa de som aberta: com fone, só a sua voz é gravada.</li>
