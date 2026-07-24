@@ -36,7 +36,6 @@ import AdminPanel from "./pages/AdminPanel";
 import VexoPitch from "./pages/VexoPitch";
 import GeracaoDigital from "./pages/GeracaoDigital";
 import GeracaoDigitalDashboard from "./pages/GeracaoDigitalDashboard";
-import GeracaoDigitalCommercialSetup from "./pages/GeracaoDigitalCommercialSetup";
 import GeracaoDigitalProposals from "./pages/GeracaoDigitalProposals";
 import GeracaoDigitalPublicProposal from "./pages/GeracaoDigitalPublicProposal";
 import PresentationPreview from "./pages/PresentationPreview";
@@ -292,14 +291,11 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
-              <Route
-                path="apresentacao-gd"
-                element={
-                  <ProtectedRoute allowedRoles={["internal"]}>
-                    <GeracaoDigitalCommercialSetup />
-                  </ProtectedRoute>
-                }
-              />
+              {/* O fluxo comercial (apresentação por segmento) foi migrado para
+                  dentro de Propostas — a apresentação abre a partir de cada
+                  proposta. Esta tela virou órfã, então a rota redireciona para o
+                  Briefing, que é o que deve aparecer aqui. */}
+              <Route path="apresentacao-gd" element={<Navigate to="/crm/geracao-digital" replace />} />
               <Route
                 path="dashboard-gd"
                 element={
