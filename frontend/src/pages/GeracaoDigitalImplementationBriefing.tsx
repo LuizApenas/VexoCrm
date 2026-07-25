@@ -966,7 +966,7 @@ export default function GeracaoDigitalImplementationBriefing() {
                       </div>
                       <Switch
                         checked={modulosCustom.necessidadeEspecifica}
-                        onCheckedChange={(checked) => setModulosCustom(m => ({ ...m necessidadeEspecifica: checked }))}
+                        onCheckedChange={(checked) => setModulosCustom(m => ({ ...m, necessidadeEspecifica: checked }))}
                       />
                     </div>
 
