@@ -44,15 +44,16 @@ export function computePackagePricing(
   const aprox = meses !== null && mensalidade !== null
     ? Math.round(mensalidade * meses * 100) !== Math.round(total * 100)
     : false;
-  const tabela = Number(valorTabela || 0);
-  const temTabela = tabela > total && total > 0;
+  const tabelaNum = Number(valorTabela || 0);
+  const tabelaTotal = (meses && tabelaNum > 0 && tabelaNum < total) ? Math.round(tabelaNum * meses * 100) / 100 : tabelaNum;
+  const temTabela = tabelaTotal > total && total > 0;
   return {
     meses,
     totalPeriodo: total,
     mensalidade,
     aprox,
-    valorTabela: temTabela ? tabela : null,
-    descontoPct: temTabela ? Math.round((1 - total / tabela) * 100) : null,
+    valorTabela: temTabela ? tabelaTotal : null,
+    descontoPct: temTabela ? Math.round((1 - total / tabelaTotal) * 100) : null,
   };
 }
 

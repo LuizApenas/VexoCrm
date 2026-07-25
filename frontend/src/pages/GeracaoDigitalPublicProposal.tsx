@@ -529,6 +529,9 @@ export default function GeracaoDigitalPublicProposal() {
                   const periodoLabel = pkg.periodo ? (PERIODO_LABELS[pkg.periodo] || pkg.periodo) : null;
                   const meses = pkg.periodo === 'anual' ? 12 : pkg.periodo === 'semestral' ? 6 : pkg.periodo === 'trimestral' ? 3 : 1;
                   const valorMensal = meses > 1 ? Number(pkg.valor || 0) / meses : Number(pkg.valor || 0);
+                  const valorTabelaPeriodo = Number(pkg.valor_tabela || 0);
+                  const valorTabelaMensal = valorTabelaPeriodo > 0 ? (meses > 1 ? valorTabelaPeriodo / meses : valorTabelaPeriodo) : 0;
+                  const temTabelaRiscada = valorTabelaMensal > valorMensal;
                   return (
                     <button
                       key={pkg.id}
@@ -547,6 +550,11 @@ export default function GeracaoDigitalPublicProposal() {
                         )}
                       </div>
                       <div>
+                        {temTabelaRiscada && (
+                          <span className="text-[11px] text-slate-400 line-through block font-mono">
+                            De R$ {valorTabelaMensal.toLocaleString("pt-BR")}/mês
+                          </span>
+                        )}
                         <span className="text-base font-black text-pink-500 font-mono">
                           R$ {valorMensal.toLocaleString("pt-BR")}<span className="text-[10px] font-bold text-slate-400">/mês</span>
                         </span>
@@ -753,12 +761,26 @@ export default function GeracaoDigitalPublicProposal() {
                   const vpMensal = Number(proposal.valor_vp || 0);
                   const temVp = vpMensal > 0 && vpMensal < mensalFinalVal;
                   const dinheiroMensal = temVp ? mensalFinalVal - vpMensal : mensalFinalVal;
+
+                  const pkgItem = (proposal.items || []).find((i: any) => i.categoria === "gd" && (Number(i.valor || 0) > 0 || Number(i.valor_tabela || 0) > 0));
+                  const valorTabelaPeriodo = pkgItem ? Number(pkgItem.valor_tabela || 0) : 0;
+                  const mesesItem = pkgItem ? (pkgItem.meses || calc.mesesPeriodo || 1) : 1;
+                  const rawTabelaMensal = valorTabelaPeriodo > 0 ? Math.round((valorTabelaPeriodo / mesesItem) * 100) / 100 : Number((proposal as any).valor_tabela_mensal || 0);
+                  const temPrecoCheio = rawTabelaMensal > mensalFinalVal;
+
                   return (
                     <>
-                      {/* Sem riscado: a permuta divide a mensalidade, não a
-                          desconta. Riscar o valor cheio fazia parecer desconto
-                          e confundia o cliente. Total em destaque, composição
-                          logo abaixo. */}
+                      {temPrecoCheio && (
+                        <div className="flex items-center gap-2 pt-0.5 pb-1">
+                          <span className="text-slate-400 line-through font-bold text-lg">
+                            R$ {rawTabelaMensal.toLocaleString("pt-BR")}/mês
+                          </span>
+                          <span className="text-emerald-400 text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                            Condição Especial
+                          </span>
+                        </div>
+                      )}
+
                       <span className="text-pink-400 font-black text-3xl block transition-all duration-500 ease-in-out">
                         R$ {mensalFinalVal.toLocaleString("pt-BR")}<span className="text-base font-bold text-slate-400 transition-colors duration-500">/mês</span>
                       </span>

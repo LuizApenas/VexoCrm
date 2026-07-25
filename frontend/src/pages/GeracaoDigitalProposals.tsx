@@ -1642,9 +1642,25 @@ export default function GeracaoDigitalProposals() {
 
                           <div className="space-y-1">
                             <span className="text-[10px] text-slate-550 uppercase font-black tracking-wider block dark:text-slate-400">Mensalidade</span>
-                            <h4 className="text-lg font-black text-pink-650 font-mono">
-                              {calc.mensalidadeFinal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês
-                            </h4>
+                            {(() => {
+                              const pkgItem = (selectedProposal.items || []).find((i: any) => i.categoria === "gd" && (Number(i.valor || 0) > 0 || Number(i.valor_tabela || 0) > 0));
+                              const valorTabelaPeriodo = pkgItem ? Number(pkgItem.valor_tabela || 0) : 0;
+                              const mesesItem = pkgItem ? (pkgItem.meses || calc.mesesPeriodo || 1) : 1;
+                              const rawTabelaMensal = valorTabelaPeriodo > 0 ? Math.round((valorTabelaPeriodo / mesesItem) * 100) / 100 : Number((selectedProposal as any).valor_tabela_mensal || 0);
+                              const temPrecoCheio = rawTabelaMensal > calc.mensalidadeFinal;
+                              return (
+                                <>
+                                  {temPrecoCheio && (
+                                    <span className="text-slate-400 line-through text-xs font-bold block font-mono">
+                                      {rawTabelaMensal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês
+                                    </span>
+                                  )}
+                                  <h4 className="text-lg font-black text-pink-650 font-mono">
+                                    {calc.mensalidadeFinal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês
+                                  </h4>
+                                </>
+                              );
+                            })()}
                           </div>
 
                           {(!periodoPlano || periodoPlano === "1") ? (
