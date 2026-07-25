@@ -13,7 +13,15 @@ import { TabTeste } from "./ChatbotSettings/TabTeste";
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ChatbotSettings() {
-  const { canAccessInternalPage } = useAuth();
+  const { canAccessInternalPage, isInternalUser } = useAuth();
+
+  if (!isInternalUser) {
+    return (
+      <PageShell title="Chatbot" subtitle="Acesso restrito">
+        <p className="text-sm text-slate-500">Você não tem permissão para acessar esta página.</p>
+      </PageShell>
+    );
+  }
   const { data: clients = [], isLoading: loadingClients } = useLeadClients();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedClientId, setSelectedClientId] = useState<string>("");
@@ -42,14 +50,6 @@ export default function ChatbotSettings() {
       }
     }
   }, [selectedClientId, tab, allowedChatbotSubTabs, setSearchParams]);
-
-  if (!canAccessInternalPage("empresas")) {
-    return (
-      <PageShell title="Chatbot" subtitle="Acesso restrito">
-        <p className="text-sm text-slate-500">Você não tem permissão para acessar esta página.</p>
-      </PageShell>
-    );
-  }
 
   return (
     <PageShell title="Chatbot" subtitle="Configure o chatbot SPIN por empresa" spacing="space-y-6">

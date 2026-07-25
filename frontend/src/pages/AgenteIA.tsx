@@ -12,11 +12,11 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PageShell, PageShellContext } from "@/components/PageShell";
 
 export default function AgenteIA() {
-  const { canAccessInternalPage } = useAuth();
+  const { canAccessInternalPage, isInternalUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const hasAgente = canAccessInternalPage("agente");
-  const hasSettings = canAccessInternalPage("chatbot-config");
+  const hasAgente = isInternalUser;
+  const hasSettings = isInternalUser;
 
   // Determine default tab based on first allowed page
   const defaultTab = hasAgente ? "operacao" : hasSettings ? "settings" : "";

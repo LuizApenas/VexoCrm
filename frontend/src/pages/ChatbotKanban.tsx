@@ -264,7 +264,7 @@ function KanbanColumn({
 
 export default function ChatbotKanban() {
   const navigate = useNavigate();
-  const { getIdToken, canAccessInternalPage } = useAuth();
+  const { getIdToken, isInternalUser } = useAuth();
   const { selectedClientId } = useCrmClient();
   const [leads, setLeads] = useState<ChatbotLead[]>([]);
   const [loading, setLoading] = useState(false);
@@ -272,7 +272,7 @@ export default function ChatbotKanban() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const canAccess = canAccessInternalPage("agente");
+  const canAccess = isInternalUser;
 
   const fetchLeads = useCallback(async () => {
     if (!canAccess || !selectedClientId) return;

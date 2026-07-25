@@ -19,9 +19,11 @@ export default function InboundAgentConfig() {
   const defaultTab = searchParams.get("tab") || "config";
   const [activeTab, setActiveTab] = useState(defaultTab);
   const { toast } = useToast();
-  const { selectedClientId } = useOptionalCrmClient();
+  const { data: rawCompanies = [], isLoading: loadingCompanies } = useFupCompanies(selectedClientId);
+  const companies = rawCompanies.length > 0
+    ? rawCompanies
+    : [{ id: selectedClientId || "default", company_name: "Instância Padrão / Principal" } as any];
 
-  const { data: companies = [], isLoading: loadingCompanies } = useFupCompanies(selectedClientId);
   const [companyId, setCompanyId] = useState<string>("all");
   const updateCompany = useUpdateFupCompany();
 
@@ -115,22 +117,6 @@ export default function InboundAgentConfig() {
       <PageShell title="Assistentes Inbound" description="Gerencie seus agentes receptivos.">
         <div className="flex h-32 items-center justify-center">
           <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-slate-900 dark:border-slate-100" />
-        </div>
-      </PageShell>
-    );
-  }
-
-  if (companies.length === 0) {
-    return (
-      <PageShell title="Assistentes Inbound" description="Nenhuma instância encontrada.">
-        <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50">
-          <AlertCircle className="mb-2 h-8 w-8 text-slate-400" />
-          <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">
-            Crie uma Instância
-          </h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Você precisa configurar uma empresa/instância no Follow-up antes de usar os Assistentes.
-          </p>
         </div>
       </PageShell>
     );
