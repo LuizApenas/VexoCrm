@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchApi, readApiJson } from "@/lib/api";
 import {
   Sparkles,
   CheckCircle2,
@@ -134,14 +136,52 @@ export default function GeracaoDigitalImplementationBriefing() {
     }
   }, [numEmployees, hasCommercialSector, suggestedModel, manualOverride]);
 
-  // Fetch Closed Proposals & Contracts
-  const { data: closedProposals = [], isLoading: isLoadingProposals } = useQuery({
-    queryKey: ["gd-closed-proposals-contracts"],
+  const { getIdToken } = useAuth();
+
+  // Fetch Closed Contracts & Proposals (Autenticado)
+  const { data: closedOptions = [], isLoading: isLoadingClosedOptions } = useQuery({
+    queryKey: ["gd-closed-contracts-and-proposals"],
     queryFn: async () => {
-      const res = await fetch("/api/gd/proposals");
-      if (!res.ok) return [];
-      const json = await res.json();
-      return json.data || json || [];
+      const token = await getIdToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const [resContracts, resProposals] = await Promise.all([
+        fetchApi("/api/gd/contracts", { headers }).catch(() => null),
+        fetchApi("/api/gd/proposals", { headers }).catch(() => null),
+      ]);
+
+      const items: Array<{ id: string; name: string; status: string }> = [];
+      const seenIds = new Set<string>();
+
+      if (resContracts && resContracts.ok) {
+        const jsonC = await readApiJson<any>(resContracts, "gd-contracts");
+        const listC = Array.isArray(jsonC) ? jsonC : jsonC?.data || [];
+        for (const c of listC) {
+          const id = c.id || c.proposal_id;
+          const name = c.dados?.razao_social || c.dados?.representante || "Contrato Sem Nome";
+          const statusLabel = c.status === "enviado_juridico" ? "No Jurídico" : c.status === "gerado" ? "Gerado" : "Contrato";
+          if (id && !seenIds.has(id)) {
+            seenIds.add(id);
+            items.push({ id, name, status: statusLabel });
+          }
+        }
+      }
+
+      if (resProposals && resProposals.ok) {
+        const jsonP = await readApiJson<any>(resProposals, "gd-proposals");
+        const listP = Array.isArray(jsonP) ? jsonP : jsonP?.data || [];
+        for (const p of listP) {
+          const id = p.id || p.tenant_id;
+          const name = p.prospect_name || p.client_name || p.dados?.razao_social || "Proposta Sem Nome";
+          const statusLabel = p.status === "aceita" ? "Contrato Fechado" : p.status || "Proposta";
+          if (id && !seenIds.has(id)) {
+            seenIds.add(id);
+            items.push({ id, name, status: statusLabel });
+          }
+        }
+      }
+
+      return items;
     },
   });
 
@@ -256,47 +296,48 @@ export default function GeracaoDigitalImplementationBriefing() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Empresa Contratante (Propostas Fechadas / Contratos Aceitos)
+                Empresa Contratante (Selecione a partir dos Contratos / Propostas Fechadas)
               </Label>
               <Select
                 value={selectedTenantId}
                 onValueChange={(val) => {
                   setSelectedTenantId(val);
-                  const found = closedProposals.find(
-                    (p: any) => (p.tenant_id || p.client_id || p.id) === val
-                  );
+                  const found = closedOptions.find((opt) => opt.id === val);
                   if (found) {
-                    const name = found.prospect_name || found.client_name || found.dados?.razao_social || "Empresa Contratante";
-                    setClientName(name);
-                  } else {
-                    setClientName(val);
+                    setClientName(found.name);
                   }
                 }}
               >
                 <SelectTrigger className="w-full h-10 text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                  <SelectValue placeholder={isLoadingProposals ? "Carregando empresas com contrato..." : "Selecione a empresa contratante..."} />
+                  <SelectValue placeholder={isLoadingClosedOptions ? "Carregando contratos..." : "Selecione a empresa contratante..."} />
                 </SelectTrigger>
                 <SelectContent>
-                  {closedProposals.length === 0 ? (
+                  {closedOptions.length === 0 ? (
                     <SelectItem value="none" disabled>
-                      Nenhuma empresa com contrato/proposta encontrada
+                      Nenhum contrato fechado encontrado no sistema
                     </SelectItem>
                   ) : (
-                    closedProposals.map((p: any) => {
-                      const id = p.tenant_id || p.client_id || p.id;
-                      const name = p.prospect_name || p.client_name || p.dados?.razao_social || "Sem nome";
-                      const statusLabel = p.status === "aceita" ? "Contrato Fechado" : p.status || "Proposta";
-                      return (
-                        <SelectItem key={id} value={id} className="text-sm">
-                          {name} <span className="text-xs text-emerald-600 font-bold ml-2">({statusLabel})</span>
-                        </SelectItem>
-                      );
-                    })
+                    closedOptions.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.id} className="text-sm">
+                        {opt.name} <span className="text-xs text-emerald-600 font-bold ml-2">({opt.status})</span>
+                      </SelectItem>
+                    ))
                   )}
                 </SelectContent>
               </Select>
+
+              {/* Opção para ajuste fino ou digitação manual se necessário */}
+              <div className="pt-1">
+                <Label className="text-[11px] font-semibold text-slate-500">Nome do Cliente / Razão Social Confirmada</Label>
+                <Input
+                  placeholder="Nome do cliente para o briefing (preenchido automaticamente ao selecionar a empresa)"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  className="mt-1 h-9 text-xs bg-slate-50 dark:bg-slate-900"
+                />
+              </div>
             </div>
 
             {/* REGRAS DE ROTEAMENTO */}
