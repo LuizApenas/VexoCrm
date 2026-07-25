@@ -10,11 +10,11 @@ import { PageShell, PageShellContext } from "@/components/PageShell";
 import { GeracaoDigitalTabs } from "@/components/GeracaoDigitalTabs";
 
 export default function GeracaoDigital() {
-  const { canAccessInternalPage } = useAuth();
+  const { canAccessInternalPage, isInternalUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const hasApresentacao = canAccessInternalPage("apresentacao-gd");
-  const hasBriefings = canAccessInternalPage("briefings-gd");
+  const hasApresentacao = isInternalUser;
+  const hasBriefings = isInternalUser;
 
   // Determine default tab based on first allowed page
   const defaultTab = hasApresentacao ? "apresentacao" : hasBriefings ? "briefings" : "";

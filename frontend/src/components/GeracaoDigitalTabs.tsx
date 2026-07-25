@@ -16,7 +16,7 @@ export function GeracaoDigitalTabs() {
   // /crm/propostas-gd/:id/apresentacao. A rota antiga continua existindo para
   // não quebrar links salvos, só não aparece mais no menu.
   const hasApresentacao = false;
-  const hasBriefings = canAccessInternalPage("briefings-gd");
+  const hasBriefings = isInternalUser;
   // Abas operacionais do fluxo comercial: liberadas para toda a equipe interna
   // (vendedores), não só admins. As rotas já permitem allowedRoles=["internal"];
   // o gate por preset ocultava as abas para quem não era admin.
