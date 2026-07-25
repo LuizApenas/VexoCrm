@@ -234,6 +234,33 @@ export async function sendContractToJuridico(req, res) {
       comment: resumo,
     });
 
+    // ETAPA 2: Mensagem SEPARADA enviada logo abaixo do contrato
+    const nomeEmpresa = (dados.razao_social || dados.empresa || "").trim() || "Empresa não informada";
+    const nomeCliente = (dados.representante || dados.cliente || "").trim() || "Cliente não informado";
+    const whatsappCliente = (dados.telefone || dados.telefone2 || dados.whatsapp || "").trim() || "WhatsApp não informado";
+
+    const mensagemDadosDetalhados =
+      `📋 *Dados do Cliente (Contrato)*\n` +
+      `• *Empresa:* ${nomeEmpresa}\n` +
+      `• *Cliente:* ${nomeCliente}\n` +
+      `• *WhatsApp:* ${whatsappCliente}`;
+
+    try {
+      await fetch(`${SLACK_API}/chat.postMessage`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({
+          channel: channelId,
+          text: mensagemDadosDetalhados,
+        }),
+      });
+    } catch (slackMsgErr) {
+      console.warn("[sendContractToJuridico] Erro ao enviar mensagem de dados no Slack:", slackMsgErr?.message || slackMsgErr);
+    }
+
     // Aviso no WhatsApp é best-effort: se falhar, o contrato já está no Slack.
     let whatsappStatus = "not_configured";
     if (juridico.whatsapp_number) {
@@ -241,7 +268,7 @@ export async function sendContractToJuridico(req, res) {
         whatsappStatus = await sendWhatsapp({
           number: juridico.whatsapp_number,
           instance: juridico.evolution_instance,
-          text: `Novo contrato para revisão: *${empresa}*. O PDF está no canal do jurídico no Slack.`,
+          text: `Novo contrato para revisão: *${empresa}*.\n\n${mensagemDadosDetalhados}\n\nO PDF foi enviado para o Slack do Jurídico.`,
         });
       } catch (waErr) {
         console.warn("[sendContractToJuridico] WhatsApp falhou:", waErr?.message || waErr);

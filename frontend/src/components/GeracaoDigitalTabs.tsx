@@ -23,11 +23,13 @@ export function GeracaoDigitalTabs() {
   const hasPropostas = isInternalUser;
   const hasPacotes = isInternalUser;
   const hasContratos = isInternalUser;
+  const hasImplantacao = isInternalUser;
 
   // Determine active tab based on path name
   let activeTab = "";
   if (location.pathname.includes("dashboard-gd")) activeTab = "dashboard";
   else if (location.pathname.includes("apresentacao-gd")) activeTab = "apresentacao";
+  else if (location.pathname.includes("implantacao-gd")) activeTab = "implantacao";
   else if (location.pathname.includes("geracao-digital")) activeTab = "briefing";
   else if (location.pathname.includes("propostas-gd")) activeTab = "propostas";
   else if (location.pathname.includes("pacotes-gd")) activeTab = "pacotes";
@@ -36,6 +38,7 @@ export function GeracaoDigitalTabs() {
   const handleTabChange = (val: string) => {
     if (val === "dashboard") navigate("/crm/dashboard-gd");
     else if (val === "apresentacao") navigate("/crm/apresentacao-gd");
+    else if (val === "implantacao") navigate("/crm/implantacao-gd");
     else if (val === "briefing") navigate("/crm/geracao-digital");
     else if (val === "propostas") navigate("/crm/propostas-gd");
     else if (val === "pacotes") navigate("/crm/pacotes-gd");
@@ -80,6 +83,12 @@ export function GeracaoDigitalTabs() {
             <TabsTrigger value="contratos" className="flex-1 flex-shrink-0 px-3 md:px-4 text-xs font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-purple-650 data-[state=active]:shadow-sm">
               <FileText className="h-3.5 w-3.5 mr-1.5" />
               Contratos
+            </TabsTrigger>
+          )}
+          {hasImplantacao && (
+            <TabsTrigger value="implantacao" className="flex-1 flex-shrink-0 px-3 md:px-4 text-xs font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-purple-650 data-[state=active]:shadow-sm">
+              <ListChecks className="h-3.5 w-3.5 mr-1.5 text-indigo-500" />
+              Implantação
             </TabsTrigger>
           )}
         </TabsList>

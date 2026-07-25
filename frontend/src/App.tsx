@@ -42,6 +42,7 @@ import PresentationPreview from "./pages/PresentationPreview";
 import GeracaoDigitalPackages from "./pages/GeracaoDigitalPackages";
 import GeracaoDigitalContracts from "./pages/GeracaoDigitalContracts/GeracaoDigitalContracts";
 import GeracaoDigitalProposalPresentation from "./pages/GeracaoDigitalProposalPresentation";
+import GeracaoDigitalImplementationBriefing from "./pages/GeracaoDigitalImplementationBriefing";
 
 const queryClient = new QueryClient();
 
@@ -325,6 +326,14 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={["internal"]}>
                     <GeracaoDigitalContracts />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="implantacao-gd"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]}>
+                    <GeracaoDigitalImplementationBriefing />
                   </ProtectedRoute>
                 }
               />

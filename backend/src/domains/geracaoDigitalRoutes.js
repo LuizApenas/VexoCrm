@@ -2341,4 +2341,196 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       res.status(500).json({ error: "Erro ao registrar assinatura." });
     }
   });
+
+  // ─── BRIEFING DE IMPLANTAÇÃO (ONBOARDING TÉCNICO) ──────────────────────────
+
+  // GET /api/gd/implementation-briefings
+  app.get("/api/gd/implementation-briefings", requireFirebaseAuth, async (req, res) => {
+    try {
+      const { tenant_id } = req.query;
+      let queryStr = `SELECT * FROM public.gd_implementation_briefings ORDER BY created_at DESC`;
+      let queryParams = [];
+
+      if (tenant_id) {
+        queryStr = `SELECT * FROM public.gd_implementation_briefings WHERE tenant_id = $1 ORDER BY created_at DESC`;
+        queryParams = [tenant_id];
+      }
+
+      const { rows } = await pool.query(queryStr, queryParams);
+      res.json({ success: true, data: rows });
+    } catch (error) {
+      console.error("[GeracaoDigital] Erro ao buscar briefings de implantação:", error);
+      res.status(500).json({ error: "Erro interno ao buscar briefings de implantação." });
+    }
+  });
+
+  // GET /api/gd/implementation-briefings/:id
+  app.get("/api/gd/implementation-briefings/:id", requireFirebaseAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { rows } = await pool.query(
+        `SELECT * FROM public.gd_implementation_briefings WHERE id = $1`,
+        [id]
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Briefing de implantação não encontrado." });
+      }
+      res.json({ success: true, data: rows[0] });
+    } catch (error) {
+      console.error("[GeracaoDigital] Erro ao buscar briefing de implantação:", error);
+      res.status(500).json({ error: "Erro interno ao buscar briefing de implantação." });
+    }
+  });
+
+  // POST /api/gd/implementation-briefings
+  app.post("/api/gd/implementation-briefings", requireFirebaseAuth, async (req, res) => {
+    try {
+      const {
+        tenant_id,
+        client_name,
+        model_type,
+        suggested_model,
+        num_employees,
+        has_commercial_sector,
+        prerequisites = {},
+        operacao = {},
+        inteligencia = {},
+        agente_ia = {},
+        canais = {},
+        modulos_custom = {},
+        fechamento = {},
+        status = 'em_andamento'
+      } = req.body;
+
+      if (!tenant_id || !client_name || !model_type) {
+        return res.status(400).json({ error: "tenant_id, client_name e model_type são obrigatórios." });
+      }
+
+      const { rows } = await pool.query(
+        `INSERT INTO public.gd_implementation_briefings (
+          tenant_id, client_name, model_type, suggested_model, num_employees,
+          has_commercial_sector, prerequisites, operacao, inteligencia, agente_ia,
+          canais, modulos_custom, fechamento, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING *`,
+        [
+          tenant_id, client_name, model_type, suggested_model || model_type,
+          Number(num_employees || 1), Boolean(has_commercial_sector),
+          JSON.stringify(prerequisites), JSON.stringify(operacao),
+          JSON.stringify(inteligencia), JSON.stringify(agente_ia),
+          JSON.stringify(canais), JSON.stringify(modulos_custom),
+          JSON.stringify(fechamento), status
+        ]
+      );
+
+      const record = rows[0];
+
+      if (status === 'concluido') {
+        await syncTenantImplementationConfig(pool, tenant_id, record);
+      }
+
+      res.json({ success: true, data: record });
+    } catch (error) {
+      console.error("[GeracaoDigital] Erro ao criar briefing de implantação:", error);
+      res.status(500).json({ error: "Erro ao criar briefing de implantação." });
+    }
+  });
+
+  // PUT /api/gd/implementation-briefings/:id
+  app.put("/api/gd/implementation-briefings/:id", requireFirebaseAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        client_name,
+        model_type,
+        suggested_model,
+        num_employees,
+        has_commercial_sector,
+        prerequisites,
+        operacao,
+        inteligencia,
+        agente_ia,
+        canais,
+        modulos_custom,
+        fechamento,
+        status
+      } = req.body;
+
+      const { rows: currentRows } = await pool.query(
+        `SELECT * FROM public.gd_implementation_briefings WHERE id = $1`,
+        [id]
+      );
+      if (currentRows.length === 0) {
+        return res.status(404).json({ error: "Briefing de implantação não encontrado." });
+      }
+
+      const curr = currentRows[0];
+      const newStatus = status || curr.status;
+
+      const { rows } = await pool.query(
+        `UPDATE public.gd_implementation_briefings SET
+          client_name = COALESCE($1, client_name),
+          model_type = COALESCE($2, model_type),
+          suggested_model = COALESCE($3, suggested_model),
+          num_employees = COALESCE($4, num_employees),
+          has_commercial_sector = COALESCE($5, has_commercial_sector),
+          prerequisites = COALESCE($6, prerequisites),
+          operacao = COALESCE($7, operacao),
+          inteligencia = COALESCE($8, inteligencia),
+          agente_ia = COALESCE($9, agente_ia),
+          canais = COALESCE($10, canais),
+          modulos_custom = COALESCE($11, modulos_custom),
+          fechamento = COALESCE($12, fechamento),
+          status = $13,
+          updated_at = NOW()
+        WHERE id = $14 RETURNING *`,
+        [
+          client_name, model_type, suggested_model,
+          num_employees !== undefined ? Number(num_employees) : null,
+          has_commercial_sector !== undefined ? Boolean(has_commercial_sector) : null,
+          prerequisites ? JSON.stringify(prerequisites) : null,
+          operacao ? JSON.stringify(operacao) : null,
+          inteligencia ? JSON.stringify(inteligencia) : null,
+          agente_ia ? JSON.stringify(agente_ia) : null,
+          canais ? JSON.stringify(canais) : null,
+          modulos_custom ? JSON.stringify(modulos_custom) : null,
+          fechamento ? JSON.stringify(fechamento) : null,
+          newStatus, id
+        ]
+      );
+
+      const updatedRecord = rows[0];
+
+      if (newStatus === 'concluido') {
+        await syncTenantImplementationConfig(pool, updatedRecord.tenant_id, updatedRecord);
+      }
+
+      res.json({ success: true, data: updatedRecord });
+    } catch (error) {
+      console.error("[GeracaoDigital] Erro ao atualizar briefing de implantação:", error);
+      res.status(500).json({ error: "Erro ao atualizar briefing de implantação." });
+    }
+  });
+
+  async function syncTenantImplementationConfig(dbPool, tenantId, briefing) {
+    try {
+      const tmRes = await dbPool.query("SELECT config FROM public.tenant_modules WHERE tenant_id = $1", [tenantId]);
+      let currentConfig = tmRes.rows[0]?.config || {};
+      let gdConfig = currentConfig.gd || {};
+      gdConfig.implementation = briefing;
+      currentConfig.gd = gdConfig;
+
+      await dbPool.query(
+        `INSERT INTO public.tenant_modules (tenant_id, module_key, is_enabled, config, updated_at)
+         VALUES ($1, 'geracao-digital', true, $2, NOW())
+         ON CONFLICT (tenant_id, module_key)
+         DO UPDATE SET config = EXCLUDED.config, updated_at = NOW()`,
+        [tenantId, JSON.stringify(currentConfig)]
+      );
+
+      console.log(`[syncTenantImplementationConfig] Config de implantação sincronizada para o tenant ${tenantId}`);
+    } catch (err) {
+      console.error(`[syncTenantImplementationConfig] Erro ao sincronizar com tenant_modules:`, err);
+    }
+  }
 }
