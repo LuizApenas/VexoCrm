@@ -18,29 +18,18 @@ export default function AgenteIA() {
   const hasAgente = isInternalUser;
   const hasSettings = isInternalUser;
 
-  // Determine default tab based on first allowed page
-  const defaultTab = hasAgente ? "operacao" : hasSettings ? "settings" : "";
-  const activeTab = searchParams.get("tab") || defaultTab;
-
-  useEffect(() => {
-    if (activeTab === "operacao" && !hasAgente) {
-      setSearchParams({ tab: defaultTab });
-    } else if (activeTab === "settings" && !hasSettings) {
-      setSearchParams({ tab: defaultTab });
-    } else if (activeTab === "inbound" && !hasAgente) {
-      setSearchParams({ tab: defaultTab });
-    } else if (activeTab === "docs" && !hasAgente) {
-      setSearchParams({ tab: defaultTab });
-    } else if (activeTab === "alertas" && !hasAgente) {
-      setSearchParams({ tab: defaultTab });
-    }
-  }, [activeTab, hasAgente, hasSettings, defaultTab, setSearchParams]);
+  const rawTab = searchParams.get("tab");
+  const validTabs = ["operacao", "settings", "inbound", "docs", "alertas"];
+  const activeTab = validTabs.includes(rawTab || "") ? (rawTab as string) : "operacao";
 
   const handleTabChange = (val: string) => {
-    setSearchParams({ tab: val });
+    setSearchParams((prev) => {
+      prev.set("tab", val);
+      return prev;
+    });
   };
 
-  if (!defaultTab) {
+  if (!isInternalUser) {
     return (
       <PageShell title="Agente IA" subtitle="Gerencie triagem, prompts, assistentes e monitoramento em tempo real">
         <div className="p-8 text-center text-muted-foreground">

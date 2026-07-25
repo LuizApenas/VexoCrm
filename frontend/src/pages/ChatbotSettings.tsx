@@ -5,15 +5,48 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLeadClients } from "@/hooks/useLeadClients";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { TabGeral } from "./ChatbotSettings/TabGeral";
 import { TabTemplate } from "./ChatbotSettings/TabTemplate";
 import { TabPrompts } from "./ChatbotSettings/TabPrompts";
 import { TabTeste } from "./ChatbotSettings/TabTeste";
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
 export default function ChatbotSettings() {
-  const { canAccessInternalPage, isInternalUser } = useAuth();
+  const { isInternalUser } = useAuth();
+  const crmClient = useOptionalCrmClient();
+  const { data: clients = [], isLoading: loadingClients } = useLeadClients();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [subTab, setSubTab] = useState<string>(searchParams.get("subtab") || "geral");
+
+  // Auto-select first client or CRM client
+  useEffect(() => {
+    if (!selectedClientId) {
+      if (crmClient?.selectedClientId && crmClient.selectedClientId !== "global") {
+        setSelectedClientId(crmClient.selectedClientId);
+      } else if (clients.length > 0) {
+        setSelectedClientId(clients[0].id);
+      }
+    }
+  }, [clients, crmClient?.selectedClientId, selectedClientId]);
+
+  // Sync subtab with URL query param `subtab` without wiping `tab=settings`
+  useEffect(() => {
+    const urlSubtab = searchParams.get("subtab");
+    if (urlSubtab && ["geral", "template", "prompts", "teste"].includes(urlSubtab)) {
+      setSubTab(urlSubtab);
+    }
+  }, [searchParams]);
+
+  const handleSubTabChange = (val: string) => {
+    setSubTab(val);
+    setSearchParams((prev) => {
+      prev.set("tab", "settings");
+      prev.set("subtab", val);
+      return prev;
+    });
+  };
 
   if (!isInternalUser) {
     return (
@@ -22,16 +55,8 @@ export default function ChatbotSettings() {
       </PageShell>
     );
   }
-  const { data: clients = [], isLoading: loadingClients } = useLeadClients();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedClientId, setSelectedClientId] = useState<string>("");
-  const tab = searchParams.get("tab") ?? "geral";
 
-  useEffect(() => {
-    if (!selectedClientId && clients.length > 0) setSelectedClientId(clients[0].id);
-  }, [clients, selectedClientId]);
-
-  const selectedClient = clients.find((c) => c.id === selectedClientId);
+  const selectedClient = clients.find((c) => c.id === selectedClientId) || (clients.length > 0 ? clients[0] : null);
 
   const allowedTabs = selectedClient?.n8n_settings?.allowed_tabs;
   const isSubTabAllowed = (subTabKey: string) => {
@@ -39,81 +64,55 @@ export default function ChatbotSettings() {
     return allowedTabs.includes(`chatbot:${subTabKey}`);
   };
 
-  const chatbotSubTabs = ["geral", "template", "prompts", "teste"] as const;
-  const allowedChatbotSubTabs = chatbotSubTabs.filter(isSubTabAllowed);
-
-  useEffect(() => {
-    if (selectedClientId && allowedChatbotSubTabs.length > 0) {
-      const isCurrentAllowed = allowedChatbotSubTabs.includes(tab as any);
-      if (!isCurrentAllowed) {
-        setSearchParams({ tab: allowedChatbotSubTabs[0] });
-      }
-    }
-  }, [selectedClientId, tab, allowedChatbotSubTabs, setSearchParams]);
+  const currentClientId = selectedClientId || (selectedClient?.id || "global");
 
   return (
-    <PageShell title="Chatbot" subtitle="Configure o chatbot SPIN por empresa" spacing="space-y-6">
+    <PageShell title="Configurações do Chatbot SPIN" subtitle="Ajuste parâmetros gerais, templates, prompts e simulações por empresa" spacing="space-y-6">
       {/* Seletor de empresa */}
       <div className="flex items-center gap-3">
-        <Select value={selectedClientId} onValueChange={setSelectedClientId} disabled={loadingClients}>
-          <SelectTrigger className="w-64 h-9 text-sm">
+        <Select value={currentClientId} onValueChange={setSelectedClientId} disabled={loadingClients}>
+          <SelectTrigger className="w-64 h-9 text-sm bg-white dark:bg-slate-900">
             <SelectValue placeholder={loadingClients ? "Carregando..." : "Selecione a empresa"} />
           </SelectTrigger>
           <SelectContent>
             {clients.map((c) => (
-              <SelectItem key={c.id} value={c.id} className="text-sm">{c.name}</SelectItem>
+              <SelectItem key={c.id} value={c.id} className="text-sm">
+                {c.name}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {selectedClient && (
-          <span className="text-xs text-slate-400 font-mono">{selectedClientId}</span>
+        {currentClientId && currentClientId !== "global" && (
+          <span className="text-xs text-slate-400 font-mono">{currentClientId}</span>
         )}
       </div>
 
-      {!selectedClientId ? (
-        <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-slate-200 dark:border-white/10">
-          <p className="text-sm text-slate-400">Selecione uma empresa para configurar o chatbot.</p>
+      <Tabs value={subTab} onValueChange={handleSubTabChange} className="w-full">
+        <TabsList className="h-10 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/10 p-1">
+          {isSubTabAllowed("geral") && <TabsTrigger value="geral" className="text-xs font-bold px-4">Geral</TabsTrigger>}
+          {isSubTabAllowed("template") && <TabsTrigger value="template" className="text-xs font-bold px-4">Template</TabsTrigger>}
+          {isSubTabAllowed("prompts") && <TabsTrigger value="prompts" className="text-xs font-bold px-4">Prompts</TabsTrigger>}
+          {isSubTabAllowed("teste") && <TabsTrigger value="teste" className="text-xs font-bold px-4">Simulador de Teste</TabsTrigger>}
+        </TabsList>
+
+        <div className="pt-4">
+          {subTab === "geral" && isSubTabAllowed("geral") && (
+            <TabGeral clientId={currentClientId} clientName={selectedClient?.name || "Empresa"} client={selectedClient} />
+          )}
+
+          {subTab === "template" && isSubTabAllowed("template") && (
+            <TabTemplate clientId={currentClientId} />
+          )}
+
+          {subTab === "prompts" && isSubTabAllowed("prompts") && (
+            <TabPrompts clientId={currentClientId} />
+          )}
+
+          {subTab === "teste" && isSubTabAllowed("teste") && (
+            <TabTeste clientId={currentClientId} />
+          )}
         </div>
-      ) : allowedChatbotSubTabs.length === 0 ? (
-        <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-slate-200 dark:border-white/10">
-          <p className="text-sm text-slate-400">Você não tem permissão para acessar nenhuma sub-aba desta ferramenta.</p>
-        </div>
-      ) : (
-        <Tabs value={tab} onValueChange={(v) => setSearchParams({ tab: v })}>
-          <TabsList className="h-9">
-            {isSubTabAllowed("geral") && <TabsTrigger value="geral" className="text-sm">Geral</TabsTrigger>}
-            {isSubTabAllowed("template") && <TabsTrigger value="template" className="text-sm">Template</TabsTrigger>}
-            {isSubTabAllowed("prompts") && <TabsTrigger value="prompts" className="text-sm">Prompts</TabsTrigger>}
-            {isSubTabAllowed("teste") && <TabsTrigger value="teste" className="text-sm">Teste</TabsTrigger>}
-          </TabsList>
-
-          {isSubTabAllowed("geral") && (
-            <TabsContent value="geral" className="mt-5">
-              {selectedClient && (
-                <TabGeral clientId={selectedClientId} clientName={selectedClient.name} client={selectedClient} />
-              )}
-            </TabsContent>
-          )}
-
-          {isSubTabAllowed("template") && (
-            <TabsContent value="template" className="mt-5">
-              <TabTemplate clientId={selectedClientId} />
-            </TabsContent>
-          )}
-
-          {isSubTabAllowed("prompts") && (
-            <TabsContent value="prompts" className="mt-5">
-              <TabPrompts clientId={selectedClientId} />
-            </TabsContent>
-          )}
-
-          {isSubTabAllowed("teste") && (
-            <TabsContent value="teste" className="mt-5">
-              <TabTeste clientId={selectedClientId} />
-            </TabsContent>
-          )}
-        </Tabs>
-      )}
+      </Tabs>
     </PageShell>
   );
 }
