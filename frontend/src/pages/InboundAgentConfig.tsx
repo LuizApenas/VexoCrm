@@ -15,29 +15,23 @@ import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useFupCompanies, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
 
 export default function InboundAgentConfig() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const defaultTab = searchParams.get("tab") || "config";
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const crmClient = useOptionalCrmClient();
+  const selectedClientId = crmClient?.selectedClientId || "";
+
+  const [activeTab, setActiveTab] = useState("config");
+
   const { data: rawCompanies = [], isLoading: loadingCompanies } = useFupCompanies(selectedClientId);
   const companies = rawCompanies.length > 0
     ? rawCompanies
-    : [{ id: selectedClientId || "default", company_name: "Instância Padrão / Principal" } as any];
+    : [{ id: selectedClientId || "default", name: "Instância Padrão / Principal", company_name: "Instância Padrão / Principal", evolution_instance: "WhatsApp" } as any];
 
   const [companyId, setCompanyId] = useState<string>("all");
   const updateCompany = useUpdateFupCompany();
 
   useEffect(() => {
-    if (activeTab !== defaultTab) {
-      setSearchParams((p) => {
-        p.set("tab", activeTab);
-        return p;
-      });
-    }
-  }, [activeTab, defaultTab, setSearchParams]);
-
-  useEffect(() => {
-    if (companies.length > 0 && companyId === "all") {
+    if (companies.length > 0 && (companyId === "all" || !companies.some((c) => c.id === companyId))) {
       setCompanyId(companies[0].id);
     }
   }, [companies, companyId]);
