@@ -171,9 +171,13 @@ export default function GeracaoDigitalImplementationBriefing() {
         const jsonP = await readApiJson<any>(resProposals, "gd-proposals");
         const listP = Array.isArray(jsonP) ? jsonP : jsonP?.data || [];
         for (const p of listP) {
+          // EXCLUI rascunhos e enviadas. SOMENTE PROPOSTAS ACEITAS/FECHADAS COM CONTRATO!
+          if (p.status !== "aceita" && p.status !== "fechado" && p.status !== "assinado") {
+            continue;
+          }
           const id = p.id || p.tenant_id;
-          const name = p.prospect_name || p.client_name || p.dados?.razao_social || "Proposta Sem Nome";
-          const statusLabel = p.status === "aceita" ? "Contrato Fechado" : p.status || "Proposta";
+          const name = p.prospect_name || p.client_name || p.dados?.razao_social || "Proposta Aceita";
+          const statusLabel = "Contrato Fechado";
           if (id && !seenIds.has(id)) {
             seenIds.add(id);
             items.push({ id, name, status: statusLabel });
@@ -185,41 +189,46 @@ export default function GeracaoDigitalImplementationBriefing() {
     },
   });
 
-  // Fetch Tenants
+  // Fetch Tenants (Autenticado)
   const { data: tenants = [] } = useQuery<TenantOption[]>({
     queryKey: ["gd-tenants-list"],
     queryFn: async () => {
-      const res = await fetch("/api/gd/implementation-briefings?list_tenants=true");
-      if (!res.ok) {
-        // Fallback fetch from tenants if endpoint custom
-        const r2 = await fetch("/api/crm/tenants").catch(() => null);
-        if (r2 && r2.ok) return (await r2.json()).data || [];
-        return [];
-      }
+      const token = await getIdToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetchApi("/api/gd/implementation-briefings?list_tenants=true", { headers }).catch(() => null);
+      if (!res || !res.ok) return [];
       const json = await res.json();
       return json.tenants || json.data || [];
     },
   });
 
-  // Load Existing Implementation Briefings
+  // Load Existing Implementation Briefings (Autenticado)
   const { data: existingBriefings = [], isLoading: isLoadingBriefings } = useQuery({
     queryKey: ["gd-implementation-briefings", selectedTenantId],
     queryFn: async () => {
+      const token = await getIdToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const url = selectedTenantId
         ? `/api/gd/implementation-briefings?tenant_id=${selectedTenantId}`
         : `/api/gd/implementation-briefings`;
-      const res = await fetch(url);
+      const res = await fetchApi(url, { headers });
       if (!res.ok) throw new Error("Erro ao buscar briefings de implantação");
       const json = await res.json();
       return json.data || [];
     },
   });
 
-  // Mutation to Save Briefing
+  // Mutation to Save Briefing (Autenticado)
   const saveMutation = useMutation({
     mutationFn: async (status: "em_andamento" | "concluido") => {
       if (!selectedTenantId) throw new Error("Selecione uma empresa / tenant para prosseguir.");
       if (!clientName) throw new Error("Informe o nome do cliente.");
+
+      const token = await getIdToken();
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
 
       const payload = {
         tenant_id: selectedTenantId,
@@ -238,9 +247,9 @@ export default function GeracaoDigitalImplementationBriefing() {
         status,
       };
 
-      const res = await fetch("/api/gd/implementation-briefings", {
+      const res = await fetchApi("/api/gd/implementation-briefings", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(payload),
       });
 

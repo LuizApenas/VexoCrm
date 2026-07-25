@@ -67,6 +67,12 @@ export function GeracaoDigitalTabs() {
               Briefing
             </TabsTrigger>
           )}
+          {hasImplantacao && (
+            <TabsTrigger value="implantacao" className="flex-1 flex-shrink-0 px-3 md:px-4 text-xs font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-purple-650 data-[state=active]:shadow-sm">
+              <ListChecks className="h-3.5 w-3.5 mr-1.5 text-indigo-500" />
+              Implantação Vexo
+            </TabsTrigger>
+          )}
           {hasPropostas && (
             <TabsTrigger value="propostas" className="flex-1 flex-shrink-0 px-3 md:px-4 text-xs font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-purple-650 data-[state=active]:shadow-sm">
               <FileText className="h-3.5 w-3.5 mr-1.5" />
@@ -83,12 +89,6 @@ export function GeracaoDigitalTabs() {
             <TabsTrigger value="contratos" className="flex-1 flex-shrink-0 px-3 md:px-4 text-xs font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-purple-650 data-[state=active]:shadow-sm">
               <FileText className="h-3.5 w-3.5 mr-1.5" />
               Contratos
-            </TabsTrigger>
-          )}
-          {hasImplantacao && (
-            <TabsTrigger value="implantacao" className="flex-1 flex-shrink-0 px-3 md:px-4 text-xs font-bold data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-purple-650 data-[state=active]:shadow-sm">
-              <ListChecks className="h-3.5 w-3.5 mr-1.5 text-indigo-500" />
-              Implantação
             </TabsTrigger>
           )}
         </TabsList>
