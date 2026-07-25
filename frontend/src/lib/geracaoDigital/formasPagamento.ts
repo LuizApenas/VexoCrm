@@ -14,7 +14,7 @@ import type { PaymentTerm, PaymentTermAplicaA } from "./paymentTerms";
 // ---------------------------------------------------------------------------
 
 export type FormaSetupId = "pix_avista" | "cartao_avista" | "cartao_parcelado";
-export type FormaMensalId = "pix_recorrente" | "cartao_recorrente" | "cartao_total_parcelado";
+export type FormaMensalId = "pagamento_unico" | "pix_recorrente" | "cartao_recorrente" | "cartao_total_parcelado";
 export type FormaId = FormaSetupId | FormaMensalId;
 
 export interface FormaDef {
@@ -32,6 +32,7 @@ export const FORMAS_SETUP: FormaDef[] = [
 ];
 
 export const FORMAS_MENSALIDADE: FormaDef[] = [
+  { id: "pagamento_unico", label: "Pagamento Único", aplica_a: "mensalidade", parcelavel: false },
   { id: "pix_recorrente", label: "Pix recorrente", aplica_a: "mensalidade", parcelavel: false },
   { id: "cartao_recorrente", label: "Cartão recorrente", aplica_a: "mensalidade", parcelavel: false },
   {
@@ -102,6 +103,8 @@ export function formasParaTerms(formas: FormasSelecionadas): PaymentTerm[] {
         return { ...base, tipo: "avista_desconto", config: { meio: "cartao", percentual_desconto: 0 } };
       case "cartao_parcelado":
         return { ...base, tipo: "parcelado_cartao", config: { meio: "cartao", num_parcelas: n } };
+      case "pagamento_unico":
+        return { ...base, tipo: "custom", config: { meio: "pix_ou_cartao", descricao: "Pagamento Único" } };
       case "pix_recorrente":
         return { ...base, tipo: "custom", config: { meio: "pix", descricao: "Pix recorrente todo mês" } };
       case "cartao_recorrente":

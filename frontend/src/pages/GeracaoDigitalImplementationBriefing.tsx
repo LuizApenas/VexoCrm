@@ -134,6 +134,17 @@ export default function GeracaoDigitalImplementationBriefing() {
     }
   }, [numEmployees, hasCommercialSector, suggestedModel, manualOverride]);
 
+  // Fetch Closed Proposals & Contracts
+  const { data: closedProposals = [], isLoading: isLoadingProposals } = useQuery({
+    queryKey: ["gd-closed-proposals-contracts"],
+    queryFn: async () => {
+      const res = await fetch("/api/gd/proposals");
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data || json || [];
+    },
+  });
+
   // Fetch Tenants
   const { data: tenants = [] } = useQuery<TenantOption[]>({
     queryKey: ["gd-tenants-list"],
@@ -245,26 +256,47 @@ export default function GeracaoDigitalImplementationBriefing() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Empresa / Tenant Contratante</Label>
-                <Input
-                  placeholder="Ex: Clínica Saúde & Vida ou Razão Social"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  className="bg-white dark:bg-slate-900"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">ID / UUID do Tenant no Sistema</Label>
-                <Input
-                  placeholder="Selecione ou cole o Tenant ID (ex: 3e82f640-e622-...)"
-                  value={selectedTenantId}
-                  onChange={(e) => setSelectedTenantId(e.target.value)}
-                  className="bg-white dark:bg-slate-900 font-mono text-xs"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Empresa Contratante (Propostas Fechadas / Contratos Aceitos)
+              </Label>
+              <Select
+                value={selectedTenantId}
+                onValueChange={(val) => {
+                  setSelectedTenantId(val);
+                  const found = closedProposals.find(
+                    (p: any) => (p.tenant_id || p.client_id || p.id) === val
+                  );
+                  if (found) {
+                    const name = found.prospect_name || found.client_name || found.dados?.razao_social || "Empresa Contratante";
+                    setClientName(name);
+                  } else {
+                    setClientName(val);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full h-10 text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                  <SelectValue placeholder={isLoadingProposals ? "Carregando empresas com contrato..." : "Selecione a empresa contratante..."} />
+                </SelectTrigger>
+                <SelectContent>
+                  {closedProposals.length === 0 ? (
+                    <SelectItem value="none" disabled>
+                      Nenhuma empresa com contrato/proposta encontrada
+                    </SelectItem>
+                  ) : (
+                    closedProposals.map((p: any) => {
+                      const id = p.tenant_id || p.client_id || p.id;
+                      const name = p.prospect_name || p.client_name || p.dados?.razao_social || "Sem nome";
+                      const statusLabel = p.status === "aceita" ? "Contrato Fechado" : p.status || "Proposta";
+                      return (
+                        <SelectItem key={id} value={id} className="text-sm">
+                          {name} <span className="text-xs text-emerald-600 font-bold ml-2">({statusLabel})</span>
+                        </SelectItem>
+                      );
+                    })
+                  )}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* REGRAS DE ROTEAMENTO */}

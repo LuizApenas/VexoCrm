@@ -97,6 +97,39 @@ export async function extractContractData(req, res) {
       out[key] = typeof parsed?.[key] === "string" ? parsed[key].trim() : "";
     }
 
+    // Extrator Heurístico de Fallback por Regex (caso a IA retorne vazio ou falhe em chaves específicas)
+    const textRaw = String(texto || "");
+
+    if (!out.cnpj) {
+      const cnpjMatch = textRaw.match(/cnpj[\s:]*([0-9.\-\/]{8,20})/i) || textRaw.match(/([0-9]{2}[\.\s]?[0-9]{3}[\.\s]?[0-9]{3}[\/\s]?[0-9]{4}[\.\-\s]?[0-9]{2})/);
+      if (cnpjMatch) out.cnpj = cnpjMatch[1].trim();
+    }
+
+    if (!out.telefone) {
+      const tel1Match = textRaw.match(/telefone[\s:1]*([0-9\s.()\-\+]{8,20})/i) || textRaw.match(/tel[\s:]*([0-9\s.()\-\+]{8,20})/i) || textRaw.match(/celular[\s:]*([0-9\s.()\-\+]{8,20})/i) || textRaw.match(/([0-9]{2}\s?[0-9]{4,5}[\-\s]?[0-9]{4})/);
+      if (tel1Match) out.telefone = tel1Match[1].trim();
+    }
+
+    if (!out.telefone2) {
+      const tel2Match = textRaw.match(/telefone\s*2[\s:]*([0-9\s.()\-\+]{8,20})/i) || textRaw.match(/tel\s*2[\s:]*([0-9\s.()\-\+]{8,20})/i);
+      if (tel2Match) out.telefone2 = tel2Match[1].trim();
+    }
+
+    if (!out.representante) {
+      const repMatch = textRaw.match(/representante[\s:]*([^\n\r,]+)/i) || textRaw.match(/responsavel[\s:]*([^\n\r,]+)/i);
+      if (repMatch) out.representante = repMatch[1].trim();
+    }
+
+    if (!out.email) {
+      const emailMatch = textRaw.match(/email[\s:]*([^\s\n\r]+@[^\s\n\r]+)/i) || textRaw.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+      if (emailMatch) out.email = emailMatch[1].trim();
+    }
+
+    if (!out.razao_social) {
+      const rsMatch = textRaw.match(/raz[aã]o\s*social[\s:]*([^\n\r,]+)/i) || textRaw.match(/empresa[\s:]*([^\n\r,]+)/i);
+      if (rsMatch) out.razao_social = rsMatch[1].trim();
+    }
+
     res.json({ success: true, data: out });
   } catch (error) {
     console.error("[extractContractData] Error:", error);

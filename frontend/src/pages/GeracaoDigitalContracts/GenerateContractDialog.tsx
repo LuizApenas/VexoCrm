@@ -154,9 +154,32 @@ export function GenerateContractDialog({ open, onOpenChange, proposalId, initial
   // Cola o texto cru do cliente (WhatsApp/e-mail/cartão CNPJ) e a IA preenche os
   // campos. Só sobrescreve o que veio preenchido — nada é salvo sem revisão.
   const handleExtract = () => {
+    const textRaw = textoColado;
+    const fallbackExtracted: Record<string, string> = {};
+
+    const cnpjMatch = textRaw.match(/cnpj[\s:]*([0-9.\-\/]{8,20})/i) || textRaw.match(/([0-9]{2}[\.\s]?[0-9]{3}[\.\s]?[0-9]{3}[\/\s]?[0-9]{4}[\.\-\s]?[0-9]{2})/);
+    if (cnpjMatch) fallbackExtracted.cnpj = cnpjMatch[1].trim();
+
+    const tel1Match = textRaw.match(/telefone[\s:1]*([0-9\s.()\-\+]{8,20})/i) || textRaw.match(/tel[\s:]*([0-9\s.()\-\+]{8,20})/i) || textRaw.match(/celular[\s:]*([0-9\s.()\-\+]{8,20})/i) || textRaw.match(/([0-9]{2}\s?[0-9]{4,5}[\-\s]?[0-9]{4})/);
+    if (tel1Match) fallbackExtracted.telefone = tel1Match[1].trim();
+
+    const tel2Match = textRaw.match(/telefone\s*2[\s:]*([0-9\s.()\-\+]{8,20})/i) || textRaw.match(/tel\s*2[\s:]*([0-9\s.()\-\+]{8,20})/i);
+    if (tel2Match) fallbackExtracted.telefone2 = tel2Match[1].trim();
+
+    const repMatch = textRaw.match(/representante[\s:]*([^\n\r,]+)/i) || textRaw.match(/responsavel[\s:]*([^\n\r,]+)/i);
+    if (repMatch) fallbackExtracted.representante = repMatch[1].trim();
+
+    const emailMatch = textRaw.match(/email[\s:]*([^\s\n\r]+@[^\s\n\r]+)/i) || textRaw.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    if (emailMatch) fallbackExtracted.email = emailMatch[1].trim();
+
     extractData.mutate(textoColado, {
       onSuccess: (extraido) => {
-        const preenchidos = Object.entries(extraido).filter(([, v]) => v && String(v).trim() !== "");
+        const merged = { ...fallbackExtracted, ...extraido };
+        if (!merged.cnpj && fallbackExtracted.cnpj) merged.cnpj = fallbackExtracted.cnpj;
+        if (!merged.telefone && fallbackExtracted.telefone) merged.telefone = fallbackExtracted.telefone;
+        if (!merged.telefone2 && fallbackExtracted.telefone2) merged.telefone2 = fallbackExtracted.telefone2;
+
+        const preenchidos = Object.entries(merged).filter(([, v]) => v && String(v).trim() !== "");
         if (preenchidos.length === 0) {
           toast({ title: "Nada encontrado", description: "A IA não identificou dados no texto colado.", variant: "destructive" });
           return;
@@ -164,7 +187,15 @@ export function GenerateContractDialog({ open, onOpenChange, proposalId, initial
         setFormData((prev) => ({ ...prev, ...Object.fromEntries(preenchidos) }));
         toast({ title: "Campos preenchidos", description: `${preenchidos.length} campo(s) preenchido(s) pela IA. Revise antes de gerar.` });
       },
-      onError: (err: any) => toast({ title: "Erro na extração", description: err.message, variant: "destructive" }),
+      onError: (err: any) => {
+        const preenchidos = Object.entries(fallbackExtracted).filter(([, v]) => v && String(v).trim() !== "");
+        if (preenchidos.length > 0) {
+          setFormData((prev) => ({ ...prev, ...fallbackExtracted }));
+          toast({ title: "Campos preenchidos (Local)", description: `${preenchidos.length} campo(s) preenchido(s) do texto. Revise antes de gerar.` });
+        } else {
+          toast({ title: "Erro na extração", description: err.message, variant: "destructive" });
+        }
+      },
     });
   };
 

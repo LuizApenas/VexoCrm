@@ -1754,39 +1754,18 @@ export default function GeracaoDigitalProposals() {
                   </CardContent>
                 </Card>
 
-                                  {/* Electronic Signature Card */}
-                  <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-full">
-                    <CardHeader>
-                      <CardTitle className="text-base font-bold text-slate-800 dark:text-slate-100">Assinatura de Aceite Comercial</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4 flex-grow flex flex-col justify-between">
-
-                      {selectedProposal.status === "aceita" ? (
-                        <div className="space-y-4 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 text-center flex-grow flex flex-col justify-center">
-                          <CheckCircle className="h-10 w-10 text-emerald-600 mx-auto" />
-                          <div className="space-y-1">
-                            <h4 className="text-sm font-bold text-slate-800 dark:text-white">Contrato Fechado com Sucesso!</h4>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">Proposta assinada comercialmente por:</p>
-                            <span className="text-xs font-mono font-bold text-emerald-600 block">{selectedProposal.signer_name}</span>
-                          </div>
-
-                          {selectedProposal.assinatura && selectedProposal.assinatura.startsWith("data:image") && (
-                            <div className="h-20 w-full max-w-[200px] bg-slate-100 dark:bg-slate-800 rounded-lg p-1.5 mx-auto flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700">
-                              <img src={selectedProposal.assinatura} alt="Assinatura" className="max-h-full max-w-full object-contain" />
-                            </div>
-                          )}
-
-                          <div className="text-[9px] text-slate-500 font-mono space-y-0.5 mt-2 dark:text-slate-400">
-                            <div>Data/Hora: {selectedProposal.signed_at ? new Date(selectedProposal.signed_at).toLocaleString("pt-BR") : ""}</div>
-                            <div>IP do Assinante: {selectedProposal.signer_ip || "Registrado"}</div>
-                          </div>
-                        </div>
-                      ) : (
+                                  {/* Electronic Signature Card (exibido apenas enquanto não está aceito) */}
+                  {selectedProposal.status !== "aceita" && (
+                    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-full">
+                      <CardHeader>
+                        <CardTitle className="text-base font-bold text-slate-800 dark:text-slate-100">Assinatura de Aceite Comercial</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4 flex-grow flex flex-col justify-between">
                         <div className="space-y-4 flex-grow flex flex-col justify-between">
                           <div className="space-y-4">
                             <div className="text-[10px] text-slate-600 dark:text-slate-350 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
                               <span className="font-bold text-slate-800 block mb-1 uppercase font-mono tracking-wider dark:text-white">Termo de Aceite:</span>
-                              "Declaro estar de acordo com os services, valores e condições desta proposta e autorizo o início dos trabalhos."
+                              "Declaro estar de acordo com os serviços, valores e condições desta proposta e autorizo o início dos trabalhos."
                             </div>
 
                             <div className="space-y-2">
@@ -1832,9 +1811,9 @@ export default function GeracaoDigitalProposals() {
                             Registrar Assinatura de Aceite
                           </Button>
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
+                  )}
               </div>
             ) : (
               <div className="lg:col-span-3 flex items-center justify-center min-h-[400px] w-full">
