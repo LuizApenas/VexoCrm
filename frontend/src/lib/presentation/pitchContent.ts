@@ -997,7 +997,6 @@ export const SEGMENT_GROUPS: Record<string, SegmentGroup> = {
                 "Recepcionista Digital 24h que qualifica o pedido",
                 "Follow-up automático para nenhum orçamento esfriar",
                 "Carteira de clientes registrada num só lugar",
-                `Parte do investimento em permuta (VP), sem a taxa de ${(b.taxaVpMercado * 100).toFixed(0)}% de mercado`,
               ],
             },
           ],
