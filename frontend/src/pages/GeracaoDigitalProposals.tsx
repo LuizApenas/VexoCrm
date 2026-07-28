@@ -1769,67 +1769,6 @@ export default function GeracaoDigitalProposals() {
                     )}
                   </CardContent>
                 </Card>
-
-                                  {/* Electronic Signature Card (exibido apenas enquanto não está aceito) */}
-                  {selectedProposal.status !== "aceita" && (
-                    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-full">
-                      <CardHeader>
-                        <CardTitle className="text-base font-bold text-slate-800 dark:text-slate-100">Assinatura de Aceite Comercial</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4 flex-grow flex flex-col justify-between">
-                        <div className="space-y-4 flex-grow flex flex-col justify-between">
-                          <div className="space-y-4">
-                            <div className="text-[10px] text-slate-600 dark:text-slate-350 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
-                              <span className="font-bold text-slate-800 block mb-1 uppercase font-mono tracking-wider dark:text-white">Termo de Aceite:</span>
-                              "Declaro estar de acordo com os serviços, valores e condições desta proposta e autorizo o início dos trabalhos."
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label className="text-[10px] text-slate-500 font-mono dark:text-slate-400">Nome Completo do Assinante</Label>
-                              <Input
-                                value={signerName}
-                                onChange={(e) => setSignerName(e.target.value)}
-                                placeholder="Nome do Responsável Legal"
-                                className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 focus:outline-none"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center">
-                                <Label className="text-[10px] text-slate-500 font-mono dark:text-slate-400">Assine com o Mouse ou Dedo</Label>
-                                <button onClick={clearCanvas} className="text-[10px] text-pink-600 hover:text-pink-500 font-semibold font-mono">
-                                  Limpar
-                                </button>
-                              </div>
-
-                              <canvas
-                                ref={canvasRef}
-                                width={320}
-                                height={120}
-                                onMouseDown={startDrawing}
-                                onMouseMove={draw}
-                                onMouseUp={stopDrawing}
-                                onMouseLeave={stopDrawing}
-                                onTouchStart={startDrawing}
-                                onTouchMove={draw}
-                                onTouchEnd={stopDrawing}
-                                style={{ touchAction: "none" }}
-                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl cursor-crosshair h-[120px]"
-                              />
-                            </div>
-                          </div>
-
-                          <Button
-                            onClick={handleSignProposal}
-                            className="w-full bg-gradient-to-r from-purple-700 to-indigo-600 hover:opacity-90 font-extrabold text-white py-3 rounded-xl text-xs mt-auto"
-                          >
-                            <PenTool className="h-4 w-4 mr-1.5" />
-                            Registrar Assinatura de Aceite
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
               </div>
             ) : (
               <div className="lg:col-span-3 flex items-center justify-center min-h-[400px] w-full">
