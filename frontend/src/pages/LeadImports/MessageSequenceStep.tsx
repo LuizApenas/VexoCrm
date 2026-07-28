@@ -63,10 +63,29 @@ export function MessageSequenceStep({
                 {step.order}
               </span>
 
-              <div className="flex items-center justify-between gap-2">
-                <Badge variant="outline" className="text-[10px] uppercase font-mono tracking-wider">
-                  Passo {step.order} — {step.type === "image" ? "Imagem" : "Texto"}
-                </Badge>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] uppercase font-mono tracking-wider">
+                    Passo {step.order} — {step.type === "image" ? "Imagem" : "Texto"}
+                  </Badge>
+
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Gatilho:</span>
+                    <Select
+                      value={step.triggerMode || "immediate"}
+                      onValueChange={(val) => updateCampaignStep(step.id, { triggerMode: val as "immediate" | "after_reply" })}
+                    >
+                      <SelectTrigger className="h-7 text-[11px] font-semibold bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 w-[190px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="immediate">⚡ Enviar na hora (Imediato)</SelectItem>
+                        <SelectItem value="after_reply">💬 Enviar após resposta do lead</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-1.5">
                   <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => moveCampaignStep(step.id, -1)} disabled={index === 0}>
                     <ArrowUp className="h-3.5 w-3.5" />
@@ -79,6 +98,12 @@ export function MessageSequenceStep({
                   </Button>
                 </div>
               </div>
+
+              {step.triggerMode === "after_reply" && (
+                <div className="flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200/80 dark:border-amber-900/40">
+                  <span className="font-bold">💬 Aguardar resposta:</span> Esta mensagem só será enviada quando o lead responder à mensagem anterior.
+                </div>
+              )}
 
               {/* Message editor */}
               <div className="space-y-2">
@@ -182,41 +207,58 @@ export function MessageSequenceStep({
                   {step.buttons && step.buttons.length > 0 && (
                     <div className="grid gap-2 pt-1">
                       {step.buttons.map((btn, btnIdx) => (
-                        <div key={btnIdx} className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900/40 p-2 rounded-lg border border-slate-200/60 dark:border-white/5">
-                          <Input
-                            value={btn.displayText}
-                            placeholder="Nome do Botão (Ex: Agendar)"
-                            className="h-8 text-[11px] max-w-[120px]"
-                            onChange={(e) => onUpdateStepButton(step.id, btnIdx, { displayText: e.target.value })}
-                          />
-                          <Select
-                            value={btn.type}
-                            onValueChange={(val) => onUpdateStepButton(step.id, btnIdx, { type: val as "url" | "reply" })}
-                          >
-                            <SelectTrigger className="h-8 text-[11px] max-w-[100px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="url">Link / URL</SelectItem>
-                              <SelectItem value="reply">Resposta Rápida</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {btn.type === "url" && (
+                        <div key={btnIdx} className="space-y-1 bg-slate-50 dark:bg-slate-900/40 p-2 rounded-lg border border-slate-200/60 dark:border-white/5">
+                          <div className="flex gap-2 items-center">
                             <Input
-                              value={btn.url || ""}
-                              placeholder="Link (Ex: {{scheduling_link}})"
-                              className="h-8 text-[11px] flex-1 font-mono"
-                              onChange={(e) => onUpdateStepButton(step.id, btnIdx, { url: e.target.value })}
+                              value={btn.displayText}
+                              placeholder="Nome do Botão (Ex: Agendar)"
+                              className="h-8 text-[11px] max-w-[130px]"
+                              onChange={(e) => onUpdateStepButton(step.id, btnIdx, { displayText: e.target.value })}
                             />
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => onRemoveStepButton(step.id, btnIdx)}
-                            className="h-8 w-8 p-0 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                            <Select
+                              value={btn.type}
+                              onValueChange={(val) => onUpdateStepButton(step.id, btnIdx, { type: val as "url" | "reply" })}
+                            >
+                              <SelectTrigger className="h-8 text-[11px] max-w-[125px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="url">Link / URL</SelectItem>
+                                <SelectItem value="reply">Resposta Rápida</SelectItem>
+                              </SelectContent>
+                            </Select>
+
+                            {btn.type === "url" ? (
+                              <Input
+                                value={btn.url || ""}
+                                placeholder="Link (Ex: {{scheduling_link}})"
+                                className="h-8 text-[11px] flex-1 font-mono"
+                                onChange={(e) => onUpdateStepButton(step.id, btnIdx, { url: e.target.value })}
+                              />
+                            ) : (
+                              <Input
+                                value={btn.replyText || btn.url || ""}
+                                placeholder="Texto de resposta do lead (Ex: Quero agendar)"
+                                className="h-8 text-[11px] flex-1"
+                                onChange={(e) => onUpdateStepButton(step.id, btnIdx, { replyText: e.target.value, url: e.target.value })}
+                              />
+                            )}
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => onRemoveStepButton(step.id, btnIdx)}
+                              className="h-8 w-8 p-0 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+
+                          <p className="text-[10px] text-slate-500 pl-1">
+                            {btn.type === "url"
+                              ? "🔗 Link externo: Direciona o lead para o link ao ser clicado."
+                              : "💬 Resposta Rápida: Quando o lead clica no botão, o WhatsApp envia este texto automaticamente de volta no chat para dar prosseguimento ao atendimento."}
+                          </p>
                         </div>
                       ))}
                     </div>

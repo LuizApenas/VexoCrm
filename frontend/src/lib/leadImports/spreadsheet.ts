@@ -7,6 +7,7 @@ export interface StepActionButton {
   displayText: string;
   type: "url" | "reply";
   url?: string;
+  replyText?: string;
 }
 
 export interface FilterRule {

@@ -83,6 +83,7 @@ export interface CampaignSequenceStep {
     displayText: string;
     type: "url" | "reply";
     url?: string;
+    replyText?: string;
   }[];
 }
 

@@ -52,10 +52,16 @@ export function WhatsAppPreviewPanel({ campaignSequence, multiAgendaEnabled }: W
                           key={bIdx}
                           className="w-full bg-slate-800 hover:bg-slate-700/80 border border-white/5 text-center text-[10px] font-bold text-indigo-400 py-1.5 rounded-xl shadow-sm cursor-pointer"
                         >
-                          🔗 {btn.displayText}
+                          {btn.type === "url" ? "🔗 " : "💬 "} {btn.displayText || (btn.type === "url" ? "Link" : "Resposta Rápida")}
                         </div>
                       ))}
                     </div>
+                  )}
+
+                  {step.triggerMode === "after_reply" && (
+                    <span className="text-[9px] font-mono text-amber-400/90 pl-2">
+                      ⏳ Envio aguardando resposta do lead
+                    </span>
                   )}
                 </div>
               );
