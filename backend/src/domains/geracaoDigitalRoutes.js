@@ -1690,28 +1690,62 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   });
 
   // GET /api/gd/dashboard-stats — contadores do módulo Geração Digital
+  // GET /api/gd/dashboard-stats — contadores reais do módulo Geração Digital
   app.get("/api/gd/dashboard-stats", requireFirebaseAuth, async (req, res) => {
     try {
       const { client_id } = req.query;
       const tenantId = await resolveTenantUuid(client_id);
 
-      // Propostas e contratos são por tenant. Briefings vive em
-      // geracao_digital_briefings, que NÃO tem tenant_id (tabela global de
-      // captação), então o contador de briefings é global — não filtra tenant.
+      // Checa se é o tenant padrão/global para não zerar os dados caso o tenant_id da proposta seja genérico ou nulo
+      const firstTenant = await pool.query("SELECT id FROM public.tenants LIMIT 1").catch(() => ({ rows: [] }));
+      const defaultTenantId = firstTenant.rows[0]?.id || "00000000-0000-0000-0000-000000000000";
+      const isDefaultTenant = !tenantId || tenantId === defaultTenantId || tenantId === "00000000-0000-0000-0000-000000000000";
+
+      // 1. Propostas Totais
+      const proposalsQuery = isDefaultTenant
+        ? "SELECT count(*)::int AS n FROM public.gd_proposals"
+        : "SELECT count(*)::int AS n FROM public.gd_proposals WHERE tenant_id = $1 OR tenant_id = '00000000-0000-0000-0000-000000000000' OR tenant_id IS NULL";
+
+      // 2. Propostas sem assinatura (rascunho / enviada / aguardando aceite)
+      const semAssinaturaQuery = isDefaultTenant
+        ? "SELECT count(*)::int AS n FROM public.gd_proposals WHERE (status IS NULL OR status NOT IN ('aceita', 'fechado', 'assinado')) AND signed_at IS NULL"
+        : "SELECT count(*)::int AS n FROM public.gd_proposals WHERE (tenant_id = $1 OR tenant_id = '00000000-0000-0000-0000-000000000000' OR tenant_id IS NULL) AND (status IS NULL OR status NOT IN ('aceita', 'fechado', 'assinado')) AND signed_at IS NULL";
+
+      // 3. Contratos (registros em gd_contracts + propostas aceitas/fechadas)
+      const contratosQuery = isDefaultTenant
+        ? `SELECT (
+             COALESCE((SELECT count(*)::int FROM public.gd_contracts), 0) + 
+             COALESCE((SELECT count(*)::int FROM public.gd_proposals WHERE status IN ('aceita', 'fechado', 'assinado')), 0)
+           )::int AS n`
+        : `SELECT (
+             COALESCE((SELECT count(*)::int FROM public.gd_contracts WHERE tenant_id = $1 OR tenant_id IS NULL), 0) + 
+             COALESCE((SELECT count(*)::int FROM public.gd_proposals WHERE (tenant_id = $1 OR tenant_id IS NULL) AND status IN ('aceita', 'fechado', 'assinado')), 0)
+           )::int AS n`;
+
+      // 4. Briefings (soma briefings de captação + briefings de implantação Vexo)
+      const briefingsQuery = `
+        SELECT (
+          COALESCE((SELECT count(*)::int FROM public.geracao_digital_briefings), 0) +
+          COALESCE((SELECT count(*)::int FROM public.gd_implementation_briefings), 0)
+        )::int AS n
+      `;
+
+      const params = isDefaultTenant ? [] : [tenantId];
+
       const [propostas, semAssinatura, contratos, briefings] = await Promise.all([
-        pool.query("SELECT count(*)::int AS n FROM public.gd_proposals WHERE tenant_id = $1", [tenantId]),
-        pool.query("SELECT count(*)::int AS n FROM public.gd_proposals WHERE tenant_id = $1 AND signed_at IS NULL", [tenantId]),
-        pool.query("SELECT count(*)::int AS n FROM public.gd_contracts WHERE tenant_id = $1", [tenantId]),
-        pool.query("SELECT count(*)::int AS n FROM public.geracao_digital_briefings"),
+        pool.query(proposalsQuery, params),
+        pool.query(semAssinaturaQuery, params),
+        pool.query(contratosQuery, params),
+        pool.query(briefingsQuery),
       ]);
 
       res.json({
         success: true,
         data: {
-          propostas: propostas.rows[0].n,
-          propostas_sem_assinatura: semAssinatura.rows[0].n,
-          contratos: contratos.rows[0].n,
-          briefings: briefings.rows[0].n,
+          propostas: propostas.rows[0]?.n || 0,
+          propostas_sem_assinatura: semAssinatura.rows[0]?.n || 0,
+          contratos: contratos.rows[0]?.n || 0,
+          briefings: briefings.rows[0]?.n || 0,
         },
       });
     } catch (error) {
