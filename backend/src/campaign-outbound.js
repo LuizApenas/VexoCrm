@@ -170,11 +170,14 @@ function normalizeDispatchOptions(rawOptions = {}) {
   );
 
   return {
-    leadDelaySeconds: Math.min(
-      normalizeNonNegativeInteger(rawOptions.leadDelaySeconds, DEFAULT_LEAD_DELAY_SECONDS),
-      MAX_LEAD_DELAY_SECONDS
+    leadDelaySeconds: normalizeNonNegativeInteger(
+      rawOptions.leadDelaySeconds,
+      DEFAULT_LEAD_DELAY_SECONDS
     ),
-    stopOnStepFailure: normalizeBoolean(rawOptions.stopOnStepFailure, true),
+    stopOnStepFailure:
+      rawOptions.stopOnStepFailure === undefined
+        ? DEFAULT_STEP_FAILURE_MODE
+        : normalizeBoolean(rawOptions.stopOnStepFailure, DEFAULT_STEP_FAILURE_MODE),
     aiAssisted: normalizeBoolean(rawOptions.aiAssisted, false),
     evolutionInstanceId: normalizeString(rawOptions.evolutionInstanceId) || null,
     templateStrategy:
