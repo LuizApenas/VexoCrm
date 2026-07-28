@@ -122,6 +122,7 @@ function getLegacySequence(rawMeta = {}) {
       image,
       enabled: true,
       delayAfterSeconds: DEFAULT_STEP_DELAY_SECONDS,
+      triggerMode: "immediate",
     });
   }
 
@@ -130,9 +131,12 @@ function getLegacySequence(rawMeta = {}) {
 
 function normalizeSequenceStep(step, index) {
   const type = normalizeString(step?.type).toLowerCase() === "image" ? "image" : "text";
+  const rawTrigger = normalizeString(step?.triggerMode).toLowerCase();
   const triggerMode =
-    normalizeString(step?.triggerMode).toLowerCase() === "after_reply"
+    rawTrigger === "after_reply"
       ? "after_reply"
+      : rawTrigger === "with_previous"
+      ? "with_previous"
       : DEFAULT_STEP_TRIGGER_MODE;
 
   return {
@@ -158,33 +162,32 @@ function normalizeDispatchOptions(rawOptions = {}) {
     MAX_REPLY_TIMEOUT_SECONDS
   );
   const replyPollIntervalSeconds = Math.min(
-    Math.max(
-      normalizeNonNegativeInteger(rawOptions.replyPollIntervalSeconds, DEFAULT_REPLY_POLL_INTERVAL_SECONDS),
-      1
+    normalizeNonNegativeInteger(
+      rawOptions.replyPollIntervalSeconds,
+      DEFAULT_REPLY_POLL_INTERVAL_SECONDS
     ),
     MAX_REPLY_POLL_INTERVAL_SECONDS
   );
 
   return {
-    leadDelaySeconds: normalizeNonNegativeInteger(
-      rawOptions.leadDelaySeconds,
-      DEFAULT_LEAD_DELAY_SECONDS
+    leadDelaySeconds: Math.min(
+      normalizeNonNegativeInteger(rawOptions.leadDelaySeconds, DEFAULT_LEAD_DELAY_SECONDS),
+      MAX_LEAD_DELAY_SECONDS
     ),
-    stopOnStepFailure:
-      rawOptions.stopOnStepFailure === undefined
-        ? DEFAULT_STEP_FAILURE_MODE
-        : normalizeBoolean(rawOptions.stopOnStepFailure, DEFAULT_STEP_FAILURE_MODE),
+    stopOnStepFailure: normalizeBoolean(rawOptions.stopOnStepFailure, true),
     aiAssisted: normalizeBoolean(rawOptions.aiAssisted, false),
+    evolutionInstanceId: normalizeString(rawOptions.evolutionInstanceId) || null,
     templateStrategy:
-      normalizeString(rawOptions.templateStrategy) === "ai_variations" ? "ai_variations" : "single",
+      normalizeString(rawOptions.templateStrategy).toLowerCase() === "ai_variations"
+        ? "ai_variations"
+        : "single",
     templateVariantCount: Math.min(
-      Math.max(normalizeNonNegativeInteger(rawOptions.templateVariantCount, 0), 0),
-      20
+      normalizeNonNegativeInteger(rawOptions.templateVariantCount, 1),
+      5
     ),
     waitForReply,
     replyTimeoutSeconds,
     replyPollIntervalSeconds,
-    evolutionInstanceId: normalizeString(rawOptions.evolutionInstanceId) || null,
   };
 }
 

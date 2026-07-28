@@ -279,7 +279,7 @@ export function createCampaignStep(type: "text" | "image", order: number, patch:
     image: patch.image || null,
     enabled: patch.enabled ?? true,
     delayAfterSeconds: patch.delayAfterSeconds ?? 5,
-    triggerMode: patch.triggerMode === "after_reply" ? "after_reply" : "immediate",
+    triggerMode: patch.triggerMode === "after_reply" ? "after_reply" : patch.triggerMode === "with_previous" ? "with_previous" : "immediate",
     buttons: (patch as any).buttons || [],
   };
 }
@@ -296,7 +296,7 @@ export function normalizeCampaignSequence(meta?: Campaign["analytics_meta"]): Ar
         image: step.image || null,
         enabled: step.enabled !== false,
         delayAfterSeconds: step.delayAfterSeconds || 5,
-        triggerMode: step.triggerMode || "immediate",
+        triggerMode: step.triggerMode === "after_reply" ? "after_reply" : step.triggerMode === "with_previous" ? "with_previous" : "immediate",
         buttons: step.buttons || [],
       }));
   }

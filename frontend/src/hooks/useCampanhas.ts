@@ -78,7 +78,7 @@ export interface CampaignSequenceStep {
   image: CampaignImageAsset | null;
   enabled: boolean;
   delayAfterSeconds: number;
-  triggerMode?: "immediate" | "after_reply";
+  triggerMode?: "immediate" | "after_reply" | "with_previous";
   buttons?: {
     displayText: string;
     type: "url" | "reply";

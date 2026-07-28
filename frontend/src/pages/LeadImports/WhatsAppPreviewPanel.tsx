@@ -63,6 +63,12 @@ export function WhatsAppPreviewPanel({ campaignSequence, multiAgendaEnabled }: W
                       ⏳ Envio aguardando resposta do lead
                     </span>
                   )}
+
+                  {step.triggerMode === "with_previous" && (
+                    <span className="text-[9px] font-mono text-indigo-400/90 pl-2">
+                      🔗 Enviado em sequência junto com a mensagem anterior
+                    </span>
+                  )}
                 </div>
               );
             })}
