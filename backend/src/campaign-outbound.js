@@ -369,15 +369,41 @@ function parseDataUrl(dataUrl) {
   };
 }
 
+function formatStepTextWithButtons(baseText, stepButtons, context = {}, phone = "") {
+  let text = baseText || "";
+  if (!Array.isArray(stepButtons) || stepButtons.length === 0) return text;
+
+  const urlButtons = stepButtons.filter((b) => b && (b.type === "url" || b.url) && (b.url || b.href));
+  if (urlButtons.length === 0) return text;
+
+  const appendedLinks = [];
+  for (const btn of urlButtons) {
+    const rawUrl = btn.url || btn.href || "";
+    const resolvedUrl = applyMessagePlaceholders(rawUrl, context.lead, phone);
+    if (resolvedUrl && !text.includes(resolvedUrl)) {
+      const label = btn.displayText || btn.label || "Acessar Link";
+      appendedLinks.push(`👉 ${label}: ${resolvedUrl}`);
+    }
+  }
+
+  if (appendedLinks.length > 0) {
+    text = text ? `${text}\n\n${appendedLinks.join("\n")}` : appendedLinks.join("\n");
+  }
+
+  return text;
+}
+
 function buildTextPayload(phone, step, context = {}) {
   const formattedButtons = Array.isArray(step.buttons) && step.buttons.length > 0
     ? step.buttons.map((btn, idx) => ({
         type: btn.type === "url" ? "url" : "reply",
         displayText: btn.displayText || btn.label || `Botao ${idx + 1}`,
         id: `btn-${step.id}-${idx}`,
-        url: btn.type === "url" && btn.url ? applyMessagePlaceholders(btn.url, context.lead, phone) : undefined,
+        url: btn.type === "url" && (btn.url || btn.href) ? applyMessagePlaceholders(btn.url || btn.href, context.lead, phone) : undefined,
       }))
     : null;
+
+  const textWithButtons = formatStepTextWithButtons(step.text, step.buttons, context, phone);
 
   return {
     source: "vexocrm",
@@ -386,11 +412,11 @@ function buildTextPayload(phone, step, context = {}) {
     stepType: "text",
     stepId: step.id,
     number: phone,
-    txt: step.text,
-    text: step.text,
-    message: step.text,
-    title: step.text,
-    description: step.text,
+    txt: textWithButtons,
+    text: textWithButtons,
+    message: textWithButtons,
+    title: textWithButtons,
+    description: textWithButtons,
     buttons: formattedButtons,
     campaign: context.campaign || null,
     client: context.client || null,
@@ -404,9 +430,11 @@ function buildImagePayload(phone, step, context = {}) {
         type: btn.type === "url" ? "url" : "reply",
         displayText: btn.displayText || btn.label || `Botao ${idx + 1}`,
         id: `btn-${step.id}-${idx}`,
-        url: btn.type === "url" && btn.url ? applyMessagePlaceholders(btn.url, context.lead, phone) : undefined,
+        url: btn.type === "url" && (btn.url || btn.href) ? applyMessagePlaceholders(btn.url || btn.href, context.lead, phone) : undefined,
       }))
     : null;
+
+  const textWithButtons = formatStepTextWithButtons(step.text || "", step.buttons, context, phone);
 
   return {
     source: "vexocrm",
@@ -415,8 +443,8 @@ function buildImagePayload(phone, step, context = {}) {
     stepType: "image",
     stepId: step.id,
     number: phone,
-    txt: step.text || "",
-    caption: step.text || "",
+    txt: textWithButtons,
+    caption: textWithButtons,
     buttons: formattedButtons,
     fileName: step.image?.name || null,
     filename: step.image?.name || null,
@@ -614,6 +642,13 @@ export async function dispatchCampaignSequence({
     let lastSentAt = null;
 
     for (let stepIndex = 0; stepIndex < enabledSteps.length; stepIndex += 1) {
+      const step = enabledSteps[stepIndex];
+
+      // Se for um passo 'after_reply' e NÃO estiver em disparo pós-resposta ativo, interrompe a rajada inicial neste lead!
+      if (stepIndex > 0 && step.triggerMode === "after_reply" && !context?.isReplyTrigger) {
+        break;
+      }
+
       if (
         typeof shouldContinue === "function" &&
         !(await shouldContinue({ leadIndex, stepIndex, phase: "step" }))
