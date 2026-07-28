@@ -36,9 +36,10 @@ export function useGdDashboard() {
       }
 
       // 2. Fallback resiliente: calcula diretamente a partir das listas de propostas, contratos e briefings do módulo
-      const [resProps, resContracts, resBriefings] = await Promise.all([
+      const [resProps, resContracts, resBriefingsCap, resBriefingsImp] = await Promise.all([
         fetchApi("/api/gd/proposals", { headers }).catch(() => null),
         fetchApi("/api/gd/contracts", { headers }).catch(() => null),
+        fetchApi("/api/geracao-digital/briefings", { headers }).catch(() => null),
         fetchApi("/api/gd/implementation-briefings", { headers }).catch(() => null),
       ]);
 
@@ -67,10 +68,16 @@ export function useGdDashboard() {
         contratos += listC.length;
       }
 
-      if (resBriefings && resBriefings.ok) {
-        const jsonB = await readApiJson<any>(resBriefings, "gd-briefings");
-        const listB = Array.isArray(jsonB) ? jsonB : jsonB?.data || jsonB?.tenants || [];
-        briefings = listB.length;
+      if (resBriefingsCap && resBriefingsCap.ok) {
+        const jsonBC = await readApiJson<any>(resBriefingsCap, "geracao-digital-briefings");
+        const listBC = Array.isArray(jsonBC) ? jsonBC : jsonBC?.data || [];
+        briefings += listBC.length;
+      }
+
+      if (resBriefingsImp && resBriefingsImp.ok) {
+        const jsonBI = await readApiJson<any>(resBriefingsImp, "gd-implementation-briefings");
+        const listBI = Array.isArray(jsonBI) ? jsonBI : jsonBI?.data || jsonBI?.tenants || [];
+        briefings += listBI.length;
       }
 
       return {

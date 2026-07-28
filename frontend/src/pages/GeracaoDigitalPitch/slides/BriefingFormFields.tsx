@@ -84,7 +84,25 @@ export function BriefingFormFields({ briefingFields, setBriefingFields, handleSe
                             }
 
                             if (field.type === "checkboxes") {
-                              const selectedList = field.value ? field.value.split(", ").map(x => x.trim()) : [];
+                              const parseSelectedList = (val: string, opts?: string[]): string[] => {
+                                if (!val) return [];
+                                if (val.startsWith("[") && val.endsWith("]")) {
+                                  try {
+                                    const arr = JSON.parse(val);
+                                    if (Array.isArray(arr)) return arr.map(String);
+                                  } catch {}
+                                }
+                                if (val.includes("; ")) {
+                                  return val.split("; ").map(x => x.trim()).filter(Boolean);
+                                }
+                                if (Array.isArray(opts) && opts.length > 0) {
+                                  const matched = opts.filter(opt => val.includes(opt));
+                                  if (matched.length > 0) return matched;
+                                }
+                                return val.split(", ").map(x => x.trim()).filter(Boolean);
+                              };
+
+                              const selectedList = parseSelectedList(field.value || "", field.options);
                               const isProdutos = field.id === "produtos";
                               const outrosItem = selectedList.find(x => x.startsWith("Outros:") || x.toLowerCase().startsWith("outros"));
                               const hasOutros = !!outrosItem;
@@ -98,7 +116,7 @@ export function BriefingFormFields({ briefingFields, setBriefingFields, handleSe
                                   newList.push(option);
                                 }
                                 newList = newList.filter(Boolean);
-                                const joined = newList.join(", ");
+                                const joined = newList.join("; ");
                                 setBriefingFields((prev) =>
                                   prev.map((f) => f.id === field.id ? { ...f, value: joined, status: joined ? "completed" : "pending" } : f)
                                 );
@@ -111,9 +129,9 @@ export function BriefingFormFields({ briefingFields, setBriefingFields, handleSe
                                 } else {
                                   newList.push("Outros");
                                 }
-                                const joined = newList.join(", ");
+                                const joined = newList.join("; ");
                                 setBriefingFields((prev) =>
-                                  prev.map((f) => f.id === "produtos" ? { ...f, value: joined, status: joined ? "completed" : "pending" } : f)
+                                  prev.map((f) => f.id === field.id ? { ...f, value: joined, status: joined ? "completed" : "pending" } : f)
                                 );
                               };
 
@@ -143,7 +161,7 @@ export function BriefingFormFields({ briefingFields, setBriefingFields, handleSe
                                             if (opt === "Outros ______________") {
                                               if (hasOutros) {
                                                 const newList = selectedList.filter(x => !x.startsWith("Outros:") && !x.toLowerCase().startsWith("outros"));
-                                                const joined = newList.join(", ");
+                                                const joined = newList.join("; ");
                                                 setBriefingFields((prev) =>
                                                   prev.map((f) => f.id === field.id ? { ...f, value: joined, status: joined ? "completed" : "pending" } : f)
                                                 );

@@ -11,10 +11,12 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchApi, readApiJson } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   Sparkles,
   CheckCircle2,
@@ -31,7 +33,13 @@ import {
   Send,
   HelpCircle,
   Clock,
-  ShieldAlert
+  ShieldAlert,
+  FolderCheck,
+  Edit3,
+  Printer,
+  MessageSquare,
+  Search,
+  Plus
 } from "lucide-react";
 
 type ModelType = "essencial" | "avancado";
@@ -45,6 +53,19 @@ interface TenantOption {
 export default function GeracaoDigitalImplementationBriefing() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Mode View (form vs saved list)
+  const [activeTabMode, setActiveTabMode] = useState<"form" | "list">("form");
+  const [editingBriefingId, setEditingBriefingId] = useState<string | null>(null);
+
+  // Search & Filter for Saved Briefings
+  const [searchSaved, setSearchSaved] = useState<string>("");
+  const [filterSavedStatus, setFilterSavedStatus] = useState<string>("todos");
+
+  // WhatsApp Dialog State
+  const [waDialogOpen, setWaDialogOpen] = useState<boolean>(false);
+  const [selectedWaBriefing, setSelectedWaBriefing] = useState<any | null>(null);
+  const [waPhone, setWaPhone] = useState<string>("");
 
   // Selected Tenant
   const [selectedTenantId, setSelectedTenantId] = useState<string>("");
@@ -247,8 +268,12 @@ export default function GeracaoDigitalImplementationBriefing() {
         status,
       };
 
-      const res = await fetchApi("/api/gd/implementation-briefings", {
-        method: "POST",
+      const url = editingBriefingId
+        ? `/api/gd/implementation-briefings/${editingBriefingId}`
+        : `/api/gd/implementation-briefings`;
+
+      const res = await fetchApi(url, {
+        method: editingBriefingId ? "PUT" : "POST",
         headers,
         body: JSON.stringify(payload),
       });
@@ -262,11 +287,11 @@ export default function GeracaoDigitalImplementationBriefing() {
     onSuccess: (data, status) => {
       queryClient.invalidateQueries({ queryKey: ["gd-implementation-briefings"] });
       toast({
-        title: status === "concluido" ? "Implantação Concluída!" : "Rascunho Salvo!",
+        title: editingBriefingId ? "Implantação Atualizada" : status === "concluido" ? "Implantação Concluída!" : "Rascunho Salvo!",
         description:
           status === "concluido"
-            ? "O briefing de implantação foi finalizado e as configurações do tenant foram atualizadas com sucesso."
-            : "As informações foram salvas como rascunho.",
+            ? "O briefing de implantação foi finalizado e as configurações do tenant foram sincronizadas."
+            : "As informações foram salvas com sucesso no banco de dados.",
       });
     },
     onError: (err: any) => {
@@ -278,13 +303,439 @@ export default function GeracaoDigitalImplementationBriefing() {
     },
   });
 
+  // Carregar briefing salvo no formulário
+  const handleLoadBriefing = (b: any) => {
+    setEditingBriefingId(b.id || null);
+    setSelectedTenantId(b.tenant_id || "");
+    setClientName(b.client_name || "");
+    setNumEmployees(b.num_employees || 1);
+    setHasCommercialSector(Boolean(b.has_commercial_sector));
+    setModelType(b.model_type || "essencial");
+    setManualOverride(true);
+
+    if (b.prerequisites) setPrerequisites(prev => ({ ...prev, ...b.prerequisites }));
+    if (b.operacao) setOperacao(prev => ({ ...prev, ...b.operacao }));
+    if (b.inteligencia) setInteligencia(prev => ({ ...prev, ...b.inteligencia }));
+    if (b.agente_ia) setAgenteIa(prev => ({ ...prev, ...b.agente_ia }));
+    if (b.canais) setCanais(prev => ({ ...prev, ...b.canais }));
+    if (b.modulos_custom) setModulosCustom(prev => ({ ...prev, ...b.modulos_custom }));
+    if (b.fechamento) setFechamento(prev => ({ ...prev, ...b.fechamento }));
+
+    setActiveTabMode("form");
+    toast({
+      title: "Implantação Carregada",
+      description: `Editando briefing técnico de ${b.client_name}.`,
+    });
+  };
+
+  // Exportar para documento PDF de impressão
+  const handleExportPdf = (b: any) => {
+    const win = window.open("", "_blank");
+    if (!win) return;
+    const isAdv = b.model_type === "avancado";
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Briefing de Implantação Vexo OS - ${b.client_name || "Cliente"}</title>
+          <style>
+            body { font-family: system-ui, -apple-system, sans-serif; color: #0f172a; padding: 30px; line-height: 1.5; font-size: 13px; }
+            .header { border-bottom: 2px solid #6366f1; padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-start; }
+            .title { font-size: 22px; font-weight: 900; color: #1e1b4b; margin: 0; }
+            .subtitle { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; }
+            .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-weight: 800; font-size: 11px; text-transform: uppercase; }
+            .badge-model { background: #e0e7ff; color: #3730a3; }
+            .badge-status { background: #dcfce7; color: #166534; }
+            .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 25px; }
+            .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; }
+            .card-title { font-size: 12px; font-weight: 800; text-transform: uppercase; color: #475569; margin-bottom: 8px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
+            .item { margin-bottom: 6px; }
+            .item-label { font-weight: 700; color: #334155; }
+            .item-val { color: #0f172a; }
+            .section { margin-bottom: 20px; page-break-inside: avoid; }
+            .section-title { font-size: 14px; font-weight: 800; color: #312e81; background: #eef2ff; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #4f46e5; margin-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+            th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; font-size: 12px; }
+            th { background: #f1f5f9; font-weight: 700; color: #475569; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1 class="title">Briefing de Implantação Técnico (Vexo OS)</h1>
+              <p class="subtitle">Empresa: <strong>${b.client_name || "Cliente"}</strong> | ID Tenant: ${b.tenant_id || "N/A"}</p>
+            </div>
+            <div>
+              <span class="badge badge-model">${isAdv ? "Trilha [A] Avançado" : "Trilha [E] Essencial"}</span>
+              <span class="badge badge-status">${b.status === "concluido" ? "Concluído" : "Em Andamento"}</span>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card">
+              <div class="card-title">Perfil da Operação</div>
+              <div class="item"><span class="item-label">Atendentes / Funcionários:</span> <span class="item-val">${b.num_employees || 1}</span></div>
+              <div class="item"><span class="item-label">Setor Comercial Dedicado:</span> <span class="item-val">${b.has_commercial_sector ? "Sim" : "Não"}</span></div>
+              <div class="item"><span class="item-label">Segmento:</span> <span class="item-val">${b.prerequisites?.segmento || "Não informado"}</span></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Canais & WhatsApp</div>
+              <div class="item"><span class="item-label">Chips WhatsApp:</span> <span class="item-val">${b.canais?.quantosChips || 1}</span></div>
+              <div class="item"><span class="item-label">Tipo de Número:</span> <span class="item-val">${b.canais?.numeroNovoOuHistorico === "ja_usado" ? "Já Usado" : "Número Novo"}</span></div>
+              <div class="item"><span class="item-label">Aquecimento Alinhado:</span> <span class="item-val">${b.canais?.aquecimentoAlinhado ? "Sim" : "Não"}</span></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">1. Parâmetros de Operação & Kanban</div>
+            <table>
+              <tr><th>Parâmetro</th><th>Configuração</th></tr>
+              <tr><td>Etapas do Kanban</td><td>${b.operacao?.kanbanEtapas || "Não informado"}</td></tr>
+              <tr><td>SLA Resposta Meta</td><td>${b.inteligencia?.slaPrimeiraRespostaMinutos || "15"} minutos</td></tr>
+              <tr><td>Visão Preferida</td><td>${b.operacao?.visaoPreferida || "Inbox"}</td></tr>
+              <tr><td>Acesso da Equipe</td><td>${b.operacao?.quemAcessa || "Todos os atendentes"}</td></tr>
+              <tr><td>Follow-up Automático</td><td>${b.operacao?.followupGatilho || "Ativo"} (${b.operacao?.followupIntervalo || "24h"})</td></tr>
+              <tr><td>Horário Comercial</td><td>${b.operacao?.horarioComercial || "08:00 às 18:00"}</td></tr>
+            </table>
+          </div>
+
+          <div class="section">
+            <div class="section-title">2. Agente de Inteligência Artificial</div>
+            <table>
+              <tr><th>Parâmetro IA</th><th>Definição</th></tr>
+              <tr><td>Tom de Voz</td><td>${b.agente_ia?.tomDeVoz || "Atencioso"}</td></tr>
+              <tr><td>Regra de Escalonamento (Humano)</td><td>${b.agente_ia?.regraEscalonamento || "Não informado"}</td></tr>
+              <tr><td>O que DEVE Informar</td><td>${b.agente_ia?.precisaSaber || "Não informado"}</td></tr>
+              <tr><td>O que NÃO Pode Informar</td><td>${b.agente_ia?.naoPodeInformar || "Não informado"}</td></tr>
+              <tr><td>Campos Obrigatórios Qualificação</td><td>${b.agente_ia?.qualificacaoObrigatoria || "Nome, Cidade"}</td></tr>
+            </table>
+          </div>
+
+          ${b.modulos_custom?.necessidadeEspecifica ? `
+          <div class="section">
+            <div class="section-title">3. Necessidade Customizada / Módulos Específicos</div>
+            <p><strong>Descrição:</strong> ${b.modulos_custom?.descricao || "Não informada."}</p>
+          </div>` : ''}
+
+          <div style="margin-top: 30px; border-top: 1px solid #cbd5e1; padding-top: 10px; text-align: center; color: #94a3b8; font-size: 11px;">
+            Documento emitido pelo Vexo OS CRM em ${new Date().toLocaleDateString("pt-BR")}.
+          </div>
+
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
+  // Abrir Modal de envio via WhatsApp
+  const handleOpenWhatsAppModal = (b: any) => {
+    setSelectedWaBriefing(b);
+    setWaPhone("");
+    setWaDialogOpen(true);
+  };
+
+  const handleSendWa = () => {
+    if (!selectedWaBriefing) return;
+    const cleanNumber = waPhone.replace(/\D/g, "");
+    const isAdv = selectedWaBriefing.model_type === "avancado";
+    const msg = `*📋 Briefing de Implantação Vexo OS (Onboarding Técnico)*
+
+*Empresa:* ${selectedWaBriefing.client_name || "Cliente"}
+*Modelo:* ${isAdv ? "Trilha [A] Modelo Avançado" : "Trilha [E] Modelo Essencial"}
+*Status:* ${selectedWaBriefing.status === "concluido" ? "Concluído" : "Em Andamento"}
+
+*👥 Perfil da Operação:*
+- Atendentes: ${selectedWaBriefing.num_employees || 1}
+- Setor Comercial Dedicado: ${selectedWaBriefing.has_commercial_sector ? "Sim" : "Não"}
+- Segmento: ${selectedWaBriefing.prerequisites?.segmento || "N/A"}
+
+*⚡ Inteligência Comercial & SLA:*
+- SLA de Resposta: ${selectedWaBriefing.inteligencia?.slaPrimeiraRespostaMinutos || "15"} min
+- Frequência Relatórios: ${selectedWaBriefing.inteligencia?.relatoriosFrequencia || "semanal"}
+
+*🤖 Agente de IA:*
+- Tom de Voz: ${selectedWaBriefing.agente_ia?.tomDeVoz || "Atencioso"}
+- Escalonamento: ${selectedWaBriefing.agente_ia?.regraEscalonamento || "Ao solicitar orçamento"}
+- Informações Principais: ${selectedWaBriefing.agente_ia?.precisaSaber || "Endereço, Horários, Serviços"}
+
+*📱 Canais & WhatsApp:*
+- Chips WhatsApp: ${selectedWaBriefing.canais?.quantosChips || 1} chip(s)
+- Horário Comercial: ${selectedWaBriefing.operacao?.horarioComercial || "08:00 às 18:00"}
+
+_Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selectedWaBriefing.created_at || Date.now()).toLocaleDateString("pt-BR")}_`;
+
+    const dest = cleanNumber ? `55${cleanNumber}` : "";
+    const url = dest ? `https://wa.me/${dest}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, "_blank");
+    setWaDialogOpen(false);
+  };
+
+  // Filtragem da lista de briefings salvos
+  const filteredBriefings = existingBriefings.filter((b: any) => {
+    const matchName = !searchSaved.trim() || (b.client_name || "").toLowerCase().includes(searchSaved.toLowerCase());
+    const matchStatus = filterSavedStatus === "todos" || b.status === filterSavedStatus;
+    return matchName && matchStatus;
+  });
+
   return (
     <PageShell
       title="Briefing de Implantação (Onboarding Técnico)"
       subtitle="Ferramenta de parametrização pós-contrato para go-live e configuração do tenant no Vexo OS."
+      icon={Layers}
     >
-      <div className="space-y-6">
-        <GeracaoDigitalTabs />
+      <GeracaoDigitalTabs />
+
+      {/* SUB-ABA: NOVO FORMULÁRIO DE IMPLANTAÇÃO vs IMPLANTAÇÕES SALVAS */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 my-6 pb-4 border-b border-slate-200 dark:border-white/10">
+        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-white/10">
+          <Button
+            type="button"
+            variant={activeTabMode === "form" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setActiveTabMode("form")}
+            className="h-9 px-4 text-xs font-black gap-2 rounded-xl"
+          >
+            <Edit3 className="h-4 w-4" />
+            {editingBriefingId ? "Editando Implantação" : "Formulário de Implantação"}
+          </Button>
+
+          <Button
+            type="button"
+            variant={activeTabMode === "list" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setActiveTabMode("list")}
+            className="h-9 px-4 text-xs font-black gap-2 rounded-xl"
+          >
+            <FolderCheck className="h-4 w-4 text-indigo-500" />
+            Implantações Salvas
+            <Badge className="ml-1 bg-indigo-600 text-white font-mono text-[10px] px-1.5 py-0">
+              {existingBriefings.length}
+            </Badge>
+          </Button>
+        </div>
+
+        {activeTabMode === "form" && editingBriefingId && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setEditingBriefingId(null);
+              setSelectedTenantId("");
+              setClientName("");
+              setManualOverride(false);
+              toast({ title: "Formulário Reiniciado", description: "Pronto para criar uma nova implantação." });
+            }}
+            className="h-8 text-xs font-bold gap-1.5 border-slate-300"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Limpar & Criar Nova
+          </Button>
+        )}
+      </div>
+
+      {/* MODAL COMPARTILHAR WHATSAPP */}
+      <Dialog open={waDialogOpen} onOpenChange={setWaDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-black">
+              <MessageSquare className="h-5 w-5 text-emerald-500" />
+              Enviar Implantação por WhatsApp
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Informe o número do destinatário para abrir a mensagem de onboarding no WhatsApp.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs font-bold">Número de WhatsApp (com DDD)</Label>
+              <Input
+                placeholder="Ex: 34999998888"
+                value={waPhone}
+                onChange={(e) => setWaPhone(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+            {selectedWaBriefing && (
+              <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-white/10 text-xs space-y-1">
+                <span className="font-bold text-slate-800 dark:text-slate-100 block">Resumo do Onboarding:</span>
+                <p className="text-slate-500 line-clamp-3 text-[11px] font-mono">
+                  {selectedWaBriefing.client_name} • {selectedWaBriefing.model_type === "avancado" ? "Trilha Avançada" : "Trilha Essencial"} • {selectedWaBriefing.num_employees} atendentes
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWaDialogOpen(false)} className="h-9 text-xs font-bold">
+              Cancelar
+            </Button>
+            <Button onClick={handleSendWa} className="h-9 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+              <Send className="h-3.5 w-3.5" />
+              Enviar no WhatsApp
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* VISUALIZAÇÃO: ABA LISTA vs ABA FORMULÁRIO */}
+      {activeTabMode === "list" ? (
+        <div className="space-y-5">
+          <Card className="border border-slate-200 dark:border-white/10 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg font-black flex items-center gap-2">
+                    <FolderCheck className="h-5 w-5 text-indigo-500" />
+                    Empresas & Implantações Registradas
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Consulte as especificações técnicas pós-contrato salvas para cada cliente Vexo.
+                  </CardDescription>
+                </div>
+
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search className="h-3.5 w-3.5 absolute left-3 top-3 text-slate-400" />
+                    <Input
+                      placeholder="Buscar por empresa..."
+                      value={searchSaved}
+                      onChange={(e) => setSearchSaved(e.target.value)}
+                      className="h-9 pl-9 text-xs"
+                    />
+                  </div>
+
+                  <Select value={filterSavedStatus} onValueChange={setFilterSavedStatus}>
+                    <SelectTrigger className="h-9 w-36 text-xs">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos Status</SelectItem>
+                      <SelectItem value="em_andamento">Em Andamento</SelectItem>
+                      <SelectItem value="concluido">Concluído</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoadingBriefings ? (
+                <div className="py-12 text-center text-xs text-slate-400">
+                  Carregando implantações registradas...
+                </div>
+              ) : filteredBriefings.length === 0 ? (
+                <div className="py-12 text-center space-y-3">
+                  <FolderCheck className="h-10 w-10 text-slate-300 mx-auto" />
+                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                    Nenhuma implantação técnica encontrada.
+                  </p>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    Preencha o formulário na aba "Formulário de Implantação" para salvar o briefing de onboarding de um cliente.
+                  </p>
+                  <Button
+                    onClick={() => setActiveTabMode("form")}
+                    className="h-8 text-xs font-bold bg-indigo-600 text-white gap-1.5"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Criar Nova Implantação
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {filteredBriefings.map((b: any) => {
+                    const isAdv = b.model_type === "avancado";
+                    const isDone = b.status === "concluido";
+                    return (
+                      <Card key={b.id} className="border border-slate-200 dark:border-slate-800 hover:border-indigo-500/50 transition-all duration-300 shadow-sm flex flex-col justify-between">
+                        <CardHeader className="pb-3 pt-4 px-4 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <h3 className="font-black text-sm text-slate-900 dark:text-white truncate">
+                                {b.client_name}
+                              </h3>
+                              <p className="text-[10px] text-slate-400 font-mono truncate">
+                                Tenant ID: {b.tenant_id}
+                              </p>
+                            </div>
+                            <Badge
+                              className={cn(
+                                "text-[10px] font-extrabold px-2 py-0.5 border-none shrink-0",
+                                isDone ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"
+                              )}
+                            >
+                              {isDone ? "Concluído" : "Em Andamento"}
+                            </Badge>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="outline" className="text-[10px] font-bold border-indigo-300 text-indigo-700 bg-indigo-50">
+                              {isAdv ? "Trilha [A] Avançado" : "Trilha [E] Essencial"}
+                            </Badge>
+                            <span className="text-[10px] text-slate-400">
+                              • {b.num_employees || 1} atendente(s)
+                            </span>
+                          </div>
+                        </CardHeader>
+
+                        <CardContent className="px-4 pb-4 space-y-3 pt-0">
+                          <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-150 dark:border-slate-800 text-[11px] space-y-1 font-mono text-slate-600 dark:text-slate-300">
+                            <div><strong>SLA Meta:</strong> {b.inteligencia?.slaPrimeiraRespostaMinutos || "15"} min</div>
+                            <div><strong>IA Tom de Voz:</strong> {b.agente_ia?.tomDeVoz || "Atencioso"}</div>
+                            <div><strong>Chips WhatsApp:</strong> {b.canais?.quantosChips || 1} chip(s)</div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleLoadBriefing(b)}
+                              className="h-8 text-[11px] font-bold gap-1 flex-1 px-2 border-slate-200"
+                            >
+                              <Edit3 className="h-3 w-3" />
+                              Ver / Editar
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleExportPdf(b)}
+                              className="h-8 text-[11px] font-bold gap-1 px-2.5 border-slate-200 text-indigo-600 hover:text-indigo-700"
+                              title="Exportar em PDF Imprimível"
+                            >
+                              <Printer className="h-3 w-3" />
+                              PDF
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenWhatsAppModal(b)}
+                              className="h-8 text-[11px] font-bold gap-1 px-2.5 border-emerald-200 text-emerald-600 hover:text-emerald-700 bg-emerald-50/50"
+                              title="Enviar resumo por WhatsApp"
+                            >
+                              <MessageSquare className="h-3 w-3" />
+                              WhatsApp
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="space-y-6">
 
         {/* PASSO 0: SELEÇÃO DE TENANT E ROTEAMENTO DO MODELO */}
         <Card className="border-indigo-100 dark:border-indigo-900/40 bg-gradient-to-br from-indigo-50/40 to-slate-50 dark:from-indigo-950/20 dark:to-slate-900 shadow-sm">
@@ -1144,10 +1595,11 @@ export default function GeracaoDigitalImplementationBriefing() {
             className="h-11 font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-md shadow-emerald-600/20 px-6"
           >
             <CheckCircle2 className="h-4 w-4" />
-            Concluir & Sincronizar Tenant
+            {editingBriefingId ? "Atualizar & Salvar Implantação" : "Concluir & Sincronizar Tenant"}
           </Button>
         </div>
       </div>
+      )}
     </PageShell>
   );
 }
