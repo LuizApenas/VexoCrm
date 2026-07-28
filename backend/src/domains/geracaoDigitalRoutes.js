@@ -32,6 +32,47 @@ const somaRecorrente = (items) =>
   temPacote(items) ? soma(items, isLinhaDePacote) : soma(items, isCobrancaMensal);
 
 export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, requireInternalPageAccess) {
+  // Inicialização defensiva da tabela de briefings de implantação Vexo OS
+  async function ensureGdImplementationTable(dbPool) {
+    try {
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS public.gd_implementation_briefings (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id text NOT NULL,
+          client_name text NOT NULL,
+          model_type text NOT NULL DEFAULT 'essencial',
+          suggested_model text DEFAULT 'essencial',
+          num_employees integer DEFAULT 1,
+          has_commercial_sector boolean DEFAULT false,
+          prerequisites jsonb DEFAULT '{}'::jsonb,
+          operacao jsonb DEFAULT '{}'::jsonb,
+          inteligencia jsonb DEFAULT '{}'::jsonb,
+          agente_ia jsonb DEFAULT '{}'::jsonb,
+          canais jsonb DEFAULT '{}'::jsonb,
+          modulos_custom jsonb DEFAULT '{}'::jsonb,
+          fechamento jsonb DEFAULT '{}'::jsonb,
+          status text NOT NULL DEFAULT 'em_andamento',
+          created_at timestamptz NOT NULL DEFAULT now(),
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+      `);
+
+      await dbPool.query(`
+        ALTER TABLE public.gd_implementation_briefings 
+        DROP CONSTRAINT IF EXISTS gd_implementation_briefings_tenant_id_fkey;
+      `).catch(() => {});
+
+      await dbPool.query(`
+        ALTER TABLE public.gd_implementation_briefings 
+        ALTER COLUMN tenant_id TYPE text USING tenant_id::text;
+      `).catch(() => {});
+    } catch (err) {
+      console.warn("[ensureGdImplementationTable] Aviso ao verificar tabela de implantações:", err.message);
+    }
+  }
+
+  ensureGdImplementationTable(pool);
+
   // POST /api/geracao-digital/briefing
   app.post("/api/geracao-digital/briefing", requireFirebaseAuth, async (req, res) => {
 
@@ -2410,9 +2451,12 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         status = 'em_andamento'
       } = req.body;
 
-      if (!tenant_id || !client_name || !model_type) {
-        return res.status(400).json({ error: "tenant_id, client_name e model_type são obrigatórios." });
+      if (!client_name) {
+        return res.status(400).json({ error: "O nome do cliente é obrigatório." });
       }
+
+      const effectiveTenantId = String(tenant_id || client_name || "default-tenant").trim();
+      const effectiveModelType = model_type || suggested_model || "essencial";
 
       const { rows } = await pool.query(
         `INSERT INTO public.gd_implementation_briefings (
@@ -2422,7 +2466,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING *`,
         [
-          tenant_id, client_name, model_type, suggested_model || model_type,
+          effectiveTenantId, client_name, effectiveModelType, suggested_model || effectiveModelType,
           Number(num_employees || 1), Boolean(has_commercial_sector),
           JSON.stringify(prerequisites), JSON.stringify(operacao),
           JSON.stringify(inteligencia), JSON.stringify(agente_ia),
@@ -2434,13 +2478,17 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       const record = rows[0];
 
       if (status === 'concluido') {
-        await syncTenantImplementationConfig(pool, tenant_id, record);
+        try {
+          await syncTenantImplementationConfig(pool, effectiveTenantId, record);
+        } catch (syncErr) {
+          console.warn("[GeracaoDigital] Aviso ao sincronizar config do tenant:", syncErr.message);
+        }
       }
 
       res.json({ success: true, data: record });
     } catch (error) {
       console.error("[GeracaoDigital] Erro ao criar briefing de implantação:", error);
-      res.status(500).json({ error: "Erro ao criar briefing de implantação." });
+      res.status(500).json({ error: `Erro ao criar briefing de implantação: ${error.message}` });
     }
   });
 
@@ -2510,13 +2558,17 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       const updatedRecord = rows[0];
 
       if (newStatus === 'concluido') {
-        await syncTenantImplementationConfig(pool, updatedRecord.tenant_id, updatedRecord);
+        try {
+          await syncTenantImplementationConfig(pool, updatedRecord.tenant_id, updatedRecord);
+        } catch (syncErr) {
+          console.warn("[GeracaoDigital] Aviso ao sincronizar config do tenant:", syncErr.message);
+        }
       }
 
       res.json({ success: true, data: updatedRecord });
     } catch (error) {
       console.error("[GeracaoDigital] Erro ao atualizar briefing de implantação:", error);
-      res.status(500).json({ error: "Erro ao atualizar briefing de implantação." });
+      res.status(500).json({ error: `Erro ao atualizar briefing de implantação: ${error.message}` });
     }
   });
 

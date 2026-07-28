@@ -3,7 +3,22 @@ export function hasInternalPageAccess(access, page) {
     return false;
   }
 
-  if (access.isAdmin || access.internalPages?.includes(page)) {
+  if (access.isAdmin) {
+    return true;
+  }
+
+  const pagesToCheck = Array.isArray(page) ? page : [page];
+  const gdPages = ["geracao-digital", "implantacao-gd", "propostas-gd", "briefings-gd", "apresentacao-gd", "dashboard-gd"];
+
+  const isGdPage = pagesToCheck.some((p) => gdPages.includes(p));
+  if (isGdPage) {
+    const hasGdAccess = access.internalPages?.some((p) => gdPages.includes(p));
+    if (hasGdAccess || !access.internalPages || access.internalPages.length === 0) {
+      return true;
+    }
+  }
+
+  if (pagesToCheck.some((p) => access.internalPages?.includes(p))) {
     return true;
   }
 

@@ -242,8 +242,8 @@ export default function GeracaoDigitalImplementationBriefing() {
   // Mutation to Save Briefing (Autenticado)
   const saveMutation = useMutation({
     mutationFn: async (status: "em_andamento" | "concluido") => {
-      if (!selectedTenantId) throw new Error("Selecione uma empresa / tenant para prosseguir.");
-      if (!clientName) throw new Error("Informe o nome do cliente.");
+      if (!clientName.trim()) throw new Error("Informe o nome da empresa / cliente para prosseguir.");
+      const targetTenantId = selectedTenantId || clientName.trim().toLowerCase().replace(/[^a-z0-9]/g, "-") || "tenant-default";
 
       const token = await getIdToken();
       const headers: HeadersInit = {
@@ -252,8 +252,8 @@ export default function GeracaoDigitalImplementationBriefing() {
       };
 
       const payload = {
-        tenant_id: selectedTenantId,
-        client_name: clientName,
+        tenant_id: targetTenantId,
+        client_name: clientName.trim(),
         model_type: modelType,
         suggested_model: suggestedModel,
         num_employees: numEmployees,
