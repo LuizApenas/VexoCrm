@@ -163,6 +163,19 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       `);
       await dbPool.query(`ALTER TABLE public.gd_proposals DROP CONSTRAINT IF EXISTS gd_proposals_tenant_id_fkey`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_proposals ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS package_id UUID`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS package_vexo_id UUID`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS prospect_logo TEXT`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS segment_id UUID`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS cobrar_setup BOOLEAN DEFAULT false`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_setup_vexo NUMERIC`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS condicoes_pagamento JSONB`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS periodo_plano TEXT`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS validade_ate TIMESTAMPTZ`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_apos_validade NUMERIC`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS observacao_validade TEXT`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS pacotes_ofertados JSONB`).catch(() => {});
 
       // 7. gd_packages
       await dbPool.query(`
@@ -170,14 +183,28 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
           nome TEXT NOT NULL,
-          descricao TEXT,
-          valor_mensal NUMERIC NOT NULL DEFAULT 0,
-          desconto_percentual NUMERIC DEFAULT 0,
-          itens JSONB NOT NULL DEFAULT '[]'::jsonb,
+          tipo TEXT DEFAULT 'gd',
+          periodo TEXT DEFAULT 'mensal',
+          produtos_incluidos JSONB NOT NULL DEFAULT '[]'::jsonb,
+          valor NUMERIC NOT NULL DEFAULT 0,
+          valor_tabela NUMERIC,
+          valor_vp NUMERIC,
+          destaque BOOLEAN NOT NULL DEFAULT false,
           ativo BOOLEAN NOT NULL DEFAULT true,
+          ad_hoc BOOLEAN NOT NULL DEFAULT false,
+          segmento TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'gd'`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS periodo TEXT DEFAULT 'mensal'`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS produtos_incluidos JSONB DEFAULT '[]'::jsonb`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor NUMERIC DEFAULT 0`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor_tabela NUMERIC`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS destaque BOOLEAN DEFAULT false`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS ad_hoc BOOLEAN DEFAULT false`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS segmento TEXT`).catch(() => {});
 
       // 8. gd_payment_terms
       await dbPool.query(`
@@ -185,13 +212,16 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
           nome TEXT NOT NULL,
-          descricao TEXT,
-          desconto_percentual NUMERIC DEFAULT 0,
-          parcelas INTEGER DEFAULT 1,
+          tipo TEXT DEFAULT 'custom',
+          config JSONB DEFAULT '{}'::jsonb,
           ativo BOOLEAN NOT NULL DEFAULT true,
+          aplica_a TEXT DEFAULT 'setup',
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
+      await dbPool.query(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'custom'`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS config JSONB DEFAULT '{}'::jsonb`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS aplica_a TEXT DEFAULT 'setup'`).catch(() => {});
 
       // 9. gd_contracts
       await dbPool.query(`
