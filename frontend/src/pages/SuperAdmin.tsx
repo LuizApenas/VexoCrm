@@ -66,12 +66,16 @@ export default function SuperAdmin() {
   });
 
   const getAuthHeaders = async () => {
-    const token = await getIdToken();
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
+    try {
+      const token = await getIdToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      return headers;
+    } catch (e) {
+      return { "Content-Type": "application/json" };
     }
-    return headers;
   };
 
   const fetchOverview = async () => {
