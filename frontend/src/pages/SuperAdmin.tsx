@@ -38,7 +38,7 @@ interface SuperAdminTenant {
 
 export default function SuperAdmin() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, getIdToken } = useAuth();
   const crmClient = useOptionalCrmClient();
   const [activeTab, setActiveTab] = useState("overview");
   const [searchTerm, setSearchTerm] = useState("");
@@ -65,10 +65,20 @@ export default function SuperAdmin() {
     suspendedTenants: 0,
   });
 
+  const getAuthHeaders = async () => {
+    const token = await getIdToken();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    return headers;
+  };
+
   const fetchOverview = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/superadmin/overview");
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/superadmin/overview", { headers });
       if (res.ok) {
         const data = await res.json();
         setRawMetrics({
@@ -81,7 +91,7 @@ export default function SuperAdmin() {
         });
       }
 
-      const tenantsRes = await fetch("/api/superadmin/tenants");
+      const tenantsRes = await fetch("/api/superadmin/tenants", { headers });
       if (tenantsRes.ok) {
         const tenantsData = await tenantsRes.json();
         if (Array.isArray(tenantsData.items) && tenantsData.items.length > 0) {
@@ -108,9 +118,10 @@ export default function SuperAdmin() {
         prev.map((t) => (t.id === tenantId ? { ...t, status: newStatus } : t))
       );
 
+      const headers = await getAuthHeaders();
       await fetch(`/api/superadmin/tenants/${tenantId}/status`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ status: newStatus }),
       });
 
@@ -441,9 +452,10 @@ export default function SuperAdmin() {
                 onClick={async () => {
                   try {
                     toast.info("Iniciando migração de dados do banco antigo...");
+                    const headers = await getAuthHeaders();
                     const res = await fetch("/api/superadmin/migrate-from-old-db", {
                       method: "POST",
-                      headers: { "Content-Type": "application/json" },
+                      headers,
                       body: JSON.stringify({
                         sourceUrl: "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable"
                       })
