@@ -1100,12 +1100,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   // GET /api/gd/segments
   app.get("/api/gd/segments", requireFirebaseAuth, async (req, res) => {
     try {
-      const clientKey = req.query.client_id || "00000000-0000-0000-0000-000000000000";
-      const tenantId = await resolveTenantUuid(clientKey);
-
       const result = await pool.query(
-        "SELECT id, nome, faturamento_min, ativo FROM public.gd_segments WHERE tenant_id = $1 AND ativo = true ORDER BY nome ASC",
-        [tenantId]
+        "SELECT id, nome, faturamento_min, ativo FROM public.gd_segments WHERE ativo = true ORDER BY nome ASC"
       );
       res.status(200).json({ success: true, data: result.rows });
     } catch (error) {
@@ -1117,13 +1113,9 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   // GET /api/gd/products
   app.get("/api/gd/products", requireFirebaseAuth, async (req, res) => {
     try {
-      const clientKey = req.query.client_id || "00000000-0000-0000-0000-000000000000";
-      const tenantId = await resolveTenantUuid(clientKey);
-
       const includeInactive = req.query.include_inactive === "1";
       const result = await pool.query(
-        `SELECT id, nome, descricao, categoria, valor_padrao, valor_vp, recorrencia, ativo FROM public.gd_products WHERE tenant_id = $1 ${includeInactive ? "" : "AND ativo = true"} ORDER BY nome ASC`,
-        [tenantId]
+        `SELECT id, nome, descricao, categoria, valor_padrao, valor_vp, recorrencia, ativo FROM public.gd_products ${includeInactive ? "" : "WHERE ativo = true"} ORDER BY nome ASC`
       );
       const rows = Array.isArray(result?.rows) ? result.rows : [];
       const data = rows.map(r => ({
@@ -1217,14 +1209,9 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   // GET /api/gd/packages
   app.get("/api/gd/packages", requireFirebaseAuth, async (req, res) => {
     try {
-      const clientKey = req.query.client_id || "00000000-0000-0000-0000-000000000000";
-      const tenantId = await resolveTenantUuid(clientKey);
       const includeInactive = req.query.include_inactive === "1";
       const cols = "id, nome, tipo, periodo, produtos_incluidos, valor, valor_tabela, valor_vp, destaque, ativo, ad_hoc, segmento, created_at";
 
-      // Modo lookup por ids: usado ao editar uma proposta para reencontrar os
-      // pacotes que ela referencia — INCLUSIVE ad_hoc (que não aparecem na
-      // biblioteca). Por id, sem filtro de ad_hoc/ativo.
       const idsParam = typeof req.query.ids === "string" ? req.query.ids.trim() : "";
       const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       let result;
@@ -1234,22 +1221,20 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           return res.status(200).json({ success: true, data: [] });
         }
         result = await pool.query(
-          `SELECT ${cols} FROM public.gd_packages WHERE tenant_id = $1 AND id = ANY($2::uuid[]) ORDER BY nome ASC`,
-          [tenantId, ids]
+          `SELECT ${cols} FROM public.gd_packages WHERE id = ANY($1::uuid[]) ORDER BY nome ASC`,
+          [ids]
         );
       } else {
-        // Lista = biblioteca de Modelos: só pacotes reutilizáveis (ad_hoc = false).
-        // Pacotes criados dentro de uma proposta (ad_hoc = true) NÃO aparecem aqui;
-        // são referenciados por id na proposta e hidratados por lookup direto.
         const segmentoFilter = req.query.segmento;
-        const params = [tenantId];
+        const params = [];
         let segmentoClause = "";
         if (segmentoFilter) {
           params.push(segmentoFilter);
-          segmentoClause = ` AND segmento = $${params.length}`;
+          segmentoClause = ` WHERE segmento = $1`;
         }
+        const whereStatus = includeInactive ? "" : (segmentoClause ? "AND ativo = true" : "WHERE ativo = true");
         result = await pool.query(
-          `SELECT ${cols} FROM public.gd_packages WHERE tenant_id = $1 AND ad_hoc = false${segmentoClause} ${includeInactive ? "" : "AND ativo = true"} ORDER BY nome ASC`,
+          `SELECT ${cols} FROM public.gd_packages${segmentoClause} ${whereStatus} ORDER BY nome ASC`,
           params
         );
       }
@@ -1973,14 +1958,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   // GET /api/gd/proposals
   app.get("/api/gd/proposals", requireFirebaseAuth, async (req, res) => {
     try {
-      const { client_id } = req.query;
-      const tenantId = await resolveTenantUuid(client_id);
-
       const result = await pool.query(
-        `SELECT * FROM public.gd_proposals 
-         WHERE ($1::text = 'all' OR $1::text = 'global' OR tenant_id::text = $1::text OR tenant_id::text = 'geracao-digital' OR tenant_id::text = '00000000-0000-0000-0000-000000000000')
-         ORDER BY created_at DESC`,
-        [tenantId]
+        `SELECT * FROM public.gd_proposals ORDER BY created_at DESC`
       );
 
       const formatted = result.rows.map(row => {
