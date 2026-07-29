@@ -657,7 +657,6 @@ export async function dispatchCampaignSequence({
         break;
       }
 
-      const step = enabledSteps[stepIndex];
       const stepForPayload = {
         ...step,
         text: applyMessagePlaceholders(resolveStepTextForLead(step, leadIndex), lead, phone),
