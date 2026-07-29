@@ -105,6 +105,8 @@ export function registerSuperAdminRoutes(app, deps) {
     const { tenantId } = req.params;
     const { modules } = req.body || {};
     res.json({ success: true, tenantId, modules: modules || [] });
+  });
+
   // POST /api/superadmin/migrate-from-old-db -> Importar tabelas e registros do banco de origem
   app.post("/api/superadmin/migrate-from-old-db", requireFirebaseAuth, requireSuperAdminGuard, async (req, res) => {
     const sourceUrl = req.body?.sourceUrl || "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable";
