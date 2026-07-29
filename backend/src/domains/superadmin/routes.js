@@ -109,15 +109,36 @@ export function registerSuperAdminRoutes(app, deps) {
 
   // POST /api/superadmin/migrate-from-old-db -> Importar tabelas e registros do banco de origem
   app.post("/api/superadmin/migrate-from-old-db", requireFirebaseAuth, requireSuperAdminGuard, async (req, res) => {
-    const sourceUrl = req.body?.sourceUrl || "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable";
-    const targetUrl = process.env.DATABASE_URL;
+    const candidateUrls = [
+      req.body?.sourceUrl,
+      "postgresql://postgres:et3gogmndgvgopdtyjxs@db-vexo:5432/vexo?sslmode=disable",
+      "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable",
+      "postgresql://postgres:et3gogmndgvgopdtyjxs@187.77.52.167:5432/vexo?sslmode=disable"
+    ].filter(Boolean);
 
+    const targetUrl = process.env.DATABASE_URL;
     if (!targetUrl) {
       res.status(500).json({ error: "DATABASE_URL destination is missing on server" });
       return;
     }
 
-    const sourcePool = new Pool({ connectionString: sourceUrl });
+    let sourcePool = null;
+    let connectedUrl = "";
+    for (const url of candidateUrls) {
+      try {
+        const testPool = new Pool({ connectionString: url, connectionTimeoutMillis: 3000 });
+        await testPool.query("SELECT 1");
+        sourcePool = testPool;
+        connectedUrl = url;
+        break;
+      } catch (err) {}
+    }
+
+    if (!sourcePool) {
+      res.status(500).json({ error: "SOURCE_DB_UNREACHABLE", message: "Não foi possível conectar a nenhuma das candidatas de banco de origem (db-vexo)." });
+      return;
+    }
+
     const targetPool = new Pool({ connectionString: targetUrl });
 
     try {
