@@ -151,15 +151,28 @@ export function registerInsightsRoutes(app, deps) {
         throw clientError;
       }
 
-      const { data: leads, error } = await supabase
-        .from(leadsTableName(clientId))
-        .select("id, nome, tipo_cliente, status, qualificacao, data_hora, cidade, created_at")
-        .eq("client_id", clientId)
-        .order("data_hora", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false });
+      let leads = [];
+      try {
+        let q = supabase
+          .from(leadsTableName(clientId))
+          .select("id, nome, tipo_cliente, status, qualificacao, data_hora, cidade, created_at")
+          .eq("client_id", clientId)
+          .order("created_at", { ascending: false });
 
-      if (error) {
-        throw error;
+        const resLeads = await q;
+        if (!resLeads.error) {
+          leads = resLeads.data || [];
+        } else {
+          // Fallback sem data_hora se der erro de coluna
+          const fallbackRes = await supabase
+            .from("leads")
+            .select("id, nome, status, created_at")
+            .eq("client_id", clientId)
+            .order("created_at", { ascending: false });
+          leads = fallbackRes.data || [];
+        }
+      } catch (lErr) {
+        console.warn("dashboard leads query failed, using empty array:", lErr?.message || lErr);
       }
 
       let conversions = [];
