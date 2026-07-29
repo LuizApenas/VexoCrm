@@ -1143,7 +1143,7 @@ export default function GeracaoDigitalProposals() {
               </p>
               <Button
                 size="sm"
-                onClick={() => { setShowNewForm(true); resetWizard(); setProposals([]); }}
+                onClick={() => { setShowNewForm(true); resetWizard(); }}
                 className="bg-gradient-to-r from-purple-700 to-indigo-600 hover:opacity-90 text-white font-bold text-xs"
               >
                 <Plus className="h-3.5 w-3.5 mr-1" />

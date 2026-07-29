@@ -63,6 +63,17 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
+      const briefingCount = await dbPool.query("SELECT count(*)::int AS count FROM public.geracao_digital_briefings");
+      if ((briefingCount.rows[0]?.count || 0) === 0) {
+        console.log("[gd-setup] Inserindo briefings iniciais de captação...");
+        await dbPool.query(`
+          INSERT INTO public.geracao_digital_briefings (prospect_name, whatsapp_number, theme_preset, briefing_data, status)
+          VALUES
+            ('Clinica Vitallis', '5531999999999', 'saude', '{"objetivo": "Escalar captação de pacientes de implante e estética dental", "orcamento_mensal": "6000", "plano": "semestral"}'::jsonb, 'concluido'),
+            ('Dr. Diogo Teodoro', '5531988888888', 'saude', '{"objetivo": "Posicionamento e tráfego pago de cirurgia plástica", "orcamento_mensal": "6000", "plano": "mensal"}'::jsonb, 'pendente')
+          ON CONFLICT DO NOTHING;
+        `).catch((err) => console.warn("[gd-setup] Aviso ao inserir seed de briefings:", err.message));
+      }
 
       // 3. gd_segments
       await dbPool.query(`
@@ -176,6 +187,21 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS observacao_validade TEXT`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS pacotes_ofertados JSONB`).catch(() => {});
+
+      // Seed de propostas históricas se a tabela estiver vazia
+      const propCount = await dbPool.query("SELECT count(*)::int AS count FROM public.gd_proposals");
+      if ((propCount.rows[0]?.count || 0) === 0) {
+        console.log("[gd-setup] Inserindo propostas históricas (Vitallis, Dr. Diogo Teodoro, Ótica R Deluxe, Mestre dos Jogos)...");
+        await dbPool.query(`
+          INSERT INTO public.gd_proposals (id, tenant_id, prospect_name, valor_total, condicoes, status, cobrar_setup, valor_setup_vexo, periodo_plano, itens)
+          VALUES
+            ('f886eb5f-2071-4e5a-9dfa-f0478673330a', '00000000-0000-0000-0000-000000000000', 'Clinica Vitallis', 41000.00, 'Contrato Semestral. Recorrência R$ 6.000/mês + Setup Vexo R$ 5.000', 'rascunho', true, 5000, 'semestral', '[{"product_id": null, "descricao": "Pacote: Pacote Semestral (Recorrência)", "categoria": "gd", "valor": 6000, "recorrencia": "mensal", "meses": 6, "valor_vp": 3000}, {"product_id": "p-landing", "descricao": "GD: Landing Page/site", "categoria": "gd", "valor": 2500, "recorrencia": "pontual"}]'::jsonb),
+            ('a1111111-2222-3333-4444-555555555555', '00000000-0000-0000-0000-000000000000', 'Dr. Diogo Teodoro', 6000.00, 'Contrato Mensal Recorrente', 'rascunho', false, 0, 'mensal', '[{"product_id": null, "descricao": "Pacote: Gestão de Tráfego e Presença Digital", "categoria": "gd", "valor": 6000, "recorrencia": "mensal", "meses": 1}]'::jsonb),
+            ('b2222222-3333-4444-5555-666666666666', '00000000-0000-0000-0000-000000000000', 'Ótica R Deluxe', 18800.00, 'Contrato Semestral. Recorrência R$ 3.000/mês + Branding R$ 800', 'enviada', false, 0, 'semestral', '[{"product_id": null, "descricao": "Pacote: Posicionamento R Deluxe", "categoria": "gd", "valor": 3000, "recorrencia": "mensal", "meses": 6}]'::jsonb),
+            ('c3333333-4444-5555-6666-777777777777', '00000000-0000-0000-0000-000000000000', 'Mestre dos Jogos', 73500.00, 'Contrato Anual. Recorrência R$ 6.000/mês + Setup E-commerce', 'enviada', false, 0, 'anual', '[{"product_id": null, "descricao": "Pacote: Escala Mestre dos Jogos", "categoria": "gd", "valor": 6000, "recorrencia": "mensal", "meses": 12}]'::jsonb)
+          ON CONFLICT (id) DO NOTHING;
+        `).catch((err) => console.warn("[gd-setup] Aviso ao inserir seed de propostas:", err.message));
+      }
 
       // 7. gd_packages
       await dbPool.query(`
