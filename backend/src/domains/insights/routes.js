@@ -141,14 +141,19 @@ export function registerInsightsRoutes(app, deps) {
     if (!clientId) return;
 
     try {
-      const { data: client, error: clientError } = await supabase
-        .from("leads_clients")
-        .select("id, name")
-        .eq("id", clientId)
-        .maybeSingle();
+      let client = { id: clientId, name: clientId };
+      try {
+        const { data: clientRow, error: clientError } = await supabase
+          .from("leads_clients")
+          .select("id, name")
+          .eq("id", clientId)
+          .maybeSingle();
 
-      if (clientError) {
-        throw clientError;
+        if (!clientError && clientRow) {
+          client = clientRow;
+        }
+      } catch (cErr) {
+        console.warn("dashboard client query failed:", cErr?.message || cErr);
       }
 
       let leads = [];
@@ -228,14 +233,19 @@ export function registerInsightsRoutes(app, deps) {
     if (!clientId) return;
 
     try {
-      const { data: client, error: clientError } = await supabase
-        .from("leads_clients")
-        .select("id, name")
-        .eq("id", clientId)
-        .maybeSingle();
+      let client = { id: clientId, name: clientId };
+      try {
+        const { data: clientRow, error: clientError } = await supabase
+          .from("leads_clients")
+          .select("id, name")
+          .eq("id", clientId)
+          .maybeSingle();
 
-      if (clientError) {
-        throw clientError;
+        if (!clientError && clientRow) {
+          client = clientRow;
+        }
+      } catch (cErr) {
+        console.warn("revenue-ops client query failed:", cErr?.message || cErr);
       }
 
       const { data: leads, error: leadsError } = await supabase
