@@ -1,3 +1,4 @@
+import pg from "pg";
 import { v4 as uuidv4 } from "uuid";
 import crypto from "crypto";
 import { getSlackQueue } from "../geracaoDigital/slackQueue.js";
@@ -230,6 +231,34 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       `);
       await dbPool.query(`ALTER TABLE public.gd_implementation_briefings DROP CONSTRAINT IF EXISTS gd_implementation_briefings_tenant_id_fkey`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
+
+      // 11. Auto-migração transparente do banco de origem no Easypanel (vexo_db-vexo)
+      try {
+        const sourcePool = new pg.Pool({
+          connectionString: "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable"
+        });
+        const tablesToSync = ["geracao_digital_briefings", "gd_proposals", "gd_contracts", "gd_products", "campaigns", "leads"];
+        for (const tableName of tablesToSync) {
+          try {
+            const srcRows = await sourcePool.query(`SELECT * FROM public."${tableName}"`).then((r) => r.rows).catch(() => []);
+            if (srcRows.length > 0) {
+              for (const row of srcRows) {
+                const keys = Object.keys(row);
+                const cols = keys.map((k) => `"${k}"`).join(", ");
+                const placeholders = keys.map((_, idx) => `$${idx + 1}`).join(", ");
+                const values = keys.map((k) => row[k]);
+                await dbPool.query(
+                  `INSERT INTO public."${tableName}" (${cols}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
+                  values
+                ).catch(() => {});
+              }
+            }
+          } catch (e) {}
+        }
+        await sourcePool.end().catch(() => {});
+      } catch (migErr) {
+        console.warn("[ensureGdTablesAndSeeds] Aviso na auto-migração de banco de origem:", migErr.message);
+      }
     } catch (err) {
       console.warn("[ensureGdTablesAndSeeds] Aviso ao verificar tabelas GD:", err.message);
     }
