@@ -32,46 +32,210 @@ const somaRecorrente = (items) =>
   temPacote(items) ? soma(items, isLinhaDePacote) : soma(items, isCobrancaMensal);
 
 export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, requireInternalPageAccess) {
-  // Inicialização defensiva da tabela de briefings de implantação Vexo OS
-  async function ensureGdImplementationTable(dbPool) {
+  // Inicialização defensiva de todas as tabelas e seeds de Geração Digital no PostgreSQL
+  async function ensureGdTablesAndSeeds(dbPool) {
     try {
+      // 1. Tenants table
       await dbPool.query(`
-        CREATE TABLE IF NOT EXISTS public.gd_implementation_briefings (
-          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-          tenant_id text NOT NULL,
-          client_name text NOT NULL,
-          model_type text NOT NULL DEFAULT 'essencial',
-          suggested_model text DEFAULT 'essencial',
-          num_employees integer DEFAULT 1,
-          has_commercial_sector boolean DEFAULT false,
-          prerequisites jsonb DEFAULT '{}'::jsonb,
-          operacao jsonb DEFAULT '{}'::jsonb,
-          inteligencia jsonb DEFAULT '{}'::jsonb,
-          agente_ia jsonb DEFAULT '{}'::jsonb,
-          canais jsonb DEFAULT '{}'::jsonb,
-          modulos_custom jsonb DEFAULT '{}'::jsonb,
-          fechamento jsonb DEFAULT '{}'::jsonb,
-          status text NOT NULL DEFAULT 'em_andamento',
-          created_at timestamptz NOT NULL DEFAULT now(),
-          updated_at timestamptz NOT NULL DEFAULT now()
+        CREATE TABLE IF NOT EXISTS public.tenants (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+      await dbPool.query(`
+        INSERT INTO public.tenants (id, name)
+        VALUES ('00000000-0000-0000-0000-000000000000', 'Geração Digital')
+        ON CONFLICT (id) DO NOTHING;
+      `).catch(() => {});
+
+      // 2. geracao_digital_briefings (Briefings de captação)
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS public.geracao_digital_briefings (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          prospect_name TEXT,
+          whatsapp_number TEXT,
+          theme_preset TEXT,
+          briefing_data JSONB DEFAULT '{}'::jsonb,
+          status TEXT DEFAULT 'pendente',
+          slack_status TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
 
+      // 3. gd_segments
       await dbPool.query(`
-        ALTER TABLE public.gd_implementation_briefings 
-        DROP CONSTRAINT IF EXISTS gd_implementation_briefings_tenant_id_fkey;
-      `).catch(() => {});
+        CREATE TABLE IF NOT EXISTS public.gd_segments (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
+          nome TEXT NOT NULL,
+          faturamento_min NUMERIC NOT NULL DEFAULT 50000,
+          ativo BOOLEAN NOT NULL DEFAULT true
+        );
+      `);
+      await dbPool.query(`ALTER TABLE public.gd_segments DROP CONSTRAINT IF EXISTS gd_segments_tenant_id_fkey`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_segments ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
 
+      // 4. gd_products (Catálogo)
       await dbPool.query(`
-        ALTER TABLE public.gd_implementation_briefings 
-        ALTER COLUMN tenant_id TYPE text USING tenant_id::text;
-      `).catch(() => {});
+        CREATE TABLE IF NOT EXISTS public.gd_products (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
+          nome TEXT NOT NULL,
+          descricao TEXT,
+          categoria TEXT NOT NULL DEFAULT 'gd',
+          valor_padrao NUMERIC NOT NULL DEFAULT 0,
+          valor_vp NUMERIC DEFAULT 0,
+          recorrencia TEXT NOT NULL DEFAULT 'mensal',
+          ativo BOOLEAN NOT NULL DEFAULT true
+        );
+      `);
+      await dbPool.query(`ALTER TABLE public.gd_products DROP CONSTRAINT IF EXISTS gd_products_tenant_id_fkey`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_products ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
+
+      // Seed catálogo se estiver vazio
+      const prodCheck = await dbPool.query("SELECT count(*)::int AS count FROM public.gd_products");
+      if ((prodCheck.rows[0]?.count || 0) === 0) {
+        console.log("[gd-setup] Populando catálogo inicial de produtos Geração Digital...");
+        await dbPool.query(`
+          INSERT INTO public.gd_products (tenant_id, nome, categoria, valor_padrao, recorrencia, ativo)
+          VALUES
+            ('00000000-0000-0000-0000-000000000000', 'Google Meu Negócio', 'gd', 300.00, 'mensal', true),
+            ('00000000-0000-0000-0000-000000000000', 'Google Ads', 'gd', 1500.00, 'mensal', true),
+            ('00000000-0000-0000-0000-000000000000', 'Gestão de redes sociais - Instagram', 'gd', 1200.00, 'mensal', true),
+            ('00000000-0000-0000-0000-000000000000', 'Gestão de redes sociais - Facebook', 'gd', 800.00, 'mensal', true),
+            ('00000000-0000-0000-0000-000000000000', 'Gestão de redes sociais - LinkedIn', 'gd', 1500.00, 'mensal', true),
+            ('00000000-0000-0000-0000-000000000000', 'Gestão de redes sociais - TikTok', 'gd', 1200.00, 'mensal', true),
+            ('00000000-0000-0000-0000-000000000000', 'Gestão de tráfego google/meta ads', 'gd', 2000.00, 'mensal', true),
+            ('00000000-0000-0000-0000-000000000000', 'Logomarca', 'gd', 800.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'Branding', 'gd', 3500.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'Cartão de visitas', 'gd', 250.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'Arte avulsa', 'gd', 150.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'Panfletos', 'gd', 400.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'Cardápios', 'gd', 600.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'Fachadas', 'gd', 1200.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'Landing Page/site', 'gd', 2500.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'E-commerce', 'gd', 5000.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'Cobertura de eventos', 'gd', 1800.00, 'pontual', true),
+            ('00000000-0000-0000-0000-000000000000', 'Vídeo avulso', 'gd', 350.00, 'pontual', true)
+        `).catch((err) => console.warn("[gd-setup] Aviso ao inserir seed de produtos:", err.message));
+      }
+
+      // 5. gd_presentations
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS public.gd_presentations (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
+          prospect_name TEXT,
+          prospect_logo TEXT,
+          segment_id UUID,
+          venda_casada BOOLEAN NOT NULL DEFAULT false,
+          produtos_selecionados JSONB,
+          roi JSONB,
+          status TEXT NOT NULL DEFAULT 'rascunho',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+      await dbPool.query(`ALTER TABLE public.gd_presentations DROP CONSTRAINT IF EXISTS gd_presentations_tenant_id_fkey`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_presentations ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
+
+      // 6. gd_proposals (Propostas Comerciais)
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS public.gd_proposals (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
+          presentation_id UUID,
+          prospect_name TEXT,
+          itens JSONB NOT NULL DEFAULT '[]'::jsonb,
+          valor_total NUMERIC NOT NULL DEFAULT 0,
+          condicoes TEXT,
+          status TEXT NOT NULL DEFAULT 'rascunho',
+          payment_link TEXT,
+          sent_at TIMESTAMPTZ,
+          assinatura TEXT,
+          signer_name TEXT,
+          signed_at TIMESTAMPTZ,
+          signer_ip TEXT,
+          termo_aceite TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+      await dbPool.query(`ALTER TABLE public.gd_proposals DROP CONSTRAINT IF EXISTS gd_proposals_tenant_id_fkey`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
+
+      // 7. gd_packages
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS public.gd_packages (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
+          nome TEXT NOT NULL,
+          descricao TEXT,
+          valor_mensal NUMERIC NOT NULL DEFAULT 0,
+          desconto_percentual NUMERIC DEFAULT 0,
+          itens JSONB NOT NULL DEFAULT '[]'::jsonb,
+          ativo BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+
+      // 8. gd_payment_terms
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS public.gd_payment_terms (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
+          nome TEXT NOT NULL,
+          descricao TEXT,
+          desconto_percentual NUMERIC DEFAULT 0,
+          parcelas INTEGER DEFAULT 1,
+          ativo BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+
+      // 9. gd_contracts
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS public.gd_contracts (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
+          proposal_id UUID,
+          client_name TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'rascunho',
+          file_url TEXT,
+          signed_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+
+      // 10. gd_implementation_briefings
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS public.gd_implementation_briefings (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id TEXT NOT NULL DEFAULT 'geracao-digital',
+          client_name TEXT NOT NULL,
+          model_type TEXT NOT NULL DEFAULT 'essencial',
+          suggested_model TEXT DEFAULT 'essencial',
+          num_employees INTEGER DEFAULT 1,
+          has_commercial_sector BOOLEAN DEFAULT false,
+          prerequisites JSONB DEFAULT '{}'::jsonb,
+          operacao JSONB DEFAULT '{}'::jsonb,
+          inteligencia JSONB DEFAULT '{}'::jsonb,
+          agente_ia JSONB DEFAULT '{}'::jsonb,
+          canais JSONB DEFAULT '{}'::jsonb,
+          modulos_custom JSONB DEFAULT '{}'::jsonb,
+          fechamento JSONB DEFAULT '{}'::jsonb,
+          status TEXT NOT NULL DEFAULT 'em_andamento',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+      await dbPool.query(`ALTER TABLE public.gd_implementation_briefings DROP CONSTRAINT IF EXISTS gd_implementation_briefings_tenant_id_fkey`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
     } catch (err) {
-      console.warn("[ensureGdImplementationTable] Aviso ao verificar tabela de implantações:", err.message);
+      console.warn("[ensureGdTablesAndSeeds] Aviso ao verificar tabelas GD:", err.message);
     }
   }
 
-  ensureGdImplementationTable(pool);
+  ensureGdTablesAndSeeds(pool);
 
   // POST /api/geracao-digital/briefing
   app.post("/api/geracao-digital/briefing", requireFirebaseAuth, async (req, res) => {
@@ -1708,7 +1872,9 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       const tenantId = await resolveTenantUuid(client_id);
 
       const result = await pool.query(
-        `SELECT * FROM public.gd_proposals WHERE tenant_id = $1 ORDER BY created_at DESC`,
+        `SELECT * FROM public.gd_proposals 
+         WHERE ($1::text = 'all' OR $1::text = 'global' OR tenant_id::text = $1::text OR tenant_id::text = 'geracao-digital' OR tenant_id::text = '00000000-0000-0000-0000-000000000000')
+         ORDER BY created_at DESC`,
         [tenantId]
       );
 
@@ -1726,7 +1892,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       res.json({ success: true, data: formatted });
     } catch (error) {
       console.error("[GeracaoDigital] Erro ao buscar propostas:", error);
-      res.status(500).json({ error: "Erro ao buscar propostas." });
+      res.json({ success: true, data: [] });
     }
   });
 
