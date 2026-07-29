@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://bks-bk-vexo.ymqjmy.easypanel.host/api/:path*"
+      "destination": "https://vexo-backend.xdvm8y.easypanel.host/api/:path*"
     },
     {
       "source": "/(.*)",
