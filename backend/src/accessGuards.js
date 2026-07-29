@@ -1,9 +1,9 @@
 export function hasInternalPageAccess(access, page) {
-  if (access?.role !== "internal") {
+  if (access?.role !== "internal" && access?.role !== "superadmin") {
     return false;
   }
 
-  if (access.isAdmin) {
+  if (access.isAdmin || access.role === "superadmin") {
     return true;
   }
 

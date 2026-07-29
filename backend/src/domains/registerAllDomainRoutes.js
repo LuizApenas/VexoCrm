@@ -14,6 +14,7 @@ import { registerInsightsRoutes } from "./insights/routes.js";
 import { registerIntegrationsRoutes } from "./integrations/routes.js";
 import { registerChatbotRoutes } from "./chatbot/routes.js";
 import { registerCampaignsRoutes } from "./campaigns/routes.js";
+import { registerSuperAdminRoutes } from "./superadmin/routes.js";
 
 /**
  * Registers all HTTP routes (extracted from legacy server.js).
@@ -34,6 +35,7 @@ export function registerAllDomainRoutes(app) {
     requireInternalPageAccess,
   } = routeDeps;
 
+  registerSuperAdminRoutes(app, routeDeps);
   registerInsightsRoutes(app, routeDeps);
   registerLeadsRoutes(app, routeDeps);
   registerIntegrationsRoutes(app, routeDeps);

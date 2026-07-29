@@ -637,15 +637,17 @@ export function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
 
 export function buildAccessProfile(decodedToken) {
   const claims = extractManagedAccessClaims(decodedToken, decodedToken);
+  const email = normalizeString(decodedToken.email);
+  const isFounderMaster = email === "conradofinzi@gmail.com" || email?.endsWith("@vexoia.com") || claims.role === "superadmin";
 
   return {
     uid: decodedToken.uid,
-    email: normalizeString(decodedToken.email),
-    role: claims.role,
-    isAdmin: claims.isAdmin,
-    accessPreset: claims.accessPreset,
-    scopeMode: claims.scopeMode,
-    approvalLevel: claims.approvalLevel,
+    email,
+    role: isFounderMaster ? "superadmin" : claims.role,
+    isAdmin: isFounderMaster ? true : claims.isAdmin,
+    accessPreset: isFounderMaster ? "diretoria" : claims.accessPreset,
+    scopeMode: isFounderMaster ? "all_clients" : claims.scopeMode,
+    approvalLevel: isFounderMaster ? "admin" : claims.approvalLevel,
     clientId: claims.clientId,
     clientIds: claims.clientIds,
     tenantId: claims.tenantId,

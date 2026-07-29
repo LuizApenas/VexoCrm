@@ -33,6 +33,7 @@ import LivPub from "./pages/LivPub";
 import AgenteIA from "./pages/AgenteIA";
 import ChipsWhatsapp from "./pages/ChipsWhatsapp";
 import AdminPanel from "./pages/AdminPanel";
+import SuperAdmin from "./pages/SuperAdmin";
 import VexoPitch from "./pages/VexoPitch";
 import GeracaoDigital from "./pages/GeracaoDigital";
 import GeracaoDigitalDashboard from "./pages/GeracaoDigitalDashboard";
@@ -230,6 +231,14 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={["internal"]}>
                     <AdminPanel />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="superadmin"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]}>
+                    <SuperAdmin />
                   </ProtectedRoute>
                 }
               />

@@ -7,6 +7,7 @@ import {
   LineChart,
   Briefcase,
   ShieldCheck,
+  Crown,
   FileSpreadsheet,
   MessageCircle,
   BookOpen,
@@ -69,6 +70,7 @@ export const AJUDA_ITEMS: SidebarItem[] = [
 
 // ━━ ADMIN ━━
 export const ADMIN_ITEMS: SidebarItem[] = [
+  { key: "superadmin", label: "Master Control", url: "/crm/superadmin", icon: Crown, page: "empresas" },
   { key: "admin", label: "Administração", url: "/crm/admin", icon: ShieldCheck, page: "empresas" },
   { key: "apresentacao-vexo", label: "Apresentação Vexo", url: "/crm/apresentacao", icon: Sparkles, page: "apresentacao" },
 ];

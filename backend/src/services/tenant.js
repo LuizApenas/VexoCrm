@@ -105,6 +105,11 @@ export function resolveAuthorizedClientId(req, res, requestedClientId) {
     clientId: null,
     clientIds: [],
   };
+
+  if (authAccess.role === "superadmin" || authAccess.isAdmin) {
+    return requestedClientId || authAccess.clientId || "geracao-digital";
+  }
+
   const clientIds = authAccess.clientIds || [];
   const scopeMode =
     authAccess.scopeMode ||
