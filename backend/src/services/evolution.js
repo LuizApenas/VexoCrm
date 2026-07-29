@@ -570,8 +570,16 @@ export async function upsertLeadClientEvolutionInstance(clientId, input, authAcc
 }
 
 export function getEvolutionAdminConfig() {
-  const baseUrl = (normalizeString(process.env.EVOLUTION_API_URL) || "").replace(/\/+$/, "");
-  const apiKey = normalizeString(process.env.EVOLUTION_API_KEY);
+  const baseUrl = (
+    normalizeString(process.env.EVOLUTION_API_URL) ||
+    normalizeString(process.env.EVOLUTION_API_ENDPOINT) ||
+    "https://vexo-evolution-api.xdvm8y.easypanel.host"
+  ).replace(/\/+$/, "");
+
+  const apiKey =
+    normalizeString(process.env.EVOLUTION_API_KEY) ||
+    normalizeString(process.env.EVOLUTION_GLOBAL_KEY) ||
+    "429683C4C977415CAAFCCE10F7D57E11";
 
   return {
     baseUrl,
@@ -654,14 +662,43 @@ export async function provisionLeadClientEvolutionInstance(clientId, input, auth
   }
 
   if (!response.ok) {
-    const error = new Error(
+    const errorMsg =
       normalizeString(responsePayload?.message) ||
       normalizeString(responsePayload?.error) ||
-      `Evolution API HTTP ${response.status}`
-    );
-    error.statusCode = response.status;
-    error.code = "EVOLUTION_INSTANCE_PROVISION_FAILED";
-    throw error;
+      (Array.isArray(responsePayload?.response?.message) ? responsePayload.response.message.join(", ") : "");
+
+    // Tentar fallback para /instance/connect se a instância já existir ou estiver criada
+    try {
+      const connectResponse = await fetch(`${config.baseUrl}/instance/connect/${encodeURIComponent(instanceName)}`, {
+        method: "GET",
+        headers: {
+          apikey: config.apiKey,
+        },
+      });
+      if (connectResponse.ok) {
+        const connectText = await connectResponse.text();
+        if (connectText) {
+          const connectPayload = JSON.parse(connectText);
+          if (connectPayload && (connectPayload.code || connectPayload.base64 || connectPayload.instance || connectPayload.count != null)) {
+            responsePayload = {
+              instance: { instanceName, status: connectPayload.status || "connecting" },
+              qrcode: connectPayload.base64 || connectPayload.code ? { code: connectPayload.code, base64: connectPayload.base64 } : connectPayload.qrcode || null,
+            };
+          }
+        }
+      }
+    } catch (fallbackErr) {
+      console.warn(`[evolution] Fallback /instance/connect for ${instanceName} failed:`, fallbackErr.message);
+    }
+
+    if (!responsePayload || (!responsePayload.qrcode && !responsePayload.instance && !responsePayload.instanceName)) {
+      const error = new Error(
+        errorMsg || `Evolution API HTTP ${response.status}`
+      );
+      error.statusCode = response.status;
+      error.code = "EVOLUTION_INSTANCE_PROVISION_FAILED";
+      throw error;
+    }
   }
 
   const saved = await upsertLeadClientEvolutionInstance(

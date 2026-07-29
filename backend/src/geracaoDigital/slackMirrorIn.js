@@ -92,8 +92,9 @@ export async function processEvolutionMessageToSlack(pool, payload) {
     
     if (isMedia) {
       try {
-        const EVOLUTION_API_TOKEN = process.env.GD_EVOLUTION_API_TOKEN || "429683C4C977415CAAFCCE10F7D57E11";
-        const b64Res = await fetch(`https://apps-evolution-api.ymqjmy.easypanel.host/chat/getBase64FromMediaMessage/${instance}`, {
+        const EVOLUTION_API_TOKEN = process.env.GD_EVOLUTION_API_TOKEN || process.env.EVOLUTION_API_KEY || "429683C4C977415CAAFCCE10F7D57E11";
+        const EVOLUTION_BASE_URL = process.env.EVOLUTION_API_URL || "https://vexo-evolution-api.xdvm8y.easypanel.host";
+        const b64Res = await fetch(`${EVOLUTION_BASE_URL}/chat/getBase64FromMediaMessage/${instance}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "apikey": EVOLUTION_API_TOKEN },
           body: JSON.stringify({ message: data }) 
