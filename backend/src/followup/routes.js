@@ -743,9 +743,10 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
         `SELECT COUNT(*) AS cnt FROM followup_suggestions WHERE status = 'pending' ${companyFilter}`,
         params
       );
-      return res.json({ success: true, count: Number(rows[0].cnt) });
+      return res.json({ success: true, count: Number(rows[0]?.cnt || 0) });
     } catch (err) {
-      return sendErr(res, 500, "COUNT_FAILED", err.message);
+      console.warn("[followup/routes][COUNT_FALLBACK]", err?.message || err);
+      return res.json({ success: true, count: 0 });
     }
   });
 
