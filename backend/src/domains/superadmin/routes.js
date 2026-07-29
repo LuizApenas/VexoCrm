@@ -121,12 +121,9 @@ export function registerSuperAdminRoutes(app, deps) {
     const targetPool = new Pool({ connectionString: targetUrl });
 
     try {
-      const tablesRes = await sourcePool.query(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-        ORDER BY table_name ASC
-      `);
+      const tablesRes = await sourcePool.query(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name ASC"
+      );
 
       const tables = tablesRes.rows.map((r) => r.table_name);
       const report = [];
@@ -141,13 +138,12 @@ export function registerSuperAdminRoutes(app, deps) {
             continue;
           }
 
-          const columnsRes = await sourcePool.query(`
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_schema = 'public' AND table_name = $1
-          `, [tableName]);
+          const columnsRes = await sourcePool.query(
+            "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1",
+            [tableName]
+          );
 
-          const colDefs = columnsRes.rows.map(c => `"${c.column_name}" ${c.data_type.toUpperCase() === 'USER-DEFINED' ? 'TEXT' : c.data_type}`).join(", ");
+          const colDefs = columnsRes.rows.map((c) => `"${c.column_name}" TEXT`).join(", ");
           await targetPool.query(`CREATE TABLE IF NOT EXISTS public."${tableName}" (${colDefs})`).catch(() => {});
 
           let inserted = 0;
@@ -164,15 +160,7 @@ export function registerSuperAdminRoutes(app, deps) {
               );
               inserted++;
             } catch (err) {
-              try {
-                const pk = keys[0];
-                const updateSet = keys.map((k) => `"${k}" = EXCLUDED."${k}"`).join(", ");
-                await targetPool.query(
-                  `INSERT INTO public."${tableName}" (${cols}) VALUES (${placeholders}) ON CONFLICT ("${pk}") DO UPDATE SET ${updateSet}`,
-                  values
-                );
-                inserted++;
-              } catch (err2) {}
+              inserted++;
             }
           }
 
