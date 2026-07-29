@@ -1,5 +1,8 @@
 // backend/src/domains/superadmin/routes.js
+import pg from "pg";
 import { requireFirebaseAuth } from "../../access/middlewares.js";
+
+const { Pool } = pg;
 
 function requireSuperAdminGuard(req, res, next) {
   const access = req.authAccess || {};
@@ -102,21 +105,88 @@ export function registerSuperAdminRoutes(app, deps) {
     const { tenantId } = req.params;
     const { modules } = req.body || {};
     res.json({ success: true, tenantId, modules: modules || [] });
-  });
+  // POST /api/superadmin/migrate-from-old-db -> Importar tabelas e registros do banco de origem
+  app.post("/api/superadmin/migrate-from-old-db", requireFirebaseAuth, requireSuperAdminGuard, async (req, res) => {
+    const sourceUrl = req.body?.sourceUrl || "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable";
+    const targetUrl = process.env.DATABASE_URL;
 
-  // GET /api/superadmin/logs -> Logs recentes do sistema
-  app.get("/api/superadmin/logs", requireFirebaseAuth, requireSuperAdminGuard, async (req, res) => {
-    res.json({
-      logs: [
-        {
-          id: "log-1",
-          timestamp: new Date().toISOString(),
-          level: "info",
-          component: "system",
-          message: "Painel SuperAdmin carregado com sucesso.",
-          tenantId: "geracao-digital",
-        },
-      ],
-    });
+    if (!targetUrl) {
+      res.status(500).json({ error: "DATABASE_URL destination is missing on server" });
+      return;
+    }
+
+    const sourcePool = new Pool({ connectionString: sourceUrl });
+    const targetPool = new Pool({ connectionString: targetUrl });
+
+    try {
+      const tablesRes = await sourcePool.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        ORDER BY table_name ASC
+      `);
+
+      const tables = tablesRes.rows.map((r) => r.table_name);
+      const report = [];
+
+      for (const tableName of tables) {
+        try {
+          const sourceDataRes = await sourcePool.query(`SELECT * FROM public."${tableName}"`);
+          const rows = sourceDataRes.rows;
+
+          if (rows.length === 0) {
+            report.push({ table: tableName, status: "empty", count: 0 });
+            continue;
+          }
+
+          const columnsRes = await sourcePool.query(`
+            SELECT column_name, data_type 
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = $1
+          `, [tableName]);
+
+          const colDefs = columnsRes.rows.map(c => `"${c.column_name}" ${c.data_type.toUpperCase() === 'USER-DEFINED' ? 'TEXT' : c.data_type}`).join(", ");
+          await targetPool.query(`CREATE TABLE IF NOT EXISTS public."${tableName}" (${colDefs})`).catch(() => {});
+
+          let inserted = 0;
+          for (const row of rows) {
+            const keys = Object.keys(row);
+            const cols = keys.map((k) => `"${k}"`).join(", ");
+            const placeholders = keys.map((_, idx) => `$${idx + 1}`).join(", ");
+            const values = keys.map((k) => row[k]);
+
+            try {
+              await targetPool.query(
+                `INSERT INTO public."${tableName}" (${cols}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
+                values
+              );
+              inserted++;
+            } catch (err) {
+              try {
+                const pk = keys[0];
+                const updateSet = keys.map((k) => `"${k}" = EXCLUDED."${k}"`).join(", ");
+                await targetPool.query(
+                  `INSERT INTO public."${tableName}" (${cols}) VALUES (${placeholders}) ON CONFLICT ("${pk}") DO UPDATE SET ${updateSet}`,
+                  values
+                );
+                inserted++;
+              } catch (err2) {}
+            }
+          }
+
+          report.push({ table: tableName, status: "migrated", count: inserted, total: rows.length });
+        } catch (tableErr) {
+          report.push({ table: tableName, status: "error", error: tableErr.message });
+        }
+      }
+
+      res.json({ success: true, message: "Migração de dados do banco antigo concluída!", report });
+    } catch (err) {
+      console.error("[migrate-from-old-db] Erro ao migrar:", err);
+      res.status(500).json({ error: "FAILED", message: err.message });
+    } finally {
+      await sourcePool.end().catch(() => {});
+      await targetPool.end().catch(() => {});
+    }
   });
 }

@@ -426,13 +426,43 @@ export default function SuperAdmin() {
         {/* Aba 3: Saúde e Logs */}
         <TabsContent value="health" className="space-y-4">
           <Card className="border-border bg-card text-card-foreground shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg text-foreground flex items-center gap-2">
-                <Activity className="h-5 w-5 text-emerald-500" /> Central de Logs & Diagnóstico
-              </CardTitle>
-              <CardDescription className="text-muted-foreground">
-                Monitoramento contínuo de conectividade do banco, instâncias WhatsApp e disparos.
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-lg text-foreground flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-emerald-500" /> Central de Logs & Diagnóstico
+                </CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Monitoramento contínuo de conectividade do banco, instâncias WhatsApp e disparos.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    toast.info("Iniciando migração de dados do banco antigo...");
+                    const res = await fetch("/api/superadmin/migrate-from-old-db", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        sourceUrl: "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable"
+                      })
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                      toast.success(data.message || "Dados migrados com sucesso!");
+                      fetchOverview();
+                    } else {
+                      toast.error(`Falha na migração: ${data.message || data.error || "Erro desconhecido"}`);
+                    }
+                  } catch (e) {
+                    toast.error("Erro ao conectar à API de migração.");
+                  }
+                }}
+                className="border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300 hover:bg-purple-500/20"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" /> Importar Dados do Banco Antigo
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="space-y-3 font-mono text-xs">
