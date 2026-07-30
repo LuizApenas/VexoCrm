@@ -18,6 +18,8 @@ import {
   processBatch,
   isFirstCampaignReply,
   extractBriefingWithAI,
+  LLM_MODELS,
+  getLlmProviderStatus,
 } from "../../chatbot-ai-engine.js";
 import {
   persistChatbotProgress,
@@ -534,11 +536,29 @@ export function registerChatbotRoutes(app, deps) {
         .select("template_key, display_name, agent_name")
         .is("client_id", null)
         .order("created_at", { ascending: true });
-      if (error) throw error;
-      return res.json({ templates: data || [] });
+      
+      const fallbackBuiltins = [
+        { template_key: "outlier", display_name: "Outlier Consórcios", agent_name: "Áureo" },
+        { template_key: "infinie", display_name: "Infinie Energia Solar", agent_name: "Lara" },
+      ];
+
+      const templates = (data && data.length > 0) ? data : fallbackBuiltins;
+      return res.json({ templates });
     } catch (err) {
-      sendError(res, 500, "TEMPLATES_FETCH_FAILED", err instanceof Error ? err.message : "Failed");
+      const fallbackBuiltins = [
+        { template_key: "outlier", display_name: "Outlier Consórcios", agent_name: "Áureo" },
+        { template_key: "infinie", display_name: "Infinie Energia Solar", agent_name: "Lara" },
+      ];
+      return res.json({ templates: fallbackBuiltins });
     }
+  });
+
+  // GET /api/chatbot-llm-models — lista modelos de LLM registrados e status dos provedores (API keys no servidor)
+  app.get("/api/chatbot-llm-models", requireFirebaseAuth, async (req, res) => {
+    return res.json({
+      models: LLM_MODELS,
+      providerStatus: getLlmProviderStatus(),
+    });
   });
 
   // GET /api/chatbot-templates — lista templates (built-ins globais + do cliente)

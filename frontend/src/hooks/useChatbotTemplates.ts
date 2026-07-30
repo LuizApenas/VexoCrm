@@ -75,6 +75,43 @@ export function useBuiltinTemplates() {
   });
 }
 
+export interface LlmModelOption {
+  id: string;
+  name: string;
+  provider: "groq" | "openai" | "anthropic" | "gemini";
+  providerName: string;
+}
+
+export interface LlmProviderStatus {
+  groq: boolean;
+  openai: boolean;
+  anthropic: boolean;
+  gemini: boolean;
+}
+
+export function useLlmModels() {
+  const { isAuthenticated, getIdToken } = useAuth();
+
+  return useQuery({
+    queryKey: ["chatbot-llm-models"],
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<{ models: LlmModelOption[]; providerStatus: LlmProviderStatus }> => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+      const res = await fetchApi("/api/chatbot-llm-models", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao carregar modelos LLM"));
+      const data = await readApiJson<{ models: LlmModelOption[]; providerStatus: LlmProviderStatus }>(res, "llm_models_fetch");
+      return {
+        models: data.models ?? [],
+        providerStatus: data.providerStatus ?? { groq: false, openai: false, anthropic: false, gemini: false },
+      };
+    },
+  });
+}
+
 export function useSaveChatbotTemplate() {
   const { getIdToken } = useAuth();
   const queryClient = useQueryClient();

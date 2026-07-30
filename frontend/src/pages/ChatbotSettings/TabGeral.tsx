@@ -1,17 +1,17 @@
 import { useState, useEffect } from "react";
-import { Check, Copy, Phone, Power, Zap } from "lucide-react";
+import { Check, Copy, Phone, Power, Zap, Cpu, Sparkles, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchApi, readApiErrorMessage, readApiJson } from "@/lib/api";
 import { useLeadClients, useUpdateLeadClientN8nSettings } from "@/hooks/useLeadClients";
-import { useChatbotTemplates, useBuiltinTemplates } from "@/hooks/useChatbotTemplates";
+import { useChatbotTemplates, useBuiltinTemplates, useLlmModels } from "@/hooks/useChatbotTemplates";
 import { buildWebhookUrl } from "@/lib/chatbotSettings/helpers";
 
 // ─── CopyButton ───────────────────────────────────────────────────────────────
@@ -38,11 +38,16 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const updateSettings = useUpdateLeadClientN8nSettings();
   const { data: builtinModels = [] } = useBuiltinTemplates();
   const { data: clientTemplates = [] } = useChatbotTemplates(clientId);
+  const { data: llmInfo } = useLlmModels();
+  
   const customModels = clientTemplates.filter((t) => !t.is_builtin);
+  const llmModels = llmInfo?.models ?? [];
+  const providerStatus = llmInfo?.providerStatus ?? { groq: false, openai: false, anthropic: false, gemini: false };
 
   const n8n = client?.n8n_settings;
   const [enabled, setEnabled] = useState(n8n?.chatbot_enabled ?? false);
-  const [model, setModel] = useState(n8n?.chatbot_model ?? "");
+  const [model, setModel] = useState(n8n?.chatbot_model ?? "outlier");
+  const [llmModel, setLlmModel] = useState(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
   const [sdrNumber, setSdrNumber] = useState(n8n?.sdr_whatsapp_number ?? "");
   const [savingSdr, setSavingSdr] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -50,7 +55,8 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
 
   useEffect(() => {
     setEnabled(n8n?.chatbot_enabled ?? false);
-    setModel(n8n?.chatbot_model ?? "");
+    setModel(n8n?.chatbot_model ?? "outlier");
+    setLlmModel(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
     setSdrNumber(n8n?.sdr_whatsapp_number ?? "");
   }, [clientId, n8n]);
 
@@ -58,8 +64,15 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const evolutionUrl = n8n?.dispatch_webhook_url ?? null;
   const hasEvolution = !!evolutionUrl;
 
+  const defaultBuiltins = [
+    { template_key: "outlier", display_name: "Outlier Consórcios", agent_name: "Áureo" },
+    { template_key: "infinie", display_name: "Infinie Energia Solar", agent_name: "Lara" },
+  ];
+
+  const availableBuiltins = builtinModels.length > 0 ? builtinModels : defaultBuiltins;
+
   const allModels = [
-    ...builtinModels,
+    ...availableBuiltins,
     ...customModels.map((m) => ({ template_key: m.template_key, agent_name: m.agent_name, display_name: m.display_name })),
   ];
 
@@ -80,10 +93,23 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     try {
       await updateSettings.mutateAsync({ tenantId: clientId, chatbotModel: value });
       const found = allModels.find((m) => m.template_key === value);
-      toast({ title: "Modelo atualizado", description: found ? `${found.agent_name} — ${found.display_name}` : value });
+      toast({ title: "Template de Persona atualizado", description: found ? `${found.agent_name} — ${found.display_name}` : value });
     } catch {
       setModel(prev);
-      toast({ title: "Erro ao salvar modelo", variant: "destructive" });
+      toast({ title: "Erro ao salvar template", variant: "destructive" });
+    }
+  }
+
+  async function handleLlmModelChange(value: string) {
+    const prev = llmModel;
+    setLlmModel(value);
+    try {
+      await updateSettings.mutateAsync({ tenantId: clientId, chatbotLlmModel: value });
+      const found = llmModels.find((m) => m.id === value);
+      toast({ title: "Motor de IA atualizado", description: found ? `${found.providerName}: ${found.name}` : value });
+    } catch {
+      setLlmModel(prev);
+      toast({ title: "Erro ao salvar modelo LLM", variant: "destructive" });
     }
   }
 
@@ -123,6 +149,11 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     }
   }
 
+  const groqModels = llmModels.filter((m) => m.provider === "groq");
+  const openaiModels = llmModels.filter((m) => m.provider === "openai");
+  const anthropicModels = llmModels.filter((m) => m.provider === "anthropic");
+  const geminiModels = llmModels.filter((m) => m.provider === "gemini");
+
   return (
     <div className="space-y-5 max-w-2xl">
       {/* Status */}
@@ -154,16 +185,18 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
             </div>
           )}
 
-          {/* Modelo */}
+          {/* Persona Template */}
           {canEdit && (
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-500">Modelo de chatbot</Label>
+              <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-indigo-500" /> Persona / Template do Chatbot
+              </Label>
               <Select value={model} onValueChange={handleModelChange} disabled={updateSettings.isPending}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Selecione um modelo..." />
+                <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900">
+                  <SelectValue placeholder="Selecione um template..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {builtinModels.map((m) => (
+                  {availableBuiltins.map((m) => (
                     <SelectItem key={m.template_key} value={m.template_key} className="text-xs">
                       {m.agent_name} — {m.display_name}
                     </SelectItem>
@@ -182,17 +215,113 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                   )}
                 </SelectContent>
               </Select>
-              {!model && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Nenhum modelo selecionado — chatbot ficará silencioso.
+            </div>
+          )}
+
+          {/* Motor de Inteligência LLM */}
+          {canEdit && (
+            <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-white/5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                  <Cpu className="h-3.5 w-3.5 text-purple-500" /> Provedor & Motor de IA (LLM)
+                </Label>
+              </div>
+
+              <Select value={llmModel} onValueChange={handleLlmModelChange} disabled={updateSettings.isPending}>
+                <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900">
+                  <SelectValue placeholder="Selecione o motor de IA..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] font-semibold uppercase text-purple-600 dark:text-purple-400">
+                      ⚡ Groq (Ultra-rápido)
+                    </SelectLabel>
+                    {groqModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] font-semibold uppercase text-emerald-600 dark:text-emerald-400">
+                      🤖 ChatGPT (OpenAI)
+                    </SelectLabel>
+                    {openaiModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] font-semibold uppercase text-amber-600 dark:text-amber-400">
+                      🧠 Claude (Anthropic)
+                    </SelectLabel>
+                    {anthropicModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] font-semibold uppercase text-blue-600 dark:text-blue-400">
+                      ✨ Gemini (Google)
+                    </SelectLabel>
+                    {geminiModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+
+              {/* Status de chaves de API no servidor */}
+              <div className="rounded-md border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-900/50 p-2.5 space-y-2">
+                <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                  <span>Status das Chaves de API no Servidor (Easypanel):</span>
                 </p>
-              )}
+                <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                  <div className="flex items-center gap-1.5">
+                    {providerStatus.groq ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
+                    <span className={providerStatus.groq ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
+                      Groq (GROQ_API_KEY)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {providerStatus.openai ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
+                    <span className={providerStatus.openai ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
+                      OpenAI (OPENAI_API_KEY)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {providerStatus.anthropic ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
+                    <span className={providerStatus.anthropic ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
+                      Claude (ANTHROPIC_API_KEY)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {providerStatus.gemini ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
+                    <span className={providerStatus.gemini ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
+                      Gemini (GEMINI_API_KEY)
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-white/10">
+                  💡 <em>Dica: Adicione as chaves de API nas variáveis do Easypanel para habilitar cada provedor.</em>
+                </p>
+              </div>
             </div>
           )}
 
           {/* SDR */}
           {canEdit && (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 pt-1">
               <Label className="text-xs text-slate-500 flex items-center gap-1">
                 <Phone className="h-3 w-3" /> Número SDR/Closer (recebe briefing)
               </Label>
@@ -208,11 +337,6 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                   {savingSdr ? "..." : "Salvar"}
                 </Button>
               </div>
-              {sdrNumber && (
-                <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                  Briefing enviado automaticamente ao finalizar conversa
-                </p>
-              )}
             </div>
           )}
         </CardContent>

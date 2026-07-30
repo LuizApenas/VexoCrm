@@ -84,7 +84,7 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
     )
     .eq("client_id", clientId)
     .maybeSingle();
@@ -121,7 +121,7 @@ export async function getLeadClientN8nSettingsMap(clientIds) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
     )
     .in("client_id", clientIds);
 
@@ -160,6 +160,7 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
   const activeProvided = Object.prototype.hasOwnProperty.call(body, "active");
   const chatbotEnabledProvided = Object.prototype.hasOwnProperty.call(body, "chatbotEnabled");
   const chatbotModelProvided = Object.prototype.hasOwnProperty.call(body, "chatbotModel");
+  const chatbotLlmModelProvided = Object.prototype.hasOwnProperty.call(body, "chatbotLlmModel") || Object.prototype.hasOwnProperty.call(body, "chatbot_llm_model");
   const segmentationConfigProvided = Object.prototype.hasOwnProperty.call(body, "segmentationConfig");
   const sdrWhatsappNumberProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumber");
   const allowedTabsProvided = Object.prototype.hasOwnProperty.call(body, "allowedTabs");
@@ -168,6 +169,7 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
     active: activeProvided ? body.active !== false : existing?.active ?? true,
     chatbot_enabled: chatbotEnabledProvided ? body.chatbotEnabled === true : existing?.chatbot_enabled ?? false,
     chatbot_model: chatbotModelProvided ? (body.chatbotModel || "outlier") : existing?.chatbot_model ?? "outlier",
+    chatbot_llm_model: chatbotLlmModelProvided ? (body.chatbotLlmModel || body.chatbot_llm_model || "llama-3.3-70b-versatile") : existing?.chatbot_llm_model ?? "llama-3.3-70b-versatile",
     segmentation_config: segmentationConfigProvided
       ? sanitizeSegmentationConfig(body.segmentationConfig, body.chatbotModel || existing?.chatbot_model || "generico")
       : sanitizeSegmentationConfig(existing?.segmentation_config, existing?.chatbot_model || body.chatbotModel || "generico"),
@@ -227,7 +229,7 @@ export async function upsertLeadClientN8nSettings(clientId, input, authAccess, e
     .from("lead_client_n8n_settings")
     .upsert(payload, { onConflict: "client_id" })
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
     )
     .single();
 

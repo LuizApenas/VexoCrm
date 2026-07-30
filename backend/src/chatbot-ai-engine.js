@@ -3,6 +3,7 @@ import {
   parseStoredHistorico,
   serializeHistorico,
 } from "./leads-outlier-schema.js";
+import { getLeadClientN8nSettings } from "./services/n8nSettings.js";
 
 /**
  * Chatbot AI Engine
@@ -15,14 +16,149 @@ import {
 const messageBuffers = new Map();
 const BUFFER_DELAY_MS = 3000;
 
-// ─── Groq config ────────────────────────────────────────────────────────────
+// ─── Configuração de Provedores e Modelos de LLM ────────────────────────────
+export const LLM_MODELS = [
+  // Groq
+  { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B (Versatile)", provider: "groq", providerName: "Groq" },
+  { id: "llama-3.1-8b-instant", name: "Llama 3.1 8B (Instant)", provider: "groq", providerName: "Groq" },
+  { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B", provider: "groq", providerName: "Groq" },
+  { id: "llama-3.2-11b-vision-preview", name: "Llama 3.2 11B (Vision)", provider: "groq", providerName: "Groq" },
+
+  // ChatGPT / OpenAI
+  { id: "gpt-4o", name: "GPT-4o (Omni)", provider: "openai", providerName: "ChatGPT / OpenAI" },
+  { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", providerName: "ChatGPT / OpenAI" },
+  { id: "gpt-4-turbo", name: "GPT-4 Turbo", provider: "openai", providerName: "ChatGPT / OpenAI" },
+  { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", provider: "openai", providerName: "ChatGPT / OpenAI" },
+
+  // Claude / Anthropic
+  { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", provider: "anthropic", providerName: "Claude / Anthropic" },
+  { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", provider: "anthropic", providerName: "Claude / Anthropic" },
+  { id: "claude-3-opus-20240229", name: "Claude 3 Opus", provider: "anthropic", providerName: "Claude / Anthropic" },
+
+  // Gemini / Google
+  { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini", providerName: "Gemini / Google" },
+  { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", provider: "gemini", providerName: "Gemini / Google" },
+  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", provider: "gemini", providerName: "Gemini / Google" },
+];
+
+export function getLlmProviderStatus() {
+  return {
+    groq: Boolean(process.env.GROQ_API_KEY),
+    openai: Boolean(process.env.OPENAI_API_KEY),
+    anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
+    gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
+  };
+}
+
+export function detectLlmProvider(modelId) {
+  const found = LLM_MODELS.find((m) => m.id === modelId);
+  if (found) return found.provider;
+  if (modelId?.startsWith("gpt-")) return "openai";
+  if (modelId?.startsWith("claude-")) return "anthropic";
+  if (modelId?.startsWith("gemini-")) return "gemini";
+  return "groq";
+}
+
 const GROQ_BASE = "https://api.groq.com/openai/v1";
-const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
 const GROQ_VISION_MODEL = "llama-3.2-11b-vision-preview";
 const GROQ_WHISPER_MODEL = "whisper-large-v3-turbo";
 
 function groqKey() {
   return process.env.GROQ_API_KEY || "";
+}
+
+export async function callLlmChatCompletion({
+  model = "llama-3.3-70b-versatile",
+  messages = [],
+  temperature = 0.4,
+  max_tokens = 600,
+  response_format = null,
+}) {
+  const provider = detectLlmProvider(model);
+
+  if (provider === "openai") {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("OPENAI_API_KEY não configurada no servidor (Easypanel)");
+    const body = { model, messages, temperature, max_tokens };
+    if (response_format) body.response_format = response_format;
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenAI HTTP ${res.status}: ${err.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "";
+  }
+
+  if (provider === "anthropic") {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY não configurada no servidor (Easypanel)");
+    const systemMsg = messages.find((m) => m.role === "system")?.content || "";
+    const anthropicMessages = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }));
+    const body = {
+      model,
+      system: systemMsg,
+      messages: anthropicMessages,
+      max_tokens,
+      temperature,
+    };
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Anthropic HTTP ${res.status}: ${err.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    return data.content?.[0]?.text || "";
+  }
+
+  if (provider === "gemini") {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY não configurada no servidor (Easypanel)");
+    const body = { model, messages, temperature, max_tokens };
+    if (response_format) body.response_format = response_format;
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Gemini HTTP ${res.status}: ${err.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "";
+  }
+
+  // Default: Groq
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY não configurada no servidor (Easypanel)");
+  const body = { model, messages, temperature, max_tokens };
+  if (response_format) body.response_format = response_format;
+  const res = await fetch(`${GROQ_BASE}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Groq HTTP ${res.status}: ${err.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "";
 }
 
 
@@ -512,11 +648,9 @@ function buildFieldContext(template) {
  * Recebe o histórico da conversa e os dados coletados, retorna texto formatado.
  * Se não houver prompt extrato no banco, retorna null (caller usa fallback determinístico).
  */
-export async function extractBriefingWithAI({ supabase, clientId, phone, history, collectedData, classificacao }) {
+export async function extractBriefingWithAI({ supabase, clientId, phone, history, collectedData, classificacao, llmModel = "llama-3.3-70b-versatile" }) {
   const extractPrompt = await fetchDynamicPrompt(supabase, clientId, "extrato");
   if (!extractPrompt) return null;
-
-  if (!groqKey()) return null;
 
   const dadosJson = JSON.stringify(collectedData || {}, null, 2);
   const historicText = Array.isArray(history)
@@ -538,30 +672,22 @@ export async function extractBriefingWithAI({ supabase, clientId, phone, history
   ].join("\n");
 
   try {
-    const resp = await fetch(`${GROQ_BASE}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey()}` },
-      body: JSON.stringify({
-        model: GROQ_CHAT_MODEL,
-        messages: [
-          { role: "system", content: extractPrompt },
-          { role: "user", content: userContent },
-        ],
-        temperature: 0.3,
-        max_tokens: 800,
-      }),
+    const content = await callLlmChatCompletion({
+      model: llmModel,
+      messages: [
+        { role: "system", content: extractPrompt },
+        { role: "user", content: userContent },
+      ],
+      temperature: 0.3,
+      max_tokens: 800,
     });
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    return json.choices?.[0]?.message?.content?.trim() || null;
+    return content?.trim() || null;
   } catch {
     return null;
   }
 }
 
-export async function runChatbotAI({ systemPrompt, history, newMessages, existingData }) {
-  if (!groqKey()) throw new Error("GROQ_API_KEY não configurada");
-
+export async function runChatbotAI({ systemPrompt, history, newMessages, existingData, llmModel = "llama-3.3-70b-versatile" }) {
   // Mesclar dados existentes no contexto do sistema
   const dataContext = existingData && Object.keys(existingData).length > 0
     ? `\n\nDADOS JÁ COLETADOS ATÉ AGORA:\n${JSON.stringify(existingData, null, 2)}`
@@ -573,28 +699,13 @@ export async function runChatbotAI({ systemPrompt, history, newMessages, existin
     { role: "user", content: newMessages.join("\n") },
   ];
 
-  const res = await fetch(`${GROQ_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${groqKey()}`,
-    },
-    body: JSON.stringify({
-      model: GROQ_CHAT_MODEL,
-      messages,
-      temperature: 0.4,
-      max_tokens: 600,
-      response_format: { type: "json_object" },
-    }),
+  const raw = await callLlmChatCompletion({
+    model: llmModel,
+    messages,
+    temperature: 0.4,
+    max_tokens: 600,
+    response_format: { type: "json_object" },
   });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Groq error ${res.status}: ${err.slice(0, 300)}`);
-  }
-
-  const data = await res.json();
-  const raw = data.choices?.[0]?.message?.content || "{}";
 
   return parseAIResponse(raw);
 }
@@ -666,11 +777,18 @@ function hoursSince(isoDate) {
   return (Date.now() - new Date(isoDate).getTime()) / 3_600_000;
 }
 
-export async function processBatch({ clientId, phone, messages, supabase, model, promptType: promptTypeOverride = null, campaignPromptId = null }) {
+export async function processBatch({ clientId, phone, messages, supabase, model, promptType: promptTypeOverride = null, campaignPromptId = null, llmModel = null }) {
   if (!model) {
     console.error("[chatbot-ai] model não configurado para cliente — chatbot silenciado", { clientId });
     return null;
   }
+
+  let activeLlmModel = llmModel;
+  if (!activeLlmModel) {
+    const settings = await getLeadClientN8nSettings(clientId).catch(() => null);
+    activeLlmModel = settings?.chatbot_llm_model || "llama-3.3-70b-versatile";
+  }
+
   const modelConfig = getChatbotModel(model);
   const leadsTable = chatbotLeadsTable(clientId);
 
@@ -781,6 +899,7 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
     history,
     newMessages: [combinedText],
     existingData: storedData,
+    llmModel: activeLlmModel,
   });
 
   console.log("[chatbot-ai] AI response:", {

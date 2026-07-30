@@ -46,6 +46,7 @@ export interface LeadClientN8nSettingsPayload {
   active?: boolean;
   chatbotEnabled?: boolean;
   chatbotModel?: string;
+  chatbotLlmModel?: string;
   segmentationConfig?: LeadClientSegmentationConfig;
   sdrWhatsappNumber?: string | null;
   allowedTabs?: string[] | null;
@@ -105,6 +106,7 @@ export interface LeadClientN8nSettingsSummary {
   active: boolean;
   chatbot_enabled: boolean;
   chatbot_model: string;
+  chatbot_llm_model?: string;
   segmentation_config?: LeadClientSegmentationConfig;
   sdr_whatsapp_number: string | null;
   evolution_instances?: LeadClientEvolutionInstance[];

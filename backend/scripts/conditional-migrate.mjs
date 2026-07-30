@@ -178,6 +178,12 @@ async function migrationAlreadyRepresented(client, fileName) {
         where table_schema = 'public' and table_name = 'lead_client_n8n_settings' and column_name = 'chatbot_model'
       ) as ok
     `,
+    "20260730150000_add_chatbot_llm_model_to_n8n_settings.sql": `
+      select exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'lead_client_n8n_settings' and column_name = 'chatbot_llm_model'
+      ) as ok
+    `,
     "20260512120000_add_sdr_whatsapp_number_to_n8n_settings.sql": `
       select exists (
         select 1 from information_schema.columns
