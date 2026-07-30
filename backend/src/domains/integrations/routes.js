@@ -488,7 +488,7 @@ export function registerIntegrationsRoutes(app, deps) {
   app.get(
     "/api/lead-clients/:tenantId/evolution-instances",
     requireFirebaseAuth,
-    requireAnyInternalPageAccess(["conexoes", "empresas"]),
+    requireAnyInternalPageAccess(["conexoes", "empresas", "banco-de-dados", "leads"]),
     async (req, res) => {
       if (!ensureDb(res)) return;
 

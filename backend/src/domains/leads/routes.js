@@ -900,8 +900,19 @@ export function registerLeadsRoutes(app, deps) {
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
     if (!clientId) return;
 
+    const chatLimit = Math.min(500, Math.max(10, parseInt(req.body?.chatLimit || req.body?.limit || "100", 10)));
+    const explicitInstanceId = normalizeString(req.body?.instanceId);
+
     try {
-      const instance = await getDefaultLeadClientEvolutionInstance(clientId);
+      let instance = null;
+      if (explicitInstanceId) {
+        const allInstances = await getLeadClientEvolutionInstances(clientId);
+        instance = allInstances.find((i) => i.id === explicitInstanceId) || null;
+      }
+      if (!instance) {
+        instance = await getDefaultLeadClientEvolutionInstance(clientId);
+      }
+
       if (!instance || !instance.dispatch_webhook_url) {
         sendError(res, 400, "EVOLUTION_NOT_CONFIGURED", "Nenhuma instância ativa do WhatsApp (Evolution API) configurada para este tenant.");
         return;
@@ -947,7 +958,7 @@ export function registerLeadsRoutes(app, deps) {
       let coldLeads = 0;
       let hotLeads = 0;
 
-      const topChats = validChats.slice(0, 100);
+      const topChats = validChats.slice(0, chatLimit);
 
       for (const chat of topChats) {
         const remoteJid = chat.id || chat.remoteJid;
@@ -1234,6 +1245,87 @@ export function registerLeadsRoutes(app, deps) {
       res.json({ success: true, deletedId: id });
     } catch (err) {
       sendError(res, 500, "LEAD_DELETE_FAILED", err.message || "Erro ao deletar lead");
+    }
+  });
+
+  // Atualização em lote de leads
+  app.post("/api/leads/bulk-update", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const requestedClientId = normalizeString(req.body?.clientId);
+    const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+    if (!clientId) return;
+
+    const leadIds = Array.isArray(req.body?.leadIds) ? req.body.leadIds : [];
+    if (leadIds.length === 0) {
+      sendError(res, 400, "INVALID_BODY", "Nenhum lead selecionado.");
+      return;
+    }
+
+    const { stage, temperature, addTag } = req.body?.updates || {};
+
+    try {
+      const updates = { updated_at: new Date().toISOString() };
+      if (stage) updates.stage = stage;
+      if (temperature) updates.temperature = temperature;
+
+      if (Object.keys(updates).length > 1) {
+        await supabase
+          .from("leads")
+          .update(updates)
+          .eq("client_id", clientId)
+          .in("id", leadIds);
+      }
+
+      if (addTag) {
+        const { data: currentLeads } = await supabase
+          .from("leads")
+          .select("id, tags")
+          .eq("client_id", clientId)
+          .in("id", leadIds);
+
+        for (const item of currentLeads || []) {
+          const currentTags = Array.isArray(item.tags) ? item.tags : [];
+          if (!currentTags.includes(addTag)) {
+            await supabase
+              .from("leads")
+              .update({ tags: [...currentTags, addTag], updated_at: new Date().toISOString() })
+              .eq("id", item.id);
+          }
+        }
+      }
+
+      res.json({ success: true, updatedCount: leadIds.length });
+    } catch (err) {
+      console.error("[leads-bulk-update] Error:", err);
+      sendError(res, 500, "BULK_UPDATE_FAILED", err.message || "Falha na atualização em lote");
+    }
+  });
+
+  // Exclusão em lote de leads
+  app.post("/api/leads/bulk-delete", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const requestedClientId = normalizeString(req.body?.clientId);
+    const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+    if (!clientId) return;
+
+    const leadIds = Array.isArray(req.body?.leadIds) ? req.body.leadIds : [];
+    if (leadIds.length === 0) {
+      sendError(res, 400, "INVALID_BODY", "Nenhum lead selecionado.");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("leads")
+        .delete()
+        .eq("client_id", clientId)
+        .in("id", leadIds);
+
+      if (error) throw error;
+      res.json({ success: true, deletedCount: leadIds.length });
+    } catch (err) {
+      console.error("[leads-bulk-delete] Error:", err);
+      sendError(res, 500, "BULK_DELETE_FAILED", err.message || "Falha na exclusão em lote");
     }
   });
 
