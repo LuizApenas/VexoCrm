@@ -570,15 +570,29 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         whatsappGroupMembers
       } = req.body;
 
+      // Salvar como rascunho: persiste o briefing com status 'rascunho' e NÃO
+      // dispara nada (Slack/WhatsApp/e-mail). Serve de rede de segurança — se o
+      // envio final falhar, os dados ficam salvos e o operador retoma depois.
+      const isDraft = req.body.draft === true;
+
       // 1. Save to DB
       const result = await pool.query(
         `INSERT INTO public.geracao_digital_briefings
          (prospect_name, whatsapp_number, theme_preset, briefing_data, status)
-         VALUES ($1, $2, $3, $4, 'pending')
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING id`,
-        [prospectName, whatsappNumber || '', themePreset, JSON.stringify(briefingData || {})]
+        [prospectName, whatsappNumber || '', themePreset, JSON.stringify(briefingData || {}), isDraft ? 'rascunho' : 'pending']
       );
       const briefingId = result.rows[0].id;
+
+      if (isDraft) {
+        return res.status(200).json({
+          success: true,
+          draft: true,
+          id: briefingId,
+          message: "Rascunho salvo. Você pode retomar e finalizar o envio depois."
+        });
+      }
 
       let briefingHtml = '<h3>Dados do Briefing:</h3><ul>';
       let briefingText = '\n\n*Dados do Briefing:*\n';

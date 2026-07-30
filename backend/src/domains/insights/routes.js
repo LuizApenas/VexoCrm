@@ -66,9 +66,23 @@ export function registerInsightsRoutes(app, deps) {
         };
       }
     }
+    // Alvo do banco (host/porta/database) SEM segredo — só pra bater o olho e confirmar
+    // que a API aponta pro banco certo. Nunca inclui usuário nem senha.
+    let databaseTarget = null;
+    try {
+      const u = new URL(process.env.DATABASE_URL || "");
+      databaseTarget = {
+        host: u.hostname,
+        port: u.port || "5432",
+        database: u.pathname.replace(/^\//, "") || null,
+      };
+    } catch {
+      databaseTarget = null;
+    }
     const services = {
       databaseClient: !!supabase,
       databaseDriver: useDirectPostgres ? "postgres" : supabase ? "supabase" : "none",
+      databaseTarget,
       postgresPing,
       firebaseAuth: firebaseReady,
     };

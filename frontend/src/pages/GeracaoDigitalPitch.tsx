@@ -85,6 +85,7 @@ export default function GeracaoDigitalPitch() {
   const [isProcessingAI, setIsProcessingAI] = useState<boolean>(false);
   const [aiProgressText, setAiProgressText] = useState<string>("");
   const [successModalOpen, setSuccessModalOpen] = useState<boolean>(false);
+  const [savingDraft, setSavingDraft] = useState<boolean>(false);
 
   // Dispatch States for Slide 6
   const [sendToProspectWhatsapp, setSendToProspectWhatsapp] = useState<boolean>(true);
@@ -272,6 +273,51 @@ export default function GeracaoDigitalPitch() {
     setSuccessModalOpen(true);
   };
 
+  // Salvar como rascunho: persiste o briefing sem disparar nada (rede de
+  // segurança contra erro no envio final). Não fecha nem limpa o formulário.
+  const handleSaveDraft = async () => {
+    if (savingDraft) return;
+    const filledCount = briefingFields.filter((f) => f.value).length;
+    if (!theme.prospectName && filledCount === 0) {
+      toast({
+        title: "Nada para salvar",
+        description: "Preencha ao menos o nome do prospect ou um campo do briefing.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSavingDraft(true);
+    try {
+      const bData = briefingFields.reduce((acc, f) => ({ ...acc, [f.id]: f.value }), {});
+      const token = (await user?.getIdToken()) || "";
+      const resp = await fetch(`${API_BASE_URL}/api/geracao-digital/briefing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          draft: true,
+          prospectName: theme.prospectName,
+          whatsappNumber: theme.whatsappNumber,
+          agencyName: theme.agencyName,
+          themePreset: theme.themePreset,
+          briefingData: bData,
+        }),
+      });
+      if (!resp.ok) throw new Error("Falha ao salvar rascunho");
+      toast({
+        title: "Rascunho salvo",
+        description: "Briefing salvo com segurança. Você pode retomar e finalizar o envio depois na aba Briefing.",
+      });
+    } catch (e) {
+      toast({
+        title: "Erro ao salvar rascunho",
+        description: "Não foi possível salvar agora. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
   return (
     <PageShell
       title="Apresentação & Onboarding On-Demand"
@@ -387,6 +433,21 @@ export default function GeracaoDigitalPitch() {
             )}
 
           </main>
+
+          {/* Salvar como rascunho — rede de segurança contra erro no envio.
+              Visível durante o preenchimento e o disparo (slides 5 e 6). */}
+          {(activeSlide === 5 || activeSlide === 6) && (
+            <div className="relative z-10 flex justify-center pb-2">
+              <button
+                type="button"
+                onClick={handleSaveDraft}
+                disabled={savingDraft}
+                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-medium shadow-sm hover:bg-slate-100 disabled:opacity-50"
+              >
+                {savingDraft ? "Salvando..." : "💾 Salvar como rascunho"}
+              </button>
+            </div>
+          )}
 
           {/* Slide Deck Bottom Navigator Footer */}
           <PresentationFooter
