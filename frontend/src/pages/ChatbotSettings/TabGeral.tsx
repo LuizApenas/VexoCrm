@@ -415,7 +415,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
             </ol>
           </div>
 
-          <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={handleTest} disabled={testing || !enabled}>
+          <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={handleTestChatbot} disabled={testing || !enabled}>
             <Zap className={`h-3.5 w-3.5 ${testing ? "animate-pulse" : ""}`} />
             {testing ? "Testando..." : "Testar webhook"}
           </Button>
