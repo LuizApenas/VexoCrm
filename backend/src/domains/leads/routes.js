@@ -12,6 +12,76 @@ import {
   ensureLeadClientTable as ensureDynamicLeadClientTable,
 } from "../../lead-client-tables.js";
 import { hasAccessPermission } from "../../accessGuards.js";
+import {
+  getDefaultLeadClientEvolutionInstance,
+  getEvolutionAdminConfig,
+} from "../../services/evolution.js";
+
+function sanitizePhoneE164(phoneInput) {
+  if (!phoneInput) return null;
+  const digits = String(phoneInput).replace(/\D/g, "");
+  if (!digits || digits.length < 8) return null;
+
+  if (digits.startsWith("55")) {
+    return `+${digits}`;
+  }
+  if (digits.length === 10 || digits.length === 11) {
+    return `+55${digits}`;
+  }
+  return `+${digits}`;
+}
+
+function classifyChatContent(messages, contactName) {
+  const fullText = (messages || []).join(" ").toLowerCase();
+
+  let stage = "cold";
+  let temperature = "warm";
+  const tagsSet = new Set();
+
+  if (/(comprei|paguei|fechado|comprovante|pix feito|pedido confirmado|boleto pago|adquirido|assinado|sou cliente)/i.test(fullText)) {
+    stage = "buyer";
+    temperature = "hot";
+    tagsSet.add("Cliente");
+  } else if (/(orçamento|orcamento|cotacao|cotação|valor|quanto custa|preço|preco|desconto|proposta|tabela|enviar valor)/i.test(fullText)) {
+    stage = "open_budget";
+    temperature = "hot";
+    tagsSet.add("Orçamento");
+  } else if (/(duvida|dúvida|funciona|endereço|horário|informação|informacao|catalogo|catálogo|como faz)/i.test(fullText)) {
+    stage = "inquiry";
+    temperature = "warm";
+    tagsSet.add("Dúvida");
+  } else if (/(cancelar|não tenho interesse|nao tenho interesse|muito caro|desisti|não quero|nao quero|remover)/i.test(fullText)) {
+    stage = "lost";
+    temperature = "cold";
+    tagsSet.add("Perdido");
+  }
+
+  if (/(óculos|oculos|lente|armação|armacao|solar)/i.test(fullText)) {
+    tagsSet.add("Óculos de Sol");
+  }
+  if (/(prótese|protese|implante|dentário|dentario)/i.test(fullText)) {
+    tagsSet.add("Prótese");
+  }
+  if (/(energia|solar|conta|luz|kw|kwh)/i.test(fullText)) {
+    tagsSet.add("Energia Solar");
+  }
+
+  if (tagsSet.size === 0) {
+    tagsSet.add("WhatsApp WA");
+  }
+
+  const summary = messages && messages.length > 0
+    ? messages.slice(0, 3).join(" | ").slice(0, 300)
+    : "Contato extraído via WhatsApp.";
+
+  return {
+    stage,
+    temperature,
+    tags: Array.from(tagsSet),
+    summary
+  };
+}
+
 
 // Fallback column auto-detection based on content and header aliases
 function detectImportColumns(rows) {
@@ -709,25 +779,425 @@ export function registerLeadsRoutes(app, deps) {
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
     if (!clientId) return;
 
-    try {
-      const { data, error } = await supabase
-        .from('leads')
-        .select("*")
-        .eq("client_id", clientId)
-        .order("data_hora", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false })
-        .limit(2000);
+    const stage = normalizeString(req.query.stage);
+    const temperature = normalizeString(req.query.temperature);
+    const tag = normalizeString(req.query.tag);
+    const search = normalizeString(req.query.search);
+    const page = Math.max(1, parseInt(req.query.page || "1", 10));
+    const limit = Math.min(2000, Math.max(1, parseInt(req.query.limit || "2000", 10)));
 
-      if (error) {
-        throw error;
+    try {
+      let query = supabase
+        .from('leads')
+        .select("*", { count: "exact" })
+        .eq("client_id", clientId);
+
+      if (stage && stage !== "all") {
+        query = query.eq("stage", stage);
       }
 
-      res.json({ items: data || [] });
+      if (temperature && temperature !== "all") {
+        query = query.eq("temperature", temperature);
+      }
+
+      if (tag) {
+        query = query.contains("tags", [tag]);
+      }
+
+      if (search) {
+        query = query.or(`nome.ilike.%${search}%,telefone.ilike.%${search}%,phone.ilike.%${search}%,raw_chat_summary.ilike.%${search}%`);
+      }
+
+      query = query
+        .order("last_interaction_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+
+      if (limit < 2000) {
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        query = query.range(from, to);
+      }
+
+      const { data, count, error } = await query;
+      if (error) throw error;
+
+      // Calcular agregações para métricas da base do tenant
+      const { data: allLeadsData } = await supabase
+        .from('leads')
+        .select("id, stage, potential_contract_value")
+        .eq("client_id", clientId);
+
+      const allItems = allLeadsData || [];
+      const totalLeads = allItems.length;
+      const buyersCount = allItems.filter(l => l.stage === 'buyer').length;
+      const openBudgetsCount = allItems.filter(l => l.stage === 'open_budget').length;
+      
+      const openBudgetsSum = allItems
+        .filter(l => l.stage === 'open_budget')
+        .reduce((sum, l) => sum + (Number(l.potential_contract_value) || 2500), 0);
+
+      res.json({
+        items: data || [],
+        total: count ?? (data?.length || 0),
+        page,
+        limit,
+        summary: {
+          totalLeads,
+          buyersCount,
+          openBudgetsCount,
+          estimatedRevenue: openBudgetsSum
+        }
+      });
     } catch (error) {
       console.error("leads query error:", error);
       sendError(res, 500, "LEADS_QUERY_FAILED", "Failed to query leads");
     }
   });
+
+  // Extração automática de contatos e mensagens via WhatsApp (Evolution API)
+  app.post("/api/leads/extract-wa-contacts", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const requestedClientId = normalizeString(req.body?.clientId || req.query?.clientId);
+    const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+    if (!clientId) return;
+
+    try {
+      const instance = await getDefaultLeadClientEvolutionInstance(clientId);
+      if (!instance || !instance.dispatch_webhook_url) {
+        sendError(res, 400, "EVOLUTION_NOT_CONFIGURED", "Nenhuma instância ativa do WhatsApp (Evolution API) configurada para este tenant.");
+        return;
+      }
+
+      const urlObj = new URL(instance.dispatch_webhook_url);
+      const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+      const parts = urlObj.pathname.split("/");
+      const instanceName = parts[parts.length - 1];
+
+      if (!instanceName) {
+        sendError(res, 400, "INVALID_INSTANCE", "Instância do WhatsApp inválida.");
+        return;
+      }
+
+      const apiKey = instance.dispatch_webhook_token || getEvolutionAdminConfig().apiKey;
+
+      const chatsRes = await fetch(`${baseUrl}/chat/findChats/${encodeURIComponent(instanceName)}`, {
+        method: "GET",
+        headers: { apikey: apiKey }
+      });
+
+      if (!chatsRes.ok) {
+        const text = await chatsRes.text();
+        sendError(res, 502, "WA_FETCH_CHATS_FAILED", `Erro ao buscar conversas no WhatsApp (HTTP ${chatsRes.status}): ${text.slice(0, 200)}`);
+        return;
+      }
+
+      const chats = await chatsRes.json();
+      if (!Array.isArray(chats)) {
+        sendError(res, 502, "WA_INVALID_RESPONSE", "Evolution API não retornou uma lista válida de conversas.");
+        return;
+      }
+
+      const validChats = chats.filter(c => {
+        const jid = c.id || c.remoteJid || "";
+        return jid && !jid.includes("@g.us") && !jid.includes("@broadcast");
+      });
+
+      let extractedCount = 0;
+      let buyers = 0;
+      let openBudgets = 0;
+      let coldLeads = 0;
+      let hotLeads = 0;
+
+      const topChats = validChats.slice(0, 100);
+
+      for (const chat of topChats) {
+        const remoteJid = chat.id || chat.remoteJid;
+        const rawPhone = remoteJid.split("@")[0] || "";
+        const formattedPhone = sanitizePhoneE164(rawPhone);
+        if (!formattedPhone) continue;
+
+        const name = normalizeString(chat.name || chat.pushName || chat.verifiedName || formattedPhone);
+
+        let messagesText = [];
+        let lastInteractionAt = null;
+
+        try {
+          const msgsRes = await fetch(`${baseUrl}/chat/findMessages/${encodeURIComponent(instanceName)}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: apiKey
+            },
+            body: JSON.stringify({
+              where: { key: { remoteJid } },
+              limit: 15
+            })
+          });
+
+          if (msgsRes.ok) {
+            const msgsData = await msgsRes.json();
+            const recordList = Array.isArray(msgsData) ? msgsData : (msgsData?.records || msgsData?.messages || []);
+            if (Array.isArray(recordList)) {
+              for (const m of recordList) {
+                const text = m.message?.conversation || m.message?.extendedTextMessage?.text || m.messageText || "";
+                if (text) messagesText.push(text);
+                if (m.messageTimestamp && !lastInteractionAt) {
+                  lastInteractionAt = new Date(m.messageTimestamp * 1000).toISOString();
+                }
+              }
+            }
+          }
+        } catch (msgErr) {
+          console.warn(`[wa-extract] Erro ao buscar mensagens do chat ${remoteJid}:`, msgErr.message);
+        }
+
+        const classification = classifyChatContent(messagesText, name);
+        if (classification.stage === 'buyer') buyers++;
+        if (classification.stage === 'open_budget') openBudgets++;
+        if (classification.stage === 'cold') coldLeads++;
+        if (classification.temperature === 'hot') hotLeads++;
+
+        const upsertPayload = {
+          client_id: clientId,
+          telefone: formattedPhone,
+          phone: formattedPhone,
+          nome: name,
+          stage: classification.stage,
+          temperature: classification.temperature,
+          tags: classification.tags,
+          extracted_from_wa: true,
+          raw_chat_summary: classification.summary,
+          last_interaction_at: lastInteractionAt || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: upsertErr } = await supabase
+          .from("leads")
+          .upsert(upsertPayload, { onConflict: "client_id,telefone" });
+
+        if (!upsertErr) {
+          extractedCount++;
+        }
+      }
+
+      res.json({
+        success: true,
+        extractedCount,
+        totalChatsFound: validChats.length,
+        summary: {
+          buyers,
+          openBudgets,
+          coldLeads,
+          hotLeads,
+          estimatedRevenue: openBudgets * 2500
+        }
+      });
+    } catch (err) {
+      console.error("[wa-extract] Erro na extração:", err);
+      sendError(res, 500, "WA_EXTRACT_FAILED", err.message || "Erro ao extrair contatos do WhatsApp");
+    }
+  });
+
+  // Importação simplificada via CSV
+  app.post("/api/leads/import-csv", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+
+    const requestedClientId = normalizeString(req.body?.clientId);
+    const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+    if (!clientId) return;
+
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+    if (!rows || rows.length === 0) {
+      sendError(res, 400, "INVALID_BODY", "Nenhuma linha enviada para importação");
+      return;
+    }
+
+    try {
+      let importedCount = 0;
+      const parsedLeads = [];
+
+      for (const row of rows) {
+        const rawPhone = row.telefone || row.phone || row.celular || row.whatsapp || row.numero || "";
+        const formattedPhone = sanitizePhoneE164(rawPhone);
+        if (!formattedPhone) continue;
+
+        const name = normalizeString(row.nome || row.name || row.cliente || row.contato || formattedPhone);
+        const stageInput = normalizeString(row.stage || row.estagio || row.etapa)?.toLowerCase();
+        const validStage = ['buyer', 'open_budget', 'inquiry', 'cold', 'lost'].includes(stageInput) ? stageInput : 'cold';
+        
+        const tempInput = normalizeString(row.temperature || row.temperatura)?.toLowerCase();
+        const validTemp = ['hot', 'warm', 'cold'].includes(tempInput) ? tempInput : 'warm';
+
+        const rawTags = row.tags || row.tag || [];
+        const tags = Array.isArray(rawTags)
+          ? rawTags.map(t => String(t).trim())
+          : typeof rawTags === "string"
+            ? rawTags.split(",").map(t => t.trim()).filter(Boolean)
+            : ["Importado CSV"];
+
+        parsedLeads.push({
+          client_id: clientId,
+          telefone: formattedPhone,
+          phone: formattedPhone,
+          nome: name,
+          stage: validStage,
+          temperature: validTemp,
+          tags: tags.length > 0 ? tags : ["Importado CSV"],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      if (parsedLeads.length > 0) {
+        const { data, error } = await supabase
+          .from("leads")
+          .upsert(parsedLeads, { onConflict: "client_id,telefone" })
+          .select("id");
+
+        if (error) throw error;
+        importedCount = data?.length || parsedLeads.length;
+      }
+
+      res.json({ success: true, importedCount, totalRows: rows.length });
+    } catch (err) {
+      console.error("[leads-csv-import] Erro ao importar CSV:", err);
+      sendError(res, 500, "CSV_IMPORT_FAILED", err.message || "Falha ao importar planilha");
+    }
+  });
+
+  // Exportação filtrada para CSV
+  app.get("/api/leads/export", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+
+    const requestedClientId = normalizeString(req.query.clientId);
+    const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+    if (!clientId) return;
+
+    const stage = normalizeString(req.query.stage);
+    const temperature = normalizeString(req.query.temperature);
+
+    try {
+      let query = supabase
+        .from("leads")
+        .select("nome, telefone, stage, temperature, tags, raw_chat_summary, created_at, last_interaction_at")
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false });
+
+      if (stage && stage !== "all") {
+        query = query.eq("stage", stage);
+      }
+      if (temperature && temperature !== "all") {
+        query = query.eq("temperature", temperature);
+      }
+
+      const { data, error } = await query.limit(5000);
+      if (error) throw error;
+
+      const leads = data || [];
+      const csvHeader = "Nome,Telefone,Estágio,Temperatura,Tags,Última Interação,Resumo Chat\n";
+      const csvRows = leads.map(l => {
+        const nome = `"${(l.nome || '').replace(/"/g, '""')}"`;
+        const fone = `"${(l.telefone || '').replace(/"/g, '""')}"`;
+        const stg = `"${l.stage || 'cold'}"`;
+        const tmp = `"${l.temperature || 'warm'}"`;
+        const tgs = `"${(Array.isArray(l.tags) ? l.tags.join("; ") : '').replace(/"/g, '""')}"`;
+        const last = `"${l.last_interaction_at ? new Date(l.last_interaction_at).toLocaleString('pt-BR') : ''}"`;
+        const sum = `"${(l.raw_chat_summary || '').replace(/"/g, '""')}"`;
+        return `${nome},${fone},${stg},${tmp},${tgs},${last},${sum}`;
+      }).join("\n");
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="leads_export_${clientId}_${Date.now()}.csv"`);
+      res.status(200).send("\uFEFF" + csvHeader + csvRows);
+    } catch (err) {
+      console.error("[leads-export] Erro ao exportar leads:", err);
+      sendError(res, 500, "EXPORT_FAILED", "Falha ao exportar base de leads");
+    }
+  });
+
+  // Criar lead manual
+  app.post("/api/leads/create", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const requestedClientId = normalizeString(req.body?.clientId);
+    const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+    if (!clientId) return;
+
+    const rawPhone = req.body?.telefone || req.body?.phone;
+    const phone = sanitizePhoneE164(rawPhone);
+    if (!phone) {
+      sendError(res, 400, "INVALID_PHONE", "Telefone inválido ou ausente.");
+      return;
+    }
+
+    try {
+      const payload = {
+        client_id: clientId,
+        telefone: phone,
+        phone: phone,
+        nome: normalizeString(req.body?.nome || req.body?.name || phone),
+        stage: normalizeString(req.body?.stage) || 'cold',
+        temperature: normalizeString(req.body?.temperature) || 'warm',
+        tags: Array.isArray(req.body?.tags) ? req.body.tags : [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from("leads")
+        .upsert(payload, { onConflict: "client_id,telefone" })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ item: data });
+    } catch (err) {
+      sendError(res, 500, "LEAD_CREATE_FAILED", err.message || "Erro ao criar lead");
+    }
+  });
+
+  // Atualizar lead
+  app.patch("/api/leads/:id", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const { id } = req.params;
+    if (!id) return sendError(res, 400, "MISSING_ID", "ID do lead ausente");
+
+    try {
+      const updates = {};
+      if (req.body.stage !== undefined) updates.stage = req.body.stage;
+      if (req.body.temperature !== undefined) updates.temperature = req.body.temperature;
+      if (req.body.tags !== undefined) updates.tags = req.body.tags;
+      if (req.body.nome !== undefined) updates.nome = req.body.nome;
+      updates.updated_at = new Date().toISOString();
+
+      const { data, error } = await supabase
+        .from("leads")
+        .update(updates)
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (error) throw error;
+      res.json({ item: data });
+    } catch (err) {
+      sendError(res, 500, "LEAD_UPDATE_FAILED", err.message || "Erro ao atualizar lead");
+    }
+  });
+
+  // Excluir lead
+  app.delete("/api/leads/:id", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const { id } = req.params;
+    if (!id) return sendError(res, 400, "MISSING_ID", "ID do lead ausente");
+
+    try {
+      const { error } = await supabase.from("leads").delete().eq("id", id);
+      if (error) throw error;
+      res.json({ success: true, deletedId: id });
+    } catch (err) {
+      sendError(res, 500, "LEAD_DELETE_FAILED", err.message || "Erro ao deletar lead");
+    }
+  });
+
 
   app.get("/api/lead-imports", requireFirebaseAuth, requireAppViewAccess("planilhas"), async (req, res) => {
     if (!ensureDb(res)) return;

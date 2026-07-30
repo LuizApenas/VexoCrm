@@ -34,6 +34,7 @@ export const INTERNAL_PAGE_ORDER = [
   "eventos",
   "relacionamento",
   "livpub",
+  "banco-de-dados",
 ] as const;
 
 export type InternalPage = (typeof INTERNAL_PAGE_ORDER)[number];

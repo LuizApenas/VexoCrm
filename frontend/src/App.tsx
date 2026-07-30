@@ -18,6 +18,7 @@ import ClientPortalPlanilhas from "./pages/ClientPortalPlanilhas";
 import ClientPortalWhatsApp from "./pages/ClientPortalWhatsApp";
 import LandingPage from "./pages/LandingPage";
 import Leads from "./pages/Leads";
+import BancoDeDados from "./pages/BancoDeDados";
 import LeadImports from "./pages/LeadImports";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
@@ -139,6 +140,7 @@ const App = () => (
             />
             <Route path="/dashboard" element={<Navigate to="/crm/dashboard" replace />} />
             <Route path="/leads" element={<Navigate to="/crm/leads" replace />} />
+            <Route path="/banco-de-dados" element={<Navigate to="/crm/banco-de-dados" replace />} />
             <Route path="/planilhas" element={<Navigate to="/crm/planilhas" replace />} />
             <Route path="/campanhas" element={<Navigate to="/crm/planilhas" replace />} />
             <Route path="/inteligencia-comercial" element={<Navigate to="/crm/inteligencia-comercial" replace />} />
@@ -168,6 +170,14 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="leads">
                     <Leads />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="banco-de-dados"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="banco-de-dados">
+                    <BancoDeDados />
                   </ProtectedRoute>
                 }
               />
