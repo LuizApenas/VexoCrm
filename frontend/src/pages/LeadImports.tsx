@@ -260,6 +260,33 @@ export default function LeadImports({
     }));
   }, [evolutionInstanceOptions]);
 
+  // Carregar público-alvo vindo do Banco de Dados Inteligente
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("vexo_pending_campaign_audience");
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.rows) && data.rows.length > 0) {
+          setParsedRows(data.rows);
+          if (Array.isArray(data.filterRules)) {
+            setFilterRules(data.filterRules);
+          }
+          if (data.campaignName) {
+            setCampaignName(data.campaignName);
+          }
+          setActiveTab("campanha");
+          toast({
+            title: "Público-Alvo Carregado! 🎯",
+            description: `${data.rows.length} contatos carregados para a nova campanha.`,
+          });
+        }
+        localStorage.removeItem("vexo_pending_campaign_audience");
+      }
+    } catch (e) {
+      console.warn("Failed to load pending campaign audience:", e);
+    }
+  }, []);
+
   // Statistics calculation for uploaded leads
   const parsedLeadsStats = useMemo(() => {
     if (filteredRows.length === 0) return { total: 0, valid: 0, invalid: 0 };

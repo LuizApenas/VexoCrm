@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import * as XLSX from "xlsx";
 import {
   Database,
   Upload,
@@ -11,7 +12,6 @@ import {
   Sparkles,
   TrendingUp,
   UserCheck,
-  Coins,
   AlertCircle,
   Plus,
   FileSpreadsheet,
@@ -20,14 +20,12 @@ import {
   Snowflake,
   Settings,
   Rocket,
-  CheckSquare,
-  Square,
   Trash2,
   Tag as TagIcon,
-  ChevronRight,
-  ExternalLink,
-  SlidersHorizontal,
-  X
+  X,
+  FileText,
+  Filter,
+  CheckCircle2
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
@@ -54,6 +52,12 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Table,
   TableBody,
   TableCell,
@@ -61,6 +65,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { parseSpreadsheetFile, detectSpreadsheetColumns } from "@/lib/leadImports/spreadsheet";
 import { toast } from "sonner";
 
 export interface LeadIntelligenceItem {
@@ -77,6 +82,7 @@ export interface LeadIntelligenceItem {
   raw_chat_summary?: string | null;
   created_at: string;
   updated_at?: string;
+  [key: string]: any;
 }
 
 export interface SummaryStats {
@@ -91,6 +97,13 @@ export interface EvolutionInstanceItem {
   name: string;
   active: boolean;
   is_default: boolean;
+}
+
+export interface DynamicFilterRule {
+  id: string;
+  column: string;
+  operator: "equals" | "contains" | "gt" | "lt";
+  value: string;
 }
 
 export default function BancoDeDados() {
@@ -133,15 +146,15 @@ export default function BancoDeDados() {
   const [isExtractingWA, setIsExtractingWA] = useState(false);
   const [waExtractStep, setWaExtractStep] = useState<string>("");
 
-  // CSV Import Modal State
+  // Import Modal State (Excel .xlsx/.xls + CSV)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvParsedRows, setCsvParsedRows] = useState<Record<string, string>[]>([]);
-  const [csvSanitizePreview, setCsvSanitizePreview] = useState<{ validCount: number; invalidCount: number }>({
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importParsedRows, setImportParsedRows] = useState<Record<string, unknown>[]>([]);
+  const [importSanitizePreview, setImportSanitizePreview] = useState<{ validCount: number; invalidCount: number }>({
     validCount: 0,
     invalidCount: 0,
   });
-  const [isUploadingCSV, setIsUploadingCSV] = useState(false);
+  const [isUploadingImport, setIsUploadingImport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Create Manual Lead State
@@ -163,6 +176,23 @@ export default function BancoDeDados() {
   const [bulkStageValue, setBulkStageValue] = useState<"buyer" | "open_budget" | "inquiry" | "cold" | "lost">("cold");
   const [isBulkTagModalOpen, setIsBulkTagModalOpen] = useState(false);
   const [bulkTagValue, setBulkTagValue] = useState("");
+
+  // Campaign Creation Wizard Modal State
+  const [isCampaignWizardOpen, setIsCampaignWizardOpen] = useState(false);
+  const [campaignSourceType, setCampaignSourceType] = useState<"funnel" | "spreadsheet">("funnel");
+  
+  // Funnel Audience Selection State
+  const [campaignStageFilter, setCampaignStageFilter] = useState<string>("all");
+  const [campaignTagFilter, setCampaignTagFilter] = useState<string>("");
+  const [campaignSelectedLeadIds, setCampaignSelectedLeadIds] = useState<string[]>([]);
+  const [campaignFunnelFilterRules, setCampaignFunnelFilterRules] = useState<DynamicFilterRule[]>([]);
+
+  // Spreadsheet Audience Selection State
+  const [campaignFile, setCampaignFile] = useState<File | null>(null);
+  const [campaignSpreadsheetRows, setCampaignSpreadsheetRows] = useState<Record<string, unknown>[]>([]);
+  const [campaignSpreadsheetColumns, setCampaignSpreadsheetColumns] = useState<string[]>([]);
+  const [campaignSpreadsheetRules, setCampaignSpreadsheetRules] = useState<DynamicFilterRule[]>([]);
+  const campaignFileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch Leads List & Aggregations
   const fetchLeads = async () => {
@@ -188,7 +218,8 @@ export default function BancoDeDados() {
       }
 
       const data = await res.json();
-      setLeads(Array.isArray(data.items) ? data.items : []);
+      const fetchedItems = Array.isArray(data.items) ? data.items : [];
+      setLeads(fetchedItems);
       if (data.summary) {
         setSummary(data.summary);
       }
@@ -282,63 +313,50 @@ export default function BancoDeDados() {
     }
   };
 
-  // Parse CSV File for Preview
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Parse Excel (.xlsx, .xls) or CSV File for Import
+  const handleImportFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setCsvFile(file);
+    setImportFile(file);
 
     try {
-      const text = await file.text();
-      const lines = text.split(/\r?\n/).filter((line) => line.trim());
-      if (lines.length < 2) {
-        setCsvParsedRows([]);
-        setCsvSanitizePreview({ validCount: 0, invalidCount: 0 });
-        return;
-      }
-
-      const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, "").toLowerCase());
-      const rows: Record<string, string>[] = [];
+      const rows = await parseSpreadsheetFile(file);
+      const mapping = detectSpreadsheetColumns(rows);
       let valid = 0;
       let invalid = 0;
 
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
-        if (values.length === 0 || !values[0]) continue;
-
-        const rowObj: Record<string, string> = {};
-        headers.forEach((h, idx) => {
-          rowObj[h] = values[idx] || "";
-        });
-
-        const rawPhone = rowObj.telefone || rowObj.phone || rowObj.celular || rowObj.whatsapp || values[0];
-        const digits = (rawPhone || "").replace(/\D/g, "");
+      const normalizedRows = rows.map((row) => {
+        const newRow: Record<string, unknown> = { ...row };
+        const rawPhone = String(row[mapping.telefone || "telefone"] || row.phone || row.celular || row.whatsapp || "").trim();
+        const digits = rawPhone.replace(/\D/g, "");
 
         if (digits && digits.length >= 8) {
           valid++;
-          rowObj.telefone = digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
-          rowObj.nome = rowObj.nome || rowObj.name || rowObj.cliente || values[1] || "";
-          rows.push(rowObj);
+          newRow.telefone = digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
         } else {
           invalid++;
         }
-      }
+        if (mapping.nome && row[mapping.nome]) {
+          newRow.nome = String(row[mapping.nome]).trim();
+        }
+        return newRow;
+      });
 
-      setCsvParsedRows(rows);
-      setCsvSanitizePreview({ validCount: valid, invalidCount: invalid });
-    } catch (err) {
-      toast.error("Erro ao ler arquivo CSV.");
+      setImportParsedRows(normalizedRows);
+      setImportSanitizePreview({ validCount: valid, invalidCount: invalid });
+    } catch (err: any) {
+      toast.error("Erro ao ler arquivo da planilha", { description: err.message || "Formato não suportado." });
     }
   };
 
-  // Submit CSV Import
-  const handleImportCSVSubmit = async () => {
-    if (!csvParsedRows || csvParsedRows.length === 0) {
+  // Submit Import (CSV / Excel)
+  const handleImportSubmit = async () => {
+    if (!importParsedRows || importParsedRows.length === 0) {
       toast.error("Nenhum contato válido encontrado na planilha.");
       return;
     }
 
-    setIsUploadingCSV(true);
+    setIsUploadingImport(true);
     try {
       const token = await getIdToken();
       const res = await fetch(`${API_BASE_URL}/api/leads/import-csv`, {
@@ -347,31 +365,31 @@ export default function BancoDeDados() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ clientId, rows: csvParsedRows }),
+        body: JSON.stringify({ clientId, rows: importParsedRows }),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.message || "Falha ao importar CSV.");
+        throw new Error(data.message || "Falha ao importar planilha.");
       }
 
       const data = await res.json();
-      toast.success("Planilha higienizada e importada!", {
-        description: `${data.importedCount || 0} leads inseridos na base com padrão +55 E.164.`,
+      toast.success("Planilha higienizada e importada com sucesso! 🎉", {
+        description: `${data.importedCount || 0} leads inseridos na base no padrão +55 E.164.`,
       });
 
       setIsImportModalOpen(false);
-      setCsvFile(null);
-      setCsvParsedRows([]);
+      setImportFile(null);
+      setImportParsedRows([]);
       fetchLeads();
     } catch (err: any) {
       toast.error("Erro na importação da planilha", { description: err.message });
     } finally {
-      setIsUploadingCSV(false);
+      setIsUploadingImport(false);
     }
   };
 
-  // Ticket Médio Config Save
+  // Save Ticket Médio
   const handleSaveTicketMedio = () => {
     const val = Number(tempTicketInput.replace(/\D/g, "")) || 2500;
     setTicketMedio(val);
@@ -382,7 +400,33 @@ export default function BancoDeDados() {
     setIsTicketModalOpen(false);
   };
 
-  // Export Filtered CSV
+  // Export Leads (Excel .xlsx)
+  const handleExportXLSX = () => {
+    try {
+      const exportData = filteredLeads.map((l) => ({
+        "ID": l.id,
+        "Nome": l.nome || "",
+        "Telefone (E.164)": l.phone || l.telefone || "",
+        "Estágio": l.stage || "cold",
+        "Temperatura": l.temperature || "warm",
+        "Tags": Array.isArray(l.tags) ? l.tags.join(", ") : "",
+        "Resumo IA": l.raw_chat_summary || "",
+        "Última Interação": l.last_interaction_at ? new Date(l.last_interaction_at).toLocaleString("pt-BR") : "",
+        "Data de Cadastro": new Date(l.created_at).toLocaleString("pt-BR"),
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Leads");
+      XLSX.writeFile(wb, `leads_${clientId}_${Date.now()}.xlsx`);
+
+      toast.success("Planilha Excel (.xlsx) baixada com sucesso!");
+    } catch (err: any) {
+      toast.error("Erro ao exportar arquivo Excel", { description: err.message });
+    }
+  };
+
+  // Export Leads (CSV)
   const handleExportCSV = async () => {
     try {
       const token = await getIdToken();
@@ -405,21 +449,130 @@ export default function BancoDeDados() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast.success("Exportação concluída com sucesso!");
+      toast.success("Arquivo CSV exportado com sucesso!");
     } catch (err: any) {
       toast.error("Erro ao exportar base", { description: err.message });
     }
   };
 
-  // Create Campaign Navigation
-  const handleCreateCampaign = () => {
-    navigate("/crm/planilhas");
-    toast.info("Redirecionando para disparos de campanhas...", {
-      description: `Filtro ativo: ${activeTab.toUpperCase()}`,
+  // Open Campaign Wizard
+  const handleOpenCampaignWizard = () => {
+    setIsCampaignWizardOpen(true);
+    setCampaignSelectedLeadIds(filteredLeads.map((l) => l.id));
+  };
+
+  // Handle Campaign Wizard File Select
+  const handleCampaignFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCampaignFile(file);
+
+    try {
+      const rows = await parseSpreadsheetFile(file);
+      setCampaignSpreadsheetRows(rows);
+      if (rows.length > 0) {
+        setCampaignSpreadsheetColumns(Object.keys(rows[0]));
+      }
+      toast.success("Planilha carregada para a campanha!", {
+        description: `${rows.length} registros e ${Object.keys(rows[0] || {}).length} colunas identificadas.`,
+      });
+    } catch (err: any) {
+      toast.error("Erro ao ler planilha", { description: err.message });
+    }
+  };
+
+  // Dynamic Rule Helper for Filtering Rows
+  const applyDynamicRules = (rows: Record<string, any>[], rules: DynamicFilterRule[]) => {
+    if (rules.length === 0) return rows;
+    return rows.filter((row) => {
+      return rules.every((rule) => {
+        if (!rule.column) return true;
+        const rawVal = row[rule.column];
+        const valStr = String(rawVal ?? "").trim().toLowerCase();
+        const ruleVal = rule.value.trim().toLowerCase();
+
+        switch (rule.operator) {
+          case "equals":
+            return valStr === ruleVal;
+          case "contains":
+            return valStr.includes(ruleVal);
+          case "gt": {
+            const num = parseFloat(valStr.replace(/[^\d\.,-]/g, "").replace(",", "."));
+            const ruleNum = parseFloat(ruleVal);
+            return !isNaN(num) && !isNaN(ruleNum) && num > ruleNum;
+          }
+          case "lt": {
+            const num = parseFloat(valStr.replace(/[^\d\.,-]/g, "").replace(",", "."));
+            const ruleNum = parseFloat(ruleVal);
+            return !isNaN(num) && !isNaN(ruleNum) && num < ruleNum;
+          }
+          default:
+            return true;
+        }
+      });
     });
   };
 
-  // Create Manual Lead
+  // Computed Target Audience for Campaign Wizard
+  const campaignFunnelFilteredLeads = useMemo(() => {
+    const base = leads.filter((l) => {
+      const stageOk = campaignStageFilter === "all" || l.stage === campaignStageFilter;
+      const tagOk = !campaignTagFilter || (Array.isArray(l.tags) && l.tags.includes(campaignTagFilter));
+      return stageOk && tagOk;
+    });
+    return applyDynamicRules(base, campaignFunnelFilterRules);
+  }, [leads, campaignStageFilter, campaignTagFilter, campaignFunnelFilterRules]);
+
+  const campaignSpreadsheetFilteredRows = useMemo(() => {
+    return applyDynamicRules(campaignSpreadsheetRows, campaignSpreadsheetRules);
+  }, [campaignSpreadsheetRows, campaignSpreadsheetRules]);
+
+  // Submit Campaign Audience and Redirect to Planilhas
+  const handleProceedToCampaign = () => {
+    let finalRows: Record<string, any>[] = [];
+    let campaignTitleName = "";
+
+    if (campaignSourceType === "funnel") {
+      const selected = campaignFunnelFilteredLeads.filter((l) => campaignSelectedLeadIds.includes(l.id));
+      if (selected.length === 0) {
+        toast.error("Selecione pelo menos 1 lead para a campanha.");
+        return;
+      }
+      finalRows = selected.map((l) => ({
+        telefone: l.phone || l.telefone,
+        nome: l.nome || "",
+        stage: l.stage || "cold",
+        temperature: l.temperature || "warm",
+        tags: Array.isArray(l.tags) ? l.tags.join(", ") : "",
+        resumo_ia: l.raw_chat_summary || "",
+      }));
+      campaignTitleName = `Campanha Funil ${campaignStageFilter.toUpperCase()} (${selected.length} leads)`;
+    } else {
+      if (campaignSpreadsheetFilteredRows.length === 0) {
+        toast.error("Nenhum contato encontrado na planilha com os filtros aplicados.");
+        return;
+      }
+      finalRows = campaignSpreadsheetFilteredRows;
+      campaignTitleName = `Campanha Planilha ${campaignFile?.name || "Importada"} (${finalRows.length} contatos)`;
+    }
+
+    localStorage.setItem(
+      "vexo_pending_campaign_audience",
+      JSON.stringify({
+        campaignName: campaignTitleName,
+        rows: finalRows,
+      })
+    );
+
+    setIsCampaignWizardOpen(false);
+    toast.success("Público-Alvo Configurado! 🎯", {
+      description: "Redirecionando para a central de campanhas e disparos...",
+    });
+
+    navigate("/crm/planilhas");
+  };
+
+  // Create Manual Lead Submit
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLeadPhone.trim()) {
@@ -466,7 +619,7 @@ export default function BancoDeDados() {
     }
   };
 
-  // Send WhatsApp Direct Message
+  // Open WhatsApp Web
   const handleSendWhatsApp = (phone: string, name?: string | null) => {
     const digits = phone.replace(/\D/g, "");
     if (!digits) return;
@@ -741,7 +894,7 @@ export default function BancoDeDados() {
   return (
     <PageShell>
       <div className="space-y-6 pb-20">
-        {/* Header Superior com Botões de Ação Renderizados no Children */}
+        {/* Header Superior */}
         <SectionHeader
           title="Banco de Dados Inteligente"
           subtitle="Vexo Lead Intelligence & Extrator de Contatos com Inteligência Semântica via WhatsApp"
@@ -775,7 +928,7 @@ export default function BancoDeDados() {
               className="gap-2 text-xs"
             >
               <Upload className="w-3.5 h-3.5" />
-              Importar Planilha
+              Importar Planilha (.xlsx/.csv)
             </Button>
 
             <Button
@@ -788,20 +941,30 @@ export default function BancoDeDados() {
               Ticket Médio
             </Button>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportCSV}
-              className="gap-2 text-xs"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Exportar Leads
-            </Button>
+            {/* Dropdown com opções de exportação XLSX e CSV */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2 text-xs">
+                  <Download className="w-3.5 h-3.5" />
+                  Exportar Leads
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportXLSX} className="cursor-pointer text-xs gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  Exportar Excel (.xlsx)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer text-xs gap-2">
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  Exportar CSV (.csv)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Button
               variant="default"
               size="sm"
-              onClick={handleCreateCampaign}
+              onClick={handleOpenCampaignWizard}
               className="bg-amber-600 hover:bg-amber-700 text-white gap-2 text-xs"
             >
               <Rocket className="w-3.5 h-3.5" />
@@ -1147,7 +1310,7 @@ export default function BancoDeDados() {
             <Button
               size="sm"
               variant="ghost"
-              onClick={handleExportCSV}
+              onClick={handleExportXLSX}
               className="text-xs h-8 hover:bg-zinc-800 dark:hover:bg-zinc-200"
             >
               Exportar
@@ -1253,17 +1416,17 @@ export default function BancoDeDados() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal B) Importar Planilha CSV/Excel */}
+      {/* Modal B) Importar Planilha (Excel .xlsx / .xls + CSV) */}
       <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="w-5 h-5 text-indigo-500" />
-              Importar Planilha de Leads
+              Importar Planilha de Leads (.xlsx / .csv)
             </DialogTitle>
 
             <DialogDescription>
-              Selecione o arquivo CSV. O sistema realiza higienização automática no padrão E.164 (+55...).
+              Selecione o arquivo Excel ou CSV. O sistema realiza higienização automática no padrão E.164 (+55...).
             </DialogDescription>
           </DialogHeader>
 
@@ -1274,25 +1437,25 @@ export default function BancoDeDados() {
             >
               <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-60" />
               <p className="text-sm font-medium text-foreground">
-                {csvFile ? csvFile.name : "Clique para selecionar a planilha (.csv)"}
+                {importFile ? importFile.name : "Clique para selecionar a planilha (.xlsx, .xls, .csv)"}
               </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv"
+                accept=".csv, .xlsx, .xls, .ods"
                 className="hidden"
-                onChange={handleFileSelect}
+                onChange={handleImportFileSelect}
               />
             </div>
 
-            {csvFile && (
+            {importFile && (
               <div className="bg-muted/40 border border-border rounded-md p-3 text-xs space-y-1">
                 <p className="font-medium text-emerald-600 dark:text-emerald-400">
-                  ✓ {csvSanitizePreview.validCount} contatos validados no padrão +55...
+                  ✓ {importSanitizePreview.validCount} contatos validados no padrão +55...
                 </p>
-                {csvSanitizePreview.invalidCount > 0 && (
+                {importSanitizePreview.invalidCount > 0 && (
                   <p className="text-amber-600 dark:text-amber-400">
-                    ⚠ {csvSanitizePreview.invalidCount} registros sem fone válido (serão ignorados).
+                    ⚠ {importSanitizePreview.invalidCount} registros sem fone válido (serão ignorados).
                   </p>
                 )}
               </div>
@@ -1304,12 +1467,280 @@ export default function BancoDeDados() {
               Cancelar
             </Button>
             <Button
-              onClick={handleImportCSVSubmit}
-              disabled={!csvFile || isUploadingCSV || csvSanitizePreview.validCount === 0}
+              onClick={handleImportSubmit}
+              disabled={!importFile || isUploadingImport || importSanitizePreview.validCount === 0}
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
             >
-              {isUploadingCSV ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : null}
+              {isUploadingImport ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : null}
               Processar e Importar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Wizard: Criar Nova Campanha & Seleção de Público Alvo */}
+      <Dialog open={isCampaignWizardOpen} onOpenChange={setIsCampaignWizardOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Rocket className="w-5 h-5 text-amber-500" />
+              Criar Nova Campanha — Configuração do Público-Alvo
+            </DialogTitle>
+            <DialogDescription>
+              Escolha a origem dos contatos e aplique filtros dinâmicos por variáveis antes de enviar a campanha.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-2">
+            {/* Escolha da Origem */}
+            <div>
+              <label className="text-xs font-bold text-foreground uppercase tracking-wider block mb-2">
+                1. Origem dos Leads
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div
+                  onClick={() => setCampaignSourceType("funnel")}
+                  className={`border rounded-lg p-3.5 cursor-pointer transition-all flex items-start gap-3 ${
+                    campaignSourceType === "funnel"
+                      ? "border-amber-500 bg-amber-500/10 dark:bg-amber-500/20"
+                      : "border-border hover:border-amber-500/40"
+                  }`}
+                >
+                  <Database className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-bold text-foreground">Leads do Banco Inteligente</h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Filtrar por estágio do funil, tags, temperatura ou variáveis salvas.
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setCampaignSourceType("spreadsheet")}
+                  className={`border rounded-lg p-3.5 cursor-pointer transition-all flex items-start gap-3 ${
+                    campaignSourceType === "spreadsheet"
+                      ? "border-amber-500 bg-amber-500/10 dark:bg-amber-500/20"
+                      : "border-border hover:border-amber-500/40"
+                  }`}
+                >
+                  <FileSpreadsheet className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-bold text-foreground">Planilha Externa (.xlsx / .csv)</h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Carregar ou importar planilha com mapeamento de colunas dinâmicas.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Opção A: Filtros e Seleção do Funil */}
+            {campaignSourceType === "funnel" ? (
+              <div className="space-y-4 border-t border-border pt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-foreground">Estágio do Funil</label>
+                    <select
+                      value={campaignStageFilter}
+                      onChange={(e) => setCampaignStageFilter(e.target.value)}
+                      className="w-full h-9 px-3 mt-1 rounded-md border border-input bg-background text-xs"
+                    >
+                      <option value="all">Todos os Estágios ({leads.length})</option>
+                      <option value="buyer">Compradores 🟢 ({summary.buyersCount})</option>
+                      <option value="open_budget">Orçamentos Abertos 🟡 ({summary.openBudgetsCount})</option>
+                      <option value="cold">Leads Frios 🔵</option>
+                      <option value="lost">Perdidos 🔴</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-foreground">Filtrar por Tag</label>
+                    <select
+                      value={campaignTagFilter}
+                      onChange={(e) => setCampaignTagFilter(e.target.value)}
+                      className="w-full h-9 px-3 mt-1 rounded-md border border-input bg-background text-xs"
+                    >
+                      <option value="">Todas as Tags</option>
+                      {availableTags.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Seleção Manual com Tabela */}
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <div className="bg-muted/50 px-3 py-2 border-b border-border flex items-center justify-between text-xs font-semibold">
+                    <span>Lista de Leads Selecionados ({campaignSelectedLeadIds.length} de {campaignFunnelFilteredLeads.length})</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-[11px] px-2"
+                      onClick={() => {
+                        if (campaignSelectedLeadIds.length === campaignFunnelFilteredLeads.length) {
+                          setCampaignSelectedLeadIds([]);
+                        } else {
+                          setCampaignSelectedLeadIds(campaignFunnelFilteredLeads.map((l) => l.id));
+                        }
+                      }}
+                    >
+                      {campaignSelectedLeadIds.length === campaignFunnelFilteredLeads.length ? "Desmarcar Todos" : "Selecionar Todos"}
+                    </Button>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto">
+                    <Table>
+                      <TableBody>
+                        {campaignFunnelFilteredLeads.map((l) => {
+                          const isSel = campaignSelectedLeadIds.includes(l.id);
+                          return (
+                            <TableRow
+                              key={l.id}
+                              className="cursor-pointer hover:bg-muted/40"
+                              onClick={() => {
+                                setCampaignSelectedLeadIds((prev) =>
+                                  prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id]
+                                );
+                              }}
+                            >
+                              <TableCell className="w-[30px] px-3">
+                                <input type="checkbox" checked={isSel} onChange={() => {}} className="rounded" />
+                              </TableCell>
+                              <TableCell className="text-xs font-medium">{l.nome || "Sem Nome"}</TableCell>
+                              <TableCell className="text-xs font-mono text-muted-foreground">{l.phone || l.telefone}</TableCell>
+                              <TableCell className="text-xs">{getStageBadge(l.stage)}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Opção B: Upload e Filtro por Variáveis da Planilha */
+              <div className="space-y-4 border-t border-border pt-4">
+                <div
+                  onClick={() => campaignFileInputRef.current?.click()}
+                  className="border-2 border-dashed border-border rounded-lg p-5 text-center cursor-pointer hover:border-amber-500 transition-colors"
+                >
+                  <FileSpreadsheet className="w-7 h-7 text-amber-500 mx-auto mb-1" />
+                  <p className="text-xs font-semibold text-foreground">
+                    {campaignFile ? campaignFile.name : "Clique para carregar planilha (.xlsx, .xls, .csv)"}
+                  </p>
+                  <input
+                    ref={campaignFileInputRef}
+                    type="file"
+                    accept=".csv, .xlsx, .xls, .ods"
+                    className="hidden"
+                    onChange={handleCampaignFileSelect}
+                  />
+                </div>
+
+                {/* Filtros por Variáveis Dinâmicas da Planilha */}
+                {campaignSpreadsheetColumns.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-foreground flex items-center gap-1">
+                        <Filter className="w-3.5 h-3.5 text-amber-500" />
+                        Filtros por Coluna / Variáveis Identificadas na Planilha
+                      </label>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          setCampaignSpreadsheetRules((prev) => [
+                            ...prev,
+                            { id: String(Date.now()), column: campaignSpreadsheetColumns[0] || "", operator: "equals", value: "" },
+                          ])
+                        }
+                        className="h-7 text-[11px] gap-1"
+                      >
+                        <Plus className="w-3 h-3" /> Adicionar Filtro por Variável
+                      </Button>
+                    </div>
+
+                    {campaignSpreadsheetRules.map((rule, idx) => (
+                      <div key={rule.id} className="flex items-center gap-2 bg-muted/30 p-2 rounded-md border border-border">
+                        <select
+                          value={rule.column}
+                          onChange={(e) => {
+                            const newCol = e.target.value;
+                            setCampaignSpreadsheetRules((prev) =>
+                              prev.map((r, i) => (i === idx ? { ...r, column: newCol } : r))
+                            );
+                          }}
+                          className="h-8 px-2 text-xs rounded border border-input bg-background flex-1"
+                        >
+                          {campaignSpreadsheetColumns.map((col) => (
+                            <option key={col} value={col}>
+                              {col}
+                            </option>
+                          ))}
+                        </select>
+
+                        <select
+                          value={rule.operator}
+                          onChange={(e) => {
+                            const newOp = e.target.value as any;
+                            setCampaignSpreadsheetRules((prev) =>
+                              prev.map((r, i) => (i === idx ? { ...r, operator: newOp } : r))
+                            );
+                          }}
+                          className="h-8 px-2 text-xs rounded border border-input bg-background w-32"
+                        >
+                          <option value="equals">Igual a (=)</option>
+                          <option value="contains">Contém</option>
+                          <option value="gt">Maior que (&gt;)</option>
+                          <option value="lt">Menor que (&lt;)</option>
+                        </select>
+
+                        <Input
+                          placeholder="Valor (ex: Masculino, 5000...)"
+                          value={rule.value}
+                          onChange={(e) => {
+                            const newVal = e.target.value;
+                            setCampaignSpreadsheetRules((prev) =>
+                              prev.map((r, i) => (i === idx ? { ...r, value: newVal } : r))
+                            );
+                          }}
+                          className="h-8 text-xs flex-1"
+                        />
+
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setCampaignSpreadsheetRules((prev) => prev.filter((_, i) => i !== idx))}
+                          className="h-8 w-8 text-rose-500 hover:bg-rose-500/10"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-2.5 text-xs text-amber-700 dark:text-amber-300 flex items-center justify-between">
+                      <span>Contatos Selecionados pela Regra:</span>
+                      <span className="font-bold">{campaignSpreadsheetFilteredRows.length} de {campaignSpreadsheetRows.length}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCampaignWizardOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleProceedToCampaign}
+              className="bg-amber-600 hover:bg-amber-700 text-white gap-2"
+            >
+              <Rocket className="w-4 h-4" />
+              Avançar para Disparos ➔
             </Button>
           </DialogFooter>
         </DialogContent>
