@@ -137,5 +137,27 @@ export async function ensureLeadClientTable(pgClientOrPool, tenantId, schemaType
     throw new Error("LEAD_CLIENT_TABLE_NOT_CREATED");
   }
 
+  await ensureLeadIntelligenceColumns(pgClientOrPool);
+
   return status;
 }
+
+export async function ensureLeadIntelligenceColumns(pgClientOrPool) {
+  if (!pgClientOrPool) return;
+  try {
+    await pgClientOrPool.query(`
+      ALTER TABLE public.leads 
+        ADD COLUMN IF NOT EXISTS tenant_id UUID,
+        ADD COLUMN IF NOT EXISTS phone TEXT,
+        ADD COLUMN IF NOT EXISTS stage TEXT DEFAULT 'cold',
+        ADD COLUMN IF NOT EXISTS temperature TEXT DEFAULT 'warm',
+        ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT ARRAY[]::text[],
+        ADD COLUMN IF NOT EXISTS last_interaction_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS extracted_from_wa BOOLEAN DEFAULT false,
+        ADD COLUMN IF NOT EXISTS raw_chat_summary TEXT;
+    `);
+  } catch (err) {
+    console.warn("[lead-tables] Could not add lead intelligence columns:", err?.message || err);
+  }
+}
+
