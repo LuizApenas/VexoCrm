@@ -111,7 +111,11 @@ export default function BancoDeDados() {
   const navigate = useNavigate();
   const { isAuthenticated, getIdToken } = useAuth();
   const crmClient = useOptionalCrmClient();
-  const clientId = crmClient?.selectedClient?.id || "infinie";
+  // Usa selectedClientId (string, sempre setado pelo seletor de tenant do topo).
+  // Antes usava selectedClient?.id, que fica null quando o objeto ainda não
+  // resolveu na lista, caindo no fallback "infinie" (cliente removido) — o que
+  // fazia instâncias e leads virem vazios nesta página.
+  const clientId = crmClient?.selectedClientId || crmClient?.selectedClient?.id || "geracao-digital";
 
   // Main Data States
   const [leads, setLeads] = useState<LeadIntelligenceItem[]>([]);
