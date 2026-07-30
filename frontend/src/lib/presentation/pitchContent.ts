@@ -138,6 +138,17 @@ export const BENCHMARKS = {
     pedidosOciososRecuperaveisMes: 12, // metade do que a capacidade ociosa comporta
     taxaVpMercado: 0.13,             // referência de VP que o cliente já paga
   },
+  lavanderia: {
+    // Lavanderia self-service: ticket baixo, volume alto, ciclo de ~40 min,
+    // funcionamento longo e 7 dias. Referência conservadora de mercado de uma
+    // unidade em operação — ajustável ao caso real do cliente.
+    ticketCiclo: 15,             // valor médio por ciclo de lavagem
+    ciclosAtualMes: 700,         // volume mensal de referência
+    ciclosMetaMes: 950,          // meta de crescimento típica do segmento
+    // Meio de semana opera a ~50% da capacidade; o fim de semana é o pico. A
+    // folga do meio de semana é onde mora o crescimento recuperável.
+    taxaRecuperavelDoGap: 0.6,
+  },
 } as const;
 
 // Ocupação diluída ao mudar para um ponto maior: o público é o mesmo, o salão
@@ -205,6 +216,19 @@ export function estimateUniformLoss() {
   const mensal = b.pedidosOciososRecuperaveisMes * b.ticketPedido;
   const anual = mensal * 12;
   return { mensal, anual };
+}
+
+// Lavanderia self-service — o ticket é baixo, então o prêmio é volume e
+// frequência: encher a folga do meio de semana e transformar quem lava uma vez
+// numa base que volta no ciclo dela. O ROI é a parte recuperável do gap entre o
+// volume atual e a meta, sob benchmark conservador.
+export function estimateLaundryLoss() {
+  const b = BENCHMARKS.lavanderia;
+  const gap = Math.max(b.ciclosMetaMes - b.ciclosAtualMes, 0);
+  const ciclosRecuperaveisMes = Math.round(gap * b.taxaRecuperavelDoGap);
+  const mensal = ciclosRecuperaveisMes * b.ticketCiclo;
+  const anual = mensal * 12;
+  return { ciclosRecuperaveisMes, mensal, anual };
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,6 +1049,117 @@ export const SEGMENT_GROUPS: Record<string, SegmentGroup> = {
       ];
     },
   },
+
+  lavanderia: {
+    id: "lavanderia",
+    label: "Lavanderias Self-Service",
+    focus: "Encher a folga do meio de semana e criar uma base que volta sozinha (lavanderias self-service).",
+    accent: "#0891b2",
+    buildSlides: ({ companyName }) => {
+      const nome = companyName?.trim() || "sua lavanderia";
+      const { mensal, anual } = estimateLaundryLoss();
+      const b = BENCHMARKS.lavanderia;
+      return [
+        {
+          id: 1,
+          kind: "impact",
+          eyebrow: "APRESENTAÇÃO COMERCIAL",
+          title: "O Fim dos Dias Vazios.",
+          subtitle: `A ${nome} enche o meio de semana e cria uma base que volta sozinha. Mais ciclos por mês, sem depender só do fim de semana.`,
+        },
+        {
+          id: 2,
+          kind: "pain",
+          eyebrow: "A DOR ATUAL",
+          title: "O cliente lava uma vez e some.",
+          body:
+            `Hoje a máquina lava, o cliente vai embora e você não sabe quem ele é, onde mora nem quando volta. ` +
+            `Não existe controle de carteira: cada pessoa que passou pela porta virou um número anônimo. ` +
+            `O fim de semana lota, mas terça, quarta e quinta ficam pela metade, e ninguém chama de volta quem já usou.`,
+        },
+        {
+          id: 3,
+          kind: "implication",
+          eyebrow: "A IMPLICAÇÃO",
+          title: "O crescimento parado na folga da semana.",
+          body:
+            `O ticket é baixo, então o jogo é volume e frequência. Sair de ${b.ciclosAtualMes} para ${b.ciclosMetaMes} ciclos por mês ` +
+            `depende de encher os dias fracos e de fazer o cliente voltar no ciclo dele. Sem uma base cadastrada e sem lembrete, ` +
+            `esse crescimento simplesmente não acontece: a folga do meio de semana passa em branco todo mês.`,
+          metric: {
+            value: `${milhar(anual)}/ano`,
+            caption: "é o faturamento adicional que a folga do meio de semana comporta e hoje fica na mesa",
+          },
+        },
+        {
+          id: 4,
+          kind: "solution",
+          eyebrow: "A SOLUÇÃO",
+          title: "A Máquina de Recorrência.",
+          steps: [
+            "Cadastramos cada cliente já na primeira lavagem: você passa a ter um banco de dados de quem usa a lavanderia, algo que hoje some pela porta.",
+            "Nossa Recepcionista Digital 24h responde o WhatsApp na hora, tira dúvida de horário e preço e traz o cliente pra dentro.",
+            "Campanhas para os dias fracos: enchemos terça, quarta e quinta com quem mora e trabalha perto, quando a capacidade está ociosa.",
+            "Programa de fidelidade no automático: a cada 3 lavagens, 1 secagem grátis, registrado sozinho, pra fazer o cliente voltar mais vezes.",
+            "Lembrete de recorrência por período: quem lava toda semana é chamado de volta no ritmo dele, sem você correr atrás.",
+          ],
+        },
+        {
+          id: 5,
+          kind: "partnership",
+          eyebrow: "A PARCERIA COMPLETA",
+          title: "Duas forças, um só resultado.",
+          subtitle: `A Geração Digital atrai o bairro e enche os dias parados. A Vexo transforma cada lavagem numa base que volta sozinha, no piloto automático. Juntas, tiram a ${nome} da dependência do fim de semana.`,
+          fronts: [
+            {
+              label: "Geração Digital",
+              tag: "Atração & Marca Local",
+              items: [
+                "Sistema de atração de clientes na sua região",
+                "Sua lavanderia achada no Google na hora da necessidade",
+                "Reputação forte: mais avaliações e prova social do bairro",
+                "Campanhas para encher os dias de menor movimento",
+                "Conteúdo que vende praticidade, higiene e tempo livre",
+                "Marca com cara de referência do bairro",
+              ],
+            },
+            {
+              label: "Vexo OS",
+              tag: "Base, Recorrência & Fidelidade",
+              items: [
+                "Banco de dados de cada cliente que usa a lavanderia",
+                "Recepcionista Digital 24h no seu WhatsApp",
+                "Programa de fidelidade automático: 3 lavagens, 1 secagem",
+                "Lembrete de recorrência que traz o cliente de volta no ciclo dele",
+                "Integração com a automação das máquinas pela API",
+              ],
+            },
+          ],
+        },
+        {
+          id: 6,
+          kind: "vision",
+          eyebrow: "VISÃO DE FUTURO",
+          title: "Previsibilidade.",
+          body:
+            `Imagine a ${nome} com o meio de semana movimentado como o fim de semana. Uma base que você conhece pelo nome, ` +
+            `que volta no ciclo certo e ainda indica o vizinho. A máquina roda cheia, e o crescimento deixa de depender da sorte do sábado.`,
+        },
+        {
+          id: 7,
+          kind: "close",
+          eyebrow: "A DECISÃO",
+          title: "O custo da inércia.",
+          body: `Quanto a ${nome} deixa de faturar todo mês com os dias fracos vazios e sem chamar de volta quem já lavou?`,
+          metric: {
+            value: `${brl(mensal)}/mês`,
+            caption: "é o faturamento adicional estimado que a folga do meio de semana comporta e hoje não acontece",
+          },
+          punch: "A pergunta não é quanto custa começar. É quanto custa deixar o meio de semana vazio mais um mês. Cada cliente que lava e some é uma recorrência que nunca aconteceu. A virada começa hoje.",
+        },
+      ];
+    },
+  },
 };
 
 // Mapeamento de segment_id específico -> grupo. Adicione novos ids aqui conforme
@@ -1067,6 +1202,12 @@ const SEGMENT_ID_TO_GROUP: Record<string, string> = {
   uniforme: "uniformes",
   confeccao: "uniformes",
   confeccao_de_uniformes: "uniformes",
+  // Lavanderias self-service
+  lavanderia: "lavanderia",
+  lavanderias: "lavanderia",
+  lavanderia_self_service: "lavanderia",
+  lavanderia_self: "lavanderia",
+  lava_e_seca: "lavanderia",
 };
 
 export const DEFAULT_GROUP_ID = "entretenimento_local";
@@ -1091,6 +1232,11 @@ const GROUP_KEYWORDS: Record<string, string[]> = {
   uniformes: [
     "uniforme", "uniformes", "confeccao", "confecção", "fardamento", "malharia",
     "costura", "camiseta", "dry fit", "esportivo", "sportswear", "têxtil", "textil",
+  ],
+  lavanderia: [
+    "lavanderia", "lavanderias", "lava e seca", "lava-e-seca", "lavagem",
+    "lavar roupa", "secadora", "self-service", "self service", "selfservice",
+    "laundromat", "lavabem", "lava jato de roupa",
   ],
   otica: [
     "otica", "ótica", "oticas", "óticas", "optica", "óptica", "oculos", "óculos",
