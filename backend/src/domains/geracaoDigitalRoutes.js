@@ -35,6 +35,7 @@ const somaRecorrente = (items) =>
 export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, requireInternalPageAccess) {
   // Inicialização defensiva de todas as tabelas e seeds de Geração Digital no PostgreSQL
   async function ensureGdTablesAndSeeds(dbPool) {
+    try {
       // 0. Core CRM Tables (leads_clients, lead_client_n8n_settings, leads, lead_conversations, lead_messages)
       await dbPool.query(`
         CREATE TABLE IF NOT EXISTS public.leads_clients (
