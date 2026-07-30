@@ -966,12 +966,14 @@ export function registerLeadsRoutes(app, deps) {
       });
 
       let extractedCount = 0;
+      let insertErrors = 0;
       let buyers = 0;
       let openBudgets = 0;
       let coldLeads = 0;
       let hotLeads = 0;
 
       const topChats = isFinite(chatLimit) ? validChats.slice(0, chatLimit) : validChats;
+      console.info(`[wa-extract] client=${clientId} instancia=${instanceName} chats=${chats.length} validos=${validChats.length} processando=${topChats.length}`);
 
       for (const chat of topChats) {
         const remoteJid = chat.id || chat.remoteJid;
@@ -1029,32 +1031,47 @@ export function registerLeadsRoutes(app, deps) {
         if (classification.stage === 'cold') coldLeads++;
         if (classification.temperature === 'hot') hotLeads++;
 
-        const upsertPayload = {
-          client_id: clientId,
-          telefone: formattedPhone,
-          phone: formattedPhone,
-          nome: name,
-          stage: classification.stage,
-          temperature: classification.temperature,
-          tags: classification.tags,
-          extracted_from_wa: true,
-          raw_chat_summary: classification.summary,
-          last_interaction_at: lastInteractionAt || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-
-        const { error: upsertErr } = await supabase
-          .from("leads")
-          .upsert(upsertPayload, { onConflict: "client_id,telefone" });
-
-        if (!upsertErr) {
+        // UPSERT via SQL cru (o shim supabase engolia o erro em silêncio, e a
+        // extração retornava 0 sem pista). ON CONFLICT (client_id, telefone)
+        // deduplica: rodar a extração várias vezes atualiza em vez de duplicar.
+        try {
+          await pgDatabasePool.query(
+            `INSERT INTO public.leads
+               (client_id, telefone, phone, nome, stage, temperature, tags, extracted_from_wa, raw_chat_summary, last_interaction_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, true, $8, $9, now())
+             ON CONFLICT (client_id, telefone) DO UPDATE SET
+               phone = EXCLUDED.phone,
+               nome = COALESCE(NULLIF(EXCLUDED.nome, ''), public.leads.nome),
+               stage = EXCLUDED.stage,
+               temperature = EXCLUDED.temperature,
+               tags = EXCLUDED.tags,
+               extracted_from_wa = true,
+               raw_chat_summary = EXCLUDED.raw_chat_summary,
+               last_interaction_at = EXCLUDED.last_interaction_at,
+               updated_at = now()`,
+            [
+              clientId,
+              formattedPhone,
+              formattedPhone,
+              name,
+              classification.stage,
+              classification.temperature,
+              JSON.stringify(classification.tags || []),
+              classification.summary,
+              lastInteractionAt || new Date().toISOString(),
+            ]
+          );
           extractedCount++;
+        } catch (insErr) {
+          insertErrors++;
+          if (insertErrors <= 3) console.warn(`[wa-extract] upsert falhou p/ ${formattedPhone}: ${insErr.message}`);
         }
       }
 
       res.json({
         success: true,
         extractedCount,
+        insertErrors,
         totalChatsFound: validChats.length,
         summary: {
           buyers,
