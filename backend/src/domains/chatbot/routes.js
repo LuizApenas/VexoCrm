@@ -261,7 +261,7 @@ export function registerChatbotRoutes(app, deps) {
 
       const result = await pgDatabasePool.query(queryText, queryParamsWithPaging);
 
-      const items = result.rows.map((row) => {
+      let items = result.rows.map((row) => {
         const timestampVal = row.delivered_at ? Math.floor(new Date(row.delivered_at).getTime() / 1000) : null;
         return {
           id: row.phone_number,
@@ -284,11 +284,48 @@ export function registerChatbotRoutes(app, deps) {
         };
       });
 
+      if (items.length === 0) {
+        const { data: fallbackLeads } = await supabase
+          .from("leads")
+          .select("id, nome, telefone, phone, raw_chat_summary, last_interaction_at, created_at")
+          .eq("client_id", clientId)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + limit - 1);
+
+        if (Array.isArray(fallbackLeads) && fallbackLeads.length > 0) {
+          items = fallbackLeads.map((l) => {
+            const phoneNum = l.phone || l.telefone || "";
+            const ts = l.last_interaction_at
+              ? Math.floor(new Date(l.last_interaction_at).getTime() / 1000)
+              : Math.floor(new Date(l.created_at).getTime() / 1000);
+            return {
+              id: phoneNum,
+              name: l.nome || phoneNum,
+              isGroup: false,
+              unreadCount: 0,
+              timestamp: ts,
+              archived: false,
+              pinned: false,
+              muted: false,
+              lastMessage: {
+                id: null,
+                body: l.raw_chat_summary || "Contato cadastrado na base de leads",
+                fromMe: false,
+                timestamp: ts,
+                type: "chat",
+              },
+              leadOrigin: "leads",
+              sourceCampaignId: null,
+            };
+          });
+        }
+      }
+
       res.json({
         items,
-        total,
+        total: total || items.length,
         nextOffset: offset + items.length,
-        hasMore: offset + items.length < total,
+        hasMore: offset + items.length < (total || items.length),
       });
     } catch (error) {
       console.error("whatsapp database chats query error:", error);
@@ -335,7 +372,7 @@ export function registerChatbotRoutes(app, deps) {
       `;
       const result = await pgDatabasePool.query(queryText, [clientId, cleanPhone, limit]);
 
-      const items = result.rows.map((row) => {
+      let items = result.rows.map((row) => {
         const timestampVal = row.delivered_at ? Math.floor(new Date(row.delivered_at).getTime() / 1000) : null;
         return {
           id: String(row.id),
@@ -349,6 +386,35 @@ export function registerChatbotRoutes(app, deps) {
           hasMedia: false,
         };
       });
+
+      if (items.length === 0) {
+        const { data: leadData } = await supabase
+          .from("leads")
+          .select("raw_chat_summary, created_at, last_interaction_at, nome")
+          .eq("client_id", clientId)
+          .or(`telefone.eq.${cleanPhone},phone.eq.${cleanPhone}`)
+          .maybeSingle();
+
+        if (leadData) {
+          const ts = leadData.last_interaction_at
+            ? Math.floor(new Date(leadData.last_interaction_at).getTime() / 1000)
+            : Math.floor(new Date(leadData.created_at).getTime() / 1000);
+
+          items = [
+            {
+              id: "msg-summary-1",
+              body: leadData.raw_chat_summary || `Conversa registrada com ${leadData.nome || cleanPhone}`,
+              from: cleanPhone,
+              to: "me",
+              author: null,
+              fromMe: false,
+              timestamp: ts,
+              type: "chat",
+              hasMedia: false,
+            },
+          ];
+        }
+      }
 
       res.json({ items: items.reverse() });
     } catch (error) {

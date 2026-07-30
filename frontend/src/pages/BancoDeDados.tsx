@@ -150,6 +150,7 @@ export default function BancoDeDados() {
   // Import Modal State (Excel .xlsx/.xls + CSV)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importTagInput, setImportTagInput] = useState<string>("");
   const [importParsedRows, setImportParsedRows] = useState<Record<string, unknown>[]>([]);
   const [importSanitizePreview, setImportSanitizePreview] = useState<{ validCount: number; invalidCount: number }>({
     validCount: 0,
@@ -320,6 +321,10 @@ export default function BancoDeDados() {
     if (!file) return;
     setImportFile(file);
 
+    const cleanFileName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const autoTag = `#Imp-${cleanFileName}`;
+    setImportTagInput(autoTag);
+
     try {
       const rows = await parseSpreadsheetFile(file);
       const mapping = detectSpreadsheetColumns(rows);
@@ -360,13 +365,18 @@ export default function BancoDeDados() {
     setIsUploadingImport(true);
     try {
       const token = await getIdToken();
+      const importTags = importTagInput
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+
       const res = await fetch(`${API_BASE_URL}/api/leads/import-csv`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ clientId, rows: importParsedRows }),
+        body: JSON.stringify({ clientId, rows: importParsedRows, importTags }),
       });
 
       if (!res.ok) {
@@ -376,7 +386,7 @@ export default function BancoDeDados() {
 
       const data = await res.json();
       toast.success("Planilha higienizada e importada com sucesso! 🎉", {
-        description: `${data.importedCount || 0} leads inseridos na base no padrão +55 E.164.`,
+        description: `${data.importedCount || 0} leads inseridos com a tag "${importTagInput}".`,
       });
 
       setIsImportModalOpen(false);
@@ -1366,11 +1376,11 @@ export default function BancoDeDados() {
                 className="w-full h-9 px-3 mt-1 rounded-md border border-input bg-background text-xs"
               >
                 {evolutionInstances.length === 0 ? (
-                  <option value="">Instância Padrão Evolution</option>
+                  <option value="">Buscar instâncias ativas do tenant...</option>
                 ) : (
                   evolutionInstances.map((inst) => (
                     <option key={inst.id} value={inst.id}>
-                      {inst.name} {inst.is_default ? "(Padrão)" : ""}
+                      {inst.name} {inst.is_default ? "(Padrão)" : ""} ({inst.active !== false ? "Conectado" : "Desconectado"})
                     </option>
                   ))
                 )}
@@ -1379,17 +1389,22 @@ export default function BancoDeDados() {
 
             <div>
               <label className="text-xs font-semibold text-foreground">Limite de Conversas para Analisar</label>
-              <div className="grid grid-cols-3 gap-2 mt-1.5">
-                {[50, 100, 300].map((limitOption) => (
+              <div className="grid grid-cols-4 gap-1.5 mt-1.5">
+                {[
+                  { value: 50, label: "50" },
+                  { value: 100, label: "100" },
+                  { value: 500, label: "500" },
+                  { value: "all", label: "Ilimitado" },
+                ].map((opt) => (
                   <Button
-                    key={limitOption}
+                    key={String(opt.value)}
                     type="button"
-                    variant={waChatLimit === limitOption ? "default" : "outline"}
+                    variant={waChatLimit === (opt.value as any) ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setWaChatLimit(limitOption)}
+                    onClick={() => setWaChatLimit(opt.value as any)}
                     className="text-xs"
                   >
-                    {limitOption} chats
+                    {opt.label} {opt.value !== "all" ? "chats" : ""}
                   </Button>
                 ))}
               </div>
@@ -1454,15 +1469,32 @@ export default function BancoDeDados() {
             </div>
 
             {importFile && (
-              <div className="bg-muted/40 border border-border rounded-md p-3 text-xs space-y-1">
-                <p className="font-medium text-emerald-600 dark:text-emerald-400">
-                  ✓ {importSanitizePreview.validCount} contatos validados no padrão +55...
-                </p>
-                {importSanitizePreview.invalidCount > 0 && (
-                  <p className="text-amber-600 dark:text-amber-400">
-                    ⚠ {importSanitizePreview.invalidCount} registros sem fone válido (serão ignorados).
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-foreground flex items-center gap-1">
+                    <TagIcon className="w-3.5 h-3.5 text-indigo-500" /> Tag de Origem / Tags Personalizadas
+                  </label>
+                  <Input
+                    placeholder="Ex: #Imp-Lista_Clinica, Vendas_Junho"
+                    value={importTagInput}
+                    onChange={(e) => setImportTagInput(e.target.value)}
+                    className="text-xs mt-1"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Esta tag será vinculada a todos os contatos desta importação para permitir filtros rápidos.
                   </p>
-                )}
+                </div>
+
+                <div className="bg-muted/40 border border-border rounded-md p-3 text-xs space-y-1">
+                  <p className="font-medium text-emerald-600 dark:text-emerald-400">
+                    ✓ {importSanitizePreview.validCount} contatos validados no padrão +55...
+                  </p>
+                  {importSanitizePreview.invalidCount > 0 && (
+                    <p className="text-amber-600 dark:text-amber-400">
+                      ⚠ {importSanitizePreview.invalidCount} registros sem fone válido (serão ignorados).
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>

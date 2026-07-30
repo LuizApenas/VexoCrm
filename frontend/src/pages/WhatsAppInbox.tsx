@@ -151,9 +151,9 @@ export default function WhatsAppInbox({
     return map;
   }, [campaignsQuery.data]);
 
-  const canLoadInbox = !!clientId && hasConnectedInstances && !tenantsLoading;
-  const chatsQuery = useWhatsAppChats(clientId, !!canLoadInbox);
-  const messagesQuery = useWhatsAppMessages(clientId, selectedChatId, !!canLoadInbox);
+  const canLoadInbox = Boolean(clientId);
+  const chatsQuery = useWhatsAppChats(clientId, canLoadInbox);
+  const messagesQuery = useWhatsAppMessages(clientId, selectedChatId, canLoadInbox);
   const sendMessage = useSendWhatsAppMessage(clientId, selectedChatId);
 
   const chats = chatsQuery.items ?? [];

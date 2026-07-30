@@ -900,15 +900,23 @@ export function registerLeadsRoutes(app, deps) {
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
     if (!clientId) return;
 
-    const chatLimit = Math.min(500, Math.max(10, parseInt(req.body?.chatLimit || req.body?.limit || "100", 10)));
+    const rawLimit = req.body?.chatLimit || req.body?.limit;
+    const isUnlimited = rawLimit === "all" || rawLimit === "unlimited" || rawLimit === 0;
+    const chatLimit = isUnlimited ? Infinity : Math.max(10, parseInt(rawLimit || "100", 10));
+
     const explicitInstanceId = normalizeString(req.body?.instanceId);
+    const explicitInstanceName = normalizeString(req.body?.instanceName);
 
     try {
       let instance = null;
+      const allInstances = await getLeadClientEvolutionInstances(clientId);
+
       if (explicitInstanceId) {
-        const allInstances = await getLeadClientEvolutionInstances(clientId);
         instance = allInstances.find((i) => i.id === explicitInstanceId) || null;
+      } else if (explicitInstanceName) {
+        instance = allInstances.find((i) => i.name === explicitInstanceName) || null;
       }
+
       if (!instance) {
         instance = await getDefaultLeadClientEvolutionInstance(clientId);
       }
@@ -921,7 +929,7 @@ export function registerLeadsRoutes(app, deps) {
       const urlObj = new URL(instance.dispatch_webhook_url);
       const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
       const parts = urlObj.pathname.split("/");
-      const instanceName = parts[parts.length - 1];
+      const instanceName = explicitInstanceName || parts[parts.length - 1];
 
       if (!instanceName) {
         sendError(res, 400, "INVALID_INSTANCE", "Instância do WhatsApp inválida.");
@@ -958,7 +966,7 @@ export function registerLeadsRoutes(app, deps) {
       let coldLeads = 0;
       let hotLeads = 0;
 
-      const topChats = validChats.slice(0, chatLimit);
+      const topChats = isFinite(chatLimit) ? validChats.slice(0, chatLimit) : validChats;
 
       for (const chat of topChats) {
         const remoteJid = chat.id || chat.remoteJid;
@@ -1048,7 +1056,7 @@ export function registerLeadsRoutes(app, deps) {
     }
   });
 
-  // Importação simplificada via CSV
+  // Importação simplificada via CSV / Excel com Suporte a Tags de Origem
   app.post("/api/leads/import-csv", requireFirebaseAuth, async (req, res) => {
     if (!ensureDb(res)) return;
 
@@ -1061,6 +1069,13 @@ export function registerLeadsRoutes(app, deps) {
       sendError(res, 400, "INVALID_BODY", "Nenhuma linha enviada para importação");
       return;
     }
+
+    const rawImportTags = req.body?.importTags || req.body?.tags || [];
+    const importTagsArray = Array.isArray(rawImportTags)
+      ? rawImportTags.map((t) => String(t).trim()).filter(Boolean)
+      : typeof rawImportTags === "string"
+      ? rawImportTags.split(",").map((t) => t.trim()).filter(Boolean)
+      : [];
 
     try {
       let importedCount = 0;
@@ -1078,12 +1093,14 @@ export function registerLeadsRoutes(app, deps) {
         const tempInput = normalizeString(row.temperature || row.temperatura)?.toLowerCase();
         const validTemp = ['hot', 'warm', 'cold'].includes(tempInput) ? tempInput : 'warm';
 
-        const rawTags = row.tags || row.tag || [];
-        const tags = Array.isArray(rawTags)
-          ? rawTags.map(t => String(t).trim())
-          : typeof rawTags === "string"
-            ? rawTags.split(",").map(t => t.trim()).filter(Boolean)
-            : ["Importado CSV"];
+        const rowTags = row.tags || row.tag || [];
+        const parsedRowTags = Array.isArray(rowTags)
+          ? rowTags.map(t => String(t).trim())
+          : typeof rowTags === "string"
+            ? rowTags.split(",").map(t => t.trim()).filter(Boolean)
+            : [];
+
+        const combinedTags = Array.from(new Set([...parsedRowTags, ...importTagsArray]));
 
         parsedLeads.push({
           client_id: clientId,
@@ -1092,7 +1109,7 @@ export function registerLeadsRoutes(app, deps) {
           nome: name,
           stage: validStage,
           temperature: validTemp,
-          tags: tags.length > 0 ? tags : ["Importado CSV"],
+          tags: combinedTags.length > 0 ? combinedTags : ["Importado"],
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
