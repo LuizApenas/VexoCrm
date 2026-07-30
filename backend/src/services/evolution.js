@@ -286,9 +286,20 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
         }
 
         const msgsData = await msgsResponse.json();
-        const messages = Array.isArray(msgsData) ? msgsData : (msgsData?.records || msgsData?.messages || []);
+        // Evolution v2: findMessages devolve { messages: { records: [...] } }.
+        // O acesso antigo (msgsData?.messages) pegava o OBJETO paginado, não o
+        // array, e o `if (!Array.isArray) continue` pulava tudo (0 inseridas).
+        const messages = Array.isArray(msgsData)
+          ? msgsData
+          : Array.isArray(msgsData?.messages?.records)
+            ? msgsData.messages.records
+            : Array.isArray(msgsData?.records)
+              ? msgsData.records
+              : Array.isArray(msgsData?.messages)
+                ? msgsData.messages
+                : [];
 
-        if (!Array.isArray(messages)) continue;
+        if (!Array.isArray(messages) || messages.length === 0) continue;
 
         // Resolve lead details once per chat
         const leadRes = await pgDatabasePool.query(
