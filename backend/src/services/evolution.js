@@ -584,12 +584,21 @@ export async function upsertLeadClientEvolutionInstance(clientId, input, authAcc
 
     await client.query("COMMIT");
 
-    // Configure the webhook remotely on Evolution API
+    // Configure the webhook remotely on Evolution API.
+    // A assinatura é (clientId, dispatchWebhookUrl, dispatchWebhookToken, enabled) e a
+    // função deriva o instanceName da própria URL. A chamada anterior passava
+    // (clientId, instanceName, webhookEnabled) — argumentos trocados: o nome da
+    // instância caía no lugar da URL e `new URL("<nome>")` estourava "Invalid URL".
     if (result.rows[0]?.dispatch_webhook_url) {
       const parts = result.rows[0].dispatch_webhook_url.split("/");
       const instanceName = parts[parts.length - 1];
       if (instanceName) {
-        configureEvolutionInstanceWebhook(clientId, instanceName, webhookEnabled).catch((err) => {
+        configureEvolutionInstanceWebhook(
+          clientId,
+          result.rows[0].dispatch_webhook_url,
+          result.rows[0].dispatch_webhook_token,
+          result.rows[0].webhook_enabled
+        ).catch((err) => {
           console.error(`[evolution-webhook] Failed to configure remote webhook for ${instanceName}:`, err.message);
         });
       }
