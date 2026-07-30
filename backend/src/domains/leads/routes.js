@@ -16,6 +16,7 @@ import { hasAccessPermission } from "../../accessGuards.js";
 import {
   getDefaultLeadClientEvolutionInstance,
   getEvolutionAdminConfig,
+  getLeadClientEvolutionInstances,
 } from "../../services/evolution.js";
 
 function sanitizePhoneE164(phoneInput) {
