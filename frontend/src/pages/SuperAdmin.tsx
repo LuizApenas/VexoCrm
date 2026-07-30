@@ -457,12 +457,12 @@ export default function SuperAdmin() {
                   try {
                     toast.info("Iniciando migração de dados do banco antigo...");
                     const headers = await getAuthHeaders();
+                    // Sem credencial hardcoded no frontend (vaza no bundle do navegador).
+                    // A origem da migração vem de LEGACY_DB_URL no servidor, se configurada.
                     const res = await fetch("/api/superadmin/migrate-from-old-db", {
                       method: "POST",
                       headers,
-                      body: JSON.stringify({
-                        sourceUrl: "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable"
-                      })
+                      body: JSON.stringify({})
                     });
                     const data = await res.json();
                     if (res.ok && data.success) {

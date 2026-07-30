@@ -109,11 +109,11 @@ export function registerSuperAdminRoutes(app, deps) {
 
   // POST /api/superadmin/migrate-from-old-db -> Importar tabelas e registros do banco de origem
   app.post("/api/superadmin/migrate-from-old-db", requireFirebaseAuth, requireSuperAdminGuard, async (req, res) => {
+    // Origem vem do corpo da requisição ou de env (LEGACY_DB_URL). Nunca hardcoded:
+    // credencial em código vaza no repositório.
     const candidateUrls = [
       req.body?.sourceUrl,
-      "postgresql://postgres:et3gogmndgvgopdtyjxs@db-vexo:5432/vexo?sslmode=disable",
-      "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable",
-      "postgresql://postgres:et3gogmndgvgopdtyjxs@187.77.52.167:5432/vexo?sslmode=disable"
+      process.env.LEGACY_DB_URL,
     ].filter(Boolean);
 
     const targetUrl = process.env.DATABASE_URL;

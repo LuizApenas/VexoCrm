@@ -365,54 +365,10 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       `);
       await dbPool.query(`ALTER TABLE public.gd_implementation_briefings DROP CONSTRAINT IF EXISTS gd_implementation_briefings_tenant_id_fkey`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
-
-      // 11. Auto-migração transparente em background do banco de origem (db-vexo)
-      setImmediate(async () => {
-        const candidateUrls = [
-          "postgresql://postgres:et3gogmndgvgopdtyjxs@db-vexo:5432/vexo?sslmode=disable",
-          "postgresql://postgres:et3gogmndgvgopdtyjxs@vexo_db-vexo:5432/vexo?sslmode=disable",
-          "postgresql://postgres:et3gogmndgvgopdtyjxs@187.77.52.167:5432/vexo?sslmode=disable"
-        ];
-        let sourcePool = null;
-        for (const url of candidateUrls) {
-          try {
-            const testPool = new pg.Pool({ connectionString: url, connectionTimeoutMillis: 2000 });
-            await testPool.query("SELECT 1");
-            sourcePool = testPool;
-            console.log(`[ensureGdTablesAndSeeds] ✅ Conectado ao banco de origem legado via ${url.replace(/:[^:@]+@/, ":***@")}`);
-            break;
-          } catch (e) {}
-        }
-
-        if (!sourcePool) {
-          return;
-        }
-
-        try {
-          const tablesToSync = ["geracao_digital_briefings", "gd_proposals", "gd_contracts", "gd_products", "gd_presentations", "gd_packages", "gd_payment_terms", "gd_segments", "campaigns", "leads"];
-          for (const tableName of tablesToSync) {
-            try {
-              const srcRows = await sourcePool.query(`SELECT * FROM public."${tableName}"`).then((r) => r.rows).catch(() => []);
-              if (srcRows.length > 0) {
-                for (const row of srcRows) {
-                  const keys = Object.keys(row);
-                  const cols = keys.map((k) => `"${k}"`).join(", ");
-                  const placeholders = keys.map((_, idx) => `$${idx + 1}`).join(", ");
-                  const values = keys.map((k) => row[k]);
-                  await dbPool.query(
-                    `INSERT INTO public."${tableName}" (${cols}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
-                    values
-                  ).catch(() => {});
-                }
-              }
-            } catch (e) {}
-          }
-        } catch (migErr) {
-          console.warn("[ensureGdTablesAndSeeds] Aviso na migração de background:", migErr.message);
-        } finally {
-          await sourcePool.end().catch(() => {});
-        }
-      });
+      // Bloco de auto-migração de background REMOVIDO: a migração já foi feita
+      // manualmente e o código anterior embutia a senha do banco em texto puro
+      // (3 connection strings hardcoded). Migração é operação pontual, não deve
+      // rodar a cada boot nem carregar segredo no fonte.
     } catch (err) {
       console.warn("[ensureGdTablesAndSeeds] Aviso ao verificar tabelas GD:", err.message);
     }
