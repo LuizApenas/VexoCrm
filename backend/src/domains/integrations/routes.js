@@ -1016,19 +1016,35 @@ export function registerIntegrationsRoutes(app, deps) {
       try {
         if (!(await ensureTenantExistsForEvolutionRoute(tenantId, res))) return;
 
-        const { data, error } = await supabase
-          .from("lead_client_evolution_instances")
-          .select("id, name, dispatch_webhook_url")
-          .eq("id", instanceId)
-          .eq("client_id", tenantId)
-          .single();
+        let instanceRecord = null;
+        if (pgDatabasePool) {
+          try {
+            const { rows } = await pgDatabasePool.query(
+              `SELECT id, name, dispatch_webhook_url, chip_state FROM public.lead_client_evolution_instances WHERE id = $1 AND client_id = $2`,
+              [instanceId, tenantId]
+            );
+            if (rows.length > 0) instanceRecord = rows[0];
+          } catch (e) {
+            console.warn("[evolution-status] Postgres query warning:", e.message);
+          }
+        }
 
-        if (error || !data) {
+        if (!instanceRecord && supabase) {
+          const { data } = await supabase
+            .from("lead_client_evolution_instances")
+            .select("id, name, dispatch_webhook_url, chip_state")
+            .eq("id", instanceId)
+            .eq("client_id", tenantId)
+            .maybeSingle();
+          if (data) instanceRecord = data;
+        }
+
+        if (!instanceRecord) {
           sendError(res, 404, "EVOLUTION_INSTANCE_NOT_FOUND", "Evolution instance not found");
           return;
         }
 
-        const instanceName = getEvolutionInstanceNameFromDispatchUrl(data.dispatch_webhook_url) || data.name;
+        const instanceName = getEvolutionInstanceNameFromDispatchUrl(instanceRecord.dispatch_webhook_url) || instanceRecord.name;
         if (!instanceName) {
            res.json({ connected: false });
            return;
@@ -1040,36 +1056,72 @@ export function registerIntegrationsRoutes(app, deps) {
           return;
         }
 
-        const response = await fetch(`${config.baseUrl}/instance/fetchInstances?instanceName=${encodeURIComponent(instanceName)}`, {
-          method: "GET",
-          headers: { apikey: config.apiKey },
-        });
+        let connected = false;
+        let profileName = null;
+        let ownerJid = null;
 
-        if (!response.ok) {
-           res.json({ connected: false });
-           return;
-        }
-        
-        const payloadList = await response.json();
-        const payload = Array.isArray(payloadList) ? payloadList[0] : payloadList;
-        
-        if (!payload) {
-           res.json({ connected: false });
-           return;
+        try {
+          const response = await fetch(`${config.baseUrl}/instance/fetchInstances?instanceName=${encodeURIComponent(instanceName)}`, {
+            method: "GET",
+            headers: { apikey: config.apiKey },
+          });
+
+          if (response.ok) {
+            const payloadList = await response.json();
+            const payload = Array.isArray(payloadList) ? payloadList.find(p => p.name === instanceName || p.instance?.instanceName === instanceName) || payloadList[0] : payloadList;
+            if (payload) {
+              const st1 = (payload?.connectionStatus || "").toLowerCase();
+              const st2 = (payload?.instance?.state || "").toLowerCase();
+              const st3 = (payload?.state || "").toLowerCase();
+              const st4 = (payload?.instance?.status || "").toLowerCase();
+              connected = ["open", "connected"].some(s => [st1, st2, st3, st4].includes(s));
+              profileName = payload?.profileName || payload?.instance?.profileName || null;
+              ownerJid = payload?.ownerJid || payload?.instance?.ownerJid || null;
+            }
+          }
+        } catch (err) {
+          console.warn(`[evolution-status] fetchInstances error for ${instanceName}:`, err.message);
         }
 
-        console.info(`[evolution] status check for ${instanceName}:`, JSON.stringify(payload));
-        const st1 = (payload?.connectionStatus || "").toLowerCase();
-        const st2 = (payload?.instance?.state || "").toLowerCase();
-        const st3 = (payload?.state || "").toLowerCase();
-        const st4 = (payload?.instance?.status || "").toLowerCase();
-        
-        const connected = ["open", "connected"].some(s => [st1, st2, st3, st4].includes(s));
-        
+        if (!connected) {
+          try {
+            const connResponse = await fetch(`${config.baseUrl}/instance/connectionState/${encodeURIComponent(instanceName)}`, {
+              method: "GET",
+              headers: { apikey: config.apiKey },
+            });
+            if (connResponse.ok) {
+              const connData = await connResponse.json();
+              const state = (connData?.instance?.state || connData?.state || connData?.status || "").toLowerCase();
+              if (["open", "connected"].includes(state)) {
+                connected = true;
+              }
+            }
+          } catch (connErr) {
+            console.warn(`[evolution-status] connectionState error for ${instanceName}:`, connErr.message);
+          }
+        }
+
+        if (connected) {
+          if (pgDatabasePool) {
+            await pgDatabasePool.query(
+              `UPDATE public.lead_client_evolution_instances SET chip_state = 'open', updated_at = now() WHERE id = $1`,
+              [instanceId]
+            ).catch(() => {});
+          }
+          if (supabase) {
+            await supabase
+              .from("lead_client_evolution_instances")
+              .update({ chip_state: "open" })
+              .eq("id", instanceId)
+              .catch(() => {});
+          }
+        }
+
         res.json({
           connected,
-          profileName: payload?.profileName || payload?.instance?.profileName || null,
-          ownerJid: payload?.ownerJid || payload?.instance?.ownerJid || null,
+          profileName,
+          ownerJid,
+          instanceName,
         });
       } catch (error) {
         console.error("Evolution instance status fetch error:", error);
