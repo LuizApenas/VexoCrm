@@ -2,6 +2,8 @@
 
 Este arquivo é lido em TODA sessão. São regras de comportamento que valem sempre, independente da etapa. Mantê-lo curto: cada regra aqui nasceu de um erro real e evita um dano irreversível. Não inflar com preferências de estilo.
 
+> ⚠️ **LEIA ANTES DE EDITAR CÓDIGO/BANCO/DEPLOY:** [DIRETRIZES-IA.md](DIRETRIZES-IA.md) — regras obrigatórias (não vazar segredo, `node --check` antes de commit, verificar qual banco/backend está vivo, não poluir código, corrigir causa e não sintoma). E [INFRA.md](INFRA.md) — topologia e runbooks. Nasceram de incidentes que derrubaram a produção.
+
 ## 1. Diff antes de descartar — NUNCA jogue trabalho fora sem comparar
 
 Antes de descartar, sobrescrever ou ignorar QUALQUER branch, arquivo ou trabalho (seu, do Conrado ou do Luiz), faça primeiro o diff/auditoria e mostre o que tem dentro, com evidência (arquivo:linha). Trabalho dado como "perdido" já foi resgatado intacto mais de uma vez neste projeto. Comparar é barato; refazer é caro.
