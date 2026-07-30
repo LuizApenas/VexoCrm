@@ -46,8 +46,10 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
 
   const n8n = client?.n8n_settings;
   const [enabled, setEnabled] = useState(n8n?.chatbot_enabled ?? false);
-  const [model, setModel] = useState(n8n?.chatbot_model ?? "outlier");
+  const [model, setModel] = useState(n8n?.chatbot_model ?? "generico");
   const [llmModel, setLlmModel] = useState(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
+  const [agentName, setAgentName] = useState(n8n?.agent_name ?? "");
+  const [savingAgentName, setSavingAgentName] = useState(false);
   const [sdrNumber, setSdrNumber] = useState(n8n?.sdr_whatsapp_number ?? "");
   const [savingSdr, setSavingSdr] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -55,8 +57,9 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
 
   useEffect(() => {
     setEnabled(n8n?.chatbot_enabled ?? false);
-    setModel(n8n?.chatbot_model ?? "outlier");
+    setModel(n8n?.chatbot_model ?? "generico");
     setLlmModel(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
+    setAgentName(n8n?.agent_name ?? "");
     setSdrNumber(n8n?.sdr_whatsapp_number ?? "");
   }, [clientId, n8n]);
 
@@ -64,10 +67,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const evolutionUrl = n8n?.dispatch_webhook_url ?? null;
   const hasEvolution = !!evolutionUrl;
 
-  const defaultBuiltins = [
-    { template_key: "outlier", display_name: "Outlier Consórcios", agent_name: "Áureo" },
-    { template_key: "infinie", display_name: "Infinie Energia Solar", agent_name: "Lara" },
-  ];
+  const defaultBuiltins: any[] = [];
 
   const availableBuiltins = builtinModels.length > 0 ? builtinModels : defaultBuiltins;
 
@@ -83,7 +83,19 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
       toast({ title: value ? "Chatbot ativado" : "Chatbot desativado" });
     } catch {
       setEnabled(!value);
-      toast({ title: "Erro ao salvar", variant: "destructive" });
+      toast({ title: "Erro ao salvar status do chatbot", variant: "destructive" });
+    }
+  }
+
+  async function handleSaveAgentName() {
+    setSavingAgentName(true);
+    try {
+      await updateSettings.mutateAsync({ tenantId: clientId, agentName: agentName || null });
+      toast({ title: "Nome do Agente salvo com sucesso" });
+    } catch {
+      toast({ title: "Erro ao salvar nome do agente", variant: "destructive" });
+    } finally {
+      setSavingAgentName(false);
     }
   }
 
@@ -119,24 +131,26 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
       await updateSettings.mutateAsync({ tenantId: clientId, sdrWhatsappNumber: sdrNumber || null });
       toast({ title: "Número SDR salvo" });
     } catch {
-      toast({ title: "Erro ao salvar", variant: "destructive" });
+      toast({ title: "Erro ao salvar número SDR", variant: "destructive" });
     } finally {
       setSavingSdr(false);
     }
   }
 
-  async function handleTest() {
+  async function handleTestChatbot() {
     setTesting(true);
     setTestResult(null);
     try {
       const token = await getIdToken();
-      const res = await fetchApi(`/api/hardcoded-chat-webhook?clientId=${encodeURIComponent(clientId)}`, {
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetchApi(`/api/chatbot-ai/test-direct`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ phone: "5511999999999", message: "Olá" }),
+        headers,
+        body: JSON.stringify({ clientId, message: "Olá, teste de conexão do chatbot" }),
       });
       if (res.ok) {
-        const data = await readApiJson<{ chatbotResponse?: { message?: string } }>(res, "chatbot_test");
+        const data = await res.json();
         setTestResult(data?.chatbotResponse?.message ?? "Conexão OK — sem resposta retornada");
       } else {
         const err = await readApiErrorMessage(res, "Erro");
@@ -185,34 +199,48 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
             </div>
           )}
 
-          {/* Persona Template */}
+          {/* Nome do Agente (Persona Editável) */}
           {canEdit && (
             <div className="space-y-1.5">
               <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-indigo-500" /> Persona / Template do Chatbot
+                <Sparkles className="h-3.5 w-3.5 text-indigo-500" /> Nome do Agente de IA (Persona)
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value)}
+                  placeholder="ex: Assistente Vexo, Sofia, Consultor IA..."
+                  className="h-8 text-xs bg-white dark:bg-slate-900"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSaveAgentName}
+                  disabled={savingAgentName || updateSettings.isPending}
+                  className="h-8 text-xs font-bold shrink-0"
+                >
+                  Salvar Nome
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Template de Modelo Personalizado (Se houver modelos cadastrados) */}
+          {canEdit && allModels.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                Template Base de Instruções
               </Label>
               <Select value={model} onValueChange={handleModelChange} disabled={updateSettings.isPending}>
                 <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900">
                   <SelectValue placeholder="Selecione um template..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableBuiltins.map((m) => (
+                  {allModels.map((m) => (
                     <SelectItem key={m.template_key} value={m.template_key} className="text-xs">
-                      {m.agent_name} — {m.display_name}
+                      {m.agent_name || m.display_name} — {m.display_name}
                     </SelectItem>
                   ))}
-                  {customModels.length > 0 && (
-                    <>
-                      <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                        Personalizados
-                      </div>
-                      {customModels.map((m) => (
-                        <SelectItem key={m.template_key} value={m.template_key} className="text-xs">
-                          {m.agent_name} — {m.display_name}
-                        </SelectItem>
-                      ))}
-                    </>
-                  )}
                 </SelectContent>
               </Select>
             </div>

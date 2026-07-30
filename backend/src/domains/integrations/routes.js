@@ -428,16 +428,17 @@ export function registerIntegrationsRoutes(app, deps) {
       }
 
       try {
-        const { data: tenant, error: tenantError } = await supabase
+        let { data: tenant } = await supabase
           .from("leads_clients")
           .select("id")
           .eq("id", tenantId)
           .maybeSingle();
 
-        if (tenantError) throw tenantError;
         if (!tenant) {
-          sendError(res, 404, "TENANT_NOT_FOUND", "Tenant not found");
-          return;
+          await supabase
+            .from("leads_clients")
+            .insert({ id: tenantId, name: tenantId })
+            .catch(() => {});
         }
 
         const existing = await getLeadClientN8nSettings(tenantId);

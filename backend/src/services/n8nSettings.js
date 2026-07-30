@@ -84,7 +84,7 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, agent_name, persona_template, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
     )
     .eq("client_id", clientId)
     .maybeSingle();
@@ -161,6 +161,7 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
   const chatbotEnabledProvided = Object.prototype.hasOwnProperty.call(body, "chatbotEnabled");
   const chatbotModelProvided = Object.prototype.hasOwnProperty.call(body, "chatbotModel");
   const chatbotLlmModelProvided = Object.prototype.hasOwnProperty.call(body, "chatbotLlmModel") || Object.prototype.hasOwnProperty.call(body, "chatbot_llm_model");
+  const agentNameProvided = Object.prototype.hasOwnProperty.call(body, "agentName") || Object.prototype.hasOwnProperty.call(body, "agent_name");
   const segmentationConfigProvided = Object.prototype.hasOwnProperty.call(body, "segmentationConfig");
   const sdrWhatsappNumberProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumber");
   const allowedTabsProvided = Object.prototype.hasOwnProperty.call(body, "allowedTabs");
@@ -170,6 +171,7 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
     chatbot_enabled: chatbotEnabledProvided ? body.chatbotEnabled === true : existing?.chatbot_enabled ?? false,
     chatbot_model: chatbotModelProvided ? (body.chatbotModel || "outlier") : existing?.chatbot_model ?? "outlier",
     chatbot_llm_model: chatbotLlmModelProvided ? (body.chatbotLlmModel || body.chatbot_llm_model || "llama-3.3-70b-versatile") : existing?.chatbot_llm_model ?? "llama-3.3-70b-versatile",
+    agent_name: agentNameProvided ? (normalizeString(body.agentName || body.agent_name) || null) : existing?.agent_name ?? null,
     segmentation_config: segmentationConfigProvided
       ? sanitizeSegmentationConfig(body.segmentationConfig, body.chatbotModel || existing?.chatbot_model || "generico")
       : sanitizeSegmentationConfig(existing?.segmentation_config, existing?.chatbot_model || body.chatbotModel || "generico"),

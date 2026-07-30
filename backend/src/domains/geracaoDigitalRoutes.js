@@ -35,7 +35,84 @@ const somaRecorrente = (items) =>
 export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, requireInternalPageAccess) {
   // Inicialização defensiva de todas as tabelas e seeds de Geração Digital no PostgreSQL
   async function ensureGdTablesAndSeeds(dbPool) {
-    try {
+      // 0. Core CRM Tables (leads_clients, lead_client_n8n_settings, leads, lead_conversations, lead_messages)
+      await dbPool.query(`
+        CREATE TABLE IF NOT EXISTS public.leads_clients (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        INSERT INTO public.leads_clients (id, name)
+        VALUES ('geracao-digital', 'Geração Digital'), ('infinie', 'Infinie Energia Solar'), ('outlier', 'Outlier Consórcios'), ('vexo', 'Vexo OS')
+        ON CONFLICT (id) DO NOTHING;
+
+        CREATE TABLE IF NOT EXISTS public.lead_client_n8n_settings (
+          client_id TEXT PRIMARY KEY REFERENCES public.leads_clients(id) ON DELETE CASCADE,
+          dispatch_webhook_url TEXT,
+          dispatch_webhook_token TEXT,
+          inbound_bearer_token TEXT,
+          active BOOLEAN DEFAULT true,
+          chatbot_enabled BOOLEAN DEFAULT false,
+          chatbot_model TEXT,
+          chatbot_llm_model TEXT,
+          agent_name TEXT,
+          persona_template TEXT,
+          segmentation_config JSONB DEFAULT '{}'::jsonb,
+          sdr_whatsapp_number TEXT,
+          allowed_tabs JSONB DEFAULT '[]'::jsonb,
+          updated_at TIMESTAMPTZ DEFAULT now(),
+          updated_by_uid TEXT,
+          updated_by_email TEXT
+        );
+        ALTER TABLE public.lead_client_n8n_settings ADD COLUMN IF NOT EXISTS agent_name TEXT;
+
+        INSERT INTO public.lead_client_n8n_settings (client_id, active, chatbot_enabled)
+        VALUES ('geracao-digital', true, false), ('infinie', true, false), ('outlier', true, false), ('vexo', true, false)
+        ON CONFLICT (client_id) DO NOTHING;
+
+        CREATE TABLE IF NOT EXISTS public.leads (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          client_id TEXT NOT NULL REFERENCES public.leads_clients(id) ON DELETE CASCADE,
+          telefone TEXT NOT NULL,
+          nome TEXT,
+          tipo_cliente TEXT,
+          faixa_consumo TEXT,
+          cidade TEXT,
+          estado TEXT,
+          conta_energia TEXT,
+          status TEXT DEFAULT 'aguardando_resposta',
+          bot_ativo BOOLEAN DEFAULT false,
+          qualificacao TEXT,
+          transcricao TEXT,
+          resumo TEXT,
+          score NUMERIC,
+          first_contact_at TIMESTAMPTZ,
+          qualified_at TIMESTAMPTZ,
+          closed_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS public.lead_conversations (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          client_id TEXT NOT NULL REFERENCES public.leads_clients(id) ON DELETE CASCADE,
+          lead_id UUID REFERENCES public.leads(id) ON DELETE CASCADE,
+          telefone TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS public.lead_messages (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          client_id TEXT NOT NULL REFERENCES public.leads_clients(id) ON DELETE CASCADE,
+          lead_id UUID REFERENCES public.leads(id) ON DELETE CASCADE,
+          direction TEXT NOT NULL DEFAULT 'inbound',
+          sender_type TEXT,
+          text_content TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `).catch((err) => console.warn("[crm-setup] Aviso ao criar tabelas core CRM:", err.message));
+
       // 1. Tenants table
       await dbPool.query(`
         CREATE TABLE IF NOT EXISTS public.tenants (
