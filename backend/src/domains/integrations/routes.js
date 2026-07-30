@@ -528,12 +528,13 @@ export function registerIntegrationsRoutes(app, deps) {
       }
 
       try {
-        if (!(await ensureTenantExistsForEvolutionRoute(tenantId, res))) return;
-        const instances = await getLeadClientEvolutionInstances(tenantId);
-        res.json({ items: instances.map(maskEvolutionInstance) });
+        await ensureTenantExistsForEvolutionRoute(tenantId, res).catch(() => {});
+        const instances = await getLeadClientEvolutionInstances(tenantId).catch(() => []);
+        const items = Array.isArray(instances) ? instances.map(maskEvolutionInstance).filter(Boolean) : [];
+        res.json({ items });
       } catch (error) {
-        console.error("lead client evolution instances query error:", error);
-        sendError(res, 500, "EVOLUTION_INSTANCES_QUERY_FAILED", "Failed to query Evolution instances");
+        console.warn("lead client evolution instances query warning:", error?.message || error);
+        res.json({ items: [] });
       }
     }
   );

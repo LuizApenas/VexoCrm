@@ -34,6 +34,13 @@ export function logCampaignDispatch(level, event, details = {}) {
 
 export function maskEvolutionInstance(row) {
   if (!row) return null;
+  const rawState = (row.chip_state || "").toLowerCase();
+  const chipState = ["open", "connected"].includes(rawState)
+    ? "open"
+    : rawState === "warm"
+    ? "warm"
+    : "cold";
+
   return {
     id: row.id,
     client_id: row.client_id,
@@ -43,7 +50,8 @@ export function maskEvolutionInstance(row) {
     inbound_bearer_token_label: row.inbound_bearer_token ? "definido" : null,
     active: row.active !== false,
     is_default: row.is_default === true,
-    chip_state: row.chip_state === "warm" ? "warm" : "cold",
+    chip_state: chipState,
+    connectionStatus: chipState === "open" ? "open" : row.active !== false ? "active" : "disconnected",
     daily_limit_override: row.daily_limit_override != null ? Number(row.daily_limit_override) : null,
     sent_count_today: row.sent_count_today != null ? Number(row.sent_count_today) : 0,
     webhook_enabled: row.webhook_enabled === true,

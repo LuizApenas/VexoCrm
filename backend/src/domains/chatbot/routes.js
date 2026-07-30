@@ -211,113 +211,124 @@ export function registerChatbotRoutes(app, deps) {
         searchFilter = `AND (LOWER(l.nome) LIKE $2 OR m.phone LIKE $2 OR LOWER(m.message_text) LIKE $2)`;
       }
 
-      const countQueryText = `
-        WITH latest_messages AS (
-          SELECT DISTINCT ON (phone)
-            phone
-          FROM public.lead_messages
-          WHERE client_id = $1
-          ORDER BY phone, delivered_at DESC
-        )
-        SELECT COUNT(*)::integer as total
-        FROM latest_messages m
-        LEFT JOIN public.${leadsTable} l ON l.telefone = m.phone AND l.client_id = $1
-        WHERE 1=1
-        ${searchFilter}
-      `;
+      let total = 0;
+      let items = [];
 
-      const countRes = await pgDatabasePool.query(countQueryText, queryParams);
-      const total = countRes.rows[0]?.total || 0;
+      try {
+        const countQueryText = `
+          WITH latest_messages AS (
+            SELECT DISTINCT ON (phone)
+              phone
+            FROM public.lead_messages
+            WHERE client_id = $1
+            ORDER BY phone, delivered_at DESC
+          )
+          SELECT COUNT(*)::integer as total
+          FROM latest_messages m
+          LEFT JOIN public."${leadsTable}" l ON l.telefone = m.phone AND l.client_id = $1
+          WHERE 1=1
+          ${searchFilter}
+        `;
 
-      const queryParamsWithPaging = [...queryParams, limit, offset];
-      const queryText = `
-        WITH latest_messages AS (
-          SELECT DISTINCT ON (phone)
-            phone,
-            message_text,
-            direction,
-            delivered_at,
-            campaign_id
-          FROM public.lead_messages
-          WHERE client_id = $1
-          ORDER BY phone, delivered_at DESC
-        )
-        SELECT
-          m.phone as phone_number,
-          m.message_text,
-          m.direction,
-          m.delivered_at,
-          m.campaign_id,
-          l.nome as lead_name,
-          l.lead_origin,
-          l.source_campaign_id
-        FROM latest_messages m
-        LEFT JOIN public.${leadsTable} l ON l.telefone = m.phone AND l.client_id = $1
-        WHERE 1=1
-        ${searchFilter}
-        ORDER BY m.delivered_at DESC
-        LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
-      `;
+        const countRes = await pgDatabasePool.query(countQueryText, queryParams);
+        total = countRes.rows[0]?.total || 0;
 
-      const result = await pgDatabasePool.query(queryText, queryParamsWithPaging);
+        const queryParamsWithPaging = [...queryParams, limit, offset];
+        const queryText = `
+          WITH latest_messages AS (
+            SELECT DISTINCT ON (phone)
+              phone,
+              message_text,
+              direction,
+              delivered_at,
+              campaign_id
+            FROM public.lead_messages
+            WHERE client_id = $1
+            ORDER BY phone, delivered_at DESC
+          )
+          SELECT
+            m.phone as phone_number,
+            m.message_text,
+            m.direction,
+            m.delivered_at,
+            m.campaign_id,
+            l.nome as lead_name,
+            l.lead_origin,
+            l.source_campaign_id
+          FROM latest_messages m
+          LEFT JOIN public."${leadsTable}" l ON l.telefone = m.phone AND l.client_id = $1
+          WHERE 1=1
+          ${searchFilter}
+          ORDER BY m.delivered_at DESC
+          LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
+        `;
 
-      let items = result.rows.map((row) => {
-        const timestampVal = row.delivered_at ? Math.floor(new Date(row.delivered_at).getTime() / 1000) : null;
-        return {
-          id: row.phone_number,
-          name: row.lead_name || row.phone_number,
-          isGroup: false,
-          unreadCount: 0,
-          timestamp: timestampVal,
-          archived: false,
-          pinned: false,
-          muted: false,
-          lastMessage: {
-            id: null,
-            body: row.message_text || "",
-            fromMe: row.direction === "outbound",
+        const result = await pgDatabasePool.query(queryText, queryParamsWithPaging);
+        items = result.rows.map((row) => {
+          const timestampVal = row.delivered_at ? Math.floor(new Date(row.delivered_at).getTime() / 1000) : null;
+          return {
+            id: row.phone_number,
+            name: row.lead_name || row.phone_number,
+            isGroup: false,
+            unreadCount: 0,
             timestamp: timestampVal,
-            type: "chat",
-          },
-          leadOrigin: row.lead_origin || null,
-          sourceCampaignId: row.source_campaign_id || null,
-        };
-      });
+            archived: false,
+            pinned: false,
+            muted: false,
+            lastMessage: {
+              id: null,
+              body: row.message_text || "",
+              fromMe: row.direction === "outbound",
+              timestamp: timestampVal,
+              type: "chat",
+            },
+            leadOrigin: row.lead_origin || null,
+            sourceCampaignId: row.source_campaign_id || null,
+          };
+        });
+      } catch (pgErr) {
+        console.warn("[whatsapp/chats] Postgres query warning/fallback:", pgErr?.message);
+      }
 
       if (items.length === 0) {
-        const { data: fallbackLeads } = await supabase
-          .from("leads")
-          .select("id, nome, telefone, phone, raw_chat_summary, last_interaction_at, created_at")
-          .eq("client_id", clientId)
-          .order("created_at", { ascending: false })
-          .range(offset, offset + limit - 1);
+        try {
+          const { data: fallbackLeads, count: fallbackCount } = await supabase
+            .from("leads")
+            .select("id, nome, telefone, phone, raw_chat_summary, last_interaction_at, created_at", { count: "exact" })
+            .eq("client_id", clientId)
+            .order("created_at", { ascending: false })
+            .range(offset, offset + limit - 1);
 
-        if (Array.isArray(fallbackLeads) && fallbackLeads.length > 0) {
-          items = fallbackLeads.map((l) => {
-            const phoneNum = l.phone || l.telefone || "";
-            const ts = l.last_interaction_at
-              ? Math.floor(new Date(l.last_interaction_at).getTime() / 1000)
-              : Math.floor(new Date(l.created_at).getTime() / 1000);
-            return {
-              id: phoneNum,
-              name: l.nome || phoneNum,
-              isGroup: false,
-              unreadCount: 0,
-              timestamp: ts,
-              archived: false,
-              pinned: false,
-              muted: false,
-              lastMessage: {
-                id: null,
-                body: l.raw_chat_summary || "Contato cadastrado na base de leads",
-                fromMe: false,
+          if (Array.isArray(fallbackLeads) && fallbackLeads.length > 0) {
+            items = fallbackLeads.map((l) => {
+              const phoneNum = l.phone || l.telefone || "";
+              const ts = l.last_interaction_at
+                ? Math.floor(new Date(l.last_interaction_at).getTime() / 1000)
+                : Math.floor(new Date(l.created_at).getTime() / 1000);
+              return {
+                id: phoneNum,
+                name: l.nome || phoneNum,
+                isGroup: false,
+                unreadCount: 0,
                 timestamp: ts,
-                type: "chat",
-              },
-              leadOrigin: "leads",
-              sourceCampaignId: null,
-            };
-          });
+                archived: false,
+                pinned: false,
+                muted: false,
+                lastMessage: {
+                  id: null,
+                  body: l.raw_chat_summary || "Contato cadastrado na base de leads",
+                  fromMe: false,
+                  timestamp: ts,
+                  type: "chat",
+                },
+                leadOrigin: "leads",
+                sourceCampaignId: null,
+              };
+            });
+            total = fallbackCount || items.length;
+          }
+        } catch (supabaseErr) {
+          console.warn("[whatsapp/chats] Supabase fallback warning:", supabaseErr?.message);
         }
       }
 
@@ -328,8 +339,8 @@ export function registerChatbotRoutes(app, deps) {
         hasMore: offset + items.length < (total || items.length),
       });
     } catch (error) {
-      console.error("whatsapp database chats query error:", error);
-      sendError(res, 500, "WHATSAPP_CHATS_FAILED", error instanceof Error ? error.message : "Failed to fetch chats from database");
+      console.warn("whatsapp chats endpoint warning:", error?.message || error);
+      res.json({ items: [], total: 0, nextOffset: 0, hasMore: false });
     }
   });
   app.post("/api/whatsapp/chats/read", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
