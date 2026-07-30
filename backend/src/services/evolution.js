@@ -395,11 +395,16 @@ export async function configureEvolutionInstanceWebhook(clientId, dispatchWebhoo
 
   const webhookUrl = `${base}/api/hardcoded-chat-webhook?clientId=${encodeURIComponent(clientId)}`;
 
+  // Evolution API v2 exige o payload ANINHADO em { webhook: {...} } e usa
+  // webhookByEvents (não byEvents). No formato antigo (plano) a v2 responde
+  // HTTP 400: instance requires property "webhook".
   const payload = {
-    enabled: Boolean(enabled),
-    url: webhookUrl,
-    byEvents: false,
-    events: enabled ? ["MESSAGES_UPSERT", "SEND_MESSAGE"] : [],
+    webhook: {
+      enabled: Boolean(enabled),
+      url: webhookUrl,
+      webhookByEvents: false,
+      events: enabled ? ["MESSAGES_UPSERT", "SEND_MESSAGE"] : [],
+    },
   };
 
   const response = await fetch(`${baseUrl}/webhook/set/${encodeURIComponent(instanceName)}`, {

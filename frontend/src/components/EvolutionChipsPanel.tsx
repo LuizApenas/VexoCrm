@@ -30,7 +30,7 @@ export function EvolutionChipsPanel({ tenant, canEdit = true }: Props) {
   const [evolutionDrafts, setEvolutionDrafts] = useState<
     Record<string, { name?: string; dispatchWebhookUrl?: string; dispatchWebhookToken?: string; active?: boolean; isDefault?: boolean }>
   >({});
-  const [qrModal, setQrModal] = useState<{ base64: string; tenantName: string; instanceName: string | null } | null>(null);
+  const [qrModal, setQrModal] = useState<{ base64: string; tenantName: string; instanceName: string | null; instanceId: string | null } | null>(null);
   const [createMode, setCreateMode] = useState<"provision" | "manual">("provision");
 
   const evolutionInstances: LeadClientEvolutionInstance[] = tenant.n8n_settings?.evolution_instances ?? [];
@@ -200,6 +200,7 @@ export function EvolutionChipsPanel({ tenant, canEdit = true }: Props) {
           base64: qrBase64,
           tenantName: tenant.name,
           instanceName: result.evolution?.instanceName ?? result.item?.name ?? null,
+          instanceId: result.item?.id ?? null,
         });
       } else {
         toast({
@@ -277,7 +278,7 @@ export function EvolutionChipsPanel({ tenant, canEdit = true }: Props) {
         )}
       </div>
 
-      <QRCodeModal open={!!qrModal} qrModal={qrModal} onClose={() => setQrModal(null)} />
+      <QRCodeModal open={!!qrModal} tenantId={tenant.id} qrModal={qrModal} onClose={() => setQrModal(null)} />
     </>
   );
 }

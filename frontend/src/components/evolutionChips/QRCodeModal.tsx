@@ -1,4 +1,7 @@
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/use-toast";
+import { useLeadClientEvolutionInstanceStatus } from "@/hooks/useLeadClients";
 import {
   Dialog,
   DialogContent,
@@ -10,15 +13,43 @@ import {
 
 interface QRCodeModalProps {
   open: boolean;
+  tenantId: string;
   qrModal: {
     base64: string;
     tenantName: string;
     instanceName: string | null;
+    instanceId?: string | null;
   } | null;
   onClose: () => void;
 }
 
-export function QRCodeModal({ open, qrModal, onClose }: QRCodeModalProps) {
+export function QRCodeModal({ open, tenantId, qrModal, onClose }: QRCodeModalProps) {
+  const instanceId = qrModal?.instanceId ?? "";
+  const shouldPoll = open && !!tenantId && !!instanceId;
+
+  // Enquanto o QR está na tela, consulta o status da instância. O hook só busca
+  // quando há instanceId; aqui forçamos o refetch a cada 3s para detectar a
+  // conexão logo depois que o usuário escaneia.
+  const status = useLeadClientEvolutionInstanceStatus(tenantId, shouldPoll ? instanceId : "");
+
+  useEffect(() => {
+    if (!shouldPoll) return;
+    const id = setInterval(() => {
+      status.refetch();
+    }, 3000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldPoll, instanceId]);
+
+  // Conectou -> fecha o modal sozinho (não precisa clicar em Fechar).
+  useEffect(() => {
+    if (open && status.data?.connected) {
+      toast({ title: "WhatsApp conectado", description: "Chip pareado com sucesso." });
+      onClose();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, status.data?.connected]);
+
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="sm:max-w-md rounded-2xl p-6">
@@ -43,7 +74,7 @@ export function QRCodeModal({ open, qrModal, onClose }: QRCodeModalProps) {
               No celular, abra o WhatsApp &gt; Aparelhos conectados &gt; Conectar um aparelho
             </p>
             <p className="text-[11px] text-muted-foreground px-4">
-              O QR Code expira rapidamente. Se necessário, feche este modal, remova a conexão criada e gere um novo QR Code.
+              A tela fecha sozinha assim que a conexão for detectada. O QR Code expira rapidamente; se expirar, feche, remova a conexão criada e gere um novo.
             </p>
           </div>
         </div>
