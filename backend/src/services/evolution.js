@@ -226,10 +226,13 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
 
     console.info(`[sync-evolution] Starting background sync for instance ${instanceName}...`);
 
-    // 1. Fetch chats from Evolution API
+    // 1. Fetch chats from Evolution API.
+    // Evolution v2: /chat/findChats/{instance} é POST (com body), não GET. Como
+    // GET dava HTTP 404, o backfill de conversas nunca acontecia.
     const chatsResponse = await fetch(`${baseUrl}/chat/findChats/${encodeURIComponent(instanceName)}`, {
-      method: "GET",
-      headers: { apikey: apiKey }
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: apiKey },
+      body: JSON.stringify({}),
     });
 
     if (!chatsResponse.ok) {
@@ -237,9 +240,11 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       return;
     }
 
-    const chats = await chatsResponse.json();
+    const rawChats = await chatsResponse.json();
+    // v2 pode devolver array direto ou paginado ({ records: [...] }).
+    const chats = Array.isArray(rawChats) ? rawChats : (rawChats?.records || rawChats?.chats || []);
     if (!Array.isArray(chats)) {
-      console.warn(`[sync-evolution] Evolution API did not return an array of chats:`, chats);
+      console.warn(`[sync-evolution] Evolution API did not return an array of chats:`, rawChats);
       return;
     }
 
