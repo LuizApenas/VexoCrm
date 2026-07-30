@@ -939,9 +939,11 @@ export function registerLeadsRoutes(app, deps) {
 
       const apiKey = instance.dispatch_webhook_token || getEvolutionAdminConfig().apiKey;
 
+      // Evolution v2: findChats é POST (com body), não GET. GET dava HTTP 404.
       const chatsRes = await fetch(`${baseUrl}/chat/findChats/${encodeURIComponent(instanceName)}`, {
-        method: "GET",
-        headers: { apikey: apiKey }
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: apiKey },
+        body: JSON.stringify({}),
       });
 
       if (!chatsRes.ok) {
@@ -950,7 +952,9 @@ export function registerLeadsRoutes(app, deps) {
         return;
       }
 
-      const chats = await chatsRes.json();
+      const rawChats = await chatsRes.json();
+      // v2 pode devolver array direto ou paginado ({ records: [...] }).
+      const chats = Array.isArray(rawChats) ? rawChats : (rawChats?.records || rawChats?.chats || []);
       if (!Array.isArray(chats)) {
         sendError(res, 502, "WA_INVALID_RESPONSE", "Evolution API não retornou uma lista válida de conversas.");
         return;
@@ -995,7 +999,16 @@ export function registerLeadsRoutes(app, deps) {
 
           if (msgsRes.ok) {
             const msgsData = await msgsRes.json();
-            const recordList = Array.isArray(msgsData) ? msgsData : (msgsData?.records || msgsData?.messages || []);
+            // Evolution v2: findMessages devolve { messages: { records: [...] } }.
+            const recordList = Array.isArray(msgsData)
+              ? msgsData
+              : Array.isArray(msgsData?.messages?.records)
+                ? msgsData.messages.records
+                : Array.isArray(msgsData?.records)
+                  ? msgsData.records
+                  : Array.isArray(msgsData?.messages)
+                    ? msgsData.messages
+                    : [];
             if (Array.isArray(recordList)) {
               for (const m of recordList) {
                 const text = m.message?.conversation || m.message?.extendedTextMessage?.text || m.messageText || "";
