@@ -25,7 +25,8 @@ import {
   X,
   FileText,
   Filter,
-  CheckCircle2
+  CheckCircle2,
+  ChevronDown
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
@@ -182,7 +183,7 @@ export default function BancoDeDados() {
   const [campaignSourceType, setCampaignSourceType] = useState<"funnel" | "spreadsheet">("funnel");
   
   // Funnel Audience Selection State
-  const [campaignStageFilter, setCampaignStageFilter] = useState<string>("all");
+  const [campaignStageFilters, setCampaignStageFilters] = useState<string[]>(["all"]);
   const [campaignTagFilter, setCampaignTagFilter] = useState<string>("");
   const [campaignSelectedLeadIds, setCampaignSelectedLeadIds] = useState<string[]>([]);
   const [campaignFunnelFilterRules, setCampaignFunnelFilterRules] = useState<DynamicFilterRule[]>([]);
@@ -516,12 +517,13 @@ export default function BancoDeDados() {
   // Computed Target Audience for Campaign Wizard
   const campaignFunnelFilteredLeads = useMemo(() => {
     const base = leads.filter((l) => {
-      const stageOk = campaignStageFilter === "all" || l.stage === campaignStageFilter;
+      const isAll = campaignStageFilters.length === 0 || campaignStageFilters.includes("all");
+      const stageOk = isAll || (l.stage && campaignStageFilters.includes(l.stage));
       const tagOk = !campaignTagFilter || (Array.isArray(l.tags) && l.tags.includes(campaignTagFilter));
       return stageOk && tagOk;
     });
     return applyDynamicRules(base, campaignFunnelFilterRules);
-  }, [leads, campaignStageFilter, campaignTagFilter, campaignFunnelFilterRules]);
+  }, [leads, campaignStageFilters, campaignTagFilter, campaignFunnelFilterRules]);
 
   const campaignSpreadsheetFilteredRows = useMemo(() => {
     return applyDynamicRules(campaignSpreadsheetRows, campaignSpreadsheetRules);
@@ -546,7 +548,10 @@ export default function BancoDeDados() {
         tags: Array.isArray(l.tags) ? l.tags.join(", ") : "",
         resumo_ia: l.raw_chat_summary || "",
       }));
-      campaignTitleName = `Campanha Funil ${campaignStageFilter.toUpperCase()} (${selected.length} leads)`;
+      const stageLabel = campaignStageFilters.includes("all") || campaignStageFilters.length === 0
+        ? "TODOS OS ESTÁGIOS"
+        : campaignStageFilters.map(s => s.toUpperCase()).join("+");
+      campaignTitleName = `Campanha Funil [${stageLabel}] (${selected.length} leads)`;
     } else {
       if (campaignSpreadsheetFilteredRows.length === 0) {
         toast.error("Nenhum contato encontrado na planilha com os filtros aplicados.");
@@ -1539,18 +1544,94 @@ export default function BancoDeDados() {
               <div className="space-y-4 border-t border-border pt-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-foreground">Estágio do Funil</label>
-                    <select
-                      value={campaignStageFilter}
-                      onChange={(e) => setCampaignStageFilter(e.target.value)}
-                      className="w-full h-9 px-3 mt-1 rounded-md border border-input bg-background text-xs"
-                    >
-                      <option value="all">Todos os Estágios ({leads.length})</option>
-                      <option value="buyer">Compradores 🟢 ({summary.buyersCount})</option>
-                      <option value="open_budget">Orçamentos Abertos 🟡 ({summary.openBudgetsCount})</option>
-                      <option value="cold">Leads Frios 🔵</option>
-                      <option value="lost">Perdidos 🔴</option>
-                    </select>
+                    <label className="text-xs font-semibold text-foreground">Estágios do Funil (Múltipla Seleção)</label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full h-9 justify-between text-xs px-3 font-normal mt-1 border-input bg-background"
+                        >
+                          <span className="truncate">
+                            {campaignStageFilters.includes("all") || campaignStageFilters.length === 0
+                              ? `Todos os Estágios (${leads.length})`
+                              : `${campaignStageFilters.length} Estágios: ${campaignStageFilters
+                                  .map((s) =>
+                                    s === "buyer"
+                                      ? "Compradores 🟢"
+                                      : s === "open_budget"
+                                      ? "Orçamentos 🟡"
+                                      : s === "inquiry"
+                                      ? "Em Dúvida 🔵"
+                                      : s === "cold"
+                                      ? "Frios ⚪"
+                                      : "Perdidos 🔴"
+                                  )
+                                  .join(", ")}`}
+                          </span>
+                          <ChevronDown className="w-4 h-4 ml-1 opacity-50 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-64 p-2 space-y-1 z-[100]">
+                        <div
+                          onClick={() => setCampaignStageFilters(["all"])}
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded text-xs cursor-pointer hover:bg-muted font-medium ${
+                            campaignStageFilters.includes("all") || campaignStageFilters.length === 0 ? "bg-amber-500/10 text-amber-600 font-semibold" : ""
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={campaignStageFilters.includes("all") || campaignStageFilters.length === 0}
+                            onChange={() => {}}
+                            className="rounded text-amber-600 cursor-pointer"
+                          />
+                          <span>Todos os Estágios ({leads.length})</span>
+                        </div>
+
+                        <div className="h-px bg-border my-1" />
+
+                        {[
+                          { id: "buyer", label: "Compradores 🟢", count: summary.buyersCount },
+                          { id: "open_budget", label: "Orçamentos Abertos 🟡", count: summary.openBudgetsCount },
+                          { id: "inquiry", label: "Em Dúvida 🔵", count: leads.filter((l) => l.stage === "inquiry").length },
+                          { id: "cold", label: "Leads Frios ⚪", count: leads.filter((l) => l.stage === "cold").length },
+                          { id: "lost", label: "Perdidos 🔴", count: leads.filter((l) => l.stage === "lost").length },
+                        ].map((stageItem) => {
+                          const isChecked = !campaignStageFilters.includes("all") && campaignStageFilters.includes(stageItem.id);
+                          return (
+                            <div
+                              key={stageItem.id}
+                              onClick={() => {
+                                let next: string[] = [];
+                                if (campaignStageFilters.includes("all")) {
+                                  next = [stageItem.id];
+                                } else if (isChecked) {
+                                  next = campaignStageFilters.filter((s) => s !== stageItem.id);
+                                  if (next.length === 0) next = ["all"];
+                                } else {
+                                  next = [...campaignStageFilters, stageItem.id];
+                                }
+                                setCampaignStageFilters(next);
+                              }}
+                              className={`flex items-center justify-between px-2.5 py-1.5 rounded text-xs cursor-pointer hover:bg-muted ${
+                                isChecked ? "bg-amber-500/10 text-amber-600 font-semibold" : ""
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {}}
+                                  className="rounded text-amber-600 cursor-pointer"
+                                />
+                                <span>{stageItem.label}</span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">({stageItem.count})</span>
+                            </div>
+                          );
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
                   <div>
