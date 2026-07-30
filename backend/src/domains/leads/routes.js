@@ -962,7 +962,10 @@ export function registerLeadsRoutes(app, deps) {
 
       const validChats = chats.filter(c => {
         const jid = c.id || c.remoteJid || "";
-        return jid && !jid.includes("@g.us") && !jid.includes("@broadcast");
+        // @lid = identificador de privacidade do WhatsApp (não é telefone real).
+        // Extrair @lid gera "números" inválidos (ex: 174203940663479) que nem
+        // existem no WhatsApp e não dá pra disparar. Só contatos com telefone.
+        return jid && !jid.includes("@g.us") && !jid.includes("@broadcast") && !jid.includes("@lid");
       });
 
       let extractedCount = 0;
@@ -1038,7 +1041,7 @@ export function registerLeadsRoutes(app, deps) {
           await pgDatabasePool.query(
             `INSERT INTO public.leads
                (client_id, telefone, phone, nome, stage, temperature, tags, extracted_from_wa, raw_chat_summary, last_interaction_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, true, $8, $9, now())
+             VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, now())
              ON CONFLICT (client_id, telefone) DO UPDATE SET
                phone = EXCLUDED.phone,
                nome = COALESCE(NULLIF(EXCLUDED.nome, ''), public.leads.nome),
@@ -1056,7 +1059,7 @@ export function registerLeadsRoutes(app, deps) {
               name,
               classification.stage,
               classification.temperature,
-              JSON.stringify(classification.tags || []),
+              Array.isArray(classification.tags) ? classification.tags : [],
               classification.summary,
               lastInteractionAt || new Date().toISOString(),
             ]

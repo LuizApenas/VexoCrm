@@ -255,7 +255,9 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
 
     for (const chat of topChats) {
       const remoteJid = chat.id || chat.remoteJid;
-      if (!remoteJid || remoteJid.includes("@g.us") || remoteJid.includes("@broadcast")) {
+      // Pula grupos, broadcast e @lid (identificador de privacidade do WhatsApp,
+      // que aparece como número inválido/errado na aba Conversas).
+      if (!remoteJid || remoteJid.includes("@g.us") || remoteJid.includes("@broadcast") || remoteJid.includes("@lid")) {
         continue;
       }
 
