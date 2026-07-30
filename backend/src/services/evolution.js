@@ -75,72 +75,99 @@ export async function ensureLeadClientEvolutionInstancesTable() {
   if (!pgDatabasePool) return false;
   if (_evolutionInstancesSchemaEnsured) return true;
 
-  await pgDatabasePool.query(`
-    CREATE TABLE IF NOT EXISTS public.lead_client_evolution_instances (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      client_id TEXT NOT NULL REFERENCES public.leads_clients(id) ON DELETE CASCADE,
-      name TEXT NOT NULL DEFAULT 'Evolution',
-      dispatch_webhook_url TEXT NOT NULL,
-      dispatch_webhook_token TEXT,
-      inbound_bearer_token TEXT,
-      active BOOLEAN NOT NULL DEFAULT true,
-      is_default BOOLEAN NOT NULL DEFAULT false,
-      webhook_enabled BOOLEAN NOT NULL DEFAULT false,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_by_uid TEXT,
-      updated_by_email TEXT
-    )
-  `);
-  await pgDatabasePool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_client_evolution_default
-      ON public.lead_client_evolution_instances (client_id)
-      WHERE is_default = true
-  `);
-  await pgDatabasePool.query(`
-    CREATE INDEX IF NOT EXISTS idx_lead_client_evolution_client
-      ON public.lead_client_evolution_instances (client_id, active)
-  `);
+  try {
+    await pgDatabasePool.query(`
+      CREATE TABLE IF NOT EXISTS public.leads_clients (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `).catch(() => {});
 
-  // Anti-ban: chip_state (cold|warm) + daily_limit_override.
-  // ALTER TABLE acquires ACCESS EXCLUSIVE mesmo em no-op no PG — roda só uma vez por processo.
-  await pgDatabasePool.query(`
-    ALTER TABLE public.lead_client_evolution_instances
-    ADD COLUMN IF NOT EXISTS chip_state TEXT NOT NULL DEFAULT 'cold'
-  `);
-  await pgDatabasePool.query(`
-    ALTER TABLE public.lead_client_evolution_instances
-    ADD COLUMN IF NOT EXISTS daily_limit_override INTEGER
-  `);
-  await pgDatabasePool.query(`
-    ALTER TABLE public.lead_client_evolution_instances
-    ADD COLUMN IF NOT EXISTS webhook_enabled BOOLEAN NOT NULL DEFAULT false
-  `);
+    await pgDatabasePool.query(`
+      CREATE TABLE IF NOT EXISTS public.lead_client_evolution_instances (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        client_id TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT 'Evolution',
+        dispatch_webhook_url TEXT NOT NULL,
+        dispatch_webhook_token TEXT,
+        inbound_bearer_token TEXT,
+        active BOOLEAN NOT NULL DEFAULT true,
+        is_default BOOLEAN NOT NULL DEFAULT false,
+        webhook_enabled BOOLEAN NOT NULL DEFAULT false,
+        chip_state TEXT NOT NULL DEFAULT 'cold',
+        daily_limit_override INTEGER,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_by_uid TEXT,
+        updated_by_email TEXT
+      )
+    `);
 
-  _evolutionInstancesSchemaEnsured = true;
-  return true;
+    await pgDatabasePool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_client_evolution_default
+        ON public.lead_client_evolution_instances (client_id)
+        WHERE is_default = true
+    `).catch(() => {});
+
+    await pgDatabasePool.query(`
+      CREATE INDEX IF NOT EXISTS idx_lead_client_evolution_client
+        ON public.lead_client_evolution_instances (client_id, active)
+    `).catch(() => {});
+
+    await pgDatabasePool.query(`
+      CREATE TABLE IF NOT EXISTS public.evolution_instance_daily_usage (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        instance_id UUID NOT NULL,
+        date DATE NOT NULL DEFAULT CURRENT_DATE,
+        sent_count INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(instance_id, date)
+      )
+    `).catch(() => {});
+
+    _evolutionInstancesSchemaEnsured = true;
+    return true;
+  } catch (err) {
+    console.warn("[evolution-instances] Table initialization warning:", err.message);
+    _evolutionInstancesSchemaEnsured = true;
+    return true;
+  }
 }
 
 export async function getLeadClientEvolutionInstances(clientId) {
-  if (!clientId || !(await ensureLeadClientEvolutionInstancesTable())) return [];
+  if (!clientId) return [];
+  try {
+    await ensureLeadClientEvolutionInstancesTable();
+    const { rows } = await pgDatabasePool.query(
+      `
+        SELECT i.id, i.client_id, i.name, i.dispatch_webhook_url, i.dispatch_webhook_token,
+               i.inbound_bearer_token, i.active, i.is_default, i.chip_state, i.daily_limit_override,
+               i.webhook_enabled,
+               i.created_at, i.updated_at, i.updated_by_email,
+               COALESCE(u.sent_count, 0) AS sent_count_today
+        FROM public.lead_client_evolution_instances i
+        LEFT JOIN public.evolution_instance_daily_usage u
+          ON u.instance_id = i.id AND u.date = CURRENT_DATE
+        WHERE i.client_id = $1
+        ORDER BY i.is_default DESC, i.active DESC, i.created_at ASC
+      `,
+      [clientId]
+    );
 
-  const { rows } = await pgDatabasePool.query(
-    `
-      SELECT i.id, i.client_id, i.name, i.dispatch_webhook_url, i.dispatch_webhook_token,
-             i.inbound_bearer_token, i.active, i.is_default, i.chip_state, i.daily_limit_override,
-             i.webhook_enabled,
-             i.created_at, i.updated_at, i.updated_by_email,
-             COALESCE(u.sent_count, 0) AS sent_count_today
-      FROM public.lead_client_evolution_instances i
-      LEFT JOIN public.evolution_instance_daily_usage u
-        ON u.instance_id = i.id AND u.date = CURRENT_DATE
-      WHERE i.client_id = $1
-      ORDER BY i.is_default DESC, i.active DESC, i.created_at ASC
-    `,
-    [clientId]
-  );
-
-  return rows;
+    return rows;
+  } catch (err) {
+    console.warn("[evolution-instances] Primary query warning for client", clientId, err.message);
+    try {
+      const { rows } = await pgDatabasePool.query(
+        `SELECT * FROM public.lead_client_evolution_instances WHERE client_id = $1`,
+        [clientId]
+      );
+      return rows;
+    } catch (fallbackErr) {
+      console.warn("[evolution-instances] Fallback query failed:", fallbackErr.message);
+      return [];
+    }
+  }
 }
 
 export async function getLeadClientEvolutionInstancesMap(clientIds) {

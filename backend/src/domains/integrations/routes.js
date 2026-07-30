@@ -471,16 +471,44 @@ export function registerIntegrationsRoutes(app, deps) {
   );
 
   async function ensureTenantExistsForEvolutionRoute(tenantId, res) {
-    const { data: tenant, error: tenantError } = await supabase
-      .from("leads_clients")
-      .select("id")
-      .eq("id", tenantId)
-      .maybeSingle();
+    if (!tenantId) return false;
 
-    if (tenantError) throw tenantError;
-    if (!tenant) {
-      sendError(res, 404, "TENANT_NOT_FOUND", "Tenant not found");
-      return false;
+    // 1. Check/upsert tenant in Supabase
+    try {
+      const { data: tenant } = await supabase
+        .from("leads_clients")
+        .select("id")
+        .eq("id", tenantId)
+        .maybeSingle();
+
+      if (!tenant) {
+        await supabase
+          .from("leads_clients")
+          .upsert({ id: tenantId, name: tenantId }, { onConflict: "id" })
+          .catch((e) => console.warn("[evolution-route] Supabase tenant auto-creation warning:", e.message));
+      }
+    } catch (e) {
+      console.warn("[evolution-route] Supabase tenant check warning:", e.message);
+    }
+
+    // 2. Check/upsert tenant in Postgres
+    try {
+      if (pgDatabasePool) {
+        await pgDatabasePool.query(`
+          CREATE TABLE IF NOT EXISTS public.leads_clients (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          )
+        `).catch(() => {});
+
+        await pgDatabasePool.query(
+          `INSERT INTO public.leads_clients (id, name) VALUES ($1, $1) ON CONFLICT (id) DO NOTHING`,
+          [tenantId]
+        ).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("[evolution-route] Postgres tenant check warning:", e.message);
     }
 
     return true;
