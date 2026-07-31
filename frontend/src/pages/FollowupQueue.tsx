@@ -25,6 +25,9 @@ export default function FollowupDashboard() {
   const activeTab = searchParams.get("tab") || "fila";
   const crmClient = useOptionalCrmClient();
   const selectedCrmClient = crmClient?.selectedClient;
+  // Tenant ativo (empresa selecionada no topo). Usado para escopar as empresas de
+  // follow-up ao próprio tenant — sem vazar nome de empresa de outro cliente.
+  const tenantId = crmClient?.selectedClientId || selectedCrmClient?.id || undefined;
 
   const allowedTabs = selectedCrmClient?.n8n_settings?.allowed_tabs;
   const isSubTabAllowed = (subTabKey: string) => {
@@ -51,7 +54,7 @@ export default function FollowupDashboard() {
     }
   }, [activeTab, allowedFollowupSubTabs, setSearchParams]);
 
-  const { data: companies = [], isLoading: loadingCompanies } = useFupCompanies();
+  const { data: companies = [], isLoading: loadingCompanies } = useFupCompanies(tenantId);
 
   // Selected company state shared across all operational tabs
   const [companyId, setCompanyId] = useState("all");
@@ -88,23 +91,28 @@ export default function FollowupDashboard() {
             <div className="flex items-center gap-2">
               <ListChecks className="h-5 w-5 text-indigo-500 shrink-0" />
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Selecione o Número do WhatsApp (Empresa) para gerenciar fila, cadências e métricas.
+                {companies.length > 1
+                  ? "Selecione o Número do WhatsApp para gerenciar fila, cadências e métricas."
+                  : "Gerencie fila, cadências e métricas do follow-up deste tenant."}
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0 max-w-xs w-full sm:w-auto">
-              <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400 shrink-0">Número do WhatsApp:</Label>
-              <Select value={companyId} onValueChange={setCompanyId} disabled={loadingCompanies}>
-                <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900 border-indigo-100 dark:border-indigo-950">
-                  <SelectValue placeholder={loadingCompanies ? "Carregando..." : "Selecionar Empresa"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all" className="text-xs">Todos os Perfis</SelectItem>
-                  {companies.map((c) => (
-                    <SelectItem key={c.id} value={c.id} className="text-xs">{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Só mostra o seletor quando o tenant tem mais de um número de WhatsApp.
+                Com um único número, ele é selecionado automaticamente. */}
+            {companies.length > 1 && (
+              <div className="flex items-center gap-2 shrink-0 max-w-xs w-full sm:w-auto">
+                <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400 shrink-0">Número do WhatsApp:</Label>
+                <Select value={companyId} onValueChange={setCompanyId} disabled={loadingCompanies}>
+                  <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900 border-indigo-100 dark:border-indigo-950">
+                    <SelectValue placeholder={loadingCompanies ? "Carregando..." : "Selecionar"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companies.map((c) => (
+                      <SelectItem key={c.id} value={c.id} className="text-xs">{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

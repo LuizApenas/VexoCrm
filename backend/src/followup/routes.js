@@ -27,6 +27,22 @@ function str(v) {
   return typeof v === "string" ? v.trim() || null : null;
 }
 
+// Escopo de tenant do usuário logado. NUNCA confiar no tenantId da query para decidir o
+// que mostrar — o filtro é derivado do req.authAccess. Corrige o vazamento de empresas de
+// outros tenants aparecendo no seletor.
+function isAdminAccess(req) {
+  return Boolean(req.authAccess?.isAdmin) || req.authAccess?.role === "superadmin";
+}
+
+function authorizedTenantIds(req) {
+  const a = req.authAccess || {};
+  return Array.from(
+    new Set(
+      [a.clientId, a.tenantId, ...(a.clientIds || []), ...(a.tenantIds || [])].filter(Boolean)
+    )
+  );
+}
+
 // ─── Auth helper — reutiliza requireFirebaseAuth injetado via closure ────────
 
 /**
@@ -156,17 +172,25 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
   // GET /api/followup/companies
   router.get("/companies", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
     try {
-      const tenantId = str(req.query.tenantId);
+      const requestedTenantId = str(req.query.tenantId);
       const supabase = getSupabase();
-      
+
       let sbQuery = supabase
         .from("followup_companies")
         .select("id, name, evolution_instance, webhook_url, panel_access, inbound_enabled, inbound_model, inbound_prompt, inbound_spin_fields, inbound_webhook_url, sdr_whatsapp_number, sdr_transfer_enabled, created_at, tenant_id, engine_scan_interval_hours, never_contacted_delay_hours, no_reply_delay_hours, livpub_inactive_delay_months, last_engine_run_at")
         .is("archived_at", null)
         .order("name", { ascending: true });
-        
-      if (tenantId) {
-        sbQuery = sbQuery.eq("tenant_id", tenantId);
+
+      // Escopo obrigatório por tenant (anti-vazamento): não-admin só enxerga as empresas
+      // dos próprios tenants; admin pode ver tudo ou filtrar pelo tenant pedido.
+      if (isAdminAccess(req)) {
+        if (requestedTenantId) sbQuery = sbQuery.eq("tenant_id", requestedTenantId);
+      } else {
+        const tenantIds = authorizedTenantIds(req);
+        if (tenantIds.length === 0) {
+          return res.json({ success: true, companies: [] });
+        }
+        sbQuery = sbQuery.in("tenant_id", tenantIds);
       }
 
       const { data, error } = await sbQuery;
@@ -224,10 +248,16 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
     }
     try {
       const supabase = getSupabase();
+      // Empresa de follow-up pertence sempre ao tenant de quem cria. Admin pode informar o
+      // tenant; demais usuários ficam presos ao próprio (não dá para criar para outro tenant).
+      const boundTenantId = isAdminAccess(req)
+        ? str(tenant_id) || authorizedTenantIds(req)[0] || null
+        : authorizedTenantIds(req)[0] || null;
+
       const { data, error } = await supabase
         .from("followup_companies")
         .insert({
-          tenant_id: str(tenant_id) || null,
+          tenant_id: boundTenantId,
           name: str(name),
           evolution_instance: str(evolution_instance),
           webhook_url: str(webhook_url),
