@@ -3,6 +3,7 @@
 
 import { normalizeString } from "../textNormalize.js";
 import { getAuth } from "../services/firebase.js";
+import { deriveEffectivePermissions, PERMISSION_KEYS } from "./permissionsRegistry.js";
 
 export const MANAGED_CLAIM_KEYS = [
   "role",
@@ -28,6 +29,7 @@ export const MANAGED_CLAIM_KEYS = [
   "allowedViews",
   "companyName",
   "internalPages",
+  "must_change_password",
 ];
 export const CLIENT_VIEW_KEYS = ["dashboard", "leads", "planilhas", "whatsapp"];
 export const DEFAULT_CLIENT_VIEWS = ["dashboard", "leads"];
@@ -499,9 +501,12 @@ export function normalizePermissions(value, role, preset = getDefaultPresetForRo
     return [];
   }
 
+  // Aceita tanto as chaves antigas (ACCESS_PERMISSION_KEYS) quanto as granulares novas do
+  // PERMISSIONS_REGISTRY, para a matriz de toggles do admin salvar permissões granulares.
+  const allowedKeys = new Set([...ACCESS_PERMISSION_KEYS, ...PERMISSION_KEYS]);
   const selected = normalizeStringArray(value)
     .map((item) => item.toLowerCase())
-    .filter((item) => ACCESS_PERMISSION_KEYS.includes(item));
+    .filter((item) => allowedKeys.has(item));
 
   if (selected.length > 0) {
     return Array.from(new Set(selected));
@@ -567,6 +572,7 @@ export function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
       internalPages: [],
       permissions: [],
       companyName: normalizeString(rawClaims.companyName),
+      mustChangePassword: rawClaims.must_change_password === true,
     };
   }
 
@@ -618,6 +624,21 @@ export function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
     ? [...buildPresetDefaults("admin_vexo").permissions]
     : normalizePermissions(rawClaims.permissions, role, normalizedPreset);
 
+  // Migração transparente (objetivo 2): o conjunto EFETIVO de permissões granulares que os
+  // guards consultam. Deriva do que o usuário já tinha (permissões antigas + páginas/views
+  // legadas) sem reduzir acesso. Usuário antigo passa a operar pelo novo modelo no 1º login,
+  // sem recriação de cadastro.
+  const effectivePermissions = deriveEffectivePermissions({
+    isAdmin,
+    role,
+    storedPermissions: [
+      ...permissions,
+      ...(Array.isArray(rawClaims.permissions) ? rawClaims.permissions : []),
+    ],
+    internalPages,
+    allowedViews,
+  });
+
   return {
     role,
     isAdmin,
@@ -630,8 +651,9 @@ export function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
     tenantIds: preserveClientAssignments || scopeMode !== "no_client_access" ? clientIds : [],
     allowedViews,
     internalPages,
-    permissions,
+    permissions: effectivePermissions,
     companyName: normalizeString(rawClaims.companyName),
+    mustChangePassword: rawClaims.must_change_password === true,
   };
 }
 
@@ -656,6 +678,7 @@ export function buildAccessProfile(decodedToken) {
     internalPages: claims.internalPages,
     permissions: claims.permissions,
     companyName: claims.companyName,
+    mustChangePassword: claims.mustChangePassword === true,
   };
 }
 

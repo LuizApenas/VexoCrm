@@ -241,6 +241,7 @@ import {
   requireInternalPageAccess,
   requireAnyInternalPageAccess,
   requireAppViewAccess,
+  requireCampaignDispatchAccess,
 } from "./access/middlewares.js";
 import {
   canManageGlobalNotifications,
@@ -639,6 +640,7 @@ Object.assign(routeDeps, {
   requireAdminAccess,
   requireAnyInternalPageAccess,
   requireAppViewAccess,
+  requireCampaignDispatchAccess,
   requireFirebaseAuth,
   requireInternalAccess,
   requireInternalPageAccess,

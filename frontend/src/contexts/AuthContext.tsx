@@ -9,6 +9,7 @@ import {
   onAuthChange,
   registerWithEmail,
 } from "@/lib/firebase";
+import { fetchApi } from "@/lib/api";
 import {
   buildPresetDefaults,
   getDefaultPresetForRole,
@@ -204,10 +205,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      let claimMustChangePassword = false;
       try {
         const tokenResult = await getCurrentIdTokenResult();
         if (!active) return;
 
+        claimMustChangePassword = tokenResult?.claims?.must_change_password === true;
         setAccessProfile(buildAccessProfile(user, tokenResult?.claims));
       } catch (error) {
         console.error("Failed to read Firebase custom claims:", error);
@@ -215,7 +218,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAccessProfile(buildAccessProfile(user));
       }
 
-      const shouldChange = isFirstLogin(user) && !hasCompletedInitialPasswordReset(user.uid);
+      // Objetivo 4: a flag must_change_password vinda do backend é a fonte de verdade
+      // (usuário criado pelo admin com senha padrão). Mantém a heurística de 1º login como
+      // fallback para cadastros antigos sem a claim. Concluir /set-password limpa a claim.
+      const shouldChange =
+        (claimMustChangePassword || isFirstLogin(user)) &&
+        !hasCompletedInitialPasswordReset(user.uid);
       setMustChangePassword(shouldChange);
       setLoading(false);
     });
@@ -263,6 +271,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         setLoading(true);
         await changeFirebasePassword(currentPassword, newPassword);
+
+        // Limpa a flag must_change_password no backend (fonte de verdade) e força o refresh
+        // do token para o próximo carregamento já vir sem a claim. Best-effort: mesmo que o
+        // backend falhe, o marcador local abaixo evita novo bloqueio.
+        try {
+          const token = await getFirebaseIdToken(true);
+          if (token) {
+            await fetchApi("/api/access/complete-password-change", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+            });
+          }
+        } catch (clearError) {
+          console.error("Failed to clear must_change_password flag:", clearError);
+        }
+
         markInitialPasswordResetAsDone(firebaseUser.uid);
         setMustChangePassword(false);
       } finally {

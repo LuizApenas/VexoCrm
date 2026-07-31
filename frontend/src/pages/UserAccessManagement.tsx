@@ -93,6 +93,9 @@ interface UserDraft {
   allowedViews: AccessView[];
   internalPages: InternalPage[];
   permissions: AccessPermission[];
+  // Matriz granular do PERMISSIONS_REGISTRY (objetivo 1b). Passa intocada pelo
+  // applySimpleAccessModel (spread) e vira o `permissions` enviado ao backend.
+  granularPermissions?: string[];
   disabled: boolean;
 }
 
@@ -109,11 +112,86 @@ interface CreateUserDraft {
   allowedViews: AccessView[];
   internalPages: InternalPage[];
   permissions: AccessPermission[];
+  granularPermissions?: string[];
   sendPasswordReset: boolean;
   disabled: boolean;
 }
 
 type AccessDraft = UserDraft | CreateUserDraft;
+
+// ── Registro central de permissões (objetivo 1b) ────────────────────────────
+// Servido por GET /api/access/context. Fonte única da matriz de toggles.
+interface RegistryPermission {
+  key: string;
+  label: string;
+  category: string;
+  roles: string[];
+  legacyPages: string[];
+  legacyViews: string[];
+}
+interface RegistryCategory {
+  key: string;
+  label: string;
+}
+interface AccessRegistry {
+  categories: RegistryCategory[];
+  permissions: RegistryPermission[];
+}
+
+let accessRegistryCache: AccessRegistry | null = null;
+
+function useAccessRegistry(): AccessRegistry | null {
+  const { getIdToken } = useAuth();
+  const [registry, setRegistry] = useState<AccessRegistry | null>(accessRegistryCache);
+
+  useEffect(() => {
+    if (accessRegistryCache) return;
+    let active = true;
+    (async () => {
+      try {
+        const token = await getIdToken();
+        if (!token) return;
+        const res = await fetchApi("/api/access/context", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const body = await readApiJson<{ registry?: AccessRegistry }>(res, "access-context");
+        if (active && body.registry) {
+          accessRegistryCache = body.registry;
+          setRegistry(body.registry);
+        }
+      } catch (error) {
+        console.error("Failed to load access registry:", error);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [getIdToken]);
+
+  return registry;
+}
+
+// Reconcilia páginas internas / views de cliente a partir das permissões granulares
+// selecionadas, para o backend (que faz union permissões + páginas) refletir exatamente
+// a matriz. Sem isso, reduzir na matriz não reduziria o acesso efetivo.
+function reconcileLegacyFromPermissions(
+  registry: AccessRegistry | null,
+  role: ManagedRole,
+  selectedKeys: string[]
+): { internalPages: string[]; allowedViews: string[] } {
+  if (!registry) return { internalPages: [], allowedViews: [] };
+  const byKey = new Map(registry.permissions.map((p) => [p.key, p]));
+  const pages = new Set<string>();
+  const views = new Set<string>();
+  for (const key of selectedKeys) {
+    const def = byKey.get(key);
+    if (!def) continue;
+    if (role === "client") def.legacyViews.forEach((v) => views.add(v));
+    else def.legacyPages.forEach((p) => pages.add(p));
+  }
+  return { internalPages: Array.from(pages), allowedViews: Array.from(views) };
+}
 type RoleFilter = "all" | ManagedRole;
 type ActionFeedbackTone = "success" | "error";
 
@@ -207,6 +285,7 @@ const INTERNAL_PAGE_LABELS: Record<InternalPage, string> = {
   eventos: "Eventos",
   relacionamento: "Relacionamento",
   livpub: "LivPub",
+  "banco-de-dados": "Banco de Dados",
 };
 
 const CLIENT_PAGE_TABS = [
@@ -433,6 +512,8 @@ function buildUserDraft(user: AdminUserRecord): UserDraft {
     permissions: user.access.permissions?.length
       ? user.access.permissions
       : [...defaults.permissions],
+    // Semente da matriz granular: as permissões efetivas do backend já são granulares.
+    granularPermissions: [...((user.access.permissions as string[] | undefined) || [])],
     disabled: user.disabled,
   };
 }
@@ -707,6 +788,13 @@ function transitionDraft<T extends AccessDraft>(draft: T): T {
 function buildPayload(draft: AccessDraft) {
   const normalized = normalizeDraft(draft);
 
+  // Objetivo 1b: a matriz granular é a fonte de verdade quando preenchida. As páginas/views
+  // já foram reconciliadas a partir dela no editor, então enviam-se juntas para o backend
+  // (que faz union permissões + páginas) refletir exatamente a matriz.
+  const granular = draft.granularPermissions;
+  const permissions =
+    granular && granular.length > 0 ? granular : normalized.permissions;
+
   return {
     role: normalized.role,
     accessPreset: normalized.accessPreset,
@@ -716,7 +804,7 @@ function buildPayload(draft: AccessDraft) {
     clientIds: normalized.clientIds,
     allowedViews: normalized.allowedViews,
     internalPages: normalized.internalPages,
-    permissions: normalized.permissions,
+    permissions,
     disabled: normalized.disabled,
   };
 }
@@ -744,7 +832,11 @@ function validateDraft(draft: AccessDraft) {
     }
   }
 
-  if (normalized.role !== "pending" && normalized.permissions.length === 0) {
+  const effectivePermissions =
+    draft.granularPermissions && draft.granularPermissions.length > 0
+      ? draft.granularPermissions
+      : normalized.permissions;
+  if (normalized.role !== "pending" && effectivePermissions.length === 0) {
     return "Selecione ao menos uma permissao operacional.";
   }
 
@@ -1370,7 +1462,84 @@ function prepareDraftForPersistence<T extends AccessDraft>(
   }) as T;
 }
 
+// Ao alterar a matriz, guarda as permissões granulares e reconcilia páginas/views.
+function applyGranularToDraft(
+  registry: AccessRegistry | null,
+  role: ManagedRole,
+  keys: string[]
+): Partial<AccessDraft> {
+  const unique = Array.from(new Set(keys));
+  const { internalPages, allowedViews } = reconcileLegacyFromPermissions(registry, role, unique);
+  return {
+    granularPermissions: unique,
+    internalPages: internalPages as InternalPage[],
+    allowedViews: allowedViews as AccessView[],
+  };
+}
+
+// Matriz de toggles por ferramenta (objetivo 1b), categorizada A–E, filtrada pelo tipo
+// de acesso (interno/cliente). Alimentada pelo PERMISSIONS_REGISTRY do backend.
+function GranularPermissionMatrix({
+  registry,
+  role,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  registry: AccessRegistry | null;
+  role: ManagedRole;
+  selected: string[];
+  disabled: boolean;
+  onToggle: (key: string, checked: boolean) => void;
+}) {
+  if (!registry) {
+    return <p className="text-sm text-muted-foreground p-4">Carregando permissões…</p>;
+  }
+
+  const roleKey = role === "client" ? "client" : "internal";
+  const available = registry.permissions.filter((perm) => perm.roles.includes(roleKey));
+  const selectedSet = new Set(selected);
+  const categories = registry.categories.filter((category) =>
+    available.some((perm) => perm.category === category.key)
+  );
+
+  return (
+    <div className="space-y-6">
+      {categories.map((category) => {
+        const perms = available.filter((perm) => perm.category === category.key);
+        return (
+          <div key={category.key} className="space-y-3">
+            <h5 className="text-sm font-bold text-foreground">{category.label}</h5>
+            <div className="grid gap-2 md:grid-cols-2">
+              {perms.map((perm) => {
+                const checked = selectedSet.has(perm.key);
+                return (
+                  <label
+                    key={perm.key}
+                    className={cn(
+                      "flex items-center justify-between gap-3 rounded-xl border p-3 transition-colors",
+                      checked ? "border-primary/40 bg-primary/5" : "border-border/60 bg-muted/5"
+                    )}
+                  >
+                    <span className="text-sm text-foreground">{perm.label}</span>
+                    <Switch
+                      checked={checked}
+                      disabled={disabled}
+                      onCheckedChange={(value) => onToggle(perm.key, value === true)}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, editable, onChange }: AccessGovernanceProps) {
+  const registry = useAccessRegistry();
   const normalized = applySimpleAccessModel(draft);
   const matrixDisabled = !editable || normalized.role === "pending";
   const applyPatch = (patch: Partial<AccessDraft>) => onChange(applySimpleAccessModel({ ...normalized, ...patch }));
@@ -1448,33 +1617,39 @@ function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, ed
           <div className="grid gap-6 md:grid-cols-2">
             <div className="space-y-3">
               <label className="text-sm font-bold text-foreground flex items-center gap-2">
-                Perfil de Acesso Principal
+                Tipo de Acesso
               </label>
-              <Select
-                value={normalized.accessPreset}
-                disabled={!editable}
-                onValueChange={(value) => {
-                  const profile = findAccessProfile(accessProfiles, value);
-                  onChange(applyAccessProfileToDraft({ ...normalized, accessPreset: value }, profile));
-                }}
-              >
-                <SelectTrigger className="h-14 rounded-2xl bg-muted/10 border-border/60 hover:bg-muted/20 transition-colors text-base px-4">
-                  <SelectValue placeholder="Selecionar perfil de acesso" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  {accessProfiles.filter(p => p.role !== "pending").map((profile) => (
-                    <SelectItem key={profile.key} value={profile.key} className="py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{profile.label}</span>
-                        <Badge variant="outline" className="text-[10px] uppercase">{ROLE_LABELS[profile.role]}</Badge>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedType?.description && (
-                <p className="text-xs text-muted-foreground leading-relaxed pl-1">{selectedType.description}</p>
-              )}
+              <div className="grid grid-cols-2 gap-3">
+                {([
+                  { value: "internal", title: "Equipe Vexo (Interno)", hint: "Acessa o back-office da Vexo." },
+                  { value: "client", title: "Cliente / Tenant", hint: "Usuário da empresa cliente." },
+                ] as const).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    disabled={!editable}
+                    onClick={() =>
+                      applyPatch({
+                        role: option.value,
+                        granularPermissions: (normalized.granularPermissions ?? []).filter((key) =>
+                          registry?.permissions.some(
+                            (perm) => perm.key === key && perm.roles.includes(option.value)
+                          )
+                        ),
+                      })
+                    }
+                    className={cn(
+                      "rounded-2xl border p-4 text-left transition-colors",
+                      normalized.role === option.value
+                        ? "border-primary bg-primary/10 shadow-sm"
+                        : "border-border/60 bg-muted/5 hover:bg-muted/10"
+                    )}
+                  >
+                    <p className="font-bold text-foreground">{option.title}</p>
+                    <p className="text-xs text-muted-foreground leading-5 mt-1">{option.hint}</p>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -1521,67 +1696,29 @@ function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, ed
         </div>
       )}
 
-      {normalized.role === "internal" ? (
-        <div className="pt-8 border-t border-border/40 space-y-5">
-          <h4 className="text-base font-bold text-foreground">Acessos Rápidos (Administração)</h4>
-          <div className="grid gap-4 md:grid-cols-2">
-            {INTERNAL_SHORTCUTS.map((shortcut) => {
-              const enabled = hasInternalShortcutAccess(normalized, shortcut.key);
-              const ShortcutIcon = shortcut.icon;
-
-              return (
-                <button
-                  key={shortcut.key}
-                  type="button"
-                  disabled={!editable}
-                  onClick={() => applyPatch(buildInternalShortcutPatch(normalized, shortcut.key, !enabled))}
-                  className={cn(
-                    "text-left rounded-[2rem] border p-6 transition-all duration-300 relative overflow-hidden group",
-                    enabled
-                      ? "border-primary/40 bg-primary/5 shadow-md"
-                      : "border-border/60 bg-muted/5 hover:border-border hover:bg-muted/10"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-4 relative z-10">
-                    <div className="flex items-start gap-4">
-                      <div className={cn(
-                        "flex h-12 w-12 items-center justify-center rounded-2xl transition-colors",
-                        enabled ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted text-muted-foreground group-hover:text-foreground"
-                      )}>
-                        <ShortcutIcon className="h-5 w-5" />
-                      </div>
-                      <div className="space-y-1 mt-1">
-                        <p className={cn("font-bold", enabled ? "text-primary" : "text-foreground")}>{shortcut.title}</p>
-                        <p className="text-xs leading-5 text-muted-foreground">{shortcut.description}</p>
-                      </div>
-                    </div>
-                    <div className="pt-2">
-                      <Switch checked={enabled} disabled={!editable} />
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-
       {normalized.role !== "pending" ? (
         <div className="pt-8 border-t border-border/40 space-y-5">
-           <div className="flex items-center justify-between">
-             <h4 className="text-base font-bold text-foreground">Permissões Detalhadas de Módulos</h4>
-             <Badge variant="outline" className="font-medium bg-muted/20">Configuração Avançada</Badge>
-           </div>
-          <div className="rounded-[2rem] border border-border/60 bg-muted/5 p-2 overflow-hidden">
-            <AccessPagesTabs
+          <div className="flex items-center justify-between">
+            <h4 className="text-base font-bold text-foreground">Matriz de Permissões</h4>
+            <Badge variant="outline" className="font-medium bg-muted/20">Por ferramenta</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Ligue apenas as ferramentas que este usuário pode acessar. A lista se atualiza
+            automaticamente quando novos módulos são adicionados ao sistema.
+          </p>
+          <div className="rounded-[2rem] border border-border/60 bg-muted/5 p-4">
+            <GranularPermissionMatrix
+              registry={registry}
               role={normalized.role}
-              selected={normalized.role === "client" ? normalized.allowedViews : normalized.internalPages}
+              selected={normalized.granularPermissions ?? (normalized.permissions as string[])}
               disabled={matrixDisabled}
-              onChange={(next) =>
-                normalized.role === "client"
-                  ? applyPatch({ allowedViews: next as AccessView[] })
-                  : applyPatch({ internalPages: next as InternalPage[] })
-              }
+              onToggle={(key, checked) => {
+                const current = normalized.granularPermissions ?? [...(normalized.permissions as string[])];
+                const next = checked
+                  ? Array.from(new Set([...current, key]))
+                  : current.filter((entry) => entry !== key);
+                applyPatch(applyGranularToDraft(registry, normalized.role, next));
+              }}
             />
           </div>
         </div>
@@ -1709,6 +1846,7 @@ function UserListItem({
 
 export default function UserAccessManagement() {
   const { accessPreset, getIdToken, isAdminUser } = useAuth();
+  const accessRegistry = useAccessRegistry();
   const crmClient = useOptionalCrmClient();
   const selectedClientId = crmClient?.selectedClientId || "";
   const canEditUsers = isAdminUser || USER_MANAGEMENT_PRESETS.includes(accessPreset);
@@ -2272,56 +2410,42 @@ export default function UserAccessManagement() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Tipo de Usuário</label>
-                    <Select
-                      value={createDraft.accessPreset}
-                      onValueChange={(value) => {
-                        const profile = findAccessProfile(resolvedAccessProfiles, value);
-                        setCreateDraft((current) =>
-                          normalizeCreateDraftForSimpleForm(
-                            applyAccessProfileToDraft(
-                              {
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Tipo de Acesso</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {([
+                        { value: "internal", title: "Equipe Vexo", hint: "Back-office interno." },
+                        { value: "client", title: "Cliente / Tenant", hint: "Usuário da empresa." },
+                      ] as const).map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          data-testid={`access-type-${option.value}`}
+                          onClick={() =>
+                            setCreateDraft((current) =>
+                              normalizeCreateDraftForSimpleForm({
                                 ...current,
-                                accessPreset: value,
-                              },
-                              profile
+                                role: option.value,
+                                accessPreset: getDefaultPresetForRole(option.value),
+                                granularPermissions: (current.granularPermissions ?? []).filter((key) =>
+                                  accessRegistry?.permissions.some(
+                                    (perm) => perm.key === key && perm.roles.includes(option.value)
+                                  )
+                                ),
+                              })
                             )
-                          )
-                        );
-                      }}
-                    >
-                      <SelectTrigger className="h-12 rounded-xl bg-muted/10 border-border/60 hover:bg-muted/20">
-                        <SelectValue placeholder="Tipo de usuario">
-                          {createDraft.accessPreset ? findAccessProfile(resolvedAccessProfiles, createDraft.accessPreset)?.label : undefined}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        {resolvedAccessProfiles
-                          .filter((profile) => {
-                            if (profile.key === "pending") return false;
-                            if (profile.key === "admin_vexo") return false;
-                            if (isAdminUser) return true;
-                            return profile.key === "operador";
-                          })
-                          .map((profile) => (
-                            <SelectItem
-                              key={profile.key}
-                              value={profile.key}
-                              className="py-3 items-start"
-                              data-testid={`profile-option-${profile.key}`}
-                            >
-                              <div className="flex flex-col gap-1 pr-2 max-w-[280px]">
-                                <span className="font-semibold text-sm leading-none">{profile.label}</span>
-                                {profile.description && (
-                                  <span className="text-[11px] text-muted-foreground whitespace-normal leading-snug">
-                                    {profile.description}
-                                  </span>
-                                )}
-                              </div>
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                          }
+                          className={cn(
+                            "rounded-xl border p-3 text-left transition-colors",
+                            createDraft.role === option.value
+                              ? "border-primary bg-primary/10 shadow-sm"
+                              : "border-border/60 bg-muted/5 hover:bg-muted/10"
+                          )}
+                        >
+                          <p className="font-bold text-sm text-foreground">{option.title}</p>
+                          <p className="text-[11px] text-muted-foreground leading-4 mt-0.5">{option.hint}</p>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Empresa / Tenant</label>
@@ -2371,17 +2495,24 @@ export default function UserAccessManagement() {
               </TabsContent>
 
               {createDraft.role !== "pending" && (
-                <TabsContent value="permissoes" className="space-y-6 mt-0 outline-none">
-                  <div className="rounded-[2rem] border border-border/60 bg-muted/5 p-2 overflow-hidden">
-                    <AccessPagesTabs
+                <TabsContent value="permissoes" className="space-y-4 mt-0 outline-none">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-foreground">Matriz de Permissões</h4>
+                    <Badge variant="outline" className="font-medium bg-muted/20 text-[10px]">Por ferramenta</Badge>
+                  </div>
+                  <div className="rounded-[2rem] border border-border/60 bg-muted/5 p-4">
+                    <GranularPermissionMatrix
+                      registry={accessRegistry}
                       role={createDraft.role}
-                      selected={createDraft.role === "client" ? createDraft.allowedViews : createDraft.internalPages}
+                      selected={createDraft.granularPermissions ?? (createDraft.permissions as string[])}
                       disabled={!canEditUsers}
-                      onChange={(next) =>
-                        createDraft.role === "client"
-                          ? updateCreateDraft({ allowedViews: next as AccessView[] })
-                          : updateCreateDraft({ internalPages: next as InternalPage[] })
-                      }
+                      onToggle={(key, checked) => {
+                        const current = createDraft.granularPermissions ?? [...(createDraft.permissions as string[])];
+                        const next = checked
+                          ? Array.from(new Set([...current, key]))
+                          : current.filter((entry) => entry !== key);
+                        updateCreateDraft(applyGranularToDraft(accessRegistry, createDraft.role, next));
+                      }}
                     />
                   </div>
                 </TabsContent>
@@ -2716,43 +2847,38 @@ export default function UserAccessManagement() {
                                   <TabsContent value="geral" className="space-y-6 mt-0 outline-none">
                                     <div className="grid gap-6 md:grid-cols-2">
                                       <div className="space-y-2">
-                                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Perfil de Acesso Principal</label>
-                                        <Select
-                                          value={selectedDraft.accessPreset}
-                                          disabled={!selectedEditable}
-                                          onValueChange={(value) => {
-                                            const profile = findAccessProfile(resolvedAccessProfiles, value);
-                                            updateDraft(selectedUser.uid, applyAccessProfileToDraft({ ...selectedDraft, accessPreset: value }, profile));
-                                          }}
-                                        >
-                                          <SelectTrigger className="h-12 rounded-xl bg-muted/10 border-border/60 hover:bg-muted/20 text-base px-4">
-                                            <SelectValue placeholder="Selecionar perfil de acesso">
-                                              {selectedDraft.accessPreset ? findAccessProfile(resolvedAccessProfiles, selectedDraft.accessPreset)?.label : undefined}
-                                            </SelectValue>
-                                          </SelectTrigger>
-                                          <SelectContent className="rounded-xl">
-                                            {resolvedAccessProfiles.filter(p => p.role !== "pending").map((profile) => (
-                                              <SelectItem
-                                                key={profile.key}
-                                                value={profile.key}
-                                                className="py-3 items-start"
-                                              >
-                                                <div className="flex flex-col gap-1 pr-2 max-w-[280px]">
-                                                  <div className="flex items-center gap-2">
-                                                    <span className="font-semibold text-sm leading-none">{profile.label}</span>
-                                                    <Badge variant="outline" className="text-[10px] uppercase">{ROLE_LABELS[profile.role]}</Badge>
-                                                  </div>
-                                                  {profile.description && (
-                                                    <span className="text-[11px] text-muted-foreground whitespace-normal leading-snug">
-                                                      {profile.description}
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-
+                                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Tipo de Acesso</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          {([
+                                            { value: "internal", title: "Equipe Vexo", hint: "Back-office interno." },
+                                            { value: "client", title: "Cliente / Tenant", hint: "Usuário da empresa." },
+                                          ] as const).map((option) => (
+                                            <button
+                                              key={option.value}
+                                              type="button"
+                                              disabled={!selectedEditable}
+                                              onClick={() =>
+                                                updateDraft(selectedUser.uid, {
+                                                  role: option.value,
+                                                  granularPermissions: (selectedDraft.granularPermissions ?? []).filter((key) =>
+                                                    accessRegistry?.permissions.some(
+                                                      (perm) => perm.key === key && perm.roles.includes(option.value)
+                                                    )
+                                                  ),
+                                                })
+                                              }
+                                              className={cn(
+                                                "rounded-xl border p-3 text-left transition-colors",
+                                                selectedDraft.role === option.value
+                                                  ? "border-primary bg-primary/10 shadow-sm"
+                                                  : "border-border/60 bg-muted/5 hover:bg-muted/10"
+                                              )}
+                                            >
+                                              <p className="font-bold text-sm text-foreground">{option.title}</p>
+                                              <p className="text-[11px] text-muted-foreground leading-4 mt-0.5">{option.hint}</p>
+                                            </button>
+                                          ))}
+                                        </div>
                                       </div>
 
                                       <div className="space-y-2">
@@ -2819,54 +2945,28 @@ export default function UserAccessManagement() {
                                       </div>
                                     )}
 
-                                    {selectedDraft.role === "internal" && (
-                                      <div className="space-y-3">
-                                        <h4 className="text-sm font-bold text-foreground">Acessos Rápidos (Administração)</h4>
-                                        <div className="space-y-2">
-                                          {INTERNAL_SHORTCUTS.map((shortcut) => {
-                                            const enabled = hasInternalShortcutAccess(selectedDraft, shortcut.key);
-                                            const ShortcutIcon = shortcut.icon;
-
-                                            return (
-                                              <div
-                                                key={shortcut.key}
-                                                className="flex items-center justify-between py-3 px-4 rounded-xl border border-border/40 bg-muted/5 transition-colors"
-                                              >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                  <ShortcutIcon className="h-5 w-5 text-muted-foreground shrink-0" />
-                                                  <div className="space-y-0.5 min-w-0">
-                                                    <p className="font-semibold text-sm text-foreground">{shortcut.title}</p>
-                                                    <p className="text-xs text-muted-foreground truncate max-w-[400px]">{shortcut.description}</p>
-                                                  </div>
-                                                </div>
-                                                <Switch
-                                                  checked={enabled}
-                                                  disabled={!selectedEditable}
-                                                  onCheckedChange={(checked) => updateDraft(selectedUser.uid, buildInternalShortcutPatch(selectedDraft, shortcut.key, checked))}
-                                                  className="scale-90 data-[state=checked]:bg-primary"
-                                                />
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    <div className="pt-4 border-t border-border/40 space-y-4">
+                                    <div className="space-y-4">
                                       <div className="flex items-center justify-between">
-                                        <h4 className="text-sm font-bold text-foreground">Permissões Detalhadas de Módulos</h4>
-                                        <Badge variant="outline" className="font-medium bg-muted/20 text-[10px]">Configuração Avançada</Badge>
+                                        <h4 className="text-sm font-bold text-foreground">Matriz de Permissões</h4>
+                                        <Badge variant="outline" className="font-medium bg-muted/20 text-[10px]">Por ferramenta</Badge>
                                       </div>
-                                      <div className="rounded-2xl border border-border/60 bg-muted/5 p-1 overflow-hidden">
-                                        <AccessPagesTabs
+                                      <p className="text-xs text-muted-foreground">
+                                        Ligue apenas as ferramentas liberadas para este usuário. A lista se atualiza
+                                        sozinha quando novos módulos entram no sistema.
+                                      </p>
+                                      <div className="rounded-2xl border border-border/60 bg-muted/5 p-4">
+                                        <GranularPermissionMatrix
+                                          registry={accessRegistry}
                                           role={selectedDraft.role}
-                                          selected={selectedDraft.role === "client" ? selectedDraft.allowedViews : selectedDraft.internalPages}
+                                          selected={selectedDraft.granularPermissions ?? (selectedDraft.permissions as string[])}
                                           disabled={!selectedEditable}
-                                          onChange={(next) =>
-                                            selectedDraft.role === "client"
-                                              ? updateDraft(selectedUser.uid, { allowedViews: next as AccessView[] })
-                                              : updateDraft(selectedUser.uid, { internalPages: next as InternalPage[] })
-                                          }
+                                          onToggle={(key, checked) => {
+                                            const current = selectedDraft.granularPermissions ?? [...(selectedDraft.permissions as string[])];
+                                            const next = checked
+                                              ? Array.from(new Set([...current, key]))
+                                              : current.filter((entry) => entry !== key);
+                                            updateDraft(selectedUser.uid, applyGranularToDraft(accessRegistry, selectedDraft.role, next));
+                                          }}
                                         />
                                       </div>
                                     </div>

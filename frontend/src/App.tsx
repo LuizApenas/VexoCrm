@@ -290,7 +290,7 @@ const App = () => (
               <Route
                 path="onboarding"
                 element={
-                  <ProtectedRoute allowedRoles={["internal"]}>
+                  <ProtectedRoute allowedRoles={["internal", "client"]}>
                     <OnboardingWizard />
                   </ProtectedRoute>
                 }
