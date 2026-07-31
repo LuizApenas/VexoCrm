@@ -75,6 +75,7 @@ export function registerCampaignsRoutes(app, deps) {
     parseOptionalUuid,
     pgDatabasePool,
     requireAppViewAccess,
+    requireCampaignDispatchAccess,
     requireFirebaseAuth,
     requireInternalPageAccess,
     resolveAuthorizedClientId,
@@ -601,7 +602,7 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  app.get("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.get("/api/campaigns", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.query.clientId);
     const clientId = resolveRequiredAuthorizedClientId({
@@ -673,7 +674,7 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  app.get("/api/campaigns/:id/leads", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.get("/api/campaigns/:id/leads", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
 
     const id = normalizeString(req.params?.id);
@@ -740,7 +741,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // POST /api/campaigns — cria campanha
-  app.post("/api/campaigns", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
 
     const name = normalizeString(req.body?.name);
@@ -896,7 +897,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // PATCH /api/campaigns/:id — atualiza campanha
-  app.patch("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.patch("/api/campaigns/:id", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
 
     const id = normalizeString(req.params?.id);
@@ -1011,7 +1012,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // DELETE /api/campaigns/:id — exclui campanha
-  app.delete("/api/campaigns/:id", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.delete("/api/campaigns/:id", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
 
     const id = normalizeString(req.params?.id);
@@ -1346,7 +1347,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // POST /api/campaigns/:id/trigger — dispara campanha (chama webhook n8n)
-  app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
 
     const id = normalizeString(req.params?.id);
@@ -1819,7 +1820,7 @@ export function registerCampaignsRoutes(app, deps) {
   // ── Campaign Dispatches CRUD ─────────────────────────────────────────────────
 
   // GET /api/dispatches — lista todos os disparos de um tenant (todas as campanhas)
-  app.get("/api/dispatches", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.get("/api/dispatches", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.query.clientId);
     if (!requestedClientId) return sendError(res, 400, "MISSING_CLIENT_ID", "Missing clientId query param");
@@ -1847,7 +1848,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // GET /api/campaigns/:id/dispatches — lista disparos de uma campanha
-  app.get("/api/campaigns/:id/dispatches", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.get("/api/campaigns/:id/dispatches", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const campaignId = normalizeString(req.params.id);
     if (!campaignId) return sendError(res, 400, "MISSING_ID", "Missing campaign id");
@@ -1876,7 +1877,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // GET /api/campaigns/dispatches/:dispatchId/preview-leads — Retorna amostra de leads que um dispatch deve atingir
-  app.get("/api/campaigns/dispatches/:dispatchId/preview-leads", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.get("/api/campaigns/dispatches/:dispatchId/preview-leads", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const dispatchId = normalizeString(req.params.dispatchId);
     if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");
@@ -1923,7 +1924,7 @@ export function registerCampaignsRoutes(app, deps) {
   // GET /api/campaigns/dispatches/:dispatchId/failed — leads falhados do disparo,
   // exportável para planilha (?format=csv). Defeito A: failed sai do reprocesso e
   // fica disponível para tratamento/exclusão manual.
-  app.get("/api/campaigns/dispatches/:dispatchId/failed", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.get("/api/campaigns/dispatches/:dispatchId/failed", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const dispatchId = normalizeString(req.params.dispatchId);
     if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");
@@ -2167,7 +2168,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // POST /api/campaigns/:id/dispatches — cria disparo
-  app.post("/api/campaigns/:id/dispatches", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/:id/dispatches", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const campaignId = normalizeString(req.params.id);
     if (!campaignId) return sendError(res, 400, "MISSING_ID", "Missing campaign id");
@@ -2250,7 +2251,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // PATCH /api/campaigns/dispatches/:dispatchId — atualiza disparo
-  app.patch("/api/campaigns/dispatches/:dispatchId", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.patch("/api/campaigns/dispatches/:dispatchId", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const dispatchId = normalizeString(req.params.dispatchId);
     if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");
@@ -2329,7 +2330,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // DELETE /api/campaigns/dispatches/:dispatchId — remove disparo (só draft)
-  app.delete("/api/campaigns/dispatches/:dispatchId", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.delete("/api/campaigns/dispatches/:dispatchId", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const dispatchId = normalizeString(req.params.dispatchId);
     if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");
@@ -2349,7 +2350,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // POST /api/campaigns/dispatches/:dispatchId/trigger — executa disparo manualmente
-  app.post("/api/campaigns/dispatches/:dispatchId/trigger", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/dispatches/:dispatchId/trigger", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const dispatchId = normalizeString(req.params.dispatchId);
     if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");

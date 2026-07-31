@@ -1,460 +1,726 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  BookOpen,
-  Smartphone,
-  Bot,
+  LayoutDashboard,
+  Database,
+  MessageCircle,
+  Wifi,
   Send,
   ListChecks,
+  Bot,
   BarChart3,
+  LineChart,
+  Briefcase,
+  Sparkles,
+  ShieldCheck,
   ArrowRight,
   Lightbulb,
   CheckCircle2,
-  Server,
-  Sparkles,
-  Briefcase
+  type LucideIcon,
 } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchApi, readApiJson } from "@/lib/api";
+
+// Vexo Academy dinâmico (objetivo 5). Conteúdo 100% data-driven: cada ferramenta do
+// sistema tem um módulo com resumo prático, passo-a-passo detalhado, dicas de ouro /
+// anti-ban e botão de ação. Os módulos aparecem APENAS se o usuário logado tem a
+// permissão correspondente no PERMISSIONS_REGISTRY — ao adicionar uma ferramenta nova,
+// basta registrar um módulo aqui com sua permissão que ele passa a aparecer sozinho.
+
+interface ModuleSection {
+  title: string;
+  intro?: string;
+  steps?: string[];
+}
+
+interface AcademyModule {
+  value: string;
+  label: string;
+  icon: LucideIcon;
+  permissions: string[]; // vazio = visível só para admin
+  title: string;
+  summary: string;
+  goal: string; // objetivo de vendas
+  ctaHref: string;
+  ctaLabel: string;
+  sections: ModuleSection[];
+  tips: string[];
+}
+
+const ACADEMY_MODULES: AcademyModule[] = [
+  {
+    value: "dashboard",
+    label: "Dashboard & Métricas",
+    icon: LayoutDashboard,
+    permissions: ["dashboard.view"],
+    title: "Dashboard & Métricas",
+    summary:
+      "A tela inicial do Vexo. Mostra em tempo real o funil de vendas, volume de leads, conversas em andamento e a saúde geral da operação.",
+    goal: "Objetivo de vendas: enxergar rápido onde estão os gargalos (leads parados, sem resposta) e agir antes de perder negócio.",
+    ctaHref: "/crm/dashboard",
+    ctaLabel: "Abrir o Dashboard",
+    sections: [
+      {
+        title: "O que você acompanha aqui",
+        steps: [
+          "Novos contatos, leads em atendimento e propostas abertas — o pipeline vivo.",
+          "Volume de mensagens enviadas e respondidas no período.",
+          "Taxa de resposta e evolução dos números ao longo dos dias.",
+        ],
+      },
+      {
+        title: "Como usar no dia a dia",
+        intro: "Use o Dashboard como primeira tela da manhã.",
+        steps: [
+          "Filtre por empresa/tenant no topo (se você atende mais de uma).",
+          "Ajuste o período (hoje, 7 dias, 30 dias) para comparar tendência.",
+          "Clique nos cartões para ir direto à lista de leads daquele estágio.",
+        ],
+      },
+    ],
+    tips: [
+      "Cheque o Dashboard todo início de turno: leads parados há muito tempo são dinheiro esfriando.",
+      "Queda súbita no volume de envio costuma indicar chip desconectado — confira em Chips WhatsApp.",
+    ],
+  },
+  {
+    value: "banco-de-dados",
+    label: "Banco de Dados Inteligente",
+    icon: Database,
+    permissions: ["banco_dados.view", "banco_dados.import", "banco_dados.extract_wa", "banco_dados.delete", "leads.view", "leads.export"],
+    title: "Banco de Dados Inteligente",
+    summary:
+      "A base central de contatos e leads do tenant. Aqui você importa listas, organiza por tags, filtra segmentos e alimenta as campanhas de disparo.",
+    goal: "Objetivo de vendas: transformar planilhas soltas e contatos avulsos numa base viva, segmentável e pronta para abordagem.",
+    ctaHref: "/crm/banco-de-dados",
+    ctaLabel: "Abrir Banco de Dados",
+    sections: [
+      {
+        title: "Importar planilhas de leads",
+        intro: "A forma mais rápida de encher a base.",
+        steps: [
+          "Prepare um arquivo Excel (.xlsx) ou CSV com no mínimo as colunas nome e telefone.",
+          "Clique em Importar / Upload e selecione o arquivo.",
+          "Faça o de-para das colunas (o Vexo tenta reconhecer sozinho nome, telefone, origem, e-mail).",
+          "Defina a Origem da lista (ex.: 'Feira X', 'Tráfego Meta') — isso vira filtro depois.",
+          "Confirme. Números repetidos são deduplicados automaticamente.",
+        ],
+      },
+      {
+        title: "Extração de contatos via WhatsApp",
+        intro: "Puxa contatos direto de um chip conectado, sem planilha.",
+        steps: [
+          "Escolha o chip conectado de onde quer extrair.",
+          "Rode a extração — o Vexo importa os contatos para a base do tenant.",
+          "Depois, organize com tags e origem como qualquer outra lista.",
+        ],
+      },
+      {
+        title: "Organizar com tags e filtros",
+        intro: "Tag é o coração da segmentação no Vexo.",
+        steps: [
+          "Selecione um ou vários leads e aplique tags (ex.: 'Quente', 'Sem resposta', 'Cliente').",
+          "Use os filtros (origem, tag, status de qualificação) para isolar exatamente o público que quer atingir.",
+          "Exporte o subconjunto filtrado, ou use-o direto como base de uma campanha.",
+        ],
+      },
+      {
+        title: "Exportar e excluir",
+        steps: [
+          "Exportar: gera Excel/CSV do que estiver filtrado na tela.",
+          "Excluir: remove leads da base (ação destrutiva — só quem tem a permissão de exclusão).",
+        ],
+      },
+    ],
+    tips: [
+      "Padronize o telefone com DDD e país (55) — número torto não recebe disparo.",
+      "Crie tags curtas e consistentes; segmentação boa depende de tag limpa.",
+      "Sempre defina a Origem ao importar: depois você mede qual fonte de lead converte mais.",
+    ],
+  },
+  {
+    value: "conversas",
+    label: "Conversas (Inbox)",
+    icon: MessageCircle,
+    permissions: ["whatsapp.view", "whatsapp.reply"],
+    title: "Conversas (Inbox de WhatsApp)",
+    summary:
+      "A caixa de entrada unificada de todos os WhatsApps conectados. É onde o time humano assume o atendimento depois que o lead responde ou a IA passa o bastão.",
+    goal: "Objetivo de vendas: responder rápido e no lugar certo, sem perder o histórico da conversa nem misturar chips.",
+    ctaHref: "/crm/whatsapp",
+    ctaLabel: "Abrir Conversas",
+    sections: [
+      {
+        title: "Entendendo a tela",
+        steps: [
+          "À esquerda: lista de conversas, com as mais recentes no topo.",
+          "No centro: o histórico da conversa selecionada.",
+          "Cada conversa mostra por qual chip está sendo atendida.",
+        ],
+      },
+      {
+        title: "Responder um lead",
+        steps: [
+          "Clique na conversa na lista à esquerda.",
+          "Digite no campo inferior e envie.",
+          "Assim que você (ou o lead) responde, qualquer follow-up automático programado para ele é cancelado na hora.",
+        ],
+      },
+      {
+        title: "Boas práticas de atendimento",
+        steps: [
+          "Priorize conversas sem resposta há mais tempo — SLA baixo fecha mais venda.",
+          "Use as tags do lead (vindas do Banco de Dados) para saber o contexto antes de responder.",
+        ],
+      },
+    ],
+    tips: [
+      "Responder lead qualificado em menos de 5 minutos aumenta muito a taxa de fechamento.",
+      "Não apague conversas: o histórico é o que a IA e os relatórios usam para medir a operação.",
+    ],
+  },
+  {
+    value: "chips",
+    label: "Chips WhatsApp & Aquecimento",
+    icon: Wifi,
+    permissions: ["whatsapp.chips_view", "whatsapp.chips_add", "whatsapp.chips_delete"],
+    title: "Chips WhatsApp & Aquecimento",
+    summary:
+      "Onde você pluga os números de WhatsApp (chips) que disparam campanhas, fazem follow-up e atendem. Também é onde se aquece chip novo para não tomar ban.",
+    goal: "Objetivo de vendas: ter linhas estáveis e com reputação para disparar em volume sem cair.",
+    ctaHref: "/crm/chips-whatsapp?tab=conexoes",
+    ctaLabel: "Abrir Chips WhatsApp",
+    sections: [
+      {
+        title: "Conectar um chip (Pareamento QR Code)",
+        steps: [
+          "Na aba Conexões, clique em Adicionar Instância e dê um nome identificador ao chip.",
+          "Aguarde o QR Code aparecer na tela.",
+          "No celular, abra WhatsApp > Aparelhos Conectados > Conectar um Aparelho e escaneie o código.",
+          "Aguarde o status ficar 'conectado'. Pronto: esse chip já pode disparar.",
+        ],
+      },
+      {
+        title: "Aquecimento (Warming) de chips novos",
+        intro: "Chip novo que dispara muito rápido é banido. O aquecimento cria reputação antes.",
+        steps: [
+          "Cadastre e ative o aquecimento de vários chips na aba Aquecimento.",
+          "O Vexo faz os chips conversarem entre si de forma simulada no background.",
+          "Deixe aquecer alguns dias antes de usar em campanha fria de volume.",
+        ],
+      },
+      {
+        title: "Remover / desconectar chip",
+        steps: [
+          "Use a opção de remover para desconectar um chip banido ou trocado (requer permissão).",
+          "Reconecte um novo no lugar e o rodízio de disparo se ajusta sozinho.",
+        ],
+      },
+    ],
+    tips: [
+      "Anti-ban: mantenha a internet do celular sempre ativa e estável.",
+      "Anti-ban: use vários chips por campanha. O Vexo faz rodízio automático e dilui a carga.",
+      "Comece devagar em chip novo e aumente o volume aos poucos.",
+    ],
+  },
+  {
+    value: "campanhas",
+    label: "Campanhas & Disparos",
+    icon: Send,
+    permissions: ["campaigns.view", "campaigns.create", "campaigns.delete", "dispatches.execute", "dispatches.pause", "dispatches.export_failed"],
+    title: "Campanhas & Disparos (Envio em Massa)",
+    summary:
+      "O motor de abordagem ativa. Uma Campanha guarda a base e a mensagem; os Disparos são os lotes de envio que você executa a partir dela — agora, agendado, em partes.",
+    goal: "Objetivo de vendas: abordar centenas de leads de forma personalizada e humanizada, controlando ritmo e volume para não queimar chip.",
+    ctaHref: "/crm/campanhas",
+    ctaLabel: "Abrir Campanhas",
+    sections: [
+      {
+        title: "1. Criar uma campanha",
+        steps: [
+          "Clique em Nova Campanha e dê um nome claro (ex.: 'Feira Set/26 - Frios').",
+          "Escolha a base: importe uma planilha na hora ou puxe um segmento já filtrado no Banco de Dados.",
+          "Selecione o chip / instância que vai enviar (ou deixe o rodízio automático entre os conectados).",
+        ],
+      },
+      {
+        title: "2. Montar a mensagem e usar modelos com variáveis",
+        intro: "Mensagem idêntica para todos é receita de ban. Personalize.",
+        steps: [
+          "Escreva o texto de abordagem usando variáveis como {{nome}} — cada lead recebe a mensagem com o próprio nome.",
+          "Monte variações do texto (modelos): o Vexo alterna entre elas para não repetir a mesma mensagem em massa.",
+          "Se disponível, use a geração de cópia por IA para criar variações humanizadas rápido.",
+          "Você pode montar uma sequência de passos (mensagem 1, 2, 3) com intervalos entre elas.",
+        ],
+      },
+      {
+        title: "3. Disparar em lotes (controle de volume)",
+        intro: "Não precisa mandar tudo de uma vez. Lote existe para proteger o chip.",
+        steps: [
+          "Ao criar o disparo, defina o tamanho do lote (quantos leads por rodada) e o ponto de início (offset).",
+          "Ex.: base de 2.000 → dispare 300 hoje, 300 amanhã, seguindo o offset de onde parou.",
+          "Antes de disparar, use a prévia de alvo (preview) para ver quantos e quais leads aquele lote vai atingir.",
+          "O envio sai com intervalos aleatórios entre mensagens, simulando digitação humana.",
+        ],
+      },
+      {
+        title: "4. Agendar disparos",
+        steps: [
+          "Ao criar o disparo, escolha o tipo Agendado e informe data e hora.",
+          "O Vexo executa sozinho no horário marcado — bom para pegar horário comercial ou evitar madrugada.",
+          "Disparos agendados ficam com status 'agendado' até a hora; você pode editar ou cancelar antes.",
+        ],
+      },
+      {
+        title: "5. Acompanhar, pausar e exportar falhados",
+        steps: [
+          "Enquanto roda, o disparo mostra status 'em execução' e o total enviado.",
+          "Precisou parar? Use Pausar para interromper um disparo em andamento (requer permissão).",
+          "No fim, exporte o relatório de leads falhados (número inválido, sem WhatsApp) para tratar e reenviar.",
+        ],
+      },
+    ],
+    tips: [
+      "Anti-ban: sempre use variações de texto + variáveis {{nome}}. Texto único em massa é o que mais gera bloqueio.",
+      "Anti-ban: prefira lotes menores e mais frequentes a um disparo gigante de uma vez.",
+      "Segmente antes no Banco de Dados: campanha para público certo converte mais e gera menos denúncia.",
+      "Reaproveite os leads falhados exportados: corrija o telefone e crie um novo lote só com eles.",
+    ],
+  },
+  {
+    value: "followup",
+    label: "Cadências de Follow-up",
+    icon: ListChecks,
+    permissions: ["whatsapp.view", "whatsapp.reply"],
+    title: "Cadências de Follow-up",
+    summary:
+      "A régua de cobrança automática. Se o lead não responde, o Vexo envia mensagens de retorno em datas programadas até ele reagir — e para sozinho quando ele responde.",
+    goal: "Objetivo de vendas: nunca mais perder venda por esquecimento de dar retorno.",
+    ctaHref: "/crm/followup",
+    ctaLabel: "Abrir Follow-up",
+    sections: [
+      {
+        title: "A Regra de Ouro: auto-pausa reativa",
+        intro: "A garantia anti-robô do Vexo.",
+        steps: [
+          "Assim que o lead responde qualquer mensagem, toda a sequência de follow-up dele é cancelada na hora.",
+          "Ou seja: você nunca cobra alguém que já respondeu ou já entrou em atendimento humano.",
+        ],
+      },
+      {
+        title: "Como configurar as jornadas",
+        steps: [
+          "Na aba Configurações, ative as jornadas que fazem sentido (ex.: 'Novo Lead', 'Proposta Enviada', 'Sem Contato').",
+          "Defina o tempo de espera de cada etapa (ex.: 1º retorno em 1 dia, 2º em 3 dias).",
+          "Escreva as mensagens; use IA para gerar variações humanizadas e evitar repetição.",
+          "Acompanhe a Fila de Follow-up para ver quem está agendado para receber.",
+        ],
+      },
+    ],
+    tips: [
+      "3 a 4 toques bem espaçados costumam recuperar mais lead do que 1 cobrança agressiva.",
+      "Varie o texto de cada etapa: cobrança copiada e colada parece robô e gera bloqueio.",
+    ],
+  },
+  {
+    value: "agente",
+    label: "Agente IA & Chatbot",
+    icon: Bot,
+    permissions: ["agente.view", "agente.toggle", "agente.edit_prompt", "agente.change_llm", "agente.change_identity"],
+    title: "Agente IA & Chatbot (Iara)",
+    summary:
+      "A IA que conversa com seus leads de forma receptiva ou ativa, qualifica e coleta dados sozinha antes de passar para o time humano.",
+    goal: "Objetivo de vendas: filtrar curioso de comprador e chegar no vendedor só o lead quente, com os dados já coletados.",
+    ctaHref: "/crm/agente?tab=operacao",
+    ctaLabel: "Abrir Agente IA",
+    sections: [
+      {
+        title: "Ligar / desligar o atendimento por IA",
+        steps: [
+          "Use o botão de liga/desliga do agente para ativar ou pausar a IA a qualquer momento (requer permissão).",
+          "Com a IA desligada, as conversas caem direto para o time no Inbox.",
+        ],
+      },
+      {
+        title: "Operação: o Kanban",
+        intro: "Aba Operação.",
+        steps: [
+          "Acompanhe em tempo real todas as conversas que a IA está conduzindo.",
+          "Veja em qual estágio da qualificação cada lead está e os dados já extraídos.",
+        ],
+      },
+      {
+        title: "Coleta SPIN (o que a IA precisa descobrir)",
+        intro: "Aba Configurações.",
+        steps: [
+          "Defina quais dados a IA é obrigada a coletar (ex.: orçamento, volume, prazo, decisor).",
+          "A IA conduz a conversa dinamicamente até obter essas respostas antes de concluir.",
+        ],
+      },
+      {
+        title: "Prompt, provedor de IA e identidade",
+        steps: [
+          "Edite o Prompt / instruções para definir o tom, as regras e como contornar objeções (requer permissão).",
+          "Troque o provedor/modelo de LLM (OpenAI, Groq, Anthropic) conforme custo e qualidade (requer permissão).",
+          "Ajuste nome e foto do agente para dar identidade à IA (requer permissão).",
+        ],
+      },
+      {
+        title: "Webhook de finalização",
+        steps: [
+          "Ao concluir a qualificação, a IA dispara um webhook (JSON) com os dados capturados.",
+          "Conecte esse webhook ao seu CRM, planilha ou n8n/Zapier para automatizar o próximo passo.",
+        ],
+      },
+    ],
+    tips: [
+      "Prompt específico > prompt genérico: quanto mais claras as regras e objeções, melhor a IA qualifica.",
+      "Comece com poucos campos obrigatórios no SPIN; excesso de perguntas espanta o lead.",
+    ],
+  },
+  {
+    value: "geracao-digital",
+    label: "Geração Digital (Propostas)",
+    icon: Briefcase,
+    permissions: ["geracao_digital.proposals", "geracao_digital.prices"],
+    title: "Geração Digital (Pitch & Propostas)",
+    summary:
+      "Módulo para conduzir a reunião de venda, montar o briefing/diagnóstico do cliente e gerar propostas comerciais formatadas.",
+    goal: "Objetivo de vendas: sair da reunião com diagnóstico feito e proposta pronta para fechar.",
+    ctaHref: "/crm/apresentacao-gd",
+    ctaLabel: "Abrir Geração Digital",
+    sections: [
+      {
+        title: "Apresentação (pitch interativo)",
+        steps: [
+          "Use a tela de Apresentação durante a reunião para guiar o cliente de forma visual.",
+          "À medida que o cliente responde, o sistema monta um briefing técnico e diagnóstico automático.",
+        ],
+      },
+      {
+        title: "Briefings salvos e propostas",
+        steps: [
+          "Todos os briefings gerados ficam salvos para consulta vitalícia.",
+          "Gere a proposta comercial a partir do briefing (requer permissão de propostas).",
+          "Ajuste valores e condições da proposta quando tiver a permissão de preços.",
+        ],
+      },
+    ],
+    tips: [
+      "Preencha o briefing na frente do cliente: diagnóstico ao vivo aumenta a percepção de valor.",
+      "Só quem tem permissão de preços muda valores — evita desconto fora de política.",
+    ],
+  },
+  {
+    value: "relatorios",
+    label: "Relatórios",
+    icon: BarChart3,
+    permissions: ["reports.commercial", "reports.dispatches", "reports.export_pdf"],
+    title: "Relatórios de Vendas e Envios",
+    summary:
+      "Onde você mede resultado: relatórios comerciais (fechamento, funil) e de disparos de WhatsApp (entregues, respondidos, falhados).",
+    goal: "Objetivo de vendas: saber o que está dando retorno e cortar o que não está.",
+    ctaHref: "/crm/relatorios",
+    ctaLabel: "Abrir Relatórios",
+    sections: [
+      {
+        title: "Relatórios de disparos de WhatsApp",
+        steps: [
+          "Veja por campanha: quantos foram enviados, entregues, responderam e falharam.",
+          "Cruze com a origem da lista para saber qual fonte de lead engaja mais.",
+        ],
+      },
+      {
+        title: "Relatórios comerciais",
+        steps: [
+          "Acompanhe funil, taxa de conversão e evolução do fechamento.",
+          "Exporte em PDF para enviar ao gestor ou ao cliente (requer permissão de exportação).",
+        ],
+      },
+    ],
+    tips: [
+      "Compare períodos: número solto não diz nada, tendência sim.",
+      "Alta taxa de falha em disparo geralmente é base suja — volte ao Banco de Dados e limpe.",
+    ],
+  },
+  {
+    value: "inteligencia",
+    label: "Inteligência Comercial",
+    icon: LineChart,
+    permissions: ["reports.commercial"],
+    title: "Inteligência Comercial & Distribuição",
+    summary:
+      "Inteligência ativa sobre a eficiência da venda: tempo de resposta (SLA) e distribuição automática de leads entre vendedores.",
+    goal: "Objetivo de vendas: leads quentes atendidos rápido e divididos com justiça, sem lead esquecido.",
+    ctaHref: "/crm/inteligencia-comercial",
+    ctaLabel: "Abrir Int. Comercial",
+    sections: [
+      {
+        title: "Controle de SLA (tempo de resposta)",
+        steps: [
+          "Meça quanto tempo o vendedor leva para responder após a IA passar o bastão.",
+          "Cobrança de SLA baixo (< 5 min) puxa a taxa de fechamento para cima.",
+        ],
+      },
+      {
+        title: "Roteamento Round-Robin (roleta comercial)",
+        steps: [
+          "Defina as regras de distribuição automática de leads qualificados entre os vendedores.",
+          "Garante divisão justa e ordenada, sem disputa nem lead esquecido.",
+        ],
+      },
+    ],
+    tips: [
+      "Round-robin só funciona se todos os vendedores estiverem cadastrados e ativos.",
+      "Acompanhe o SLA por vendedor: gargalo quase sempre é uma pessoa, não o sistema.",
+    ],
+  },
+  {
+    value: "livpub",
+    label: "LivPub & Eventos",
+    icon: Sparkles,
+    permissions: [],
+    title: "LivPub & Gestão de Eventos",
+    summary:
+      "Automação de relacionamento para público de eventos: esteiras de ingresso, cupons e segmentação por comportamento.",
+    goal: "Objetivo de vendas: encher e reengajar eventos no automático.",
+    ctaHref: "/crm/livpub?tab=eventos",
+    ctaLabel: "Abrir Painel LivPub",
+    sections: [
+      {
+        title: "Gestão de eventos (crítico)",
+        intro: "A automação depende de um evento ativo cadastrado.",
+        steps: [
+          "Na aba Eventos, clique em Novo Evento e defina nome, data e local.",
+          "Esteira pré-evento: dispara lembrete de emissão de ingresso dias antes.",
+          "Esteira pós-evento: envia cupom de desconto exclusivo dias depois.",
+        ],
+      },
+      {
+        title: "Relacionamento & segmentação",
+        steps: [
+          "Filtre a base por comportamento: aniversariantes, inativos (60+ dias), novas assinaturas.",
+          "Programe disparos só para o segmento escolhido.",
+        ],
+      },
+    ],
+    tips: [
+      "Cadastre o evento com a data certa: as esteiras usam a data para calcular quando disparar.",
+    ],
+  },
+  {
+    value: "admin",
+    label: "Administração & Usuários",
+    icon: ShieldCheck,
+    permissions: ["users.view", "users.manage", "tenants.manage"],
+    title: "Administração (Empresas, Usuários e Permissões)",
+    summary:
+      "Onde o gestor cadastra a equipe, define exatamente o que cada pessoa acessa e gerencia as empresas/tenants.",
+    goal: "Objetivo de vendas: dar a cada vendedor só as ferramentas que ele precisa, sem risco e sem confusão.",
+    ctaHref: "/crm/admin?tab=usuarios",
+    ctaLabel: "Abrir Administração",
+    sections: [
+      {
+        title: "Criar um novo usuário (passo a passo)",
+        steps: [
+          "Na aba Usuários, clique em Novo Usuário e informe e-mail, nome e uma senha padrão.",
+          "Escolha o Tipo de Acesso: 'Equipe Vexo' (interno) ou 'Cliente / Tenant' (usuário da empresa).",
+          "Selecione a Empresa / Tenant vinculada (obrigatório para usuário do tipo cliente).",
+          "Na Matriz de Permissões, ligue apenas as ferramentas que essa pessoa pode usar (por categoria).",
+          "Marque enviar e-mail de acesso se quiser que o Vexo mande o convite automaticamente.",
+          "Salve. No 1º login o usuário é obrigado a trocar a senha padrão antes de entrar.",
+        ],
+      },
+      {
+        title: "Editar permissões de quem já existe",
+        steps: [
+          "Abra o usuário na lista e vá na Matriz de Permissões.",
+          "Ligue/desligue ferramentas — a mudança vale no próximo login dele.",
+          "Você pode desativar o acesso temporariamente sem apagar o cadastro.",
+        ],
+      },
+      {
+        title: "Empresas / Tenants",
+        steps: [
+          "Na aba Empresas, cadastre e configure as empresas parceiras que usam o CRM.",
+          "Defina limites de envio e dados básicos de cada tenant (requer permissão de tenants).",
+        ],
+      },
+    ],
+    tips: [
+      "Dê o mínimo necessário: vendedor não precisa de permissão de excluir base nem de trocar LLM.",
+      "A lista de permissões se atualiza sozinha quando uma ferramenta nova entra no sistema.",
+      "Nunca compartilhe login: crie um usuário por pessoa para medir SLA e responsabilidade.",
+    ],
+  },
+];
+
+interface AccessContext {
+  permissions: string[];
+  isAdmin: boolean;
+}
 
 export default function OnboardingWizard() {
-  const [activeTab, setActiveTab] = useState("modulo-1");
+  const { getIdToken } = useAuth();
+  const [context, setContext] = useState<AccessContext | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const token = await getIdToken();
+        if (!token) return;
+        const res = await fetchApi("/api/access/context", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const body = await readApiJson<{ access?: { permissions?: string[]; isAdmin?: boolean; role?: string } }>(
+          res,
+          "access-context"
+        );
+        if (active && body.access) {
+          setContext({
+            permissions: body.access.permissions || [],
+            isAdmin: Boolean(body.access.isAdmin) || body.access.role === "superadmin",
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load access context for academy:", error);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [getIdToken]);
+
+  const canSee = useMemo(() => {
+    return (module: AcademyModule) => {
+      if (!context) return module.permissions.length > 0;
+      if (context.isAdmin) return true;
+      if (module.permissions.length === 0) return false;
+      return module.permissions.some((permission) => context.permissions.includes(permission));
+    };
+  }, [context]);
+
+  const visibleModules = useMemo(() => ACADEMY_MODULES.filter(canSee), [canSee]);
+  const [activeTab, setActiveTab] = useState<string>(ACADEMY_MODULES[0].value);
+
+  useEffect(() => {
+    if (visibleModules.length === 0) return;
+    if (!visibleModules.some((module) => module.value === activeTab)) {
+      setActiveTab(visibleModules[0].value);
+    }
+  }, [visibleModules, activeTab]);
 
   return (
     <PageShell
       title="Vexo Academy"
-      subtitle="Domine o sistema de ponta a ponta. Aprenda as estratégias por trás de cada ferramenta para escalar suas vendas e qualificações."
+      subtitle="Domine cada ferramenta que você tem acesso — o que ela faz, o passo a passo para operar e as dicas de ouro (inclusive anti-ban) para escalar suas vendas."
     >
-      <div className="flex flex-col lg:flex-row gap-6 animate-fade-in-up">
-        {/* Menu Lateral de Módulos */}
-        <div className="lg:w-1/4 shrink-0">
-          <Tabs value={activeTab} onValueChange={setActiveTab} orientation="vertical" className="w-full">
-            <div className="sticky top-6">
-              <Card className="border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                <CardHeader className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 pb-4">
-                  <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-500">
-                    Trilha de Aprendizado
-                  </CardTitle>
-                </CardHeader>
-                <TabsList className="flex-col items-stretch h-auto bg-transparent p-0">
-                  <TabsTrigger
-                    value="modulo-1"
-                    className="justify-start gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
-                  >
-                    <Smartphone className="h-4 w-4" />
-                    <span className="text-left font-semibold">1. Canais & Conexões</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="modulo-2"
-                    className="justify-start gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
-                  >
-                    <Bot className="h-4 w-4" />
-                    <span className="text-left font-semibold">2. Agente IA & Chatbot</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="modulo-3"
-                    className="justify-start gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
-                  >
-                    <Send className="h-4 w-4" />
-                    <span className="text-left font-semibold">3. Campanhas & Disparos</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="modulo-4"
-                    className="justify-start gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
-                  >
-                    <ListChecks className="h-4 w-4" />
-                    <span className="text-left font-semibold">4. Cadências de Follow-up</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="modulo-5"
-                    className="justify-start gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
-                  >
-                    <Briefcase className="h-4 w-4" />
-                    <span className="text-left font-semibold">5. Geração Digital (GD)</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="modulo-6"
-                    className="justify-start gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    <span className="text-left font-semibold">6. LivPub & Eventos</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="modulo-7"
-                    className="justify-start gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
-                  >
-                    <Server className="h-4 w-4" />
-                    <span className="text-left font-semibold">7. Administração</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="modulo-8"
-                    className="justify-start gap-3 rounded-none px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
-                  >
-                    <BarChart3 className="h-4 w-4" />
-                    <span className="text-left font-semibold">8. Inteligência Comercial</span>
-                  </TabsTrigger>
-                </TabsList>
-              </Card>
-            </div>
-          </Tabs>
+      {visibleModules.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-8 text-center text-sm text-muted-foreground">
+          Nenhum módulo de treinamento disponível para o seu perfil ainda. Assim que novas
+          ferramentas forem liberadas para você, elas aparecerão aqui automaticamente.
         </div>
+      ) : (
+        <div className="flex flex-col lg:flex-row gap-6 animate-fade-in-up">
+          {/* Menu lateral (sem numeração, filtrado por permissão) */}
+          <div className="lg:w-1/4 shrink-0">
+            <Tabs value={activeTab} onValueChange={setActiveTab} orientation="vertical" className="w-full">
+              <div className="sticky top-6">
+                <Card className="border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <CardHeader className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 pb-4">
+                    <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-500">
+                      Trilha de Aprendizado
+                    </CardTitle>
+                  </CardHeader>
+                  <TabsList className="flex-col items-stretch h-auto bg-transparent p-0">
+                    {visibleModules.map((module) => {
+                      const ModuleIcon = module.icon;
+                      return (
+                        <TabsTrigger
+                          key={module.value}
+                          value={module.value}
+                          className="justify-start gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
+                        >
+                          <ModuleIcon className="h-4 w-4 shrink-0" />
+                          <span className="text-left font-semibold">{module.label}</span>
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </Card>
+              </div>
+            </Tabs>
+          </div>
 
-        {/* Conteúdo do Módulo */}
-        <div className="lg:w-3/4">
-          <Tabs value={activeTab}>
-            {/* MÓDULO 1: CANAIS & CONEXÕES */}
-            <TabsContent value="modulo-1" className="m-0 space-y-6 animate-fade-in-up">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400">
-                    Módulo 1: Canais & Conexões (Chips WhatsApp)
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Como plugar o seu número de WhatsApp no Vexo, aquecer seus chips e monitorar conexões.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
-                  <p>
-                    O primeiro passo no Vexo é conectar os números de WhatsApp (chamados de "Chips") que dispararão suas campanhas, farão follow-ups automatizados e atenderão novos contatos.
-                  </p>
-                  
-                  <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-4">
-                    <div>
-                      <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">Aba Conexões (Pareamento QR Code)</h4>
-                      <ul className="mt-2 space-y-2 list-disc list-inside text-sm">
-                        <li>Acesse o menu <strong>Chips WhatsApp</strong> na barra lateral.</li>
-                        <li>Na aba <strong>Conexões</strong>, clique em <strong>Adicionar Instância</strong> e digite um nome identificador.</li>
-                        <li>Aguarde o QR Code carregar na tela.</li>
-                        <li>Abra o WhatsApp no seu smartphone, acesse "Aparelhos Conectados" &gt; "Conectar um Aparelho" e escaneie o código.</li>
-                      </ul>
-                    </div>
+          {/* Conteúdo do módulo (data-driven) */}
+          <div className="lg:w-3/4">
+            <Tabs value={activeTab}>
+              {visibleModules.map((module) => {
+                const ModuleIcon = module.icon;
+                return (
+                  <TabsContent key={module.value} value={module.value} className="m-0 space-y-6 animate-fade-in-up">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
+                          <ModuleIcon className="h-6 w-6" />
+                          {module.title}
+                        </CardTitle>
+                        <CardDescription className="text-base">{module.summary}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
+                        <div className="rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 p-4 text-sm text-indigo-800 dark:text-indigo-300">
+                          {module.goal}
+                        </div>
 
-                    <div>
-                      <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">Aba Aquecimento (Warming de Chips)</h4>
-                      <p className="text-sm mt-1">
-                        Para evitar que o WhatsApp bloqueie chips novos ao enviar muitas mensagens, use a aba **Aquecimento**. Ao cadastrar e ativar o aquecimento de vários chips, o Vexo faz com que eles conversem entre si de forma simulada no background, criando "reputação" com os servidores do WhatsApp antes de iniciar as campanhas comerciais frias.
-                      </p>
-                    </div>
-                  </div>
+                        {module.sections.map((section) => (
+                          <div key={section.title} className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-2">
+                            <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">{section.title}</h4>
+                            {section.intro && <p className="text-sm">{section.intro}</p>}
+                            {section.steps && (
+                              <ol className="mt-1 space-y-2 list-decimal list-inside text-sm">
+                                {section.steps.map((step, index) => (
+                                  <li key={index}>{step}</li>
+                                ))}
+                              </ol>
+                            )}
+                          </div>
+                        ))}
 
-                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-5 flex gap-4">
-                    <Lightbulb className="h-6 w-6 text-amber-500 shrink-0" />
-                    <div>
-                      <h4 className="font-bold text-amber-800 dark:text-amber-500 mb-1">Dica de Ouro: Blindagem e Rotação</h4>
-                      <p className="text-sm text-amber-700 dark:text-amber-400">
-                        Sempre mantenha a internet do celular de conexão ativa e estável. Para campanhas de alto volume, conecte múltiplos chips. O Vexo distribui os disparos de forma rotativa entre os chips conectados de modo totalmente automático, diluindo a carga e blindando seus números contra banimento.
-                      </p>
-                    </div>
-                  </div>
+                        {module.tips.length > 0 && (
+                          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-5 flex gap-4">
+                            <Lightbulb className="h-6 w-6 text-amber-500 shrink-0" />
+                            <div className="space-y-2">
+                              <h4 className="font-bold text-amber-800 dark:text-amber-500">Dicas de Ouro</h4>
+                              <ul className="space-y-1.5 text-sm text-amber-700 dark:text-amber-400">
+                                {module.tips.map((tip, index) => (
+                                  <li key={index} className="flex gap-2">
+                                    <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                                    <span>{tip}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
 
-                  <Button onClick={() => window.location.href = "/crm/chips-whatsapp?tab=conexoes"} className="w-full sm:w-auto mt-4 bg-indigo-600 hover:bg-indigo-700">
-                    Ir para Conexões <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* MÓDULO 2: AGENTE IA */}
-            <TabsContent value="modulo-2" className="m-0 space-y-6 animate-fade-in-up">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400">
-                    Módulo 2: Agente IA & Chatbot
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Transforme seu WhatsApp em uma máquina inteligente de triagem, atendimento e qualificação de leads.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
-                  <p>
-                    O menu **Agente IA** consolida todo o comportamento dos robôs que conversam com seus leads de forma receptiva (inbound) ou ativa. A Inteligência Artificial qualifica e coleta dados de forma autônoma.
-                  </p>
-
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5">
-                      <h3 className="font-bold text-base mb-2 text-indigo-600 dark:text-indigo-400">1. O Kanban (Aba Operação)</h3>
-                      <p className="text-sm">
-                        Monitore todas as conversas ativas da IA em tempo real. Veja em qual estágio da qualificação o cliente está e as respostas estruturadas obtidas pela inteligência.
-                      </p>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5">
-                      <h3 className="font-bold text-base mb-2 text-indigo-600 dark:text-indigo-400">2. A Coleta SPIN (Aba Configurações)</h3>
-                      <p className="text-sm">
-                        Aqui você define quais dados a IA **é obrigada** a extrair da conversa (ex: Orçamento, Volume, Data). A IA conduzirá a conversa dinamicamente para colher estas respostas antes de concluir.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5">
-                    <h3 className="font-bold text-base mb-2 text-indigo-600 dark:text-indigo-400">3. Identidade & Base de Conhecimento (Aba Documentação)</h3>
-                    <p className="text-sm">
-                      Dê personalidade à IA! Descreva quem é a sua empresa e defina a base de perguntas e respostas recomendadas para contornar objeções comuns de clientes de forma humanizada.
-                    </p>
-                  </div>
-
-                  <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-5 flex gap-4">
-                    <CheckCircle2 className="h-6 w-6 text-emerald-500 shrink-0" />
-                    <div>
-                      <h4 className="font-bold text-emerald-800 dark:text-emerald-500 mb-1">Webhook de Finalização</h4>
-                      <p className="text-sm text-emerald-700 dark:text-emerald-400">
-                        Quando a IA conclui a coleta de dados de qualificação com sucesso, ela dispara um webhook (JSON) enviando as informações capturadas diretamente para seu CRM, planilha ou sistema de reservas no n8n/Zapier.
-                      </p>
-                    </div>
-                  </div>
-
-                  <Button onClick={() => window.location.href = "/crm/agente?tab=operacao"} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
-                    Configurar Agente IA <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* MÓDULO 3: CAMPANHAS */}
-            <TabsContent value="modulo-3" className="m-0 space-y-6 animate-fade-in-up">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400">
-                    Módulo 3: Campanhas & Disparos (Envio em Massa)
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Como importar listas de contatos por planilhas e engajar centenas de leads ativamente.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
-                  <p>
-                    Com o menu **Campanhas**, você pode subir bases frias ou listas de contatos em massa via arquivo Excel ou CSV, disparando mensagens humanizadas de abordagem um a um.
-                  </p>
-
-                  <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5">
-                    <h3 className="font-bold text-lg mb-3">Como criar uma Campanha:</h3>
-                    <ol className="space-y-3 list-decimal list-inside text-sm">
-                      <li>Prepare um arquivo Excel (.xlsx) ou CSV contendo no mínimo as colunas: <strong>nome</strong> e <strong>telefone</strong>.</li>
-                      <li>Acesse o menu **Campanhas** e clique no botão para criar uma nova campanha.</li>
-                      <li>Escreva o texto de abordagem. Você pode usar variáveis como <code>{"{{nome}}"}</code> no texto para que a mensagem de cada cliente seja totalmente personalizada.</li>
-                      <li>O robô enviará as mensagens com pequenos intervalos aleatórios de tempo (delay), simulando o comportamento de um vendedor humano e protegendo a linha contra banimentos.</li>
-                    </ol>
-                  </div>
-
-                  <Button onClick={() => window.location.href = "/crm/campanhas"} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
-                    Ir para Campanhas <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* MÓDULO 4: CADÊNCIAS DE FOLLOW-UP */}
-            <TabsContent value="modulo-4" className="m-0 space-y-6 animate-fade-in-up">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
-                    <ListChecks className="h-6 w-6" />
-                    Módulo 4: Cadências de Follow-up
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Nunca mais perca vendas por esquecimento. Configure o motor de cadências e cobranças inteligentes do Vexo.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
-                  <p>
-                    Grande parte das vendas é perdida porque o vendedor esquece de retornar o contato caso o lead não responda de primeira. O Follow-up do Vexo funciona como uma régua de cobrança automática via WhatsApp, enviando mensagens em datas programadas até que o lead reaja.
-                  </p>
-
-                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-5">
-                    <h4 className="font-bold text-red-800 dark:text-red-500 mb-1 flex items-center gap-2">
-                      <Bot className="h-5 w-5" /> A Regra de Ouro: Auto-Pausa Reativa
-                    </h4>
-                    <p className="text-sm text-red-700 dark:text-red-400">
-                      <strong>Garantia anti-robô:</strong> assim que o cliente responder à qualquer mensagem no WhatsApp, o Vexo cancela instantaneamente toda a sequência de follow-ups programada para ele. Dessa forma, você nunca correrá o risco de cobrar um cliente que já respondeu ou iniciou atendimento humano.
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h3 className="font-bold text-lg">Como Configurar:</h3>
-                    <ul className="space-y-2 list-disc list-inside text-sm">
-                      <li>Acesse a aba <strong>Configurações</strong> do Follow-up.</li>
-                      <li>Ative as Jornadas que se aplicam ao seu modelo (ex: "Novo Lead", "Proposta Enviada", "Sem Contato").</li>
-                      <li>Defina o tempo de espera e o texto das mensagens usando I.A. para gerar variações humanizadas no envio.</li>
-                    </ul>
-                  </div>
-
-                  <Button onClick={() => window.location.href = "/crm/followup"} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
-                    Acessar Fila de Follow-up <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* MÓDULO 5: GERAÇÃO DIGITAL */}
-            <TabsContent value="modulo-5" className="m-0 space-y-6 animate-fade-in-up">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400">
-                    Módulo 5: Geração Digital (Módulo Personalizado)
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Apresente pitches comerciais interativos e gerencie briefings gerados de forma rápida.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
-                  <p>
-                    O módulo **Geração Digital** foi projetado especialmente para apoiar as reuniões de vendas de consultores e fechar contratos de marketing digital, gerando inteligência a partir do diagnóstico.
-                  </p>
-
-                  <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-4">
-                    <div>
-                      <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">Aba Apresentação (Pitch Comercial Interativo)</h4>
-                      <p className="text-sm mt-1">
-                        Use esta tela durante reuniões de vendas para apresentar a metodologia de Geração Digital de forma visual e guiada. À medida que o cliente responde perguntas sobre o negócio dele, o sistema constrói um briefing técnico e diagnóstico automático.
-                      </p>
-                    </div>
-
-                    <div>
-                      <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">Aba Briefings Salvos</h4>
-                      <p className="text-sm mt-1">
-                        Todos os formulários e briefings gerados durante os pitches de vendas ficam salvos nesta aba de forma vitalícia. É o local ideal para consultar o histórico dos leads, analisar as respostas do dossiê e encaminhar as propostas formatadas.
-                      </p>
-                    </div>
-                  </div>
-
-                  <Button onClick={() => window.location.href = "/crm/geracao-digital?tab=apresentacao"} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
-                    Acessar Geração Digital <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* MÓDULO 6: LIVPUB */}
-            <TabsContent value="modulo-6" className="m-0 space-y-6 animate-fade-in-up">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
-                    <Sparkles className="h-6 w-6 text-indigo-600" />
-                    Módulo 6: LivPub & Gestão de Eventos
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Automação de relacionamento para o público de eventos, controle de esteiras de ingressos e cupons.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
-                  <p>
-                    O módulo **Painel LivPub** automatiza e gerencia a régua de relacionamento com os participantes dos eventos programados da casa, coordenando canais de mensagens e segmentações dinâmicas.
-                  </p>
-
-                  <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-4">
-                    <div>
-                      <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">1. Gestão de Eventos (Muito Importante)</h4>
-                      <p className="text-sm mt-1">
-                        A automação de disparos depende da criação de eventos ativos. Na aba **Eventos**, clique em **Novo Evento** e defina o Nome, a Data e o Local do evento. 
-                        A criação do evento é **crucial**, pois o sistema monitora a data do evento para rodar as réguas automáticas:
-                      </p>
-                      <ul className="mt-2 space-y-1.5 list-disc list-inside text-sm pl-2">
-                        <li><strong>Esteira 1 (Pre-Event 3 Days):</strong> Dispara mensagens 3 dias antes do evento lembrando o participante de emitir o ingresso via Sympla.</li>
-                        <li><strong>Esteira 5 (After-Event):</strong> Envia automaticamente um cupom de desconto exclusivo dias após a realização do evento.</li>
-                      </ul>
-                    </div>
-
-                    <div>
-                      <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">2. Relacionamento & Segmentação</h4>
-                      <p className="text-sm mt-1">
-                        Filtre a base de clientes do clube por perfil de comportamento. Configure disparos apenas para aniversariantes do mês, clientes inativos (há mais de 60 dias sem visitas) ou novas assinaturas.
-                      </p>
-                    </div>
-                  </div>
-
-                  <Button onClick={() => window.location.href = "/crm/livpub?tab=eventos"} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
-                    Acessar Painel LivPub <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* MÓDULO 7: ADMINISTRAÇÃO */}
-            <TabsContent value="modulo-7" className="m-0 space-y-6 animate-fade-in-up">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
-                    <Server className="h-6 w-6 text-indigo-600" />
-                    Módulo 7: Administração (Gerenciamento Global)
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Como gerenciar empresas parceiras (tenants), cadastrar usuários e criar tokens de integração.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
-                  <p>
-                    A tela de **Administração** concentra os controles avançados do sistema e é visível apenas para usuários administradores.
-                  </p>
-
-                  <div className="grid gap-6 md:grid-cols-3">
-                    <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-                      <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">1. Empresas (Tenants)</h4>
-                      <p className="text-xs mt-1 leading-relaxed">
-                        Crie e configure as contas de empresas parceiras que usam o CRM. Defina limites de envio de mensagens e gerencie as configurações técnicas básicas de banco de dados.
-                      </p>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-                      <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">2. Usuários</h4>
-                      <p className="text-xs mt-1 leading-relaxed">
-                        Gerencie a sua equipe. Cadastre novos acessos e atribua permissões de forma granular (ex: "Administrador" com acesso total, ou "Vendedor/Consultor" limitado).
-                      </p>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-                      <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">3. Integrações</h4>
-                      <p className="text-xs mt-1 leading-relaxed">
-                        Gere chaves e tokens de segurança para conectar o Vexo OS a sistemas de automação de terceiros, como plataformas de tráfego pago, n8n ou Zapier.
-                      </p>
-                    </div>
-                  </div>
-
-                  <Button onClick={() => window.location.href = "/crm/admin?tab=empresas"} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
-                    Acessar Painel de Administração <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* MÓDULO 8: INTELIGÊNCIA COMERCIAL */}
-            <TabsContent value="modulo-8" className="m-0 space-y-6 animate-fade-in-up">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400">
-                    Módulo 8: Inteligência Comercial & Métricas
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Monitore a saúde da sua operação, meça tempos de resposta e gerencie a fila de distribuição de leads.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
-                  <p>
-                    O menu **Int. Comercial** fornece inteligência ativa sobre a eficiência das suas vendas, auxiliando os gestores a otimizarem o tempo de fechamento.
-                  </p>
-
-                  <div className="space-y-4">
-                    <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-                      <h4 className="font-bold text-base">Controle de SLA (Tempo de Resposta)</h4>
-                      <p className="text-sm mt-1">
-                        Acompanhe o tempo médio que os vendedores levam para responder um lead após a IA passar o bastão do atendimento. Responder contatos qualificados em menos de 5 minutos aumenta as taxas de fechamento exponencialmente.
-                      </p>
-                    </div>
-
-                    <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-                      <h4 className="font-bold text-base">Roteamento Round-Robin (Roleta Comercial)</h4>
-                      <p className="text-sm mt-1">
-                        Evite disputas ou esquecimento de leads. Defina as regras de distribuição automatizada de leads qualificados entre os seus vendedores cadastrados, garantindo uma divisão justa, ordenada e rápida de novos negócios.
-                      </p>
-                    </div>
-                  </div>
-
-                  <Button onClick={() => window.location.href = "/crm/inteligencia-comercial"} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
-                    Visualizar Relatórios <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                        <Button onClick={() => (window.location.href = module.ctaHref)} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
+                          {module.ctaLabel} <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                );
+              })}
+            </Tabs>
+          </div>
         </div>
-      </div>
+      )}
     </PageShell>
   );
 }

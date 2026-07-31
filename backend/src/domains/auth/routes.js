@@ -11,6 +11,7 @@ import {
   filterVisibleUserRecords,
   hasUserPermission,
 } from "../../userAccessScope.js";
+import { buildPermissionsRegistryPayload } from "../../access/permissionsRegistry.js";
 
 
 // ---------------------------------------------------------------------------
@@ -84,6 +85,43 @@ export function registerAuthRoutes(app, deps) {
     resolveRequestedAccessProfile,
     sendError,
   } = deps;
+
+  // Registro central de permissões + acesso efetivo do usuário logado (objetivos 1, 3, 5).
+  // FONTE ÚNICA para a matriz de toggles do admin, a filtragem do Vexo Academy e o gating
+  // da UI. Qualquer usuário autenticado pode ler (a academy precisa das próprias permissões).
+  app.get("/api/access/context", requireFirebaseAuth, (req, res) => {
+    res.json({
+      registry: buildPermissionsRegistryPayload(),
+      access: req.authAccess,
+    });
+  });
+
+  // Objetivo 4: limpa a flag must_change_password depois que o usuário define a senha
+  // definitiva. Chamado pelo frontend ao concluir /set-password.
+  app.post("/api/access/complete-password-change", requireFirebaseAuth, async (req, res) => {
+    try {
+      const auth = getAuth();
+      const uid = req.authUser?.uid;
+      if (!uid) {
+        sendError(res, 401, "UNAUTHORIZED", "Unauthorized");
+        return;
+      }
+      const user = await auth.getUser(uid);
+      const claims = user.customClaims || {};
+      if (claims.must_change_password) {
+        await auth.setCustomUserClaims(uid, { ...claims, must_change_password: false });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("complete password change error:", error);
+      sendError(
+        res,
+        500,
+        "COMPLETE_PASSWORD_CHANGE_FAILED",
+        error instanceof Error ? error.message : "Failed to complete password change"
+      );
+    }
+  });
 
   app.get("/api/admin/users", requireFirebaseAuth, requireInternalPageAccess("usuarios"), async (req, res) => {
     if (!hasUserPermission(req.authAccess, "users.view")) {
@@ -355,7 +393,12 @@ export function registerAuthRoutes(app, deps) {
         displayName: displayName || undefined,
       });
 
-      await auth.setCustomUserClaims(user.uid, mergeManagedClaims({}, managedClaims));
+      // Objetivo 4: usuário criado pelo admin com senha padrão precisa trocar a senha no
+      // 1º login. O backend é a fonte de verdade — o frontend bloqueia e leva a /set-password.
+      await auth.setCustomUserClaims(
+        user.uid,
+        mergeManagedClaims({}, { ...managedClaims, must_change_password: true })
+      );
 
       let passwordResetLink = null;
       let passwordResetEmail = { enviado: false, motivo: null };

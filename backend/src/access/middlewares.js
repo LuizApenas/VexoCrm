@@ -6,6 +6,7 @@ import { getAuth, firebaseReady } from "../services/firebase.js";
 import { buildAccessProfile } from "./claims.js";
 import { canAccessAppView, hasInternalPageAccess } from "../accessGuards.js";
 import { hasUserPermission } from "../userAccessScope.js";
+import { accessHasPagePermission, accessHasViewPermission } from "./permissionsRegistry.js";
 
 export async function requireFirebaseAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -121,7 +122,18 @@ export function requireInternalPageAccess(page) {
       return;
     }
 
+    // Caminho legado: usuário interno com a página liberada (compat total).
     if (hasInternalPageAccess(access, page)) {
+      next();
+      return;
+    }
+
+    // Novo modelo (objetivo 1): usuário interno que, após a migração, tem a permissão
+    // granular do PERMISSIONS_REGISTRY mapeada para esta página — mesmo que a lista antiga
+    // de páginas não a contenha. Cobre o time interno antigo (ex.: Geração Digital) sem
+    // recriar cadastro. Rotas internas seguem internas; clientes acessam ferramentas por
+    // requireAppViewAccess / requireCampaignDispatchAccess (com escopo de tenant).
+    if (accessHasPagePermission(access, page)) {
       next();
       return;
     }
@@ -169,6 +181,69 @@ export function requireAppViewAccess(view) {
       return;
     }
 
+    // Novo modelo (objetivo 1): autoriza por permissão granular mapeada para a view/página,
+    // cobrindo tanto clientes quanto internos que tenham a permissão.
+    if (accessHasViewPermission(access, view) || accessHasPagePermission(access, view)) {
+      next();
+      return;
+    }
+
     sendError(res, 403, "FORBIDDEN", `Missing permission for view ${view}`);
   };
+}
+
+// Autoriza criar/disparar lotes de campanha para QUALQUER usuário válido vinculado ao
+// tenant que possua permissão de disparo (objetivo 6 da reformulação — bug do Gabriel).
+// A vinculação ao tenant continua sendo aplicada dentro da rota por resolveAuthorizedClientId;
+// aqui só validamos a capacidade de disparo, sem exigir a página interna "planilhas".
+export function requireCampaignDispatchAccess(req, res, next) {
+  const access = req.authAccess;
+
+  if (!access || access.role === "pending") {
+    sendError(res, 403, "PENDING_APPROVAL", "Your account is waiting for approval");
+    return;
+  }
+
+  if (access.isAdmin || access.role === "superadmin") {
+    next();
+    return;
+  }
+
+  const permissions = access.permissions || [];
+  // Permissões granulares do PERMISSIONS_REGISTRY para todo o fluxo de campanhas/disparos
+  // (ver, criar, disparar, pausar, exportar) + compat com o preset antigo campaigns.manage.
+  const campaignDispatchPermissions = [
+    "campaigns.view",
+    "campaigns.create",
+    "campaigns.delete",
+    "campaigns.manage",
+    "dispatches.execute",
+    "dispatches.pause",
+    "dispatches.export_failed",
+  ];
+
+  if (campaignDispatchPermissions.some((permission) => permissions.includes(permission))) {
+    next();
+    return;
+  }
+
+  // Compat: usuários internos antigos identificavam disparo pela página interna.
+  if (access.role === "internal") {
+    const pages = access.internalPages || [];
+    if (pages.includes("planilhas") || pages.includes("disparos") || pages.includes("campanhas")) {
+      next();
+      return;
+    }
+  }
+
+  // Compat: usuários do cliente com acesso operacional ao WhatsApp podem disparar.
+  if (access.role === "client") {
+    const views = access.allowedViews || [];
+    if (views.includes("whatsapp") || permissions.includes("whatsapp.reply")) {
+      next();
+      return;
+    }
+  }
+
+  sendError(res, 403, "FORBIDDEN", "Missing dispatch permission");
 }
