@@ -9,6 +9,7 @@ import {
   verifyHmac,
   parseWebhookPayload,
   processInboundWebhook,
+  enrollLead,
   cancelPendingJobsForCampaign,
 } from "./service.js";
 import { getAnalytics } from "./analyticsService.js";
@@ -488,6 +489,72 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
       return res.json({ success: true });
     } catch (err) {
       return sendErr(res, 500, "CAMPAIGN_DELETE_FAILED", err.message);
+    }
+  });
+
+  // POST /api/followup/campaigns/:id/enroll — enrola leads selecionados (ex.: vindos do
+  // Banco de Dados) na cadência, reusando a mesma engine do webhook. Body:
+  //   { leads: [{ name, phone, meeting_datetime? }], meeting_datetime?, origin? }
+  // meeting_datetime global (a "data-alvo": reunião/evento/pagamento) vale para os leads
+  // que não trouxerem a própria; dirige os lembretes "antes/depois" da cadência.
+  router.post("/campaigns/:id/enroll", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+    const id = str(req.params.id);
+    if (!id) return sendErr(res, 400, "MISSING_ID", "id inválido");
+
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const leads = Array.isArray(body.leads) ? body.leads : [];
+    if (leads.length === 0) {
+      return sendErr(res, 400, "NO_LEADS", "Envie ao menos um lead para enrolar.");
+    }
+    const globalMeeting = str(body.meeting_datetime);
+    const origin = str(body.origin) || "banco_dados";
+
+    try {
+      const supabase = getSupabase();
+      const { data: campaign, error: campErr } = await supabase
+        .from("followup_campaigns")
+        .select("id, company_id, status, default_origin")
+        .eq("id", id)
+        .maybeSingle();
+      if (campErr || !campaign) return sendErr(res, 404, "NOT_FOUND", "Cadência não encontrada");
+      if (campaign.status !== "active") {
+        return sendErr(res, 400, "CAMPAIGN_NOT_ACTIVE", "Ative a cadência antes de enrolar leads.");
+      }
+
+      let enrolled = 0;
+      let enqueued = 0;
+      let missingPhone = 0;
+      const errors = [];
+
+      for (const raw of leads) {
+        const lead_name = str(raw?.name) || str(raw?.lead_name) || "Lead";
+        const phone = str(raw?.phone) || str(raw?.telefone) || null;
+        const meeting_datetime = str(raw?.meeting_datetime) || globalMeeting || null;
+        try {
+          const result = await enrollLead(campaign, {
+            lead_name,
+            phone,
+            meeting_datetime,
+            originOverride: origin,
+          });
+          enrolled++;
+          enqueued += result.enqueued || 0;
+          if (result.reason === "missing_phone") missingPhone++;
+        } catch (err) {
+          errors.push({ lead: lead_name, message: err instanceof Error ? err.message : String(err) });
+        }
+      }
+
+      return res.status(201).json({
+        success: true,
+        enrolled,
+        enqueued,
+        missingPhone,
+        failed: errors.length,
+        errors: errors.slice(0, 10),
+      });
+    } catch (err) {
+      return sendErr(res, 500, "ENROLL_FAILED", err.message);
     }
   });
 

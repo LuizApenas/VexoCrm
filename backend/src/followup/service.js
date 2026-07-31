@@ -132,31 +132,31 @@ export function parseWebhookPayload(body) {
 
 // ─── Processamento principal do webhook de entrada ───────────────────────────
 
-export async function processInboundWebhook(campaignId, parsedPayload) {
-  const supabase = getSupabase();
+const EMPTY_UTMS = {
+  utm_source: null,
+  utm_medium: null,
+  utm_campaign: null,
+  utm_content: null,
+  utm_term: null,
+};
 
-  const { data: campaign, error: campErr } = await supabase
-    .from("followup_campaigns")
-    .select(
-      "id, company_id, status, default_origin, webhook_secret"
-    )
-    .eq("id", campaignId)
-    .maybeSingle();
-
-  if (campErr || !campaign) throw new Error("Campanha não encontrada.");
-  if (campaign.status !== "active") {
-    return { skipped: true, reason: "campaign_not_active" };
-  }
-
-  const { lead_name, phone: rawPhone, meeting_datetime, calendly_event_uri, utms } =
-    parsedPayload;
+// Enrola UM lead numa cadência: cria o followup_schedule e enfileira os followup_jobs
+// conforme os templates (passos) ativos da campanha. Reutilizado pelo webhook de entrada
+// e pelo enrolamento manual a partir do Banco de Dados. `campaign` é a linha já carregada
+// de followup_campaigns; `originOverride` marca a origem (ex.: "banco_dados") no manual.
+export async function enrollLead(
+  campaign,
+  { lead_name, phone: rawPhone, meeting_datetime = null, calendly_event_uri = null, utms = EMPTY_UTMS, originOverride = null }
+) {
   const phone = normalizePhone(rawPhone);
 
   const utmPresent = hasUtms(utms);
-  const origin_type = utmPresent ? "utm" : "default";
-  const origin = utmPresent
-    ? utms.utm_source || "utm"
-    : campaign.default_origin || null;
+  const origin_type = originOverride ? "manual" : utmPresent ? "utm" : "default";
+  const origin = originOverride
+    ? originOverride
+    : utmPresent
+      ? utms.utm_source || "utm"
+      : campaign.default_origin || null;
 
   // Inserir schedule
   const { rows: schedRows } = await query(
@@ -168,7 +168,7 @@ export async function processInboundWebhook(campaignId, parsedPayload) {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      RETURNING id`,
     [
-      campaignId,
+      campaign.id,
       campaign.company_id,
       lead_name,
       phone,
@@ -188,24 +188,30 @@ export async function processInboundWebhook(campaignId, parsedPayload) {
   const scheduleId = schedRows[0].id;
 
   if (!phone) {
-    return { scheduleId, enqueued: 0 };
+    return { scheduleId, enqueued: 0, reason: "missing_phone" };
   }
 
-  // Buscar templates ativos
+  // Buscar templates ativos (os passos da cadência)
+  const supabase = getSupabase();
   const { data: templates } = await supabase
     .from("followup_templates")
     .select("id, trigger_type, trigger_value, trigger_unit, trigger_direction, order_index")
-    .eq("campaign_id", campaignId)
+    .eq("campaign_id", campaign.id)
     .eq("is_active", true)
     .order("order_index", { ascending: true });
 
   const now = new Date();
   const queue = getFollowupQueue();
   let enqueued = 0;
+  let skippedNoDate = 0;
 
   for (const tpl of templates || []) {
     const scheduledFor = calcScheduledFor(tpl, now, meeting_datetime);
-    if (!scheduledFor) continue;
+    if (!scheduledFor) {
+      // Passo depende de data-alvo (ex.: antes/depois da reunião) e ela não foi informada.
+      skippedNoDate++;
+      continue;
+    }
 
     const delay = Math.max(0, scheduledFor.getTime() - Date.now());
 
@@ -233,7 +239,34 @@ export async function processInboundWebhook(campaignId, parsedPayload) {
     enqueued++;
   }
 
-  return { scheduleId, enqueued };
+  return { scheduleId, enqueued, skippedNoDate };
+}
+
+export async function processInboundWebhook(campaignId, parsedPayload) {
+  const supabase = getSupabase();
+
+  const { data: campaign, error: campErr } = await supabase
+    .from("followup_campaigns")
+    .select(
+      "id, company_id, status, default_origin, webhook_secret"
+    )
+    .eq("id", campaignId)
+    .maybeSingle();
+
+  if (campErr || !campaign) throw new Error("Campanha não encontrada.");
+  if (campaign.status !== "active") {
+    return { skipped: true, reason: "campaign_not_active" };
+  }
+
+  const { lead_name, phone, meeting_datetime, calendly_event_uri, utms } = parsedPayload;
+
+  return enrollLead(campaign, {
+    lead_name,
+    phone,
+    meeting_datetime,
+    calendly_event_uri,
+    utms,
+  });
 }
 
 // ─── Cancelar jobs quando campanha for arquivada ──────────────────────────────
