@@ -32,6 +32,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { API_BASE_URL } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
 import { PageShell } from "@/components/PageShell";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -1096,42 +1097,42 @@ export default function BancoDeDados() {
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border dark:border-zinc-800 pb-3">
           <div className="flex flex-wrap items-center gap-1.5">
             <Button
-              variant={activeTab === "all" ? "default" : "ghost"}
+              variant="ghost"
               size="sm"
               onClick={() => setActiveTab("all")}
-              className="rounded-full text-xs"
+              className={cn("rounded-full text-xs", activeTab === "all" && "border border-primary/60 bg-primary/5 font-semibold hover:bg-primary/10")}
             >
               Todas ({summary.totalLeads})
             </Button>
             <Button
-              variant={activeTab === "buyer" ? "default" : "ghost"}
+              variant="ghost"
               size="sm"
               onClick={() => setActiveTab("buyer")}
-              className="rounded-full text-xs text-emerald-600 dark:text-emerald-400"
+              className={cn("rounded-full text-xs text-emerald-600 dark:text-emerald-400", activeTab === "buyer" && "border border-emerald-500/60 bg-emerald-500/5 font-semibold hover:bg-emerald-500/10")}
             >
               Clientes 🟢 ({summary.buyersCount})
             </Button>
             <Button
-              variant={activeTab === "open_budget" ? "default" : "ghost"}
+              variant="ghost"
               size="sm"
               onClick={() => setActiveTab("open_budget")}
-              className="rounded-full text-xs text-amber-600 dark:text-amber-400"
+              className={cn("rounded-full text-xs text-amber-600 dark:text-amber-400", activeTab === "open_budget" && "border border-amber-500/60 bg-amber-500/5 font-semibold hover:bg-amber-500/10")}
             >
               Orçamentos Abertos 🟡 ({summary.openBudgetsCount})
             </Button>
             <Button
-              variant={activeTab === "cold" ? "default" : "ghost"}
+              variant="ghost"
               size="sm"
               onClick={() => setActiveTab("cold")}
-              className="rounded-full text-xs text-blue-600 dark:text-blue-400"
+              className={cn("rounded-full text-xs text-blue-600 dark:text-blue-400", activeTab === "cold" && "border border-blue-500/60 bg-blue-500/5 font-semibold hover:bg-blue-500/10")}
             >
               Leads Frios 🔵
             </Button>
             <Button
-              variant={activeTab === "lost" ? "default" : "ghost"}
+              variant="ghost"
               size="sm"
               onClick={() => setActiveTab("lost")}
-              className="rounded-full text-xs text-rose-600 dark:text-rose-400"
+              className={cn("rounded-full text-xs text-rose-600 dark:text-rose-400", activeTab === "lost" && "border border-rose-500/60 bg-rose-500/5 font-semibold hover:bg-rose-500/10")}
             >
               Perdidos 🔴
             </Button>
