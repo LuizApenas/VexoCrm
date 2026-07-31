@@ -1466,14 +1466,26 @@ function prepareDraftForPersistence<T extends AccessDraft>(
 function applyGranularToDraft(
   registry: AccessRegistry | null,
   role: ManagedRole,
-  keys: string[]
+  keys: string[],
+  currentInternalPages: InternalPage[] = [],
+  currentAllowedViews: AccessView[] = []
 ): Partial<AccessDraft> {
   const unique = Array.from(new Set(keys));
   const { internalPages, allowedViews } = reconcileLegacyFromPermissions(registry, role, unique);
+
+  // Preserva páginas/views que NÃO são gerenciadas por nenhuma permissão do registro
+  // (ex.: onboarding-wizard/Treinamento, apresentacao, chatbot-*, followup subpages). Sem
+  // isso, salvar pela matriz apagava acessos que a matriz sequer controla — foi o que sumiu
+  // a aba de Treinamento dos usuários.
+  const managedPages = new Set((registry?.permissions || []).flatMap((p) => p.legacyPages || []));
+  const managedViews = new Set((registry?.permissions || []).flatMap((p) => p.legacyViews || []));
+  const preservedPages = currentInternalPages.filter((p) => !managedPages.has(p));
+  const preservedViews = currentAllowedViews.filter((v) => !managedViews.has(v));
+
   return {
     granularPermissions: unique,
-    internalPages: internalPages as InternalPage[],
-    allowedViews: allowedViews as AccessView[],
+    internalPages: Array.from(new Set([...internalPages, ...preservedPages])) as InternalPage[],
+    allowedViews: Array.from(new Set([...allowedViews, ...preservedViews])) as AccessView[],
   };
 }
 
@@ -1717,7 +1729,7 @@ function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, ed
                 const next = checked
                   ? Array.from(new Set([...current, key]))
                   : current.filter((entry) => entry !== key);
-                applyPatch(applyGranularToDraft(registry, normalized.role, next));
+                applyPatch(applyGranularToDraft(registry, normalized.role, next, normalized.internalPages, normalized.allowedViews));
               }}
             />
           </div>
@@ -2511,7 +2523,7 @@ export default function UserAccessManagement() {
                         const next = checked
                           ? Array.from(new Set([...current, key]))
                           : current.filter((entry) => entry !== key);
-                        updateCreateDraft(applyGranularToDraft(accessRegistry, createDraft.role, next));
+                        updateCreateDraft(applyGranularToDraft(accessRegistry, createDraft.role, next, createDraft.internalPages, createDraft.allowedViews));
                       }}
                     />
                   </div>
@@ -2965,7 +2977,7 @@ export default function UserAccessManagement() {
                                             const next = checked
                                               ? Array.from(new Set([...current, key]))
                                               : current.filter((entry) => entry !== key);
-                                            updateDraft(selectedUser.uid, applyGranularToDraft(accessRegistry, selectedDraft.role, next));
+                                            updateDraft(selectedUser.uid, applyGranularToDraft(accessRegistry, selectedDraft.role, next, selectedDraft.internalPages, selectedDraft.allowedViews));
                                           }}
                                         />
                                       </div>
