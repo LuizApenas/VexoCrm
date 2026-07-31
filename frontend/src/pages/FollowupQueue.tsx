@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useFupCompanies } from "@/hooks/useFollowupAdmin";
 import { FollowUpJourneys } from "@/components/followup/FollowUpJourneys";
+import CadenceEditor from "@/components/followup/CadenceEditor";
 import { AnalyticsTab } from "@/pages/FollowupQueue/AnalyticsTab";
 import { ConfigTab } from "@/pages/FollowupQueue/ConfigTab";
 
@@ -38,7 +39,7 @@ export default function FollowupDashboard() {
     return allowedTabs.includes(`followup:${subTabKey}`);
   };
 
-  const followupSubTabs = ["journeys", "metrics", "config"] as const;
+  const followupSubTabs = ["journeys", "cadencias", "metrics", "config"] as const;
   const allowedFollowupSubTabs = followupSubTabs.filter(isSubTabAllowed);
 
   useEffect(() => {
@@ -121,6 +122,11 @@ export default function FollowupDashboard() {
                 Jornadas Automatizadas
               </TabsTrigger>
             )}
+            {isSubTabAllowed("cadencias") && (
+              <TabsTrigger value="cadencias" className="text-xs font-semibold px-4 py-2">
+                Cadências
+              </TabsTrigger>
+            )}
             {isSubTabAllowed("metrics") && (
               <TabsTrigger value="metrics" className="text-xs font-semibold px-4 py-2">
                 Estatísticas
@@ -136,6 +142,12 @@ export default function FollowupDashboard() {
           {isSubTabAllowed("journeys") && (
             <TabsContent value="journeys" className="space-y-4 outline-none">
               <FollowUpJourneys companyId={companyId} />
+            </TabsContent>
+          )}
+
+          {isSubTabAllowed("cadencias") && (
+            <TabsContent value="cadencias" className="space-y-4 outline-none">
+              <CadenceEditor companyId={companyId} />
             </TabsContent>
           )}
 

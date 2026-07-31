@@ -20,6 +20,7 @@ import {
   Snowflake,
   Settings,
   Rocket,
+  CalendarClock,
   Trash2,
   Tag as TagIcon,
   X,
@@ -31,6 +32,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { API_BASE_URL } from "@/lib/api";
+import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
 import { PageShell } from "@/components/PageShell";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Button } from "@/components/ui/button";
@@ -165,6 +167,7 @@ export default function BancoDeDados() {
 
   // Create Manual Lead State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isFollowupModalOpen, setIsFollowupModalOpen] = useState(false);
   const [newLeadName, setNewLeadName] = useState("");
   const [newLeadPhone, setNewLeadPhone] = useState("");
   const [newLeadStage, setNewLeadStage] = useState<"buyer" | "open_budget" | "inquiry" | "cold" | "lost">("cold");
@@ -989,6 +992,18 @@ export default function BancoDeDados() {
               <Rocket className="w-3.5 h-3.5" />
               Criar Campanha
             </Button>
+
+            {selectedLeadIds.length > 0 && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setIsFollowupModalOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 text-xs"
+              >
+                <CalendarClock className="w-3.5 h-3.5" />
+                Aplicar Follow-up ({selectedLeadIds.length})
+              </Button>
+            )}
 
             <Button
               variant="default"
@@ -1895,6 +1910,18 @@ export default function BancoDeDados() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal Aplicar Follow-up nos leads selecionados */}
+      <ApplyFollowupModal
+        open={isFollowupModalOpen}
+        onOpenChange={setIsFollowupModalOpen}
+        clientId={clientId}
+        apiBase={API_BASE_URL}
+        getToken={getIdToken}
+        leads={leads
+          .filter((l) => selectedLeadIds.includes(l.id))
+          .map((l) => ({ id: l.id, nome: l.nome, phone: l.phone, telefone: l.telefone }))}
+      />
 
       {/* Modal Cadastro Manual */}
       <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
