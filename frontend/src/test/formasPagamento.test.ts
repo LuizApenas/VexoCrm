@@ -18,6 +18,7 @@ describe("formas de pagamento fixas", () => {
   it("três por item, como combinado", () => {
     expect(FORMAS_SETUP.map((f) => f.id)).toEqual(["pix_avista", "cartao_avista", "cartao_parcelado"]);
     expect(FORMAS_MENSALIDADE.map((f) => f.id)).toEqual([
+      "pagamento_unico",
       "pix_recorrente",
       "cartao_recorrente",
       "cartao_total_parcelado",

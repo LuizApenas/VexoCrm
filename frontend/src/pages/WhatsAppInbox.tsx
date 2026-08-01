@@ -286,8 +286,8 @@ export default function WhatsAppInbox({
                       >
                         <option value="all">Todas as instâncias</option>
                         {evolutionInstances.map((inst) => (
-                          <option key={inst.instanceName} value={inst.instanceName}>
-                            {inst.instanceName}
+                          <option key={inst.name} value={inst.name}>
+                            {inst.name}
                           </option>
                         ))}
                       </select>

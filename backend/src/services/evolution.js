@@ -380,8 +380,8 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
             await pgDatabasePool.query(
               `
                 INSERT INTO public.lead_messages 
-                  (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                  (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
               `,
               [
                 clientId,
@@ -393,7 +393,8 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
                 messageText,
                 timestamp,
                 timestamp,
-                JSON.stringify({})
+                JSON.stringify({}),
+                instanceName
               ]
             );
           }

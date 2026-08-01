@@ -44,8 +44,8 @@ describe("Vexo Sales frontend access control", () => {
     expect(hookSource).toContain("preferSameOrigin");
     expect(hookSource).toContain("[normalizedPath, absoluteApiUrl]");
     expect(frontendVercelConfig).toContain('"source": "/api/:path*"');
-    expect(frontendVercelConfig).toContain("bks-bk-vexo.ymqjmy.easypanel.host/api/:path*");
+    expect(frontendVercelConfig).toContain("vexo-backend.xdvm8y.easypanel.host/api/:path*");
     expect(rootVercelConfig).toContain('"source": "/api/:path*"');
-    expect(rootVercelConfig).toContain("bks-bk-vexo.ymqjmy.easypanel.host/api/:path*");
+    expect(rootVercelConfig).toContain("vexo-backend.xdvm8y.easypanel.host/api/:path*");
   });
 });
