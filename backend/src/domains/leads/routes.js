@@ -13,6 +13,7 @@ import {
   ensureLeadIntelligenceColumns,
 } from "../../lead-client-tables.js";
 import { hasAccessPermission } from "../../accessGuards.js";
+import { upsertLeadByPhone } from "../../services/leadUpsert.js";
 import {
   getDefaultLeadClientEvolutionInstance,
   getEvolutionAdminConfig,
@@ -1112,34 +1113,19 @@ export function registerLeadsRoutes(app, deps) {
         // extração retornava 0 sem pista). ON CONFLICT (client_id, telefone)
         // deduplica: rodar a extração várias vezes atualiza em vez de duplicar.
         try {
-          await pgDatabasePool.query(
-            `INSERT INTO public.leads
-               (client_id, telefone, phone, nome, stage, temperature, tags, extracted_from_wa, raw_chat_summary, last_interaction_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, now())
-             ON CONFLICT (client_id, telefone) DO UPDATE SET
-               phone = EXCLUDED.phone,
-               nome = COALESCE(NULLIF(EXCLUDED.nome, ''), public.leads.nome),
-               stage = EXCLUDED.stage,
-               temperature = EXCLUDED.temperature,
-               tags = EXCLUDED.tags,
-               extracted_from_wa = true,
-               raw_chat_summary = EXCLUDED.raw_chat_summary,
-               last_interaction_at = EXCLUDED.last_interaction_at,
-               updated_at = now()`,
-            [
-              clientId,
-              // telefone sem "+" para casar com lead_messages.phone (sync) e
-              // deduplicar entre extração e sincronização (mesma chave).
-              formattedPhone.replace(/^\+/, ""),
-              formattedPhone.replace(/^\+/, ""),
-              name,
-              classification.stage,
-              classification.temperature,
-              Array.isArray(classification.tags) ? classification.tags : [],
-              classification.summary,
-              lastInteractionAt || new Date().toISOString(),
-            ]
-          );
+          // telefone sem "+" para casar com lead_messages.phone (sync) e
+          // deduplicar entre extração e sincronização (mesma chave).
+          const telefoneKey = formattedPhone.replace(/^\+/, "");
+          await upsertLeadByPhone(pgDatabasePool, clientId, telefoneKey, {
+            phone: telefoneKey,
+            nome: name,
+            stage: classification.stage,
+            temperature: classification.temperature,
+            tags: Array.isArray(classification.tags) ? classification.tags : [],
+            extracted_from_wa: true,
+            raw_chat_summary: classification.summary,
+            last_interaction_at: lastInteractionAt || new Date().toISOString(),
+          });
           extractedCount++;
         } catch (insErr) {
           insertErrors++;

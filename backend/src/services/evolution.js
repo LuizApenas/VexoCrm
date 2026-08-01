@@ -23,6 +23,7 @@ import { pgDatabasePool } from "./database.js";
 import { normalizeString } from "../textNormalize.js";
 import { normalizeTenantKey, normalizeHttpUrl } from "./tenant.js";
 import { isMaskedSecretPlaceholder } from "./httpInfra.js";
+import { upsertLeadByPhone } from "./leadUpsert.js";
 
 /** Timeout padrão para chamadas HTTP de saída (Evolution health-check e webhooks de campanha). */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
@@ -279,15 +280,10 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       const rawName = String(chat.pushName || "").trim();
       const contactName = /^(você|voce)$/i.test(rawName) ? "" : rawName;
       if (contactName) {
-        await pgDatabasePool.query(
-          `INSERT INTO public.leads (client_id, telefone, phone, nome, updated_at)
-           VALUES ($1, $2, $2, $3, now())
-           ON CONFLICT (client_id, telefone) DO UPDATE SET
-             nome = COALESCE(NULLIF(public.leads.nome, ''), EXCLUDED.nome),
-             phone = EXCLUDED.phone,
-             updated_at = now()`,
-          [clientId, phone, contactName]
-        ).catch((e) => console.warn(`[sync-evolution] upsert nome falhou p/ ${phone}: ${e.message}`));
+        await upsertLeadByPhone(pgDatabasePool, clientId, phone, {
+          phone,
+          nome: contactName,
+        }).catch((e) => console.warn(`[sync-evolution] upsert nome falhou p/ ${phone}: ${e.message}`));
       }
 
       // 2. Fetch last 15 messages for each of the top chats
