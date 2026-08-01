@@ -1,12 +1,11 @@
-import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
-import { ListChecks } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Smartphone, Send, Zap, BarChart3, Settings, ChevronDown } from "lucide-react";
 
 import { PageShell } from "@/components/PageShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useFupCompanies } from "@/hooks/useFollowupAdmin";
@@ -16,59 +15,102 @@ import { AnalyticsTab } from "@/pages/FollowupQueue/AnalyticsTab";
 import { ConfigTab } from "@/pages/FollowupQueue/ConfigTab";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TELA PRINCIPAL (DASHBOARD UNIFICADO DE FOLLOW-UP)
+// MÓDULO DE FOLLOW-UP — fluxo LINEAR (redesenho). Em vez de abas soltas, uma sequência
+// de passos de cima para baixo: 1) número de WhatsApp do tenant → 2) cadências (o núcleo,
+// usado pelo Banco de Dados) → 3) automações por evento (opcional) → 4) fila & métricas →
+// configurações avançadas. As empresas são escopadas ao tenant (sem vazar outro cliente).
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Bloco de passo. `collapsible` recolhe seções secundárias para o fluxo não virar um scroll
+// gigante. A seção principal (Cadências) fica sempre aberta.
+function StepSection({
+  step,
+  icon,
+  title,
+  subtitle,
+  children,
+  collapsible = false,
+  defaultOpen = false,
+}: {
+  step?: number;
+  icon: ReactNode;
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+}) {
+  const header = (
+    <div className="flex items-center gap-3">
+      {step != null && (
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+          {step}
+        </span>
+      )}
+      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
+        {icon}
+      </span>
+      <div className="min-w-0 text-left">
+        <p className="text-sm font-bold text-foreground">{title}</p>
+        {subtitle && <p className="text-xs text-muted-foreground leading-4">{subtitle}</p>}
+      </div>
+    </div>
+  );
+
+  if (!collapsible) {
+    return (
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          {header}
+          <div>{children}</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Collapsible defaultOpen={defaultOpen}>
+      <Card>
+        <CollapsibleTrigger className="group w-full">
+          <CardContent className="p-4 flex items-center justify-between gap-3">
+            {header}
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+          </CardContent>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="p-4 pt-0">{children}</CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
+}
+
 export default function FollowupDashboard() {
-  const { canAccessInternalPage, currentTenant } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get("tab") || "fila";
+  const { canAccessInternalPage } = useAuth();
   const crmClient = useOptionalCrmClient();
   const selectedCrmClient = crmClient?.selectedClient;
-  // Tenant ativo (empresa selecionada no topo). Usado para escopar as empresas de
-  // follow-up ao próprio tenant — sem vazar nome de empresa de outro cliente.
+  // Tenant ativo — escopa as empresas de follow-up ao próprio cliente.
   const tenantId = crmClient?.selectedClientId || selectedCrmClient?.id || undefined;
 
   const allowedTabs = selectedCrmClient?.n8n_settings?.allowed_tabs;
-  const isSubTabAllowed = (subTabKey: string) => {
+  const isSectionAllowed = (key: string) => {
     if (!allowedTabs || !Array.isArray(allowedTabs)) return true;
-
-    // Migração de permissões de UI
-    if (subTabKey === "journeys") {
+    if (key === "journeys") {
       if (allowedTabs.includes("followup:journeys")) return true;
       if (allowedTabs.includes("followup:regras") || allowedTabs.includes("followup:fila")) return true;
     }
-
-    return allowedTabs.includes(`followup:${subTabKey}`);
+    return allowedTabs.includes(`followup:${key}`);
   };
 
-  const followupSubTabs = ["journeys", "cadencias", "metrics", "config"] as const;
-  const allowedFollowupSubTabs = followupSubTabs.filter(isSubTabAllowed);
-
-  useEffect(() => {
-    if (allowedFollowupSubTabs.length > 0) {
-      const isCurrentAllowed = allowedFollowupSubTabs.includes(activeTab as any);
-      if (!isCurrentAllowed) {
-        setSearchParams({ tab: allowedFollowupSubTabs[0] });
-      }
-    }
-  }, [activeTab, allowedFollowupSubTabs, setSearchParams]);
-
   const { data: companies = [], isLoading: loadingCompanies } = useFupCompanies(tenantId);
+  const [companyId, setCompanyId] = useState("");
 
-  // Selected company state shared across all operational tabs
-  const [companyId, setCompanyId] = useState("all");
-
+  // Seleciona o número do tenant automaticamente assim que carrega.
   useEffect(() => {
-    // Select first company by default once loaded if none is selected
-    if (companies.length > 0 && companyId === "all") {
+    if (companies.length > 0 && !companies.some((c) => c.id === companyId)) {
       setCompanyId(companies[0].id);
     }
   }, [companies, companyId]);
-
-  const setActiveTab = (tab: string) => {
-    setSearchParams({ tab });
-  };
 
   if (!canAccessInternalPage("fila-de-followup")) {
     return (
@@ -78,99 +120,105 @@ export default function FollowupDashboard() {
     );
   }
 
+  const activeCompany = companies.find((c) => c.id === companyId) || null;
+  const hasCompany = companies.length > 0;
+
   return (
     <PageShell
       title="Módulo de Follow-up"
-      subtitle="Gerenciamento proativo de leads, campanhas, analytics e conexões no mesmo lugar"
-      spacing="space-y-6"
+      subtitle="Configure, do começo ao fim, como o Vexo faz o acompanhamento automático dos seus leads."
+      spacing="space-y-4"
     >
-      {/* Cabeçalho Unificado de Controle */}
-      <Card className="border-indigo-100 bg-indigo-50/20 dark:border-indigo-950 dark:bg-indigo-950/10">
-        <CardContent className="pt-4 pb-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <ListChecks className="h-5 w-5 text-indigo-500 shrink-0" />
-              <div className="text-xs text-slate-500 dark:text-slate-400">
-                {companies.length > 1
-                  ? "Selecione o Número do WhatsApp para gerenciar fila, cadências e métricas."
-                  : "Gerencie fila, cadências e métricas do follow-up deste tenant."}
-              </div>
-            </div>
-            {/* Só mostra o seletor quando o tenant tem mais de um número de WhatsApp.
-                Com um único número, ele é selecionado automaticamente. */}
-            {companies.length > 1 && (
-              <div className="flex items-center gap-2 shrink-0 max-w-xs w-full sm:w-auto">
-                <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400 shrink-0">Número do WhatsApp:</Label>
-                <Select value={companyId} onValueChange={setCompanyId} disabled={loadingCompanies}>
-                  <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900 border-indigo-100 dark:border-indigo-950">
-                    <SelectValue placeholder={loadingCompanies ? "Carregando..." : "Selecionar"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {companies.map((c) => (
-                      <SelectItem key={c.id} value={c.id} className="text-xs">{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+      {/* Passo 1 — Número de WhatsApp do tenant */}
+      <StepSection
+        step={1}
+        icon={<Smartphone className="h-4 w-4" />}
+        title="Número de WhatsApp"
+        subtitle="O número por onde as mensagens de follow-up saem. É exclusivo desta empresa."
+      >
+        {loadingCompanies ? (
+          <p className="text-xs text-muted-foreground">Carregando…</p>
+        ) : !hasCompany ? (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-800 dark:text-amber-300">
+            Nenhum número configurado ainda. Abra <strong>Configurações da empresa</strong> (mais abaixo) e
+            cadastre o número de WhatsApp deste cliente para começar.
           </div>
-        </CardContent>
-      </Card>
+        ) : companies.length === 1 ? (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="font-semibold text-foreground">{activeCompany?.name}</span>
+            <span className="text-muted-foreground">— número ativo deste tenant</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 max-w-sm">
+            <Label className="text-xs font-semibold shrink-0">Número:</Label>
+            <Select value={companyId} onValueChange={setCompanyId}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder="Selecionar" />
+              </SelectTrigger>
+              <SelectContent>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={c.id} className="text-sm">{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </StepSection>
 
-      {/* Tabs Layout */}
-      {allowedFollowupSubTabs.length === 0 ? (
-        <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-card">
-          <p className="text-sm text-slate-400">Você não tem permissão para acessar nenhuma sub-aba do Follow-up.</p>
-        </div>
-      ) : (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="w-full flex justify-start rounded-xl border border-slate-200/80 bg-slate-100/50 p-1 dark:border-white/10 dark:bg-white/[0.02]">
-            {isSubTabAllowed("journeys") && (
-              <TabsTrigger value="journeys" className="text-xs font-semibold px-4 py-2">
-                Jornadas Automatizadas
-              </TabsTrigger>
-            )}
-            {isSubTabAllowed("cadencias") && (
-              <TabsTrigger value="cadencias" className="text-xs font-semibold px-4 py-2">
-                Cadências
-              </TabsTrigger>
-            )}
-            {isSubTabAllowed("metrics") && (
-              <TabsTrigger value="metrics" className="text-xs font-semibold px-4 py-2">
-                Estatísticas
-              </TabsTrigger>
-            )}
-            {isSubTabAllowed("config") && (
-              <TabsTrigger value="config" className="text-xs font-semibold px-4 py-2">
-                Configuração
-              </TabsTrigger>
-            )}
-          </TabsList>
-
-          {isSubTabAllowed("journeys") && (
-            <TabsContent value="journeys" className="space-y-4 outline-none">
-              <FollowUpJourneys companyId={companyId} />
-            </TabsContent>
+      {/* Passo 2 — Cadências (núcleo, integrado com o Banco de Dados) */}
+      {isSectionAllowed("cadencias") && (
+        <StepSection
+          step={2}
+          icon={<Send className="h-4 w-4" />}
+          title="Cadências de follow-up"
+          subtitle="Monte sequências de mensagens reutilizáveis (ex.: lembretes 7d/3d/1d antes de uma data). É o que você aplica nos leads pelo Banco de Dados."
+        >
+          {hasCompany ? (
+            <CadenceEditor companyId={companyId} />
+          ) : (
+            <p className="text-xs text-muted-foreground">Cadastre o número de WhatsApp (passo 1) para criar cadências.</p>
           )}
+        </StepSection>
+      )}
 
-          {isSubTabAllowed("cadencias") && (
-            <TabsContent value="cadencias" className="space-y-4 outline-none">
-              <CadenceEditor companyId={companyId} />
-            </TabsContent>
-          )}
+      {/* Passo 3 — Automações por evento (opcional) */}
+      {isSectionAllowed("journeys") && hasCompany && (
+        <StepSection
+          step={3}
+          icon={<Zap className="h-4 w-4" />}
+          title="Automações por evento (opcional)"
+          subtitle="Mensagens disparadas automaticamente por gatilhos: novo lead, agendamento, proposta enviada, no-show."
+          collapsible
+        >
+          <FollowUpJourneys companyId={companyId} />
+        </StepSection>
+      )}
 
-          {isSubTabAllowed("metrics") && (
-            <TabsContent value="metrics" className="space-y-4 outline-none">
-              <AnalyticsTab companyId={companyId} />
-            </TabsContent>
-          )}
+      {/* Passo 4 — Fila & Métricas */}
+      {isSectionAllowed("metrics") && hasCompany && (
+        <StepSection
+          step={4}
+          icon={<BarChart3 className="h-4 w-4" />}
+          title="Fila & Métricas"
+          subtitle="Acompanhe os envios agendados e o resultado das cadências."
+          collapsible
+        >
+          <AnalyticsTab companyId={companyId} />
+        </StepSection>
+      )}
 
-          {isSubTabAllowed("config") && (
-            <TabsContent value="config" className="space-y-4 outline-none">
-              <ConfigTab />
-            </TabsContent>
-          )}
-        </Tabs>
+      {/* Configurações da empresa (avançado) — inclui criar/editar o número de WhatsApp */}
+      {isSectionAllowed("config") && (
+        <StepSection
+          icon={<Settings className="h-4 w-4" />}
+          title="Configurações da empresa (avançado)"
+          subtitle="Cadastrar/editar o número de WhatsApp, horários de envio, motor de reabordagem e integração Calendly."
+          collapsible
+          defaultOpen={!hasCompany}
+        >
+          <ConfigTab />
+        </StepSection>
       )}
     </PageShell>
   );
