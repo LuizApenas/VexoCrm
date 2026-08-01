@@ -127,7 +127,14 @@ export function AppSidebar() {
   const visibleCanais = filterItems(CANAIS_ITEMS);
   const visibleGeracaoDigital = filterItems(GERACAO_DIGITAL_ITEMS);
   const visibleLivpub = filterItems(LIVPUB_ITEMS);
-  const visibleAjuda = filterItems(AJUDA_ITEMS);
+  // Itens de AJUDA (Treinamento Vexo, Apresentação) são ajuda/onboarding e NÃO dependem de
+  // uma página interna gerenciável — o conteúdo do treino já é filtrado por permissão dentro
+  // da própria tela. Sempre visíveis para usuário interno (e p/ cliente conforme allowed_tabs).
+  // Corrige regressão em que salvar pela matriz de permissões apagava a página onboarding-wizard
+  // e sumia a aba de Treinamento.
+  const visibleAjuda = AJUDA_ITEMS.filter(
+    (f) => isInternalUser || isPathAllowedForClient(f.url, allowedTabs)
+  );
   const visibleAdmin = filterItems(ADMIN_ITEMS);
 
   const selectedPreset = COLOR_PRESETS[(color as keyof typeof COLOR_PRESETS) || "default"] || COLOR_PRESETS.default;
