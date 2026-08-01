@@ -14,6 +14,7 @@ import {
 } from "../../lead-client-tables.js";
 import { hasAccessPermission } from "../../accessGuards.js";
 import { upsertLeadByPhone } from "../../services/leadUpsert.js";
+import { summarizeChatWithAI } from "./chatInsight.js";
 import {
   getDefaultLeadClientEvolutionInstance,
   getEvolutionAdminConfig,
@@ -1104,6 +1105,23 @@ export function registerLeadsRoutes(app, deps) {
         }
 
         const classification = classifyChatContent(messagesText, name);
+        // Resumo inteligente (pontos-chave + diagnóstico + próxima ação). Se a
+        // IA não estiver disponível, mantém o resumo heurístico.
+        try {
+          const insight = await summarizeChatWithAI(messagesText, name);
+          if (insight?.summary) {
+            classification.summary = insight.summary;
+            if (insight.prioridade === "alta" && !classification.tags.includes("Prioridade alta")) {
+              classification.tags.push("Prioridade alta");
+            }
+            if (insight.canalSugerido === "followup" && !classification.tags.includes("Follow-up")) {
+              classification.tags.push("Follow-up");
+            }
+            if (insight.canalSugerido === "campanha" && !classification.tags.includes("Campanha")) {
+              classification.tags.push("Campanha");
+            }
+          }
+        } catch { /* mantém o resumo heurístico */ }
         if (classification.stage === 'buyer') buyers++;
         if (classification.stage === 'open_budget') openBudgets++;
         if (classification.stage === 'cold') coldLeads++;

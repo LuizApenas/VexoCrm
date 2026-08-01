@@ -2034,8 +2034,11 @@ export default function BancoDeDados() {
                 <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
                   <Sparkles className="w-3.5 h-3.5" /> Resumo Semântico da IA
                 </span>
-                <p className="text-xs text-foreground/90 leading-relaxed italic">
-                  "{selectedLead.raw_chat_summary || "Sem histórico recente analisado."}"
+                {/* O resumo vem em linhas (pontos-chave / diagnóstico / próxima
+                    ação). whitespace-pre-line preserva a quebra; sem itálico e
+                    sem aspas, porque não é mais citação da conversa. */}
+                <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-line">
+                  {selectedLead.raw_chat_summary || "Sem histórico recente analisado."}
                 </p>
               </div>
 
