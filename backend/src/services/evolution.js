@@ -248,10 +248,10 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       return;
     }
 
-    console.info(`[sync-evolution] Found ${chats.length} chats. Syncing messages for the top 30 chats...`);
+    console.info(`[sync-evolution] Found ${chats.length} chats. Syncing messages for the top 200 chats...`);
 
-    // Only sync the top 30 chats to avoid excessive API requests
-    const topChats = chats.slice(0, 30);
+    // Sincroniza até 200 chats (número comercial tem muitas conversas por dia).
+    const topChats = chats.slice(0, 200);
 
     for (const chat of topChats) {
       // Telefone REAL: em contatos LID o remoteJid é "<lid>@lid" e o número
@@ -270,6 +270,22 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
 
       const phone = phoneJid.split("@")[0];
       if (!phone) continue;
+
+      // Grava/atualiza o lead com o NOME do contato (pushName) para a aba
+      // Conversas mostrar nome em vez de só o número. telefone = phone (mesmo
+      // formato do lead_messages, para o LEFT JOIN casar).
+      const contactName = String(chat.pushName || "").trim();
+      if (contactName) {
+        await pgDatabasePool.query(
+          `INSERT INTO public.leads (client_id, telefone, phone, nome, updated_at)
+           VALUES ($1, $2, $2, $3, now())
+           ON CONFLICT (client_id, telefone) DO UPDATE SET
+             nome = COALESCE(NULLIF(public.leads.nome, ''), EXCLUDED.nome),
+             phone = EXCLUDED.phone,
+             updated_at = now()`,
+          [clientId, phone, contactName]
+        ).catch((e) => console.warn(`[sync-evolution] upsert nome falhou p/ ${phone}: ${e.message}`));
+      }
 
       // 2. Fetch last 15 messages for each of the top chats
       try {

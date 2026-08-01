@@ -1063,8 +1063,10 @@ export function registerLeadsRoutes(app, deps) {
                updated_at = now()`,
             [
               clientId,
-              formattedPhone,
-              formattedPhone,
+              // telefone sem "+" para casar com lead_messages.phone (sync) e
+              // deduplicar entre extração e sincronização (mesma chave).
+              formattedPhone.replace(/^\+/, ""),
+              formattedPhone.replace(/^\+/, ""),
               name,
               classification.stage,
               classification.temperature,
