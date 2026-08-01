@@ -190,6 +190,7 @@ export function registerChatbotRoutes(app, deps) {
   });
   app.get("/api/whatsapp/chats", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (_req, res) => {
     if (!ensureDb(res)) return;
+    try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS instance_name VARCHAR(150);").catch(() => {}); } catch(e) {}
 
     try {
       const search = normalizeString(_req.query.search)?.toLowerCase() || "";
@@ -362,6 +363,7 @@ export function registerChatbotRoutes(app, deps) {
 
   app.delete("/api/whatsapp/chats/clear", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
     if (!ensureDb(res)) return;
+    try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS instance_name VARCHAR(150);").catch(() => {}); } catch(e) {}
 
     try {
       const requestedClientId = normalizeString(req.query.clientId || req.body.clientId);
@@ -376,8 +378,6 @@ export function registerChatbotRoutes(app, deps) {
       if (instanceName) {
         queryText += ` AND instance_name = $2`;
         queryParams.push(instanceName);
-      } else {
-        queryText += ` AND instance_name IS NULL`;
       }
 
       const result = await pgDatabasePool.query(queryText, queryParams);
