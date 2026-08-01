@@ -62,7 +62,7 @@ async function parseApiResponse<T>(res: Response): Promise<T> {
   throw new Error(message);
 }
 
-export function useWhatsAppChats(clientId: string | null, enabled: boolean) {
+export function useWhatsAppChats(clientId: string | null, instanceName: string | null, enabled: boolean) {
   const { getIdToken } = useAuth();
   const [olderPagesEnabled, setOlderPagesEnabled] = useState(false);
 
@@ -86,6 +86,10 @@ export function useWhatsAppChats(clientId: string | null, enabled: boolean) {
     if (clientId) {
       params.append("clientId", clientId);
     }
+    
+    if (instanceName) {
+      params.append("instanceName", instanceName);
+    }
 
     const res = await fetch(`${API_BASE_URL}/api/whatsapp/chats?${params.toString()}`, {
       headers: {
@@ -97,7 +101,7 @@ export function useWhatsAppChats(clientId: string | null, enabled: boolean) {
   };
 
   const recentChatsQuery = useQuery({
-    queryKey: ["whatsapp-chats", clientId, "recent"],
+    queryKey: ["whatsapp-chats", clientId, instanceName, "recent"],
     enabled: enabled && !!clientId,
     queryFn: async () => fetchChatsPage(0),
     refetchInterval: enabled && !!clientId ? 5000 : false,
@@ -105,7 +109,7 @@ export function useWhatsAppChats(clientId: string | null, enabled: boolean) {
   });
 
   const olderChatsQuery = useInfiniteQuery({
-    queryKey: ["whatsapp-chats", clientId, "older"],
+    queryKey: ["whatsapp-chats", clientId, instanceName, "older"],
     enabled: enabled && olderPagesEnabled && !!clientId,
     initialPageParam: 20,
     queryFn: async ({ pageParam }) => fetchChatsPage(pageParam),
@@ -154,11 +158,11 @@ export function useWhatsAppChats(clientId: string | null, enabled: boolean) {
   };
 }
 
-export function useWhatsAppMessages(clientId: string | null, chatId: string | null, enabled: boolean) {
+export function useWhatsAppMessages(clientId: string | null, instanceName: string | null, chatId: string | null, enabled: boolean) {
   const { getIdToken } = useAuth();
 
   return useQuery({
-    queryKey: ["whatsapp-messages", clientId, chatId],
+    queryKey: ["whatsapp-messages", clientId, instanceName, chatId],
     enabled: enabled && !!chatId && !!clientId,
     queryFn: async (): Promise<WhatsAppMessage[]> => {
       const token = await getIdToken();
@@ -173,6 +177,10 @@ export function useWhatsAppMessages(clientId: string | null, chatId: string | nu
 
       if (clientId) {
         params.append("clientId", clientId);
+      }
+      
+      if (instanceName) {
+        params.append("instanceName", instanceName);
       }
 
       const res = await fetch(
@@ -220,7 +228,40 @@ export function useSendWhatsAppMessage(clientId: string | null, chatId: string |
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["whatsapp-chats", clientId] });
-      queryClient.invalidateQueries({ queryKey: ["whatsapp-messages", clientId, chatId] });
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-messages", clientId] });
+    },
+  });
+}
+
+export function useClearWhatsAppChats(clientId: string | null) {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (instanceName: string | null) => {
+      if (!clientId) throw new Error("Client ID is required");
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Usuario nao autenticado.");
+      }
+
+      const params = new URLSearchParams({ clientId });
+      if (instanceName) {
+        params.append("instanceName", instanceName);
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/whatsapp/chats/clear?${params.toString()}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      return parseApiResponse<{ success: boolean; deletedCount: number }>(res);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-chats", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-messages", clientId] });
     },
   });
 }

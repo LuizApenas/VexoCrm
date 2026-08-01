@@ -49,6 +49,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
     leadId = null,
     deliveredAt = null,
     meta = null,
+    instanceName = null,
   }) {
     if (!supabase || !clientId || !phone) return null;
 
@@ -120,6 +121,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
       message_text: normalizedMessage,
       delivered_at: deliveredAt || new Date().toISOString(),
       meta: meta && typeof meta === "object" ? meta : {},
+      instance_name: instanceName,
     });
 
     if (error && !isMissingSchemaError(error)) {

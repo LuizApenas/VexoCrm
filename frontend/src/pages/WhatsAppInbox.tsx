@@ -28,6 +28,7 @@ import {
   useSendWhatsAppMessage,
   useWhatsAppChats,
   useWhatsAppMessages,
+  useClearWhatsAppChats,
   type WhatsAppChat,
   type WhatsAppMessage,
 } from "@/hooks/useWhatsAppInbox";
@@ -142,6 +143,7 @@ export default function WhatsAppInbox({
   const initialPhone = searchParams.get("phone") ?? null;
 
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [selectedInstanceName, setSelectedInstanceName] = useState<string>("all");
   const [draft, setDraft] = useState("");
   const chatsContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -164,9 +166,11 @@ export default function WhatsAppInbox({
   }, [campaignsQuery.data]);
 
   const canLoadInbox = Boolean(clientId);
-  const chatsQuery = useWhatsAppChats(clientId, canLoadInbox);
-  const messagesQuery = useWhatsAppMessages(clientId, selectedChatId, canLoadInbox);
+  const instanceFilter = selectedInstanceName === "all" ? null : selectedInstanceName;
+  const chatsQuery = useWhatsAppChats(clientId, instanceFilter, canLoadInbox);
+  const messagesQuery = useWhatsAppMessages(clientId, instanceFilter, selectedChatId, canLoadInbox);
   const sendMessage = useSendWhatsAppMessage(clientId, selectedChatId);
+  const clearChats = useClearWhatsAppChats(clientId);
 
   const chats = chatsQuery.items ?? [];
   const messages = messagesQuery.data ?? [];
@@ -268,10 +272,44 @@ export default function WhatsAppInbox({
               />
             ) : (
               <div className="grid h-[calc(100vh-260px)] min-h-[620px] gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-                <div className="min-h-0 overflow-hidden rounded-xl border border-border/70 bg-background/30">
-                  <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 text-xs font-medium text-slate-500 dark:border-slate-800">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                    Conversas · atualizando em tempo real
+                <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-background/30">
+                  <div className="flex flex-col gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                    <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                      Conversas · atualizando em tempo real
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                        value={selectedInstanceName}
+                        onChange={(e) => setSelectedInstanceName(e.target.value)}
+                      >
+                        <option value="all">Todas as instâncias</option>
+                        {evolutionInstances.map((inst) => (
+                          <option key={inst.instanceName} value={inst.instanceName}>
+                            {inst.instanceName}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="h-8 shrink-0 px-2 text-xs"
+                        disabled={clearChats.isPending}
+                        onClick={async () => {
+                          if (confirm("Tem certeza que deseja limpar as conversas do banco de dados? Isso apagará o histórico da instância selecionada no CRM.")) {
+                            try {
+                              await clearChats.mutateAsync(selectedInstanceName === "all" ? null : selectedInstanceName);
+                              toast.success("Conversas limpas com sucesso.");
+                            } catch (error) {
+                              toast.error(error instanceof Error ? error.message : "Erro ao limpar conversas.");
+                            }
+                          }
+                        }}
+                      >
+                        Limpar
+                      </Button>
+                    </div>
                   </div>
                   <div
                     ref={chatsContainerRef}

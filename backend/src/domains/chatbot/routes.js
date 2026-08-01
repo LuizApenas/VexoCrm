@@ -202,6 +202,7 @@ export function registerChatbotRoutes(app, deps) {
       const clientId = resolveAuthorizedClientId(_req, res, requestedClientId);
       if (!clientId) return;
 
+      const instanceName = normalizeString(_req.query.instanceName) || null;
       const leadsTable = leadsTableName(clientId);
 
       const queryParams = [clientId];
@@ -209,6 +210,13 @@ export function registerChatbotRoutes(app, deps) {
       if (search) {
         queryParams.push(`%${search}%`);
         searchFilter = `AND (LOWER(l.nome) LIKE $2 OR m.phone LIKE $2 OR LOWER(m.message_text) LIKE $2)`;
+      }
+
+      let instanceFilter = "";
+      if (instanceName) {
+        queryParams.push(instanceName);
+        const idx = queryParams.length;
+        instanceFilter = `AND instance_name = $${idx}`;
       }
 
       let total = 0;
@@ -220,7 +228,7 @@ export function registerChatbotRoutes(app, deps) {
             SELECT DISTINCT ON (phone)
               phone
             FROM public.lead_messages
-            WHERE client_id = $1
+            WHERE client_id = $1 ${instanceFilter}
             ORDER BY phone, delivered_at DESC
           )
           SELECT COUNT(*)::integer as total
@@ -243,7 +251,7 @@ export function registerChatbotRoutes(app, deps) {
               delivered_at,
               campaign_id
             FROM public.lead_messages
-            WHERE client_id = $1
+            WHERE client_id = $1 ${instanceFilter}
             ORDER BY phone, delivered_at DESC
           )
           SELECT
@@ -351,6 +359,34 @@ export function registerChatbotRoutes(app, deps) {
     }
     res.json({ success: true, chatId });
   });
+
+  app.delete("/api/whatsapp/chats/clear", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
+    if (!ensureDb(res)) return;
+
+    try {
+      const requestedClientId = normalizeString(req.query.clientId || req.body.clientId);
+      const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+      if (!clientId) return;
+
+      const instanceName = normalizeString(req.query.instanceName || req.body.instanceName) || null;
+
+      let queryText = `DELETE FROM public.lead_messages WHERE client_id = $1`;
+      let queryParams = [clientId];
+
+      if (instanceName) {
+        queryText += ` AND instance_name = $2`;
+        queryParams.push(instanceName);
+      } else {
+        queryText += ` AND instance_name IS NULL`;
+      }
+
+      const result = await pgDatabasePool.query(queryText, queryParams);
+      res.json({ success: true, deletedCount: result.rowCount });
+    } catch (error) {
+      console.error("[whatsapp/chats] clear error:", error);
+      sendError(res, 500, "CLEAR_FAILED", "Failed to clear chats");
+    }
+  });
   app.get("/api/whatsapp/messages", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
     if (!ensureDb(res)) return;
 
@@ -363,12 +399,23 @@ export function registerChatbotRoutes(app, deps) {
       const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
       if (!clientId) return;
 
+      const instanceName = normalizeString(req.query.instanceName) || null;
+
       if (!chatId) {
         sendError(res, 400, "INVALID_QUERY", "Missing chatId");
         return;
       }
 
       const cleanPhone = sanitizePhone(chatId);
+      const queryParams = [clientId, cleanPhone, limit];
+      
+      let instanceFilter = "";
+      if (instanceName) {
+        queryParams.push(instanceName);
+        const idx = queryParams.length;
+        instanceFilter = `AND instance_name = $${idx}`;
+      }
+
       const queryText = `
         SELECT
           id,
@@ -377,11 +424,11 @@ export function registerChatbotRoutes(app, deps) {
           delivered_at,
           sender_type
         FROM public.lead_messages
-        WHERE client_id = $1 AND phone = $2
+        WHERE client_id = $1 AND phone = $2 ${instanceFilter}
         ORDER BY delivered_at DESC
         LIMIT $3
       `;
-      const result = await pgDatabasePool.query(queryText, [clientId, cleanPhone, limit]);
+      const result = await pgDatabasePool.query(queryText, queryParams);
 
       let items = result.rows.map((row) => {
         const timestampVal = row.delivered_at ? Math.floor(new Date(row.delivered_at).getTime() / 1000) : null;
@@ -898,6 +945,8 @@ export function registerChatbotRoutes(app, deps) {
       return;
     }
 
+    const instanceName = body.instance || body.instanceName || req.query.instanceName || req.query.instance || null;
+
     // ── Campaign routing ─────────────────────────────────────────────────
     let chatbotPromptTypeOverride = null; // "campanha" | "padrao" | null
     let activeCampaignForLead = null;
@@ -1028,6 +1077,7 @@ export function registerChatbotRoutes(app, deps) {
                   transcribed: item.transcribed === true,
                   described: item.described === true,
                 },
+                instanceName,
               });
             }
           }
@@ -1092,6 +1142,7 @@ export function registerChatbotRoutes(app, deps) {
                 finalized: aiResponse.finalizado === true,
                 recontact: aiResponse._recontato === true,
               },
+              instanceName,
             });
           } else {
             const errText = await evolutionResponse.text();
