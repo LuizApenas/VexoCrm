@@ -114,6 +114,17 @@ outras rotas quebravam por schema). O sintoma sumiu do console, a causa continuo
 - Rota alterada: prove com uma chamada real (curl/fetch/DevTools) que retorna o esperado.
 - Migração/coluna: consulte o banco e confirme que a coluna/linha existe (`information_schema`
   ou `SELECT ... LIMIT 0`).
+- **DDL que "deu OK" não prova que o objeto existe.** `CREATE TABLE/INDEX ... IF NOT EXISTS` e
+  `ALTER ... ADD COLUMN IF NOT EXISTS` retornam sucesso mesmo quando não criam nada (e o objeto
+  pode ter sido apagado depois, por um DELETE/DROP em cascata). Sempre confirme o estado real
+  com uma consulta de catálogo, e prove o comportamento:
+  - índice: `SELECT indexname, indexdef FROM pg_indexes WHERE tablename = '<tabela>';`
+  - coluna: `SELECT column_name, data_type, column_default FROM information_schema.columns WHERE table_name = '<tabela>';`
+  - se o código usa `ON CONFLICT (a, b)`, rode um INSERT de teste (e apague depois). Sem um índice
+    único em `(a, b)` o Postgres responde *"there is no unique or exclusion constraint matching the
+    ON CONFLICT specification"* e **todo** upsert falha em silêncio se o erro for engolido.
+  Incidente real: nomes de contato não gravavam e a extração retornava 0 porque o índice único
+  `(client_id, telefone)` não existia, apesar de o `CREATE ... IF NOT EXISTS` ter reportado OK.
 - Ao relatar: diga o comando que rodou e o resultado. Se não rodou, diga "não verificado".
   Não escreva "corrigido" para algo que você só editou.
 
@@ -140,6 +151,7 @@ outras rotas quebravam por schema). O sintoma sumiu do console, a causa continuo
 - [ ] Zero credencial literal no diff (`grep` por senha/token).
 - [ ] Não adicionei tabela/seed/rotina de migração desnecessária.
 - [ ] Não escondi erro com catch vazio.
+- [ ] Se mexi em schema: confirmei coluna/índice no catálogo (não confiei no "OK" do `IF NOT EXISTS`).
 - [ ] Testei a rota/tela afetada de verdade e tenho o resultado.
 - [ ] `git add` só dos arquivos certos; branch e remote conferidos.
 - [ ] Avisei o usuário se precisa **Deploy** no Easypanel (backend não sobe no push).
