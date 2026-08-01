@@ -970,10 +970,70 @@ export function registerLeadsRoutes(app, deps) {
         if (rj.includes("@s.whatsapp.net")) return rj;
         return "";
       };
+      // Número da própria instância (o WhatsApp conectado) — não é lead. A
+      // tabela não guarda o ownerJid, então consulta a Evolution.
+      let ownerDigits = "";
+      try {
+        const instRes = await fetch(`${baseUrl}/instance/fetchInstances?instanceName=${encodeURIComponent(instanceName)}`, {
+          headers: { apikey: apiKey },
+        });
+        if (instRes.ok) {
+          const iData = await instRes.json();
+          const iList = Array.isArray(iData) ? iData : [iData];
+          const found = iList.find((i) => (i?.name || i?.instance?.instanceName) === instanceName) || iList[0];
+          const owner = found?.ownerJid || found?.owner || found?.instance?.owner || "";
+          ownerDigits = String(owner).split("@")[0].replace(/\D/g, "");
+        }
+      } catch (e) {
+        console.warn("[wa-extract] não foi possível obter o número da instância:", e.message);
+      }
+
       const validChats = chats.filter(c => {
         const jid = realPhoneJid(c);
-        return jid && !jid.includes("@g.us") && !jid.includes("@broadcast");
+        if (!jid || jid.includes("@g.us") || jid.includes("@broadcast")) return false;
+        const digits = jid.split("@")[0].replace(/\D/g, "");
+        // Descarta telefone vazio/curto ("0", "WhatsApp Business" etc.) e o
+        // próprio número conectado (aparecia como lead com telefone zerado).
+        if (!digits || digits.length < 10) return false;
+        if (ownerDigits && digits === ownerDigits) return false;
+        return true;
       });
+
+      // NOMES: o "~nome" que aparece no WhatsApp de quem não está salvo nos
+      // contatos é o pushName que a pessoa configurou no aparelho dela. Vem no
+      // chat, mas quando a última mensagem é nossa o pushName é "Você"; então
+      // buscamos também /chat/findContacts, que traz pushName por contato.
+      const contactNames = new Map();
+      try {
+        const contactsRes = await fetch(`${baseUrl}/chat/findContacts/${encodeURIComponent(instanceName)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: apiKey },
+          body: JSON.stringify({}),
+        });
+        if (contactsRes.ok) {
+          const cData = await contactsRes.json();
+          const cList = Array.isArray(cData) ? cData : (cData?.records || cData?.contacts || []);
+          for (const ct of cList) {
+            const jid = String(ct?.remoteJid || ct?.id || "");
+            const digits = jid.split("@")[0].replace(/\D/g, "");
+            const nm = String(ct?.pushName || ct?.name || ct?.verifiedName || "").trim();
+            if (digits && nm && nm.toLowerCase() !== "você" && nm.toLowerCase() !== "voce") {
+              contactNames.set(digits, nm);
+            }
+          }
+          console.info(`[wa-extract] findContacts: ${contactNames.size} nomes carregados`);
+        }
+      } catch (e) {
+        console.warn("[wa-extract] findContacts indisponível:", e.message);
+      }
+
+      const isRealName = (n) => {
+        const s = String(n || "").trim();
+        if (!s) return false;
+        const low = s.toLowerCase();
+        if (low === "você" || low === "voce") return false;
+        return !/^\+?\d[\d\s\-()]*$/.test(s); // não é só número
+      };
 
       let extractedCount = 0;
       let insertErrors = 0;
@@ -991,7 +1051,12 @@ export function registerLeadsRoutes(app, deps) {
         const formattedPhone = sanitizePhoneE164(rawPhone);
         if (!formattedPhone) continue;
 
-        const name = normalizeString(chat.pushName || chat.name || chat.verifiedName || formattedPhone);
+        // Ordem: pushName do chat > nome do findContacts > pushName da última
+        // mensagem recebida (nunca a enviada, que vem como "Você") > telefone.
+        const digitsOnly = rawPhone.replace(/\D/g, "");
+        const lastMsgName = chat?.lastMessage?.key?.fromMe === false ? chat?.lastMessage?.pushName : "";
+        const candidates = [chat.pushName, contactNames.get(digitsOnly), lastMsgName, chat.name, chat.verifiedName];
+        const name = normalizeString(candidates.find(isRealName) || formattedPhone);
         // findMessages usa o jid REAL da conversa (remoteJid, que pode ser @lid).
         const msgRemoteJid = chat.remoteJid || phoneJid;
 

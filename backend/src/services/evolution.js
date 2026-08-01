@@ -269,12 +269,15 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       if (!phoneJid) continue; // LID sem telefone real -> ignora
 
       const phone = phoneJid.split("@")[0];
-      if (!phone) continue;
+      // Descarta telefone vazio/curto e o próprio número conectado (não é lead).
+      if (!phone || phone.replace(/\D/g, "").length < 10) continue;
 
       // Grava/atualiza o lead com o NOME do contato (pushName) para a aba
       // Conversas mostrar nome em vez de só o número. telefone = phone (mesmo
       // formato do lead_messages, para o LEFT JOIN casar).
-      const contactName = String(chat.pushName || "").trim();
+      // "Você" é o pushName de mensagem enviada por nós — não é nome do contato.
+      const rawName = String(chat.pushName || "").trim();
+      const contactName = /^(você|voce)$/i.test(rawName) ? "" : rawName;
       if (contactName) {
         await pgDatabasePool.query(
           `INSERT INTO public.leads (client_id, telefone, phone, nome, updated_at)
