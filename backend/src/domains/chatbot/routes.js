@@ -476,6 +476,12 @@ export function registerChatbotRoutes(app, deps) {
       }
 
       // Log sent message in the database
+      // instanceName must be the Evolution API name (last URL path segment) to match
+      // what the sync and webhook store in lead_messages.instance_name.
+      const evoInstanceName = webhookUrl
+        ? new URL(webhookUrl).pathname.split("/").filter(Boolean).pop() || activeInstance.name
+        : activeInstance.name;
+
       await appendLeadMessage({
         clientId,
         phone: cleanPhone,
@@ -483,10 +489,10 @@ export function registerChatbotRoutes(app, deps) {
         direction: "outbound",
         messageText: body,
         deliveredAt: new Date().toISOString(),
+        instanceName: evoInstanceName,
         meta: {
           source: "manual-inbox-reply",
           instanceId: activeInstance.id,
-          instanceName: activeInstance.name,
         },
       });
 

@@ -285,11 +285,19 @@ export default function WhatsAppInbox({
                         onChange={(e) => setSelectedInstanceName(e.target.value)}
                       >
                         <option value="all">Todas as instâncias</option>
-                        {evolutionInstances.map((inst) => (
-                          <option key={inst.name} value={inst.name}>
-                            {inst.name}
-                          </option>
-                        ))}
+                        {evolutionInstances.map((inst) => {
+                          // The sync saves instance_name from the last URL path segment
+                          // (e.g. "geracao-digital-gd-vexo"), not inst.name ("GD Vexo").
+                          // We must match.
+                          const urlName = inst.dispatch_webhook_url
+                            ? inst.dispatch_webhook_url.split("/").filter(Boolean).pop() ?? inst.name
+                            : inst.name;
+                          return (
+                            <option key={urlName} value={urlName}>
+                              {inst.name}
+                            </option>
+                          );
+                        })}
                       </select>
                       <Button
                         variant="destructive"
