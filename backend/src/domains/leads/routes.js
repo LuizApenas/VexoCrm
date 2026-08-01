@@ -960,12 +960,19 @@ export function registerLeadsRoutes(app, deps) {
         return;
       }
 
+      // Telefone REAL: em contatos LID o remoteJid é "<lid>@lid" (não é telefone)
+      // e o número verdadeiro fica em lastMessage.key.remoteJidAlt (@s.whatsapp.net).
+      // O campo `id` é uma string aleatória (ex: cms81bq...) — nunca usar como fone.
+      const realPhoneJid = (c) => {
+        const alt = c?.lastMessage?.key?.remoteJidAlt || "";
+        const rj = c?.remoteJid || "";
+        if (alt.includes("@s.whatsapp.net")) return alt;
+        if (rj.includes("@s.whatsapp.net")) return rj;
+        return "";
+      };
       const validChats = chats.filter(c => {
-        const jid = c.id || c.remoteJid || "";
-        // @lid = identificador de privacidade do WhatsApp (não é telefone real).
-        // Extrair @lid gera "números" inválidos (ex: 174203940663479) que nem
-        // existem no WhatsApp e não dá pra disparar. Só contatos com telefone.
-        return jid && !jid.includes("@g.us") && !jid.includes("@broadcast") && !jid.includes("@lid");
+        const jid = realPhoneJid(c);
+        return jid && !jid.includes("@g.us") && !jid.includes("@broadcast");
       });
 
       let extractedCount = 0;
@@ -979,12 +986,14 @@ export function registerLeadsRoutes(app, deps) {
       console.info(`[wa-extract] client=${clientId} instancia=${instanceName} chats=${chats.length} validos=${validChats.length} processando=${topChats.length}`);
 
       for (const chat of topChats) {
-        const remoteJid = chat.id || chat.remoteJid;
-        const rawPhone = remoteJid.split("@")[0] || "";
+        const phoneJid = realPhoneJid(chat);
+        const rawPhone = phoneJid.split("@")[0] || "";
         const formattedPhone = sanitizePhoneE164(rawPhone);
         if (!formattedPhone) continue;
 
-        const name = normalizeString(chat.name || chat.pushName || chat.verifiedName || formattedPhone);
+        const name = normalizeString(chat.pushName || chat.name || chat.verifiedName || formattedPhone);
+        // findMessages usa o jid REAL da conversa (remoteJid, que pode ser @lid).
+        const msgRemoteJid = chat.remoteJid || phoneJid;
 
         let messagesText = [];
         let lastInteractionAt = null;
@@ -997,7 +1006,7 @@ export function registerLeadsRoutes(app, deps) {
               apikey: apiKey
             },
             body: JSON.stringify({
-              where: { key: { remoteJid } },
+              where: { key: { remoteJid: msgRemoteJid } },
               limit: 15
             })
           });

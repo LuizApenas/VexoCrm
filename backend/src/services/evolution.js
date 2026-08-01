@@ -254,14 +254,21 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
     const topChats = chats.slice(0, 30);
 
     for (const chat of topChats) {
-      const remoteJid = chat.id || chat.remoteJid;
-      // Pula grupos, broadcast e @lid (identificador de privacidade do WhatsApp,
-      // que aparece como número inválido/errado na aba Conversas).
-      if (!remoteJid || remoteJid.includes("@g.us") || remoteJid.includes("@broadcast") || remoteJid.includes("@lid")) {
+      // Telefone REAL: em contatos LID o remoteJid é "<lid>@lid" e o número
+      // verdadeiro fica em lastMessage.key.remoteJidAlt (@s.whatsapp.net). O
+      // campo `id` é string aleatória (não é telefone). findMessages usa o
+      // remoteJid original (que pode ser @lid).
+      const remoteJid = chat.remoteJid || chat.id;
+      if (!remoteJid || remoteJid.includes("@g.us") || remoteJid.includes("@broadcast")) {
         continue;
       }
+      const altJid = chat?.lastMessage?.key?.remoteJidAlt || "";
+      const phoneJid = altJid.includes("@s.whatsapp.net")
+        ? altJid
+        : (remoteJid.includes("@s.whatsapp.net") ? remoteJid : "");
+      if (!phoneJid) continue; // LID sem telefone real -> ignora
 
-      const phone = remoteJid.split("@")[0];
+      const phone = phoneJid.split("@")[0];
       if (!phone) continue;
 
       // 2. Fetch last 15 messages for each of the top chats
