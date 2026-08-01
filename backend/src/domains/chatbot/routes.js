@@ -299,47 +299,6 @@ export function registerChatbotRoutes(app, deps) {
         console.warn("[whatsapp/chats] Postgres query warning/fallback:", pgErr?.message);
       }
 
-      if (items.length === 0) {
-        try {
-          const { data: fallbackLeads, count: fallbackCount } = await supabase
-            .from("leads")
-            .select("id, nome, telefone, phone, raw_chat_summary, last_interaction_at, created_at", { count: "exact" })
-            .eq("client_id", clientId)
-            .order("created_at", { ascending: false })
-            .range(offset, offset + limit - 1);
-
-          if (Array.isArray(fallbackLeads) && fallbackLeads.length > 0) {
-            items = fallbackLeads.map((l) => {
-              const phoneNum = l.phone || l.telefone || "";
-              const ts = l.last_interaction_at
-                ? Math.floor(new Date(l.last_interaction_at).getTime() / 1000)
-                : Math.floor(new Date(l.created_at).getTime() / 1000);
-              return {
-                id: phoneNum,
-                name: l.nome || phoneNum,
-                isGroup: false,
-                unreadCount: 0,
-                timestamp: ts,
-                archived: false,
-                pinned: false,
-                muted: false,
-                lastMessage: {
-                  id: null,
-                  body: l.raw_chat_summary || "Contato cadastrado na base de leads",
-                  fromMe: false,
-                  timestamp: ts,
-                  type: "chat",
-                },
-                leadOrigin: "leads",
-                sourceCampaignId: null,
-              };
-            });
-            total = fallbackCount || items.length;
-          }
-        } catch (supabaseErr) {
-          console.warn("[whatsapp/chats] Supabase fallback warning:", supabaseErr?.message);
-        }
-      }
 
       res.json({
         items,
@@ -445,34 +404,6 @@ export function registerChatbotRoutes(app, deps) {
         };
       });
 
-      if (items.length === 0) {
-        const { data: leadData } = await supabase
-          .from("leads")
-          .select("raw_chat_summary, created_at, last_interaction_at, nome")
-          .eq("client_id", clientId)
-          .or(`telefone.eq.${cleanPhone},phone.eq.${cleanPhone}`)
-          .maybeSingle();
-
-        if (leadData) {
-          const ts = leadData.last_interaction_at
-            ? Math.floor(new Date(leadData.last_interaction_at).getTime() / 1000)
-            : Math.floor(new Date(leadData.created_at).getTime() / 1000);
-
-          items = [
-            {
-              id: "msg-summary-1",
-              body: leadData.raw_chat_summary || `Conversa registrada com ${leadData.nome || cleanPhone}`,
-              from: cleanPhone,
-              to: "me",
-              author: null,
-              fromMe: false,
-              timestamp: ts,
-              type: "chat",
-              hasMedia: false,
-            },
-          ];
-        }
-      }
 
       res.json({ items: items.reverse() });
     } catch (error) {
