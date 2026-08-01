@@ -65,14 +65,26 @@ function getPreview(chat: WhatsAppChat) {
   return body.length > 72 ? `${body.slice(0, 72)}...` : body;
 }
 
+// Avatar redondo com inicial (nome) ou ícone. Cores neutras (sem roxo).
+function ChatAvatar({ label, size = "md" }: { label?: string; size?: "sm" | "md" }) {
+  const clean = (label || "").trim();
+  const initial = clean ? clean.replace(/[^\p{L}\p{N}]/gu, "").charAt(0).toUpperCase() || "#" : "#";
+  const dim = size === "sm" ? "h-9 w-9 text-xs" : "h-11 w-11 text-sm";
+  return (
+    <div className={cn("flex shrink-0 items-center justify-center rounded-full bg-emerald-100 font-semibold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300", dim)}>
+      {initial}
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: WhatsAppMessage }) {
   return (
     <div
       className={cn(
-        "max-w-[78%] rounded-2xl px-4 py-3 text-sm",
+        "max-w-[75%] rounded-2xl px-3.5 py-2 text-sm shadow-sm",
         message.fromMe
-          ? "ml-auto bg-electric-indigo/15 text-foreground"
-          : "bg-secondary text-foreground"
+          ? "ml-auto rounded-br-md bg-emerald-500 text-white"
+          : "rounded-bl-md border border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
       )}
     >
       <MediaMessage
@@ -81,8 +93,8 @@ function MessageBubble({ message }: { message: WhatsAppMessage }) {
         fallbackBody={message.body}
         fromMe={message.fromMe}
       />
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        {formatTimestamp(message.timestamp)} {message.fromMe ? "• voce" : ""}
+      <p className={cn("mt-1 text-right text-[10px]", message.fromMe ? "text-emerald-50/90" : "text-slate-400")}>
+        {formatTimestamp(message.timestamp)} {message.fromMe ? "✓✓" : ""}
       </p>
     </div>
   );
@@ -102,7 +114,7 @@ function OriginBadge({ origin, campaignId, campaignNames }: { origin: string | n
   if (origin === "campaign") {
     const name = campaignId ? campaignNames.get(campaignId) : undefined;
     return (
-      <span className="rounded-full border border-electric-indigo/30 bg-electric-indigo/10 px-2 py-0.5 text-[10px] font-semibold text-electric-indigo">
+      <span className="rounded-full border border-emerald-300/40 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
         {name ? `Campanha: ${name}` : "Campanha"}
       </span>
     );
@@ -245,7 +257,7 @@ export default function WhatsAppInbox({
           <CardContent>
             {tenantsLoading ? (
               <div className="flex flex-col items-center justify-center gap-4 py-16 text-sm text-muted-foreground">
-                <LoaderCircle className="h-7 w-7 animate-spin text-primary" />
+                <LoaderCircle className="h-7 w-7 animate-spin text-emerald-500" />
                 Carregando conversas do WhatsApp...
               </div>
             ) : !hasConnectedInstances ? (
@@ -257,8 +269,9 @@ export default function WhatsAppInbox({
             ) : (
               <div className="grid h-[calc(100vh-260px)] min-h-[620px] gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
                 <div className="min-h-0 overflow-hidden rounded-xl border border-border/70 bg-background/30">
-                  <div className="border-b border-border/70 p-3">
-                    <Input readOnly value="" placeholder="Conversas atualizadas automaticamente" />
+                  <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 text-xs font-medium text-slate-500 dark:border-slate-800">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                    Conversas · atualizando em tempo real
                   </div>
                   <div
                     ref={chatsContainerRef}
@@ -273,42 +286,50 @@ export default function WhatsAppInbox({
                         description="Nenhuma conversa registrada no banco de dados para os chips conectados."
                       />
                     ) : (
-                      chats.map((chat) => (
+                      chats.map((chat) => {
+                        const phoneLabel = String(chat.id || "");
+                        const showPhone = !!chat.name && chat.name !== phoneLabel;
+                        return (
                         <button
                           key={chat.id}
                           type="button"
                           onClick={() => setSelectedChatId(chat.id)}
                           className={cn(
-                            "w-full border-b border-border/60 px-4 py-3 text-left transition-colors hover:bg-accent/40",
-                            chat.id === selectedChatId && "bg-primary/10"
+                            "flex w-full items-center gap-3 border-b border-slate-100 px-3 py-3 text-left transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50",
+                            chat.id === selectedChatId && "bg-emerald-50 dark:bg-emerald-500/10"
                           )}
                         >
-                          <div className="mb-1 flex items-center justify-between gap-3">
-                            <p className="truncate text-sm font-medium text-foreground">{chat.name}</p>
-                            <span className="shrink-0 text-[11px] text-muted-foreground">
-                              {formatTimestamp(chat.timestamp, true)}
-                            </span>
-                          </div>
-                          <p className="truncate text-xs text-muted-foreground">{getPreview(chat)}</p>
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                            {chat.unreadCount > 0 && (
-                              <span className="rounded-full bg-electric-indigo px-2 py-0.5 text-[10px] font-bold text-black">
-                                {chat.unreadCount} novas
+                          <ChatAvatar label={chat.name || phoneLabel} />
+                          <div className="min-w-0 flex-1">
+                            <div className="mb-0.5 flex items-center justify-between gap-2">
+                              <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{chat.name || phoneLabel}</p>
+                              <span className="shrink-0 text-[11px] text-slate-400">
+                                {formatTimestamp(chat.timestamp, true)}
                               </span>
-                            )}
-                            {chat.isGroup && (
-                              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                                Grupo
-                              </span>
-                            )}
-                            <OriginBadge
-                              origin={chat.leadOrigin ?? null}
-                              campaignId={chat.sourceCampaignId ?? null}
-                              campaignNames={campaignNames}
-                            />
+                            </div>
+                            {showPhone && <p className="truncate text-[11px] text-slate-400">+{phoneLabel}</p>}
+                            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{getPreview(chat)}</p>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              {chat.unreadCount > 0 && (
+                                <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                                  {chat.unreadCount}
+                                </span>
+                              )}
+                              {chat.isGroup && (
+                                <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500 dark:border-slate-700">
+                                  Grupo
+                                </span>
+                              )}
+                              <OriginBadge
+                                origin={chat.leadOrigin ?? null}
+                                campaignId={chat.sourceCampaignId ?? null}
+                                campaignNames={campaignNames}
+                              />
+                            </div>
                           </div>
                         </button>
-                      ))
+                        );
+                      })
                     )}
 
                     {!chatsQuery.isLoading && chatsQuery.isFetchingNextPage && (
@@ -321,27 +342,30 @@ export default function WhatsAppInbox({
                 </div>
 
                 <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-background/30">
-                  <div className="border-b border-border/70 px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-foreground">
-                        {selectedChat?.name || "Selecione uma conversa"}
+                  <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                    {selectedChat && <ChatAvatar label={selectedChat.name || String(selectedChat.id)} size="sm" />}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                          {selectedChat?.name || "Selecione uma conversa"}
+                        </p>
+                        {selectedChat && (
+                          <OriginBadge
+                            origin={selectedChat.leadOrigin ?? null}
+                            campaignId={selectedChat.sourceCampaignId ?? null}
+                            campaignNames={campaignNames}
+                          />
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        {selectedChat?.id ? `+${selectedChat.id}` : "Nenhuma conversa selecionada"}
                       </p>
-                      {selectedChat && (
-                        <OriginBadge
-                          origin={selectedChat.leadOrigin ?? null}
-                          campaignId={selectedChat.sourceCampaignId ?? null}
-                          campaignNames={campaignNames}
-                        />
-                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {selectedChat?.id || "Nenhuma conversa selecionada"}
-                    </p>
                   </div>
 
                   <div
                     ref={messagesContainerRef}
-                    className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4"
+                    className="min-h-0 flex-1 space-y-2.5 overflow-y-auto bg-slate-50 px-4 py-4 dark:bg-slate-900/20"
                   >
                     {messagesQuery.isLoading ? (
                       <EmptyState message="Carregando ultimas mensagens..." />
@@ -378,6 +402,7 @@ export default function WhatsAppInbox({
                         <Button
                           onClick={handleSendMessage}
                           disabled={!selectedChat || !draft.trim() || sendMessage.isPending}
+                          className="bg-emerald-600 text-white hover:bg-emerald-700"
                         >
                           {sendMessage.isPending ? (
                             <LoaderCircle className="h-4 w-4 animate-spin" />
