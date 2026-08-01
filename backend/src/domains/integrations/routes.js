@@ -533,18 +533,6 @@ export function registerIntegrationsRoutes(app, deps) {
         const instances = await getLeadClientEvolutionInstances(tenantId).catch(() => []);
         const items = Array.isArray(instances) ? instances.map(maskEvolutionInstance).filter(Boolean) : [];
 
-        // Fire-and-forget: sync messages from ALL active instances into lead_messages
-        // so the Inbox has data from every connected chip, not just the first one.
-        if (Array.isArray(instances)) {
-          for (const inst of instances) {
-            if (inst.active && inst.dispatch_webhook_url) {
-              syncEvolutionInstanceChatsAndMessages(tenantId, inst.dispatch_webhook_url, inst.dispatch_webhook_token).catch((err) => {
-                console.warn(`[sync-evolution] background sync for ${inst.name || inst.id} failed:`, err.message);
-              });
-            }
-          }
-        }
-
         res.json({ items });
       } catch (error) {
         console.warn("lead client evolution instances query warning:", error?.message || error);

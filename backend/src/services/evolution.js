@@ -273,18 +273,6 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       // Descarta telefone vazio/curto e o próprio número conectado (não é lead).
       if (!phone || phone.replace(/\D/g, "").length < 10) continue;
 
-      // Grava/atualiza o lead com o NOME do contato (pushName) para a aba
-      // Conversas mostrar nome em vez de só o número. telefone = phone (mesmo
-      // formato do lead_messages, para o LEFT JOIN casar).
-      // "Você" é o pushName de mensagem enviada por nós — não é nome do contato.
-      const rawName = String(chat.pushName || "").trim();
-      const contactName = /^(você|voce)$/i.test(rawName) ? "" : rawName;
-      if (contactName) {
-        await upsertLeadByPhone(pgDatabasePool, clientId, phone, {
-          phone,
-          nome: contactName,
-        }).catch((e) => console.warn(`[sync-evolution] upsert nome falhou p/ ${phone}: ${e.message}`));
-      }
 
       // 2. Fetch last 15 messages for each of the top chats
       try {

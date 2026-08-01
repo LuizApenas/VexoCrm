@@ -62,6 +62,36 @@ export function registerChatbotRoutes(app, deps) {
     isMissingSchemaError,
   });
 
+  async function resolveInstanceNameAliases(clientId, rawInstanceName) {
+    if (!rawInstanceName || rawInstanceName === "all") return null;
+
+    const allInstances = await getLeadClientEvolutionInstances(clientId).catch(() => []);
+    const matched = allInstances.find((inst) => {
+      const urlName = inst.dispatch_webhook_url
+        ? inst.dispatch_webhook_url.split("/").filter(Boolean).pop()
+        : null;
+      return (
+        inst.name === rawInstanceName ||
+        inst.id === rawInstanceName ||
+        urlName === rawInstanceName
+      );
+    });
+
+    const aliases = new Set();
+    aliases.add(rawInstanceName);
+
+    if (matched) {
+      if (matched.name) aliases.add(matched.name);
+      if (matched.id) aliases.add(matched.id);
+      if (matched.dispatch_webhook_url) {
+        const urlName = matched.dispatch_webhook_url.split("/").filter(Boolean).pop();
+        if (urlName) aliases.add(urlName);
+      }
+    }
+
+    return Array.from(aliases);
+  }
+
   // n8n / automação: insere leads no formato do chat outlier em `leads_outlier` (Bearer inbound por tenant).
   // O payload espelha colunas de `leads` (exceto tipo_cliente, faixa_consumo, cidade, estado) mais campos do chat.
   // Obrigatório: telefone, mensagem, finalizado, status_conversa. Temperatura: JSON `status` ou `lead_temperature` → BD `lead_temperature`; texto do pipeline CRM → `pipeline_status` → coluna `status`.
@@ -203,7 +233,8 @@ export function registerChatbotRoutes(app, deps) {
       const clientId = resolveAuthorizedClientId(_req, res, requestedClientId);
       if (!clientId) return;
 
-      const instanceName = normalizeString(_req.query.instanceName) || null;
+      const rawInstanceName = normalizeString(_req.query.instanceName) || null;
+      const instanceAliases = await resolveInstanceNameAliases(clientId, rawInstanceName);
       const leadsTable = leadsTableName(clientId);
 
       const queryParams = [clientId];
@@ -214,10 +245,10 @@ export function registerChatbotRoutes(app, deps) {
       }
 
       let instanceFilter = "";
-      if (instanceName) {
-        queryParams.push(instanceName);
+      if (instanceAliases && instanceAliases.length > 0) {
+        queryParams.push(instanceAliases);
         const idx = queryParams.length;
-        instanceFilter = `AND instance_name = $${idx}`;
+        instanceFilter = `AND instance_name = ANY($${idx})`;
       }
 
       let total = 0;
@@ -329,14 +360,15 @@ export function registerChatbotRoutes(app, deps) {
       const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
       if (!clientId) return;
 
-      const instanceName = normalizeString(req.query.instanceName || req.body.instanceName) || null;
+      const rawInstanceName = normalizeString(req.query.instanceName || req.body.instanceName) || null;
+      const instanceAliases = await resolveInstanceNameAliases(clientId, rawInstanceName);
 
       let queryText = `DELETE FROM public.lead_messages WHERE client_id = $1`;
       let queryParams = [clientId];
 
-      if (instanceName) {
-        queryText += ` AND instance_name = $2`;
-        queryParams.push(instanceName);
+      if (instanceAliases && instanceAliases.length > 0) {
+        queryText += ` AND instance_name = ANY($2)`;
+        queryParams.push(instanceAliases);
       }
 
       const result = await pgDatabasePool.query(queryText, queryParams);
@@ -358,7 +390,8 @@ export function registerChatbotRoutes(app, deps) {
       const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
       if (!clientId) return;
 
-      const instanceName = normalizeString(req.query.instanceName) || null;
+      const rawInstanceName = normalizeString(req.query.instanceName) || null;
+      const instanceAliases = await resolveInstanceNameAliases(clientId, rawInstanceName);
 
       if (!chatId) {
         sendError(res, 400, "INVALID_QUERY", "Missing chatId");
@@ -369,10 +402,10 @@ export function registerChatbotRoutes(app, deps) {
       const queryParams = [clientId, cleanPhone, limit];
       
       let instanceFilter = "";
-      if (instanceName) {
-        queryParams.push(instanceName);
+      if (instanceAliases && instanceAliases.length > 0) {
+        queryParams.push(instanceAliases);
         const idx = queryParams.length;
-        instanceFilter = `AND instance_name = $${idx}`;
+        instanceFilter = `AND instance_name = ANY($${idx})`;
       }
 
       const queryText = `
