@@ -238,7 +238,7 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
 
     if (!chatsResponse.ok) {
       console.warn(`[sync-evolution] Failed to fetch chats for ${instanceName}: HTTP ${chatsResponse.status}`);
-      return;
+      return { instanceName, chats: 0, synced: 0, messages: 0, error: `HTTP ${chatsResponse.status}` };
     }
 
     const rawChats = await chatsResponse.json();
@@ -246,8 +246,12 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
     const chats = Array.isArray(rawChats) ? rawChats : (rawChats?.records || rawChats?.chats || []);
     if (!Array.isArray(chats)) {
       console.warn(`[sync-evolution] Evolution API did not return an array of chats:`, rawChats);
-      return;
+      return { instanceName, chats: 0, synced: 0, messages: 0, error: "resposta inválida da Evolution" };
     }
+    // Contadores para dar feedback real ao usuário (o botão "Sincronizar agora"
+    // mostra quantas conversas/mensagens entraram, em vez de "não aconteceu nada").
+    let syncedChats = 0;
+    let insertedMessages = 0;
 
     console.info(`[sync-evolution] Found ${chats.length} chats. Syncing messages for the top 200 chats...`);
 
@@ -385,15 +389,19 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
                 instanceName
               ]
             );
+            insertedMessages++;
           }
         }
+        syncedChats++;
       } catch (chatErr) {
         console.error(`[sync-evolution] Error syncing messages for chat ${remoteJid}:`, chatErr.message || chatErr);
       }
     }
-    console.info(`[sync-evolution] Background sync for instance ${instanceName} completed!`);
+    console.info(`[sync-evolution] Instance ${instanceName}: ${syncedChats} conversas processadas, ${insertedMessages} mensagens novas.`);
+    return { instanceName, chats: chats.length, synced: syncedChats, messages: insertedMessages, error: null };
   } catch (err) {
     console.error(`[sync-evolution] Background sync error:`, err.message || err);
+    return { instanceName: null, chats: 0, synced: 0, messages: 0, error: err?.message || "erro no sync" };
   }
 }
 

@@ -5,6 +5,7 @@ import {
   useDeleteLeadClientEvolutionInstance,
   useProvisionLeadClientEvolutionInstance,
   useSaveLeadClientEvolutionInstance,
+  useSyncLeadClientEvolutionInstance,
   type LeadClient,
   type LeadClientEvolutionInstance,
 } from "@/hooks/useLeadClients";
@@ -23,6 +24,30 @@ export function EvolutionChipsPanel({ tenant, canEdit = true }: Props) {
   const saveEvolutionInstance = useSaveLeadClientEvolutionInstance();
   const provisionEvolutionInstance = useProvisionLeadClientEvolutionInstance();
   const deleteEvolutionInstance = useDeleteLeadClientEvolutionInstance();
+  const syncEvolutionInstance = useSyncLeadClientEvolutionInstance(tenant.id);
+  const [syncingInstanceId, setSyncingInstanceId] = useState<string | null>(null);
+
+  // Importa o histórico de conversas do chip para a aba Conversas, sob comando
+  // explícito do usuário (antes dependia de efeito colateral do toggle e o
+  // segundo chip nunca sincronizava).
+  const handleSyncInstance = async (instance: LeadClientEvolutionInstance) => {
+    setSyncingInstanceId(instance.id);
+    try {
+      const r = await syncEvolutionInstance.mutateAsync(instance.id);
+      toast({
+        title: "Conversas sincronizadas",
+        description: `${instance.name}: ${r.chatsSynced} de ${r.chatsFound} conversas processadas, ${r.messagesImported} mensagens novas.`,
+      });
+    } catch (e) {
+      toast({
+        title: "Falha ao sincronizar",
+        description: e instanceof Error ? e.message : "Não foi possível importar as conversas deste chip.",
+        variant: "destructive",
+      });
+    } finally {
+      setSyncingInstanceId(null);
+    }
+  };
 
   const [chipDrafts, setChipDrafts] = useState<
     Record<string, { chipState?: "cold" | "warm"; dailyLimitOverride?: string }>
@@ -251,9 +276,11 @@ export function EvolutionChipsPanel({ tenant, canEdit = true }: Props) {
                   onToggleActive={() => void handleUpdateEvolutionInstance(instance, { active: !instance.active })}
                   onToggleWebhook={() => void handleUpdateEvolutionInstance(instance, { webhookEnabled: !instance.webhook_enabled })}
                   onDelete={() => void handleDeleteEvolutionInstance(instance)}
+                  onSyncNow={() => void handleSyncInstance(instance)}
                   canEdit={canEdit}
                   isSavePending={saveEvolutionInstance.isPending}
                   isDeletePending={deleteEvolutionInstance.isPending}
+                  isSyncPending={syncingInstanceId === instance.id}
                 />
               );
             })}

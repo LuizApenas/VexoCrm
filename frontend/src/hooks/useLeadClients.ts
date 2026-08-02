@@ -481,6 +481,42 @@ export function useLeadClientEvolutionInstanceStatus(tenantId: string, instanceI
   });
 }
 
+/**
+ * Importa as conversas de UM chip para a aba Conversas. Explícito: antes o sync
+ * só rodava como efeito colateral de salvar o webhook, então não havia como
+ * sincronizar um chip específico (o segundo chip nunca puxava as conversas).
+ */
+export function useSyncLeadClientEvolutionInstance(tenantId: string) {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (instanceId: string) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuario nao autenticado.");
+
+      const res = await fetchApi(
+        `/api/lead-clients/${encodeURIComponent(tenantId)}/evolution-instances/${encodeURIComponent(instanceId)}/sync`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error?.message || "Falha ao sincronizar conversas deste chip.");
+      }
+      return data as {
+        instance: string;
+        chatsFound: number;
+        chatsSynced: number;
+        messagesImported: number;
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-chats"] });
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-messages"] });
+    },
+  });
+}
+
 export function useVerifyLeadClientTable() {
   const { getIdToken } = useAuth();
 

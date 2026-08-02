@@ -1015,6 +1015,68 @@ export function registerIntegrationsRoutes(app, deps) {
         sendError(res, 400, "INVALID_BODY", "Invalid tenant or Evolution instance id");
         return;
       }
+      return handleInstanceStatus(req, res, tenantId, instanceId);
+    }
+  );
+
+  // POST .../evolution-instances/:instanceId/sync — importa as conversas deste
+  // chip para a aba Conversas. É explícito e síncrono de propósito: antes o sync
+  // só acontecia como efeito colateral de salvar o webhook, então não havia como
+  // sincronizar um chip específico (o 2º chip nunca puxava as conversas).
+  app.post(
+    "/api/lead-clients/:tenantId/evolution-instances/:instanceId/sync",
+    requireFirebaseAuth,
+    requireAnyInternalPageAccess(["conexoes", "empresas"]),
+    async (req, res) => {
+      if (!ensureDb(res)) return;
+
+      const tenantId = normalizeTenantKey(req.params?.tenantId);
+      const instanceId = normalizeString(req.params?.instanceId);
+      if (!tenantId || !parseOptionalUuid(instanceId)) {
+        sendError(res, 400, "INVALID_BODY", "Invalid tenant or Evolution instance id");
+        return;
+      }
+
+      try {
+        const { rows } = await pgDatabasePool.query(
+          `SELECT id, name, dispatch_webhook_url, dispatch_webhook_token
+             FROM public.lead_client_evolution_instances
+            WHERE id = $1 AND client_id = $2`,
+          [instanceId, tenantId]
+        );
+        const inst = rows[0];
+        if (!inst?.dispatch_webhook_url) {
+          sendError(res, 404, "INSTANCE_NOT_FOUND", "Chip não encontrado para este cliente.");
+          return;
+        }
+
+        const result = await syncEvolutionInstanceChatsAndMessages(
+          tenantId,
+          inst.dispatch_webhook_url,
+          inst.dispatch_webhook_token
+        );
+
+        if (result?.error) {
+          sendError(res, 502, "SYNC_FAILED", `Falha ao sincronizar: ${result.error}`);
+          return;
+        }
+
+        res.json({
+          success: true,
+          instance: inst.name,
+          chatsFound: result?.chats ?? 0,
+          chatsSynced: result?.synced ?? 0,
+          messagesImported: result?.messages ?? 0,
+        });
+      } catch (error) {
+        console.error("[evolution-sync] erro:", error?.message || error);
+        sendError(res, 500, "SYNC_ERROR", error?.message || "Erro ao sincronizar conversas");
+      }
+    }
+  );
+
+  async function handleInstanceStatus(req, res, tenantId, instanceId) {
+    {
 
       try {
         if (!(await ensureTenantExistsForEvolutionRoute(tenantId, res))) return;
@@ -1131,7 +1193,8 @@ export function registerIntegrationsRoutes(app, deps) {
         res.json({ connected: false, error: "FAILED" });
       }
     }
-  );
+  }
+
   app.get("/api/whatsapp/session", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (_req, res) => {
     if (whatsappSessionManager.getState().hasPersistedSession) {
       whatsappSessionManager.restorePersistedSession().catch((error) => {

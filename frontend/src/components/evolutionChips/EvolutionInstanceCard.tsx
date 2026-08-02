@@ -1,4 +1,4 @@
-import { Save, Trash2 } from "lucide-react";
+import { RefreshCw, Save, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,9 +21,11 @@ interface EvolutionInstanceCardProps {
   onToggleActive: () => void;
   onToggleWebhook: () => void;
   onDelete: () => void;
+  onSyncNow?: () => void;
   canEdit: boolean;
   isSavePending: boolean;
   isDeletePending: boolean;
+  isSyncPending?: boolean;
 }
 
 export function EvolutionInstanceCard({
@@ -37,9 +39,11 @@ export function EvolutionInstanceCard({
   onToggleActive,
   onToggleWebhook,
   onDelete,
+  onSyncNow,
   canEdit,
   isSavePending,
   isDeletePending,
+  isSyncPending = false,
 }: EvolutionInstanceCardProps) {
   const displayLimit = resolveChipLimit(draft.chipState, draft.dailyLimitOverride);
   const sent = instance.sent_count_today ?? 0;
@@ -162,11 +166,27 @@ export function EvolutionInstanceCard({
               Espelha em tempo real as mensagens recebidas e enviadas deste chip na aba "Conversas".
             </p>
           </div>
-          <Switch
-            checked={instance.webhook_enabled}
-            onCheckedChange={onToggleWebhook}
-            disabled={!canEdit || isSavePending}
-          />
+          <div className="flex items-center gap-3">
+            {canEdit && onSyncNow && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg text-[11px]"
+                disabled={isSyncPending}
+                onClick={onSyncNow}
+                title="Importa o histórico de conversas deste chip para a aba Conversas"
+              >
+                <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", isSyncPending && "animate-spin")} />
+                {isSyncPending ? "Sincronizando..." : "Sincronizar agora"}
+              </Button>
+            )}
+            <Switch
+              checked={instance.webhook_enabled}
+              onCheckedChange={onToggleWebhook}
+              disabled={!canEdit || isSavePending}
+            />
+          </div>
         </div>
       </div>
 
