@@ -294,15 +294,24 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       await pgDatabasePool.query(`
         CREATE TABLE IF NOT EXISTS public.whatsapp_lid_map (
           lid TEXT PRIMARY KEY,
-          phone TEXT NOT NULL,
+          phone TEXT,
           contact_name TEXT,
           first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )`).catch(() => {});
+      // Perfil público (fetchProfile): unica identificacao disponivel para
+      // contatos LID sem telefone/pushName — foto, descricao do negocio, site.
+      await pgDatabasePool.query(`ALTER TABLE public.whatsapp_lid_map ALTER COLUMN phone DROP NOT NULL`).catch(() => {});
+      await pgDatabasePool.query(`ALTER TABLE public.whatsapp_lid_map ADD COLUMN IF NOT EXISTS profile_pic TEXT`).catch(() => {});
+      await pgDatabasePool.query(`ALTER TABLE public.whatsapp_lid_map ADD COLUMN IF NOT EXISTS description TEXT`).catch(() => {});
+      await pgDatabasePool.query(`ALTER TABLE public.whatsapp_lid_map ADD COLUMN IF NOT EXISTS website TEXT`).catch(() => {});
+      await pgDatabasePool.query(`ALTER TABLE public.whatsapp_lid_map ADD COLUMN IF NOT EXISTS profile_checked BOOLEAN DEFAULT false`).catch(() => {});
       const { rows: lidRows } = await pgDatabasePool.query(
-        "SELECT lid, phone, contact_name FROM public.whatsapp_lid_map"
+        "SELECT lid, phone, contact_name, profile_pic, profile_checked FROM public.whatsapp_lid_map"
       );
-      for (const r of lidRows) lidMap.set(r.lid, { phone: r.phone, name: r.contact_name });
+      for (const r of lidRows) lidMap.set(r.lid, {
+        phone: r.phone, name: r.contact_name, pic: r.profile_pic, checked: r.profile_checked === true,
+      });
     } catch (e) {
       console.warn("[sync-evolution] lid_map indisponível:", e.message);
     }
@@ -359,12 +368,54 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       }
 
       // Vínculo já descoberto antes (por este ou por outro chip).
-      if (!isGroup && (!phone || !chatName)) {
-        const known = lidMap.get(remoteJid) || lidMap.get(jidDigits);
-        if (known) {
-          if (!phone) phone = known.phone;
-          if (!chatName && known.name) chatName = known.name;
+      let knownEntry = null;
+      if (!isGroup) {
+        knownEntry = lidMap.get(remoteJid) || lidMap.get(jidDigits) || null;
+        if (knownEntry) {
+          if (!phone && knownEntry.phone) phone = knownEntry.phone;
+          if (!chatName && knownEntry.name) chatName = knownEntry.name;
         }
+      }
+
+      // Sem nome e sem telefone: o perfil público é a única identificação que a
+      // API oferece para contatos LID (fetchProfile traz foto, descrição do
+      // negócio e site — não traz nome nem número). Consulta uma vez por LID.
+      if (!isGroup && !chatName && remoteJid.includes("@lid") && !knownEntry?.checked) {
+        try {
+          const pf = await fetch(`${baseUrl}/chat/fetchProfile/${encodeURIComponent(instanceName)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", apikey: apiKey },
+            body: JSON.stringify({ number: remoteJid }),
+          });
+          if (pf.ok) {
+            const prof = await pf.json();
+            const desc = String(prof?.description || "").trim();
+            const site = String(prof?.website || "").trim();
+            // Nome legível a partir do que existe: descrição do negócio ou o
+            // domínio do site. Não inventa: são dados do próprio perfil.
+            let derived = desc;
+            if (!derived && site) {
+              try {
+                const host = new URL(site.startsWith("http") ? site : `https://${site}`).hostname;
+                derived = host.replace(/^www\./, "").split(".")[0];
+              } catch { /* site inválido */ }
+            }
+            if (derived) chatName = derived;
+            await pgDatabasePool.query(
+              `INSERT INTO public.whatsapp_lid_map (lid, contact_name, profile_pic, description, website, profile_checked)
+               VALUES ($1, $2, $3, $4, $5, true)
+               ON CONFLICT (lid) DO UPDATE SET
+                 contact_name = COALESCE(NULLIF(public.whatsapp_lid_map.contact_name, ''), EXCLUDED.contact_name),
+                 profile_pic = COALESCE(EXCLUDED.profile_pic, public.whatsapp_lid_map.profile_pic),
+                 description = COALESCE(EXCLUDED.description, public.whatsapp_lid_map.description),
+                 website = COALESCE(EXCLUDED.website, public.whatsapp_lid_map.website),
+                 profile_checked = true,
+                 updated_at = now()`,
+              [remoteJid, derived || null, prof?.picture || null, desc || null, site || null]
+            ).catch(() => {});
+            lidMap.set(remoteJid, { ...(knownEntry || {}), name: derived || knownEntry?.name || null, checked: true });
+          }
+        } catch (e) { /* perfil indisponível: segue sem nome */ }
       }
       // Descobriu agora -> memoriza para os outros chips/conversas.
       if (!isGroup && phone && remoteJid.includes("@lid")) {
