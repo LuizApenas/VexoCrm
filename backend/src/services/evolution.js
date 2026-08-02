@@ -300,11 +300,29 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
 
       const isGroup = remoteJid.includes("@g.us");
       const jidDigits = remoteJid.split("@")[0].replace(/\D/g, "");
-      // phone/nome são resolvidos DEPOIS de buscar as mensagens: em contatos LID
-      // o telefone real e o pushName vêm de dentro das mensagens (key.remoteJidAlt
-      // e pushName), não do objeto do chat. Antes a lista mostrava o LID cru.
+
+      // FONTE PRIMÁRIA: o próprio objeto do chat. Em contatos LID o telefone real
+      // vem em lastMessage.key.remoteJidAlt e o nome em pushName — os dois já
+      // chegam no findChats. Só se faltar aqui é que vamos procurar nas mensagens.
       let phone = "";
       let chatName = "";
+
+      if (!isGroup) {
+        const altCandidates = [
+          chat?.lastMessage?.key?.remoteJidAlt,
+          chat?.lastMessage?.key?.participantAlt,
+          chat?.lastMessage?.key?.senderPn,
+          remoteJid.includes("@s.whatsapp.net") ? remoteJid : null,
+        ];
+        for (const c of altCandidates) {
+          const v = String(c || "");
+          if (v.includes("@s.whatsapp.net")) { phone = v.split("@")[0]; break; }
+        }
+      }
+      {
+        const nm = String(chat?.pushName || chat?.name || "").trim();
+        if (nm && !/^(você|voce)$/i.test(nm) && !/^\+?\d[\d\s\-()]*$/.test(nm)) chatName = nm;
+      }
 
 
       // 2. Fetch last 15 messages for each of the top chats
@@ -390,7 +408,9 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
         }
         if (!phone) continue;
 
-        if (!Array.isArray(messages) || messages.length === 0) continue;
+        // Sem mensagens não há o que inserir, mas o chat já foi resolvido acima
+        // (telefone/nome do objeto do chat) — não descarta a conversa por isso.
+        if (!Array.isArray(messages)) continue;
 
         // Resolve lead details once per chat
         const leadRes = await pgDatabasePool.query(
