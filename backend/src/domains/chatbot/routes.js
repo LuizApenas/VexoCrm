@@ -62,30 +62,36 @@ export function registerChatbotRoutes(app, deps) {
     isMissingSchemaError,
   });
 
+  // Aceita um chip ou VÁRIOS separados por vírgula ("Chip A,Chip B") — o inbox
+  // permite selecionar mais de um chip ao mesmo tempo. Devolve todos os aliases
+  // (nome amigável, id e nome extraído da URL da Evolution) de cada um.
   async function resolveInstanceNameAliases(clientId, rawInstanceName) {
     if (!rawInstanceName || rawInstanceName === "all") return null;
 
+    const requested = String(rawInstanceName)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (requested.length === 0) return null;
+
     const allInstances = await getLeadClientEvolutionInstances(clientId).catch(() => []);
-    const matched = allInstances.find((inst) => {
-      const urlName = inst.dispatch_webhook_url
-        ? inst.dispatch_webhook_url.split("/").filter(Boolean).pop()
-        : null;
-      return (
-        inst.name === rawInstanceName ||
-        inst.id === rawInstanceName ||
-        urlName === rawInstanceName
-      );
-    });
-
     const aliases = new Set();
-    aliases.add(rawInstanceName);
 
-    if (matched) {
-      if (matched.name) aliases.add(matched.name);
-      if (matched.id) aliases.add(matched.id);
-      if (matched.dispatch_webhook_url) {
-        const urlName = matched.dispatch_webhook_url.split("/").filter(Boolean).pop();
-        if (urlName) aliases.add(urlName);
+    for (const wanted of requested) {
+      aliases.add(wanted);
+      const matched = allInstances.find((inst) => {
+        const urlName = inst.dispatch_webhook_url
+          ? inst.dispatch_webhook_url.split("/").filter(Boolean).pop()
+          : null;
+        return inst.name === wanted || inst.id === wanted || urlName === wanted;
+      });
+      if (matched) {
+        if (matched.name) aliases.add(matched.name);
+        if (matched.id) aliases.add(matched.id);
+        if (matched.dispatch_webhook_url) {
+          const urlName = matched.dispatch_webhook_url.split("/").filter(Boolean).pop();
+          if (urlName) aliases.add(urlName);
+        }
       }
     }
 

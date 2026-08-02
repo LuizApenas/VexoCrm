@@ -143,7 +143,8 @@ export default function WhatsAppInbox({
   const initialPhone = searchParams.get("phone") ?? null;
 
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
-  const [selectedInstanceName, setSelectedInstanceName] = useState<string>("all");
+  // Vários chips podem ser vistos ao mesmo tempo. Lista vazia = todos.
+  const [selectedInstanceNames, setSelectedInstanceNames] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const chatsContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -166,7 +167,7 @@ export default function WhatsAppInbox({
   }, [campaignsQuery.data]);
 
   const canLoadInbox = Boolean(clientId);
-  const instanceFilter = selectedInstanceName === "all" ? null : selectedInstanceName;
+  const instanceFilter = selectedInstanceNames.length > 0 ? selectedInstanceNames.join(",") : null;
   const chatsQuery = useWhatsAppChats(clientId, instanceFilter, canLoadInbox);
   const messagesQuery = useWhatsAppMessages(clientId, instanceFilter, selectedChatId, canLoadInbox);
   const sendMessage = useSendWhatsAppMessage(clientId, selectedChatId);
@@ -279,26 +280,50 @@ export default function WhatsAppInbox({
                       Conversas · atualizando em tempo real
                     </div>
                     <div className="flex items-center gap-2">
-                      <select
-                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
-                        value={selectedInstanceName}
-                        onChange={(e) => setSelectedInstanceName(e.target.value)}
-                      >
-                        <option value="all">Todas as instâncias</option>
+                      <div className="flex flex-1 flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInstanceNames([])}
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                            selectedInstanceNames.length === 0
+                              ? "border-emerald-500 bg-emerald-500 text-white"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-transparent dark:text-slate-300"
+                          )}
+                        >
+                          Todos
+                        </button>
                         {evolutionInstances.map((inst) => {
-                          // The sync saves instance_name from the last URL path segment
-                          // (e.g. "geracao-digital-gd-vexo"), not inst.name ("GD Vexo").
-                          // We must match.
+                          // instance_name gravado no sync é o último segmento da URL
+                          // da Evolution (ex.: "geracao-digital-gd-vexo"), não inst.name.
                           const urlName = inst.dispatch_webhook_url
                             ? inst.dispatch_webhook_url.split("/").filter(Boolean).pop() ?? inst.name
                             : inst.name;
+                          const checked = selectedInstanceNames.includes(urlName);
                           return (
-                            <option key={urlName} value={urlName}>
-                              {inst.name}
-                            </option>
+                            <button
+                              key={urlName}
+                              type="button"
+                              onClick={() =>
+                                setSelectedInstanceNames((cur) =>
+                                  cur.includes(urlName)
+                                    ? cur.filter((n) => n !== urlName)
+                                    : [...cur, urlName]
+                                )
+                              }
+                              className={cn(
+                                "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                                checked
+                                  ? "border-emerald-500 bg-emerald-500 text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-transparent dark:text-slate-300"
+                              )}
+                              title={checked ? "Clique para remover este chip do filtro" : "Clique para incluir este chip"}
+                            >
+                              {checked ? "✓ " : ""}{inst.name}
+                            </button>
                           );
                         })}
-                      </select>
+                      </div>
                       <Button
                         variant="destructive"
                         size="sm"
@@ -307,7 +332,7 @@ export default function WhatsAppInbox({
                         onClick={async () => {
                           if (confirm("Tem certeza que deseja limpar as conversas do banco de dados? Isso apagará o histórico da instância selecionada no CRM.")) {
                             try {
-                              await clearChats.mutateAsync(selectedInstanceName === "all" ? null : selectedInstanceName);
+                              await clearChats.mutateAsync(instanceFilter);
                               toast.success("Conversas limpas com sucesso.");
                             } catch (error) {
                               toast.error(error instanceof Error ? error.message : "Erro ao limpar conversas.");
