@@ -286,6 +286,40 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       console.warn("[sync-evolution] findContacts indisponível:", e.message);
     }
 
+    // Mapa persistente LID -> telefone: o mesmo contato tem o mesmo LID em
+    // qualquer chip, então um vínculo descoberto por um chip serve para todos.
+    // (Verificado: o LID 60640710402218 traz remoteJidAlt num chip e não noutro.)
+    const lidMap = new Map();
+    try {
+      await pgDatabasePool.query(`
+        CREATE TABLE IF NOT EXISTS public.whatsapp_lid_map (
+          lid TEXT PRIMARY KEY,
+          phone TEXT NOT NULL,
+          contact_name TEXT,
+          first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )`).catch(() => {});
+      const { rows: lidRows } = await pgDatabasePool.query(
+        "SELECT lid, phone, contact_name FROM public.whatsapp_lid_map"
+      );
+      for (const r of lidRows) lidMap.set(r.lid, { phone: r.phone, name: r.contact_name });
+    } catch (e) {
+      console.warn("[sync-evolution] lid_map indisponível:", e.message);
+    }
+    const rememberLid = async (lid, ph, nm) => {
+      if (!lid || !ph) return;
+      lidMap.set(lid, { phone: ph, name: nm || lidMap.get(lid)?.name || null });
+      await pgDatabasePool.query(
+        `INSERT INTO public.whatsapp_lid_map (lid, phone, contact_name)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (lid) DO UPDATE SET
+           phone = EXCLUDED.phone,
+           contact_name = COALESCE(NULLIF(EXCLUDED.contact_name, ''), public.whatsapp_lid_map.contact_name),
+           updated_at = now()`,
+        [lid, ph, nm || null]
+      ).catch(() => {});
+    };
+
     // Sincroniza até 200 chats (número comercial tem muitas conversas por dia).
     const topChats = chats.slice(0, 200);
 
@@ -322,6 +356,19 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       {
         const nm = String(chat?.pushName || chat?.name || "").trim();
         if (nm && !/^(você|voce)$/i.test(nm) && !/^\+?\d[\d\s\-()]*$/.test(nm)) chatName = nm;
+      }
+
+      // Vínculo já descoberto antes (por este ou por outro chip).
+      if (!isGroup && (!phone || !chatName)) {
+        const known = lidMap.get(remoteJid) || lidMap.get(jidDigits);
+        if (known) {
+          if (!phone) phone = known.phone;
+          if (!chatName && known.name) chatName = known.name;
+        }
+      }
+      // Descobriu agora -> memoriza para os outros chips/conversas.
+      if (!isGroup && phone && remoteJid.includes("@lid")) {
+        await rememberLid(remoteJid, phone, chatName);
       }
 
 
@@ -405,6 +452,10 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
           chatName = cands.find(
             (n) => n && !/^(você|voce)$/i.test(n) && !/^\+?\d[\d\s\-()]*$/.test(n)
           ) || "";
+        }
+        // Telefone descoberto nas mensagens -> memoriza o vínculo do LID.
+        if (phone && remoteJid.includes("@lid")) {
+          await rememberLid(remoteJid, phone, chatName);
         }
         if (!phone) continue;
 
