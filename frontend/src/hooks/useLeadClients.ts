@@ -512,9 +512,8 @@ export function useSyncLeadClientEvolutionInstance(tenantId: string) {
       }
       return data as {
         instance: string;
-        chatsFound: number;
-        chatsSynced: number;
-        messagesImported: number;
+        started?: boolean;
+        message?: string;
       };
     },
     onSuccess: () => {

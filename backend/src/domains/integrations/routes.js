@@ -1050,24 +1050,30 @@ export function registerIntegrationsRoutes(app, deps) {
           return;
         }
 
-        const result = await syncEvolutionInstanceChatsAndMessages(
+        // Responde IMEDIATAMENTE e sincroniza em background: importar o
+        // histórico (chats + mensagens + perfis) leva minutos, e o proxy do
+        // frontend corta requisições longas — a tela mostrava "signal is
+        // aborted without reason" mesmo com o sync rodando até o fim.
+        res.status(202).json({
+          success: true,
+          started: true,
+          instance: inst.name,
+          message: "Sincronização iniciada. As conversas aparecem conforme forem importadas.",
+        });
+
+        syncEvolutionInstanceChatsAndMessages(
           tenantId,
           inst.dispatch_webhook_url,
           inst.dispatch_webhook_token
-        );
-
-        if (result?.error) {
-          sendError(res, 502, "SYNC_FAILED", `Falha ao sincronizar: ${result.error}`);
-          return;
-        }
-
-        res.json({
-          success: true,
-          instance: inst.name,
-          chatsFound: result?.chats ?? 0,
-          chatsSynced: result?.synced ?? 0,
-          messagesImported: result?.messages ?? 0,
-        });
+        )
+          .then((r) => {
+            console.info(
+              `[evolution-sync] ${inst.name}: ${r?.synced ?? 0}/${r?.chats ?? 0} conversas, ${r?.messages ?? 0} mensagens novas.`
+            );
+          })
+          .catch((err) => {
+            console.error(`[evolution-sync] ${inst.name} falhou:`, err?.message || err);
+          });
       } catch (error) {
         console.error("[evolution-sync] erro:", error?.message || error);
         sendError(res, 500, "SYNC_ERROR", error?.message || "Erro ao sincronizar conversas");

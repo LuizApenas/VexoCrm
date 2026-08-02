@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/use-toast";
 import {
@@ -25,6 +26,7 @@ export function EvolutionChipsPanel({ tenant, canEdit = true }: Props) {
   const provisionEvolutionInstance = useProvisionLeadClientEvolutionInstance();
   const deleteEvolutionInstance = useDeleteLeadClientEvolutionInstance();
   const syncEvolutionInstance = useSyncLeadClientEvolutionInstance(tenant.id);
+  const queryClientRef = useQueryClient();
   const [syncingInstanceId, setSyncingInstanceId] = useState<string | null>(null);
 
   // Importa o histórico de conversas do chip para a aba Conversas, sob comando
@@ -33,11 +35,15 @@ export function EvolutionChipsPanel({ tenant, canEdit = true }: Props) {
   const handleSyncInstance = async (instance: LeadClientEvolutionInstance) => {
     setSyncingInstanceId(instance.id);
     try {
-      const r = await syncEvolutionInstance.mutateAsync(instance.id);
+      await syncEvolutionInstance.mutateAsync(instance.id);
       toast({
-        title: "Conversas sincronizadas",
-        description: `${instance.name}: ${r.chatsSynced} de ${r.chatsFound} conversas processadas, ${r.messagesImported} mensagens novas.`,
+        title: "Sincronização iniciada",
+        description: `${instance.name}: importando o histórico em segundo plano. As conversas aparecem na aba "Conversas" conforme forem chegando.`,
       });
+      // Recarrega a lista depois de um tempo, já com parte do histórico.
+      setTimeout(() => {
+        queryClientRef.invalidateQueries({ queryKey: ["whatsapp-chats"] });
+      }, 15000);
     } catch (e) {
       toast({
         title: "Falha ao sincronizar",
