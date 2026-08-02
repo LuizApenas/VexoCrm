@@ -300,38 +300,11 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
 
       const isGroup = remoteJid.includes("@g.us");
       const jidDigits = remoteJid.split("@")[0].replace(/\D/g, "");
-      const altJid = chat?.lastMessage?.key?.remoteJidAlt || "";
-      const phoneJid = altJid.includes("@s.whatsapp.net")
-        ? altJid
-        : (remoteJid.includes("@s.whatsapp.net") ? remoteJid : "");
-
-      // Identificador da conversa: telefone real sempre que possível — do
-      // remoteJidAlt da última mensagem ou do catálogo de contatos (LID). Sem
-      // isso a lista mostrava o LID cru ("224777281249297@lid") como se fosse
-      // número. Grupo mantém o próprio jid (não tem telefone).
-      const phoneFromContacts = !isGroup ? phoneByLid.get(jidDigits) : null;
-      const phone = phoneJid
-        ? phoneJid.split("@")[0]
-        : (phoneFromContacts || remoteJid);
-      if (!phone) continue;
-
-      // Nome exibido: pushName do chat, do catálogo de contatos (cobre quem não
-      // está salvo na agenda) ou da última mensagem recebida. Gravado na própria
-      // mensagem (contact_name) para o inbox não depender da tabela de leads.
-      const lastMsgName = chat?.lastMessage?.key?.fromMe === false
-        ? String(chat?.lastMessage?.pushName || "").trim()
-        : "";
-      const nameCandidates = [
-        String(chat.pushName || "").trim(),
-        String(chat.name || "").trim(),
-        contactNameByKey.get(jidDigits),
-        phoneFromContacts ? contactNameByKey.get(phoneFromContacts) : "",
-        contactNameByKey.get(String(phone).replace(/\D/g, "")),
-        lastMsgName,
-      ];
-      const chatName = nameCandidates.find(
-        (n) => n && !/^(você|voce)$/i.test(n) && !/^\+?\d[\d\s\-()]*$/.test(n)
-      ) || "";
+      // phone/nome são resolvidos DEPOIS de buscar as mensagens: em contatos LID
+      // o telefone real e o pushName vêm de dentro das mensagens (key.remoteJidAlt
+      // e pushName), não do objeto do chat. Antes a lista mostrava o LID cru.
+      let phone = "";
+      let chatName = "";
 
 
       // 2. Fetch last 15 messages for each of the top chats
@@ -370,6 +343,38 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
               : Array.isArray(msgsData?.messages)
                 ? msgsData.messages
                 : [];
+
+        // Telefone e nome REAIS vêm das mensagens: em contatos LID o número
+        // aparece em key.remoteJidAlt e o nome (pushName que a pessoa configurou
+        // no WhatsApp dela) nas mensagens recebidas. O objeto do chat costuma vir
+        // sem esses dados, e era por isso que a lista mostrava o LID cru e sem nome.
+        for (const m of messages) {
+          if (!phone) {
+            const alt = String(m?.key?.remoteJidAlt || "");
+            if (alt.includes("@s.whatsapp.net")) phone = alt.split("@")[0];
+          }
+          if (!chatName && m?.key?.fromMe === false) {
+            const nm = String(m?.pushName || "").trim();
+            if (nm && !/^(você|voce)$/i.test(nm) && !/^\+?\d[\d\s\-()]*$/.test(nm)) chatName = nm;
+          }
+          if (phone && chatName) break;
+        }
+
+        // Fallbacks: catálogo de contatos e o próprio objeto do chat.
+        if (!phone && !isGroup) phone = phoneByLid.get(jidDigits) || "";
+        if (!phone) phone = remoteJid.includes("@s.whatsapp.net") ? remoteJid.split("@")[0] : remoteJid;
+        if (!chatName) {
+          const cands = [
+            String(chat.pushName || "").trim(),
+            String(chat.name || "").trim(),
+            contactNameByKey.get(jidDigits),
+            contactNameByKey.get(String(phone).replace(/\D/g, "")),
+          ];
+          chatName = cands.find(
+            (n) => n && !/^(você|voce)$/i.test(n) && !/^\+?\d[\d\s\-()]*$/.test(n)
+          ) || "";
+        }
+        if (!phone) continue;
 
         if (!Array.isArray(messages) || messages.length === 0) continue;
 
