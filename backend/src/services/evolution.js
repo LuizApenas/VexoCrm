@@ -259,23 +259,30 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
     const topChats = chats.slice(0, 200);
 
     for (const chat of topChats) {
-      // Telefone REAL: em contatos LID o remoteJid é "<lid>@lid" e o número
-      // verdadeiro fica em lastMessage.key.remoteJidAlt (@s.whatsapp.net). O
-      // campo `id` é string aleatória (não é telefone). findMessages usa o
-      // remoteJid original (que pode ser @lid).
+      // A aba Conversas mostra TUDO que existe no WhatsApp do chip: contato
+      // individual, grupo e LID sem telefone conhecido. Filtrar grupo/LID aqui
+      // (regra que só faz sentido para EXTRAIR LEAD, onde é preciso um telefone
+      // discável) zerava a sincronização de chips cujas conversas são grupos —
+      // era por isso que o segundo chip nunca aparecia.
       const remoteJid = chat.remoteJid || chat.id;
-      if (!remoteJid || remoteJid.includes("@g.us") || remoteJid.includes("@broadcast")) {
-        continue;
-      }
+      if (!remoteJid || remoteJid.includes("@broadcast")) continue;
+
+      const isGroup = remoteJid.includes("@g.us");
       const altJid = chat?.lastMessage?.key?.remoteJidAlt || "";
       const phoneJid = altJid.includes("@s.whatsapp.net")
         ? altJid
         : (remoteJid.includes("@s.whatsapp.net") ? remoteJid : "");
-      if (!phoneJid) continue; // LID sem telefone real -> ignora
 
-      const phone = phoneJid.split("@")[0];
-      // Descarta telefone vazio/curto e o próprio número conectado (não é lead).
-      if (!phone || phone.replace(/\D/g, "").length < 10) continue;
+      // Identificador da conversa: o telefone quando existe; senão o próprio jid
+      // (grupo/LID). É a chave usada por lead_messages.phone e pelo inbox.
+      const phone = phoneJid ? phoneJid.split("@")[0] : remoteJid;
+      if (!phone) continue;
+
+      // Nome exibido: pushName do contato/grupo. Gravado na própria mensagem
+      // (contact_name) para o inbox não depender da tabela de leads — assim
+      // mostrar o nome não cria lead no Banco de Dados.
+      const rawChatName = String(chat.pushName || chat.name || "").trim();
+      const chatName = /^(você|voce)$/i.test(rawChatName) ? "" : rawChatName;
 
 
       // 2. Fetch last 15 messages for each of the top chats
@@ -372,8 +379,8 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
             await pgDatabasePool.query(
               `
                 INSERT INTO public.lead_messages 
-                  (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                  (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name, contact_name, is_group)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
               `,
               [
                 clientId,
@@ -386,7 +393,9 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
                 timestamp,
                 timestamp,
                 JSON.stringify({}),
-                instanceName
+                instanceName,
+                chatName || null,
+                isGroup
               ]
             );
             insertedMessages++;

@@ -221,6 +221,10 @@ export function registerChatbotRoutes(app, deps) {
   app.get("/api/whatsapp/chats", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (_req, res) => {
     if (!ensureDb(res)) return;
     try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS instance_name VARCHAR(150);").catch(() => {}); } catch(e) {}
+    // contact_name/is_group: nome exibido e flag de grupo vivem na mensagem para o
+    // inbox nao depender da tabela de leads (mostrar nome nao pode criar lead).
+    try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS contact_name TEXT;").catch(() => {}); } catch(e) {}
+    try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS is_group BOOLEAN DEFAULT false;").catch(() => {}); } catch(e) {}
 
     try {
       const search = normalizeString(_req.query.search)?.toLowerCase() || "";
@@ -281,7 +285,9 @@ export function registerChatbotRoutes(app, deps) {
               message_text,
               direction,
               delivered_at,
-              campaign_id
+              campaign_id,
+              contact_name,
+              is_group
             FROM public.lead_messages
             WHERE client_id = $1 ${instanceFilter}
             ORDER BY phone, delivered_at DESC
@@ -292,6 +298,8 @@ export function registerChatbotRoutes(app, deps) {
             m.direction,
             m.delivered_at,
             m.campaign_id,
+            m.contact_name,
+            m.is_group,
             l.nome as lead_name,
             l.lead_origin,
             l.source_campaign_id
@@ -308,8 +316,10 @@ export function registerChatbotRoutes(app, deps) {
           const timestampVal = row.delivered_at ? Math.floor(new Date(row.delivered_at).getTime() / 1000) : null;
           return {
             id: row.phone_number,
-            name: row.lead_name || row.phone_number,
-            isGroup: false,
+            // contact_name (pushName do WhatsApp) tem prioridade: existe para
+            // grupos e para contatos que nao viraram lead no Banco de Dados.
+            name: row.contact_name || row.lead_name || row.phone_number,
+            isGroup: row.is_group === true,
             unreadCount: 0,
             timestamp: timestampVal,
             archived: false,
@@ -354,6 +364,10 @@ export function registerChatbotRoutes(app, deps) {
   app.delete("/api/whatsapp/chats/clear", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
     if (!ensureDb(res)) return;
     try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS instance_name VARCHAR(150);").catch(() => {}); } catch(e) {}
+    // contact_name/is_group: nome exibido e flag de grupo vivem na mensagem para o
+    // inbox nao depender da tabela de leads (mostrar nome nao pode criar lead).
+    try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS contact_name TEXT;").catch(() => {}); } catch(e) {}
+    try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS is_group BOOLEAN DEFAULT false;").catch(() => {}); } catch(e) {}
 
     try {
       const requestedClientId = normalizeString(req.query.clientId || req.body.clientId);
