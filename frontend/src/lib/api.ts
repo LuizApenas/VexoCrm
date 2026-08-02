@@ -28,18 +28,25 @@ export function shouldRetryApiResponse(response: Response) {
   return [502, 503, 504].includes(response.status) || (response.status >= 500 && contentType.includes("text/html"));
 }
 
-export async function fetchApi(path: string, init: RequestInit = {}) {
+/** Operações longas (ex.: importar o histórico de conversas de um chip) podem
+ *  passar `timeoutMs` para não serem abortadas pelo limite padrão de 15s. */
+export async function fetchApi(
+  path: string,
+  init: RequestInit & { timeoutMs?: number } = {}
+) {
   const startedAt = Date.now();
   let networkError: unknown = null;
   const candidates = getApiCandidates(path);
+  const { timeoutMs, ...requestInit } = init;
+  const effectiveTimeout = timeoutMs ?? API_REQUEST_TIMEOUT_MS;
 
   for (const [index, url] of candidates.entries()) {
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+    const timeoutId = window.setTimeout(() => controller.abort(), effectiveTimeout);
 
     try {
       const response = await fetch(url, {
-        ...init,
+        ...requestInit,
         signal: controller.signal,
       });
       const durationMs = Date.now() - startedAt;

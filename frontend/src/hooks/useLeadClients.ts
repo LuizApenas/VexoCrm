@@ -497,7 +497,14 @@ export function useSyncLeadClientEvolutionInstance(tenantId: string) {
 
       const res = await fetchApi(
         `/api/lead-clients/${encodeURIComponent(tenantId)}/evolution-instances/${encodeURIComponent(instanceId)}/sync`,
-        { method: "POST", headers: { Authorization: `Bearer ${token}` } }
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          // Importar o histórico (chats + mensagens + perfis) passa dos 15s
+          // padrão; sem isto o AbortController cortava a resposta e a tela
+          // dizia "signal is aborted without reason" mesmo com o sync rodando.
+          timeoutMs: 5 * 60 * 1000,
+        }
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
