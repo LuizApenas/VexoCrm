@@ -412,9 +412,17 @@ export function registerChatbotRoutes(app, deps) {
         return;
       }
 
-      const cleanPhone = sanitizePhone(chatId);
-      const queryParams = [clientId, cleanPhone, limit];
-      
+      // Conversas de grupo/LID são gravadas com o jid inteiro em phone
+      // (ex.: "120363...@g.us"). sanitizePhone removeria o sufixo e a busca não
+      // casaria — era por isso que clicar num grupo mostrava "Sem mensagens
+      // carregadas". Aceita as duas formas: o chatId como veio e só os dígitos.
+      const isJidChat = chatId.includes("@");
+      const cleanPhone = isJidChat ? chatId : sanitizePhone(chatId);
+      const phoneVariants = Array.from(
+        new Set([chatId, cleanPhone, sanitizePhone(chatId)].filter(Boolean))
+      );
+      const queryParams = [clientId, phoneVariants, limit];
+
       let instanceFilter = "";
       if (instanceAliases && instanceAliases.length > 0) {
         queryParams.push(instanceAliases);
@@ -430,7 +438,7 @@ export function registerChatbotRoutes(app, deps) {
           delivered_at,
           sender_type
         FROM public.lead_messages
-        WHERE client_id = $1 AND phone = $2 ${instanceFilter}
+        WHERE client_id = $1 AND phone = ANY($2) ${instanceFilter}
         ORDER BY delivered_at DESC
         LIMIT $3
       `;

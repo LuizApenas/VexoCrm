@@ -255,6 +255,37 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
 
     console.info(`[sync-evolution] Found ${chats.length} chats. Syncing messages for the top 200 chats...`);
 
+    // Catálogo de contatos da instância: resolve o NOME (pushName que a pessoa
+    // configurou no WhatsApp dela) e, quando disponível, o TELEFONE real de um
+    // contato LID. Sem isso a conversa aparece como "224777281249297@lid" e sem
+    // nome, porque o findChats de contatos LID nem sempre traz remoteJidAlt.
+    const contactNameByKey = new Map(); // dígitos do jid -> nome
+    const phoneByLid = new Map();       // dígitos do LID  -> telefone real
+    try {
+      const ctRes = await fetch(`${baseUrl}/chat/findContacts/${encodeURIComponent(instanceName)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: apiKey },
+        body: JSON.stringify({}),
+      });
+      if (ctRes.ok) {
+        const ctData = await ctRes.json();
+        const ctList = Array.isArray(ctData) ? ctData : (ctData?.records || ctData?.contacts || []);
+        for (const ct of ctList) {
+          const jid = String(ct?.remoteJid || ct?.id || "");
+          const digits = jid.split("@")[0].replace(/\D/g, "");
+          const nm = String(ct?.pushName || ct?.name || ct?.verifiedName || "").trim();
+          if (digits && nm && !/^(você|voce)$/i.test(nm)) contactNameByKey.set(digits, nm);
+          // alguns registros trazem o telefone correspondente ao LID
+          const alt = String(ct?.remoteJidAlt || ct?.jid || "");
+          if (jid.includes("@lid") && alt.includes("@s.whatsapp.net")) {
+            phoneByLid.set(digits, alt.split("@")[0].replace(/\D/g, ""));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[sync-evolution] findContacts indisponível:", e.message);
+    }
+
     // Sincroniza até 200 chats (número comercial tem muitas conversas por dia).
     const topChats = chats.slice(0, 200);
 
@@ -268,21 +299,39 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
       if (!remoteJid || remoteJid.includes("@broadcast")) continue;
 
       const isGroup = remoteJid.includes("@g.us");
+      const jidDigits = remoteJid.split("@")[0].replace(/\D/g, "");
       const altJid = chat?.lastMessage?.key?.remoteJidAlt || "";
       const phoneJid = altJid.includes("@s.whatsapp.net")
         ? altJid
         : (remoteJid.includes("@s.whatsapp.net") ? remoteJid : "");
 
-      // Identificador da conversa: o telefone quando existe; senão o próprio jid
-      // (grupo/LID). É a chave usada por lead_messages.phone e pelo inbox.
-      const phone = phoneJid ? phoneJid.split("@")[0] : remoteJid;
+      // Identificador da conversa: telefone real sempre que possível — do
+      // remoteJidAlt da última mensagem ou do catálogo de contatos (LID). Sem
+      // isso a lista mostrava o LID cru ("224777281249297@lid") como se fosse
+      // número. Grupo mantém o próprio jid (não tem telefone).
+      const phoneFromContacts = !isGroup ? phoneByLid.get(jidDigits) : null;
+      const phone = phoneJid
+        ? phoneJid.split("@")[0]
+        : (phoneFromContacts || remoteJid);
       if (!phone) continue;
 
-      // Nome exibido: pushName do contato/grupo. Gravado na própria mensagem
-      // (contact_name) para o inbox não depender da tabela de leads — assim
-      // mostrar o nome não cria lead no Banco de Dados.
-      const rawChatName = String(chat.pushName || chat.name || "").trim();
-      const chatName = /^(você|voce)$/i.test(rawChatName) ? "" : rawChatName;
+      // Nome exibido: pushName do chat, do catálogo de contatos (cobre quem não
+      // está salvo na agenda) ou da última mensagem recebida. Gravado na própria
+      // mensagem (contact_name) para o inbox não depender da tabela de leads.
+      const lastMsgName = chat?.lastMessage?.key?.fromMe === false
+        ? String(chat?.lastMessage?.pushName || "").trim()
+        : "";
+      const nameCandidates = [
+        String(chat.pushName || "").trim(),
+        String(chat.name || "").trim(),
+        contactNameByKey.get(jidDigits),
+        phoneFromContacts ? contactNameByKey.get(phoneFromContacts) : "",
+        contactNameByKey.get(String(phone).replace(/\D/g, "")),
+        lastMsgName,
+      ];
+      const chatName = nameCandidates.find(
+        (n) => n && !/^(você|voce)$/i.test(n) && !/^\+?\d[\d\s\-()]*$/.test(n)
+      ) || "";
 
 
       // 2. Fetch last 15 messages for each of the top chats
