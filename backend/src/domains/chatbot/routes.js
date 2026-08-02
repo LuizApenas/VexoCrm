@@ -306,11 +306,14 @@ export function registerChatbotRoutes(app, deps) {
             m.campaign_id,
             m.contact_name,
             m.is_group,
+            lm.profile_pic,
+            lm.contact_name as profile_name,
             l.nome as lead_name,
             l.lead_origin,
             l.source_campaign_id
           FROM latest_messages m
           LEFT JOIN public."${leadsTable}" l ON l.telefone = m.phone AND l.client_id = $1
+          LEFT JOIN public.whatsapp_lid_map lm ON lm.lid = m.phone
           WHERE 1=1
           ${searchFilter}
           ORDER BY m.delivered_at DESC
@@ -324,7 +327,8 @@ export function registerChatbotRoutes(app, deps) {
             id: row.phone_number,
             // contact_name (pushName do WhatsApp) tem prioridade: existe para
             // grupos e para contatos que nao viraram lead no Banco de Dados.
-            name: row.contact_name || row.lead_name || row.phone_number,
+            name: row.contact_name || row.profile_name || row.lead_name || row.phone_number,
+            profilePic: row.profile_pic || null,
             isGroup: row.is_group === true,
             unreadCount: 0,
             timestamp: timestampVal,

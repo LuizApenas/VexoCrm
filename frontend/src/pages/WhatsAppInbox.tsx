@@ -66,11 +66,28 @@ function getPreview(chat: WhatsAppChat) {
   return body.length > 72 ? `${body.slice(0, 72)}...` : body;
 }
 
-// Avatar redondo com inicial (nome) ou ícone. Cores neutras (sem roxo).
-function ChatAvatar({ label, size = "md" }: { label?: string; size?: "sm" | "md" }) {
+// Avatar: foto de perfil do WhatsApp quando disponível, senão a inicial do nome.
+// As URLs do WhatsApp (pps.whatsapp.net) expiram; se a imagem falhar, cai na
+// inicial sem quebrar o layout.
+function ChatAvatar({ label, picture, size = "md" }: { label?: string; picture?: string | null; size?: "sm" | "md" }) {
+  const [failed, setFailed] = useState(false);
   const clean = (label || "").trim();
   const initial = clean ? clean.replace(/[^\p{L}\p{N}]/gu, "").charAt(0).toUpperCase() || "#" : "#";
   const dim = size === "sm" ? "h-9 w-9 text-xs" : "h-11 w-11 text-sm";
+
+  if (picture && !failed) {
+    return (
+      <img
+        src={picture}
+        alt={clean || "Contato"}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className={cn("shrink-0 rounded-full object-cover", dim)}
+      />
+    );
+  }
+
   return (
     <div className={cn("flex shrink-0 items-center justify-center rounded-full bg-emerald-100 font-semibold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300", dim)}>
       {initial}
@@ -377,7 +394,7 @@ export default function WhatsAppInbox({
                             chat.id === selectedChatId && "bg-emerald-50 dark:bg-emerald-500/10"
                           )}
                         >
-                          <ChatAvatar label={chat.name || phoneLabel} />
+                          <ChatAvatar label={chat.name || phoneLabel} picture={chat.profilePic} />
                           <div className="min-w-0 flex-1">
                             <div className="mb-0.5 flex items-center justify-between gap-2">
                               <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{chat.name || phoneLabel}</p>
@@ -421,7 +438,7 @@ export default function WhatsAppInbox({
 
                 <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-background/30">
                   <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-                    {selectedChat && <ChatAvatar label={selectedChat.name || String(selectedChat.id)} size="sm" />}
+                    {selectedChat && <ChatAvatar label={selectedChat.name || String(selectedChat.id)} picture={selectedChat.profilePic} size="sm" />}
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">

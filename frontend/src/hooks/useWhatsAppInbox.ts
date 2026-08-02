@@ -21,6 +21,8 @@ export interface WhatsAppChat {
   } | null;
   leadOrigin: string | null;
   sourceCampaignId: string | null;
+  /** Foto do perfil do WhatsApp (URL temporária da Evolution). */
+  profilePic?: string | null;
 }
 
 export interface WhatsAppMessage {
