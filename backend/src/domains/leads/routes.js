@@ -1006,6 +1006,10 @@ export function registerLeadsRoutes(app, deps) {
       // chat, mas quando a última mensagem é nossa o pushName é "Você"; então
       // buscamos também /chat/findContacts, que traz pushName por contato.
       const contactNames = new Map();
+      // Agenda completa do chip: contatos salvos com telefone real. Muitos nunca
+      // trocaram mensagem (ou a conversa foi apagada), então não aparecem em
+      // findChats — mas são exatamente os leads que o Banco de Dados quer.
+      const addressBook = [];
       try {
         const contactsRes = await fetch(`${baseUrl}/chat/findContacts/${encodeURIComponent(instanceName)}`, {
           method: "POST",
@@ -1022,6 +1026,9 @@ export function registerLeadsRoutes(app, deps) {
             if (digits && nm && nm.toLowerCase() !== "você" && nm.toLowerCase() !== "voce") {
               contactNames.set(digits, nm);
             }
+            if (jid.endsWith("@s.whatsapp.net") && digits.length >= 10 && digits !== ownerDigits) {
+              addressBook.push({ digits, name: nm });
+            }
           }
           console.info(`[wa-extract] findContacts: ${contactNames.size} nomes carregados`);
         }
@@ -1037,6 +1044,7 @@ export function registerLeadsRoutes(app, deps) {
         return !/^\+?\d[\d\s\-()]*$/.test(s); // não é só número
       };
 
+      const seenPhones = new Set();
       let extractedCount = 0;
       let insertErrors = 0;
       let buyers = 0;
@@ -1145,15 +1153,46 @@ export function registerLeadsRoutes(app, deps) {
             last_interaction_at: lastInteractionAt || new Date().toISOString(),
           });
           extractedCount++;
+          seenPhones.add(telefoneKey);
         } catch (insErr) {
           insertErrors++;
           if (insertErrors <= 3) console.warn(`[wa-extract] upsert falhou p/ ${formattedPhone}: ${insErr.message}`);
         }
       }
 
+      // AGENDA: importa os contatos salvos que não vieram por conversa. Sem
+      // histórico não dá para classificar estágio/temperatura, então entram
+      // como lead frio marcado pela origem — o telefone e o nome, que é o que
+      // faltava, ficam disponíveis para trabalhar depois.
+      let addressBookCount = 0;
+      for (const ct of addressBook) {
+        const formatted = sanitizePhoneE164(ct.digits);
+        if (!formatted) continue;
+        const telefoneKey = formatted.replace(/^\+/, "");
+        if (seenPhones.has(telefoneKey)) continue;
+        seenPhones.add(telefoneKey);
+        try {
+          await upsertLeadByPhone(pgDatabasePool, clientId, telefoneKey, {
+            phone: telefoneKey,
+            nome: isRealName(ct.name) ? normalizeString(ct.name) : formatted,
+            stage: "cold",
+            temperature: "cold",
+            tags: ["agenda-whatsapp"],
+            extracted_from_wa: true,
+          });
+          addressBookCount++;
+        } catch (insErr) {
+          insertErrors++;
+          if (insertErrors <= 3) console.warn(`[wa-extract] upsert agenda falhou p/ ${formatted}: ${insErr.message}`);
+        }
+      }
+      console.info(`[wa-extract] agenda: ${addressBookCount} contatos importados de ${addressBook.length} salvos`);
+
       res.json({
         success: true,
-        extractedCount,
+        extractedCount: extractedCount + addressBookCount,
+        fromChats: extractedCount,
+        fromAddressBook: addressBookCount,
         insertErrors,
         totalChatsFound: validChats.length,
         summary: {
