@@ -321,7 +321,9 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
                 remoteJid: remoteJid
               }
             },
-            limit: 15
+            // Janela maior: em contatos LID o telefone real (key.remoteJidAlt) e o
+            // nome (pushName) podem estar em qualquer mensagem, nao so nas ultimas.
+            limit: 60
           })
         });
 
@@ -350,8 +352,20 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
         // sem esses dados, e era por isso que a lista mostrava o LID cru e sem nome.
         for (const m of messages) {
           if (!phone) {
-            const alt = String(m?.key?.remoteJidAlt || "");
-            if (alt.includes("@s.whatsapp.net")) phone = alt.split("@")[0];
+            // O telefone aparece em campos diferentes conforme o tipo de mensagem
+            // e a versao da Evolution; tenta todos os conhecidos.
+            const candidates = [
+              m?.key?.remoteJidAlt,
+              m?.key?.participantAlt,
+              m?.key?.senderPn,
+              m?.participant,
+              m?.key?.participant,
+              m?.contextInfo?.participant,
+            ];
+            for (const c of candidates) {
+              const v = String(c || "");
+              if (v.includes("@s.whatsapp.net")) { phone = v.split("@")[0]; break; }
+            }
           }
           if (!chatName && m?.key?.fromMe === false) {
             const nm = String(m?.pushName || "").trim();

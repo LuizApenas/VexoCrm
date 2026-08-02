@@ -358,8 +358,15 @@ export default function WhatsAppInbox({
                       />
                     ) : (
                       chats.map((chat) => {
-                        const phoneLabel = String(chat.id || "");
-                        const showPhone = !!chat.name && chat.name !== phoneLabel;
+                        const rawId = String(chat.id || "");
+                        // Grupo e contato LID nao tem telefone: mostrar o jid cru
+                        // ("235368586727590@lid") parece numero errado. Exibe um
+                        // rotulo honesto nesses casos.
+                        const isJid = rawId.includes("@");
+                        const phoneLabel = isJid
+                          ? (rawId.includes("@g.us") ? "Grupo do WhatsApp" : "Número não disponível")
+                          : `+${rawId}`;
+                        const showPhone = !!chat.name && chat.name !== rawId;
                         return (
                         <button
                           key={chat.id}
@@ -378,7 +385,7 @@ export default function WhatsAppInbox({
                                 {formatTimestamp(chat.timestamp, true)}
                               </span>
                             </div>
-                            {showPhone && <p className="truncate text-[11px] text-slate-400">+{phoneLabel}</p>}
+                            {showPhone && <p className="truncate text-[11px] text-slate-400">{phoneLabel}</p>}
                             <p className="truncate text-xs text-slate-500 dark:text-slate-400">{getPreview(chat)}</p>
                             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                               {chat.unreadCount > 0 && (
@@ -429,7 +436,11 @@ export default function WhatsAppInbox({
                         )}
                       </div>
                       <p className="text-xs text-slate-400">
-                        {selectedChat?.id ? `+${selectedChat.id}` : "Nenhuma conversa selecionada"}
+                        {selectedChat?.id
+                          ? (String(selectedChat.id).includes("@")
+                              ? (String(selectedChat.id).includes("@g.us") ? "Grupo do WhatsApp" : "Número não disponível")
+                              : `+${selectedChat.id}`)
+                          : "Nenhuma conversa selecionada"}
                       </p>
                     </div>
                   </div>
