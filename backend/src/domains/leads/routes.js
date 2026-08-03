@@ -547,17 +547,14 @@ export function registerLeadsRoutes(app, deps) {
       results.push(await deleteLeadClientRowsFromTable(tableName, tenantId));
     }
 
-    // Limpar tabela de leads específica do tenant e dropar a tabela física com CASCADE
+    // Apaga só as linhas deste tenant. NÃO dropar a tabela: `leadsTableName`
+    // devolve "leads" para qualquer tenant desde que a tabela virou unificada
+    // (migration 20260703000000), então o DROP que existia aqui apagava os leads
+    // de TODOS os clientes e derrubava o índice único (client_id, telefone) —
+    // que o boot recriava sem, fazendo a extração de contatos retornar 0 em
+    // silêncio.
     const leadsTable = leadsTableName(tenantId);
     results.push(await deleteLeadClientRowsFromTable(leadsTable, tenantId));
-
-    try {
-      await pgDatabasePool.query(`DROP TABLE IF EXISTS public."${leadsTable}" CASCADE`);
-      results.push({ table: leadsTable, deleted: 1, dropped: true });
-    } catch (err) {
-      console.error(`Failed to drop leads table ${leadsTable} for tenant ${tenantId}:`, err);
-      results.push({ table: leadsTable, deleted: 0, dropped: false, error: err.message });
-    }
 
     return results;
   }

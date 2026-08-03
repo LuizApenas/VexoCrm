@@ -71,28 +71,12 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         VALUES ('geracao-digital', true, false), ('infinie', true, false), ('outlier', true, false), ('vexo', true, false)
         ON CONFLICT (client_id) DO NOTHING;
 
-        CREATE TABLE IF NOT EXISTS public.leads (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          client_id TEXT NOT NULL REFERENCES public.leads_clients(id) ON DELETE CASCADE,
-          telefone TEXT NOT NULL,
-          nome TEXT,
-          tipo_cliente TEXT,
-          faixa_consumo TEXT,
-          cidade TEXT,
-          estado TEXT,
-          conta_energia TEXT,
-          status TEXT DEFAULT 'aguardando_resposta',
-          bot_ativo BOOLEAN DEFAULT false,
-          qualificacao TEXT,
-          transcricao TEXT,
-          resumo TEXT,
-          score NUMERIC,
-          first_contact_at TIMESTAMPTZ,
-          qualified_at TIMESTAMPTZ,
-          closed_at TIMESTAMPTZ,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
+        -- public.leads NÃO é criada aqui. O schema desta função era mínimo (sem
+        -- UNIQUE (client_id, telefone), sem stage/temperature/tags/phone/
+        -- extracted_from_wa), e recriava a tabela degradada sempre que ela
+        -- faltava, derrubando em silêncio a extração de contatos. O schema
+        -- correto é responsabilidade das migrations em supabase/migrations
+        -- (20260703000000 + 20260730000000 + 20260801120000).
 
         CREATE TABLE IF NOT EXISTS public.lead_conversations (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
