@@ -83,9 +83,9 @@ export const BENCHMARKS = {
     ocupacaoFimDeSemanaNovo: "25% a 33%",
   },
   saude_estetica: {
-    horariosVagosDia: 4,       // janelas ociosas por dia na agenda
-    ticketMedioProcedimento: 250,
-    diasUteisMes: 22,
+    horariosVagosSemana: 4,        // janelas ociosas por semana na agenda
+    ticketMedioProcedimento: 3000, // procedimento de ticket alto, não consulta avulsa
+    semanasMes: 4,
     mesesAno: 12,
   },
   otica: {
@@ -160,8 +160,8 @@ export function estimateOcupacaoNovoPonto() {
 // Perda anual estimada com horários vagos na agenda (saude_estetica).
 export function estimateEmptyChairLoss() {
   const b = BENCHMARKS.saude_estetica;
-  const mensal = b.horariosVagosDia * b.ticketMedioProcedimento * b.diasUteisMes * 0.5; // 50% recuperável
-  const anual = mensal * 12;
+  const mensal = b.horariosVagosSemana * b.ticketMedioProcedimento * b.semanasMes;
+  const anual = mensal * b.mesesAno;
   return { anual, mensal };
 }
 
@@ -395,8 +395,8 @@ export const SEGMENT_GROUPS: Record<string, SegmentGroup> = {
           eyebrow: "A IMPLICAÇÃO",
           title: "O Custo do Horário Vago.",
           body:
-            `Uma agenda como a da ${nome} costuma ter em média ${b.horariosVagosDia} janelas ociosas por dia. ` +
-            `Com um ticket médio de ${brl(b.ticketMedioProcedimento)}, metade disso é receita perfeitamente recuperável, ` +
+            `Uma agenda como a da ${nome} costuma ter em média ${b.horariosVagosSemana} janelas ociosas por semana. ` +
+            `Com um ticket médio de ${brl(b.ticketMedioProcedimento)}, isso é receita recuperável: ` +
             `${milhar(mensal)} por mês deixados na mesa.`,
           metric: {
             value: `${milhar(anual)}/ano`,

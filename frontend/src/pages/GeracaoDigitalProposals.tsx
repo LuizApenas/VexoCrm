@@ -1456,6 +1456,20 @@ export default function GeracaoDigitalProposals() {
                             não haveria como trocar o roteiro da apresentação nem
                             a marca do cliente depois que a proposta existe. */}
                         <div className="flex flex-wrap items-end gap-4">
+                          {/* Nome do prospect: o estado já era carregado e já ia
+                              no corpo do save, mas não havia campo — depois de
+                              criada a proposta não dava para corrigir o nome que
+                              aparece na apresentação e no PDF. */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">Nome da empresa (aparece na apresentação)</Label>
+                            <input
+                              type="text"
+                              value={prospectName}
+                              onChange={(e) => setProspectName(e.target.value)}
+                              placeholder="Ex.: Clínica Dr. Diogo Teodoro"
+                              className="block w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg px-2 h-8 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                            />
+                          </div>
                           <div className="space-y-1">
                             <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">Segmento (roteiro da apresentação)</Label>
                             <select
