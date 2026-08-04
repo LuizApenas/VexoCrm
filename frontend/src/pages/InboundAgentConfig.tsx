@@ -13,11 +13,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useCreateFupCompany, useFupCompanies, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
+import { useLeadClients } from "@/hooks/useLeadClients";
 import { useLlmModels } from "@/hooks/useChatbotTemplates";
 
 // Empresa "de mentira" mostrada quando o tenant ainda nao tem linha em
 // followup_companies. Salvar com ela cria a linha de verdade.
 const PLACEHOLDER_COMPANY_ID = "__sem_empresa__";
+// Prefixo de opcao "chip conectado que ainda nao tem agente". Salvar cria a linha.
+const CHIP_OPTION_PREFIX = "chip:";
+
+// O nome real da instancia Evolution fica no fim da URL de disparo do chip.
+function instanceNameFromChip(chip: { name?: string; dispatch_webhook_url?: string | null }) {
+  const url = chip?.dispatch_webhook_url || "";
+  const last = url.split("/").filter(Boolean).pop();
+  return (last && !last.includes("?") ? last : chip?.name) || "";
+}
 
 export default function InboundAgentConfig() {
   const [searchParams] = useSearchParams();
@@ -40,6 +50,15 @@ export default function InboundAgentConfig() {
     [rawCompanies]
   );
 
+  // Chips conectados do tenant: sao eles que devem aparecer como "numero"
+  // deste agente. Cada chip vira uma linha propria em followup_companies, entao
+  // varios numeros de atendimento funcionam sem mudar schema.
+  const { data: leadClients = [] } = useLeadClients();
+  const chips = useMemo(() => {
+    const tenant = leadClients.find((c) => c.id === selectedClientId);
+    return (tenant?.n8n_settings?.evolution_instances ?? []).filter((i) => i.active !== false);
+  }, [leadClients, selectedClientId]);
+
   const [companyId, setCompanyId] = useState<string>("all");
   const updateCompany = useUpdateFupCompany();
   const createCompany = useCreateFupCompany();
@@ -53,12 +72,29 @@ export default function InboundAgentConfig() {
   const providerOrder = ["groq", "openai", "anthropic", "gemini"] as const;
 
   useEffect(() => {
+    if (companyId.startsWith(CHIP_OPTION_PREFIX)) return;
     if (companies.length > 0 && (companyId === "all" || !companies.some((c) => c.id === companyId))) {
       setCompanyId(companies[0].id);
     }
   }, [companies, companyId]);
 
-  const activeCompany = companies.find((c) => c.id === companyId);
+  // Chips que ainda nao tem linha em followup_companies.
+  const chipsSemAgente = useMemo(
+    () =>
+      chips.filter((chip) => {
+        const inst = instanceNameFromChip(chip);
+        return inst && !rawCompanies.some((c: any) => (c.evolution_instance || "").trim() === inst);
+      }),
+    [chips, rawCompanies]
+  );
+
+  const selectedChipInstance = companyId.startsWith(CHIP_OPTION_PREFIX)
+    ? companyId.slice(CHIP_OPTION_PREFIX.length)
+    : null;
+
+  const activeCompany = selectedChipInstance
+    ? ({ id: PLACEHOLDER_COMPANY_ID, name: selectedChipInstance, evolution_instance: selectedChipInstance } as any)
+    : companies.find((c) => c.id === companyId);
 
   const [inboundEnabled, setInboundEnabled] = useState(false);
   const [inboundModel, setInboundModel] = useState("gpt-4o");
@@ -106,13 +142,18 @@ export default function InboundAgentConfig() {
     // salvar nunca surtia efeito. Aqui a linha e criada no primeiro salvamento.
     if (isPlaceholderCompany) {
       try {
-        await createCompany.mutateAsync({
-          name: "Instância Padrão / Principal",
-          evolution_instance: "WhatsApp",
+        const instancia = selectedChipInstance || "WhatsApp";
+        const criada = await createCompany.mutateAsync({
+          name: selectedChipInstance || "Instância Padrão / Principal",
+          evolution_instance: instancia,
           tenant_id: selectedClientId,
           ...payload,
         } as any);
-        toast({ title: "Configuração criada", description: "Agente inbound configurado para esta empresa." });
+        if (criada?.id) setCompanyId(criada.id);
+        toast({
+          title: "Agente criado",
+          description: `Configuração gravada para o número "${instancia}".`,
+        });
       } catch (e: any) {
         toast({ title: "Erro ao criar configuração", description: e.message, variant: "destructive" });
       }
@@ -201,6 +242,12 @@ export default function InboundAgentConfig() {
                   <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
                     ({c.evolution_instance})
                   </span>
+                </SelectItem>
+              ))}
+              {chipsSemAgente.map((chip) => (
+                <SelectItem key={chip.id} value={`${CHIP_OPTION_PREFIX}${instanceNameFromChip(chip)}`}>
+                  {chip.name}
+                  <span className="ml-2 text-xs text-amber-500">(sem agente — salvar para criar)</span>
                 </SelectItem>
               ))}
             </SelectContent>

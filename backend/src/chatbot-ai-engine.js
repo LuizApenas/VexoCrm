@@ -789,7 +789,7 @@ function hoursSince(isoDate) {
   return (Date.now() - new Date(isoDate).getTime()) / 3_600_000;
 }
 
-export async function processBatch({ clientId, phone, messages, supabase, model, promptType: promptTypeOverride = null, campaignPromptId = null, llmModel = null }) {
+export async function processBatch({ clientId, phone, messages, supabase, model, promptType: promptTypeOverride = null, campaignPromptId = null, llmModel = null, inboundPrompt = null, inboundSpinInstruction = "" }) {
   if (!model) {
     console.error("[chatbot-ai] model não configurado para cliente — chatbot silenciado", { clientId });
     return null;
@@ -868,7 +868,9 @@ export async function processBatch({ clientId, phone, messages, supabase, model,
     fetchTemplate(supabase, clientId, baseModelKey),
   ]);
 
-  if (!dynamicPrompt) {
+  // Prompt escrito na tela do Agente Inbound tem precedencia sobre o prompt
+  // dinamico do tenant: e o agente daquele numero especifico.
+  if (!dynamicPrompt && !inboundPrompt) {
     console.error("[chatbot-ai] PROMPT NOT FOUND in DB — chatbot silenciado", { clientId, promptType });
     return null;
   }
@@ -879,7 +881,9 @@ export async function processBatch({ clientId, phone, messages, supabase, model,
   // Garante que todas as colunas do template existam na tabela (fire-and-forget nos erros)
   await ensureTemplateColumns(supabase, leadsTable, template?.data_fields);
 
-  const basePromptText = dynamicPrompt;
+  const basePromptText = inboundPrompt
+    ? `${inboundPrompt}${inboundSpinInstruction}`
+    : dynamicPrompt;
 
   const fieldContext = buildFieldContext(template);
   const baseSystemPrompt = fieldContext

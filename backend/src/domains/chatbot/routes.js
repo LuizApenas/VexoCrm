@@ -28,6 +28,7 @@ import {
   trackInvalidResponse,
 } from "../../hardcoded-chatbot-persistence.js";
 import { parseStoredHistorico } from "../../leads-outlier-schema.js";
+import { resolveInboundAgentConfig, buildSpinInstruction, fireInboundCompletionWebhook } from "../../services/inboundAgent.js";
 
 export function registerChatbotRoutes(app, deps) {
   const {
@@ -949,6 +950,19 @@ export function registerChatbotRoutes(app, deps) {
 
     const instanceName = body.instance || body.instanceName || req.query.instanceName || req.query.instance || null;
 
+    // Agente inbound configurado na tela "Agente IA → Inbound", por NUMERO.
+    // Sem linha configurada, inboundConfig e null e o comportamento antigo
+    // (prompt e modelo do tenant) segue valendo — nada muda para quem ja usa.
+    const inboundConfig = await resolveInboundAgentConfig({ supabase, clientId, instanceName }).catch((err) => {
+      console.warn("[chatbot-webhook] falha ao resolver agente inbound:", err?.message || err);
+      return null;
+    });
+
+    if (inboundConfig && !inboundConfig.enabled) {
+      res.json({ success: true, ignored: "inbound_disabled" });
+      return;
+    }
+
     // ── Campaign routing ─────────────────────────────────────────────────
     let chatbotPromptTypeOverride = null; // "campanha" | "padrao" | null
     let activeCampaignForLead = null;
@@ -1094,6 +1108,9 @@ export function registerChatbotRoutes(app, deps) {
             model: chatbotModel,
             promptType,
             campaignPromptId: campaignPromptIdOverride,
+            llmModel: inboundConfig?.model || null,
+            inboundPrompt: inboundConfig?.prompt || null,
+            inboundSpinInstruction: inboundConfig ? buildSpinInstruction(inboundConfig.spinFields) : "",
           });
 
           if (!aiResponse?.mensagem) return;
@@ -1151,7 +1168,12 @@ export function registerChatbotRoutes(app, deps) {
             console.error("[chatbot-webhook] Evolution send failed:", evolutionResponse.status, errText.slice(0, 200));
           }
 
-          const sdrNumber = tenantSettings?.sdr_whatsapp_number;
+          // Transbordo configurado na tela do Inbound tem precedencia sobre o
+          // numero do tenant. Com "Permitir Transferencia" desligado naquele
+          // numero, nao notifica ninguem.
+          const sdrNumber = inboundConfig
+            ? (inboundConfig.sdrTransferEnabled ? (inboundConfig.sdrPhone || tenantSettings?.sdr_whatsapp_number) : null)
+            : tenantSettings?.sdr_whatsapp_number;
 
           // Recontato: lead finalizado voltou a falar — avisa SDR sem gerar novo briefing
           if (aiResponse._recontato) {
@@ -1179,6 +1201,19 @@ export function registerChatbotRoutes(app, deps) {
                 console.error("[chatbot-webhook] SDR recontact alert error:", err.message);
               }
             }
+          }
+
+          // Webhook de finalizacao da tela do Inbound: dispara com os dados
+          // coletados quando o atendimento fecha. Era um campo salvo e nunca usado.
+          if (aiResponse.finalizado && !aiResponse._recontato && inboundConfig?.webhookUrl) {
+            fireInboundCompletionWebhook({
+              webhookUrl: inboundConfig.webhookUrl,
+              clientId,
+              phone,
+              instanceName,
+              dados: aiResponse.dados || {},
+              classificacao: aiResponse.classificacao,
+            }).catch(() => {});
           }
 
           // Finalizado pela primeira vez: gerar briefing completo e notificar SDR
