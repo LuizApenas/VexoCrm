@@ -30,7 +30,7 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
   const { data, error } = await supabase
     .from("followup_companies")
     .select(
-      "id, evolution_instance, inbound_enabled, inbound_model, inbound_prompt, inbound_spin_fields, inbound_webhook_url, sdr_whatsapp_number, sdr_transfer_enabled"
+      "id, evolution_instance, evolution_instances, inbound_enabled, inbound_model, inbound_prompt, inbound_spin_fields, inbound_webhook_url, sdr_whatsapp_number, sdr_transfer_enabled"
     )
     .eq("tenant_id", clientId);
 
@@ -40,11 +40,21 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
   }
 
   const wanted = normalize(instanceName);
+  // Um agente pode atender VÁRIOS números (evolution_instances). A coluna antiga
+  // entra como fallback para linhas anteriores à migration.
+  const instancesOf = (row) => {
+    const list = Array.isArray(row?.evolution_instances) ? row.evolution_instances : [];
+    const nomes = list.map(normalize).filter(Boolean);
+    const legado = normalize(row?.evolution_instance);
+    if (legado && !nomes.includes(legado)) nomes.push(legado);
+    return nomes;
+  };
+
   // Casa pelo nome da instância. Sem casamento exato, só aceita uma linha
   // genérica se ela for a única do tenant — nunca escolhe "alguma" linha, senão
   // o agente de um número responderia no lugar do agente de outro.
   const byInstance = wanted
-    ? data.find((row) => normalize(row.evolution_instance) === wanted)
+    ? data.find((row) => instancesOf(row).includes(wanted))
     : null;
   const row = byInstance || (data.length === 1 ? data[0] : null);
   if (!row) return null;
@@ -58,6 +68,7 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
   return {
     companyId: row.id,
     instanceName: normalize(row.evolution_instance) || null,
+    instanceNames: instancesOf(row),
     enabled: row.inbound_enabled === true,
     model: normalize(row.inbound_model) || null,
     prompt: normalize(row.inbound_prompt) || null,

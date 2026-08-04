@@ -177,7 +177,7 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
 
       let sbQuery = supabase
         .from("followup_companies")
-        .select("id, name, evolution_instance, webhook_url, panel_access, inbound_enabled, inbound_model, inbound_prompt, inbound_spin_fields, inbound_webhook_url, sdr_whatsapp_number, sdr_transfer_enabled, created_at, tenant_id, engine_scan_interval_hours, never_contacted_delay_hours, no_reply_delay_hours, livpub_inactive_delay_months, last_engine_run_at")
+        .select("id, name, evolution_instance, evolution_instances, webhook_url, panel_access, inbound_enabled, inbound_model, inbound_prompt, inbound_spin_fields, inbound_webhook_url, sdr_whatsapp_number, sdr_transfer_enabled, created_at, tenant_id, engine_scan_interval_hours, never_contacted_delay_hours, no_reply_delay_hours, livpub_inactive_delay_months, last_engine_run_at")
         .is("archived_at", null)
         .order("name", { ascending: true });
 
@@ -222,10 +222,22 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
   });
 
   // POST /api/followup/companies
+// Lista de instancias Evolution de um agente. A coluna antiga (evolution_instance)
+// guarda a primeira, para nao quebrar quem le so ela.
+function normalizeInstanceList(list, fallback) {
+  const arr = Array.isArray(list) ? list : [];
+  const clean = arr.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean);
+  const unique = [...new Set(clean)];
+  if (unique.length > 0) return unique;
+  const single = typeof fallback === "string" ? fallback.trim() : "";
+  return single ? [single] : [];
+}
+
   router.post("/companies", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
     const {
       name,
       evolution_instance,
+      evolution_instances,
       webhook_url,
       calendly_webhook_secret,
       panel_access,
@@ -243,8 +255,9 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
       livpub_inactive_delay_months,
     } = req.body || {};
 
-    if (!str(name) || !str(evolution_instance)) {
-      return sendErr(res, 400, "MISSING_FIELDS", "name e evolution_instance são obrigatórios");
+    const instanceList = normalizeInstanceList(evolution_instances, evolution_instance);
+    if (!str(name) || instanceList.length === 0) {
+      return sendErr(res, 400, "MISSING_FIELDS", "name e ao menos um número (evolution_instance) são obrigatórios");
     }
     try {
       const supabase = getSupabase();
@@ -259,7 +272,8 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
         .insert({
           tenant_id: boundTenantId,
           name: str(name),
-          evolution_instance: str(evolution_instance),
+          evolution_instance: instanceList[0],
+          evolution_instances: instanceList,
           webhook_url: str(webhook_url),
           calendly_webhook_secret: str(calendly_webhook_secret),
           panel_access: Boolean(panel_access),
@@ -291,6 +305,7 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
     const {
       name,
       evolution_instance,
+      evolution_instances,
       webhook_url,
       calendly_webhook_secret,
       panel_access,
@@ -312,7 +327,16 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
     try {
       const patch = { updated_at: new Date().toISOString() };
       if (str(name)) patch.name = str(name);
-      if (str(evolution_instance)) patch.evolution_instance = str(evolution_instance);
+      if ("evolution_instances" in req.body) {
+        const lista = normalizeInstanceList(evolution_instances, evolution_instance);
+        if (lista.length > 0) {
+          patch.evolution_instances = lista;
+          patch.evolution_instance = lista[0]; // coluna antiga = primeiro da lista
+        }
+      } else if (str(evolution_instance)) {
+        patch.evolution_instance = str(evolution_instance);
+        patch.evolution_instances = [str(evolution_instance)];
+      }
       if ("webhook_url" in req.body) patch.webhook_url = str(webhook_url);
       if ("calendly_webhook_secret" in req.body)
         patch.calendly_webhook_secret = str(calendly_webhook_secret);

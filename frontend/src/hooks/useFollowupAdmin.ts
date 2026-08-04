@@ -8,6 +8,8 @@ export interface FupCompany {
   id: string;
   name: string;
   evolution_instance: string;
+  /** Todos os números atendidos por este agente. A coluna antiga guarda o primeiro. */
+  evolution_instances?: string[];
   webhook_url: string | null;
   panel_access: boolean;
   auto_pause_on_reply?: boolean;

@@ -121,7 +121,7 @@ export function EvolutionChipsPanel({ tenant, canEdit = true }: Props) {
     patch: { active?: boolean; isDefault?: boolean; webhookEnabled?: boolean }
   ) => {
     try {
-      await saveEvolutionInstance.mutateAsync({
+      const salva = await saveEvolutionInstance.mutateAsync({
         tenantId: tenant.id,
         instanceId: instance.id,
         name: instance.name,
@@ -130,6 +130,16 @@ export function EvolutionChipsPanel({ tenant, canEdit = true }: Props) {
         isDefault: patch.isDefault ?? instance.is_default,
         webhookEnabled: patch.webhookEnabled ?? instance.webhook_enabled,
       });
+      // O chip salvou, mas a Evolution pode ter recusado o webhook. Antes isso
+      // so aparecia no log do servidor e o numero ficava mudo sem aviso.
+      if (salva?.webhook_error) {
+        toast({
+          title: "Chip salvo, mas o webhook falhou",
+          description: salva.webhook_error,
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
         title: patch.isDefault
           ? "Evolution padrao atualizada"

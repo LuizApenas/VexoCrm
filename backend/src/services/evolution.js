@@ -56,6 +56,8 @@ export function maskEvolutionInstance(row) {
     daily_limit_override: row.daily_limit_override != null ? Number(row.daily_limit_override) : null,
     sent_count_today: row.sent_count_today != null ? Number(row.sent_count_today) : 0,
     webhook_enabled: row.webhook_enabled === true,
+    // Preenchido quando a configuracao remota do webhook falhou no salvamento.
+    webhook_error: row.webhook_error || null,
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
     updated_by_email: row.updated_by_email || null,
@@ -834,14 +836,26 @@ export async function upsertLeadClientEvolutionInstance(clientId, input, authAcc
       const parts = result.rows[0].dispatch_webhook_url.split("/");
       const instanceName = parts[parts.length - 1];
       if (instanceName) {
-        configureEvolutionInstanceWebhook(
-          clientId,
-          result.rows[0].dispatch_webhook_url,
-          result.rows[0].dispatch_webhook_token,
-          result.rows[0].webhook_enabled
-        ).catch((err) => {
-          console.error(`[evolution-webhook] Failed to configure remote webhook for ${instanceName}:`, err.message);
-        });
+        // Antes era fire-and-forget com catch que so logava: quando o webhook
+        // nao era configurado (ex.: WEBHOOK_BASE_URL ausente), a tela dizia que
+        // salvou e o numero ficava sem receber mensagem, sem nenhum aviso.
+        // O salvamento do chip continua valendo — o erro vai junto na resposta.
+        try {
+          await configureEvolutionInstanceWebhook(
+            clientId,
+            result.rows[0].dispatch_webhook_url,
+            result.rows[0].dispatch_webhook_token,
+            result.rows[0].webhook_enabled
+          );
+          result.rows[0].webhook_error = null;
+        } catch (err) {
+          const message = err?.message || String(err);
+          console.error(`[evolution-webhook] Failed to configure remote webhook for ${instanceName}:`, message);
+          result.rows[0].webhook_error =
+            message === "WEBHOOK_BASE_URL_UNDEFINED"
+              ? "WEBHOOK_BASE_URL nao esta configurada no servidor: o numero nao vai receber mensagens."
+              : `Nao foi possivel configurar o webhook na Evolution: ${message}`;
+        }
       }
     }
 

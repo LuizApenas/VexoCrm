@@ -77,6 +77,8 @@ export interface LeadClientEvolutionInstance {
   daily_limit_override: number | null;
   sent_count_today: number;
   webhook_enabled: boolean;
+  /** Preenchido quando a Evolution recusou a configuração do webhook ao salvar. */
+  webhook_error?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   updated_by_email?: string | null;

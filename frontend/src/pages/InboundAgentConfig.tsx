@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bot, Save, AlertCircle, Sparkles, Smartphone, Plus, Trash2, Send, Zap } from "lucide-react";
+import { Bot, Save, AlertCircle, Sparkles, Smartphone, Plus, Trash2, Send, Zap, ChevronDown } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
@@ -103,6 +105,9 @@ export default function InboundAgentConfig() {
   const [sdrTransferEnabled, setSdrTransferEnabled] = useState(false);
   const [spinFields, setSpinFields] = useState<{ id: string; name: string; required: boolean }[]>([]);
   const [inboundWebhookUrl, setInboundWebhookUrl] = useState("");
+  // Números atendidos por ESTE agente. Um agente qualificador pode cobrir os
+  // celulares de vários consultores sem duplicar prompt, modelo e SPIN.
+  const [numerosVinculados, setNumerosVinculados] = useState<string[]>([]);
 
   const [simMessages, setSimMessages] = useState<{ role: "user" | "bot"; text: string }[]>([
     { role: "bot", text: "Olá! Como posso ajudar?" }
@@ -120,6 +125,10 @@ export default function InboundAgentConfig() {
       setSdrTransferEnabled(activeCompany.sdr_transfer_enabled ?? false);
       setSpinFields(activeCompany.inbound_spin_fields ?? []);
       setInboundWebhookUrl(activeCompany.inbound_webhook_url ?? "");
+      const lista = Array.isArray(activeCompany.evolution_instances) && activeCompany.evolution_instances.length > 0
+        ? activeCompany.evolution_instances
+        : (activeCompany.evolution_instance ? [activeCompany.evolution_instance] : []);
+      setNumerosVinculados(lista);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompany?.id]);
@@ -136,13 +145,14 @@ export default function InboundAgentConfig() {
       inbound_webhook_url: inboundWebhookUrl,
       sdr_whatsapp_number: sdrPhone,
       sdr_transfer_enabled: sdrTransferEnabled,
+      evolution_instances: numerosVinculados,
     };
 
     // Sem linha em followup_companies o PATCH ia para um id inexistente e o
     // salvar nunca surtia efeito. Aqui a linha e criada no primeiro salvamento.
     if (isPlaceholderCompany) {
       try {
-        const instancia = selectedChipInstance || "WhatsApp";
+        const instancia = numerosVinculados[0] || selectedChipInstance || "WhatsApp";
         const criada = await createCompany.mutateAsync({
           name: selectedChipInstance || "Instância Padrão / Principal",
           evolution_instance: instancia,
@@ -303,6 +313,56 @@ export default function InboundAgentConfig() {
                     </p>
                   </div>
                   <Switch checked={inboundEnabled} onCheckedChange={setInboundEnabled} />
+                </div>
+
+                <div className="space-y-2 max-w-md">
+                  <Label>Números atendidos por este agente</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <span className="truncate">
+                          {numerosVinculados.length === 0
+                            ? "Nenhum número vinculado"
+                            : numerosVinculados.length === 1
+                              ? numerosVinculados[0]
+                              : `${numerosVinculados.length} números vinculados`}
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[min(26rem,calc(100vw-2rem))] p-1" align="start">
+                      <div className="max-h-64 overflow-y-auto">
+                        {chips.length === 0 && (
+                          <p className="px-2 py-3 text-xs text-slate-400">
+                            Nenhum chip conectado. Conecte em "Chips WhatsApp".
+                          </p>
+                        )}
+                        {chips.map((chip) => {
+                          const inst = instanceNameFromChip(chip);
+                          const marcado = numerosVinculados.includes(inst);
+                          return (
+                            <label key={chip.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent">
+                              <Checkbox
+                                checked={marcado}
+                                onCheckedChange={() =>
+                                  setNumerosVinculados((atual) =>
+                                    atual.includes(inst) ? atual.filter((i) => i !== inst) : [...atual, inst]
+                                  )
+                                }
+                              />
+                              <span className="truncate">{chip.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  <p className="text-xs text-slate-500">
+                    Todos os números marcados respondem com este mesmo prompt, modelo e coleta.
+                  </p>
                 </div>
 
                 <div className="space-y-2 max-w-md">
