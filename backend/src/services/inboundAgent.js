@@ -53,9 +53,11 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
   // Casa pelo nome da instância. Sem casamento exato, só aceita uma linha
   // genérica se ela for a única do tenant — nunca escolhe "alguma" linha, senão
   // o agente de um número responderia no lugar do agente de outro.
-  const byInstance = wanted
-    ? data.find((row) => instancesOf(row).includes(wanted))
-    : null;
+  // Entre linhas que atendem o mesmo número (acontece: o módulo de follow-up
+  // deixa várias linhas por instância), a que tem o agente LIGADO vence. Sem
+  // isso, qual agente atende dependia da ordem que o banco devolveu.
+  const candidatas = wanted ? data.filter((row) => instancesOf(row).includes(wanted)) : [];
+  const byInstance = candidatas.find((row) => row.inbound_enabled === true) || candidatas[0] || null;
   const row = byInstance || (data.length === 1 ? data[0] : null);
   if (!row) return null;
 
