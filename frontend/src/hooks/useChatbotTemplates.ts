@@ -55,19 +55,24 @@ export interface BuiltinTemplateOption {
   agent_name: string;
 }
 
-export function useBuiltinTemplates() {
+export function useBuiltinTemplates(clientId?: string) {
   const { isAuthenticated, getIdToken } = useAuth();
 
   return useQuery({
-    queryKey: ["chatbot-templates-builtins"],
+    queryKey: ["chatbot-templates-builtins", clientId ?? null],
     enabled: isAuthenticated,
     staleTime: 10 * 60 * 1000,
     queryFn: async (): Promise<BuiltinTemplateOption[]> => {
       const token = await getIdToken();
       if (!token) throw new Error("Usuário não autenticado.");
-      const res = await fetchApi("/api/chatbot-templates/builtins", {
+      const res = await fetchApi(
+        clientId
+          ? `/api/chatbot-templates/builtins?clientId=${encodeURIComponent(clientId)}`
+          : "/api/chatbot-templates/builtins",
+        {
         headers: { Authorization: `Bearer ${token}` },
-      });
+      }
+      );
       if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao carregar modelos"));
       const data = await readApiJson<{ templates: BuiltinTemplateOption[] }>(res, "builtins_fetch");
       return data.templates ?? [];

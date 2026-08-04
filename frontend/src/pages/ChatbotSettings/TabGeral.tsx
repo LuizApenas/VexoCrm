@@ -36,7 +36,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const { getIdToken, hasPermission } = useAuth();
   const canEdit = hasPermission("empresas.edit" as import("@/lib/access").AccessPermission) || hasPermission("admin" as import("@/lib/access").AccessPermission);
   const updateSettings = useUpdateLeadClientN8nSettings();
-  const { data: builtinModels = [] } = useBuiltinTemplates();
+  const { data: builtinModels = [] } = useBuiltinTemplates(clientId);
   const { data: clientTemplates = [] } = useChatbotTemplates(clientId);
   const { data: llmInfo } = useLlmModels();
   
@@ -71,18 +71,8 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
 
   const defaultBuiltins: any[] = [];
 
-  // Built-ins sao globais e incluem personas de clientes que sairam da carteira
-  // (Aureo/Outlier, Lara/Infinie). Só entram na lista se pertencerem a este
-  // tenant ou se o tenant ainda nao tiver template proprio.
-  const builtinsDoTenant = builtinModels.filter(
-    (m: any) => !m.client_id || m.client_id === clientId
-  );
-  const availableBuiltins =
-    customModels.length > 0
-      ? builtinsDoTenant.filter((m: any) => m.client_id === clientId)
-      : builtinsDoTenant.length > 0
-        ? builtinsDoTenant
-        : defaultBuiltins;
+  // O backend ja devolve so built-ins globais ou do proprio tenant.
+  const availableBuiltins = builtinModels.length > 0 ? builtinModels : defaultBuiltins;
 
   const allModels = [
     ...availableBuiltins,

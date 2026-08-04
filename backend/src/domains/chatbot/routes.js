@@ -654,29 +654,34 @@ export function registerChatbotRoutes(app, deps) {
       sendError(res, 500, "PROMPT_SAVE_FAILED", err instanceof Error ? err.message : "Failed to save prompt");
     }
   });
-  // GET /api/chatbot-templates/builtins — lista apenas templates built-in (client_id IS NULL)
+  // GET /api/chatbot-templates/builtins — templates built-in visíveis ao tenant.
+  //
+  // Antes filtrava client_id IS NULL e, quando nada voltava, devolvia uma lista
+  // ESCRITA NO CÓDIGO com Áureo (Outlier) e Lara (Infinie). Como nenhum template
+  // tem client_id nulo — outlier pertence a "outlier", infinie a "infinie" — a
+  // consulta voltava vazia sempre e essas duas personas apareciam para todos os
+  // tenants, mesmo depois de aqueles clientes saírem da carteira. Nada de
+  // fallback fabricado: se não há built-in visível, a lista volta vazia.
   app.get("/api/chatbot-templates/builtins", requireFirebaseAuth, async (req, res) => {
     if (!ensureDb(res)) return;
+    const clientId = normalizeTenantKey(req.query?.clientId);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("chatbot_templates")
-        .select("template_key, display_name, agent_name")
-        .is("client_id", null)
-        .order("created_at", { ascending: true });
-      
-      const fallbackBuiltins = [
-        { template_key: "outlier", display_name: "Outlier Consórcios", agent_name: "Áureo" },
-        { template_key: "infinie", display_name: "Infinie Energia Solar", agent_name: "Lara" },
-      ];
+        .select("template_key, display_name, agent_name, client_id")
+        .eq("is_builtin", true);
 
-      const templates = (data && data.length > 0) ? data : fallbackBuiltins;
-      return res.json({ templates });
+      // Built-in global (sem dono) ou built-in do próprio tenant.
+      query = clientId
+        ? query.or(`client_id.is.null,client_id.eq.${clientId}`)
+        : query.is("client_id", null);
+
+      const { data, error } = await query.order("created_at", { ascending: true });
+      if (error) throw error;
+      return res.json({ templates: data || [] });
     } catch (err) {
-      const fallbackBuiltins = [
-        { template_key: "outlier", display_name: "Outlier Consórcios", agent_name: "Áureo" },
-        { template_key: "infinie", display_name: "Infinie Energia Solar", agent_name: "Lara" },
-      ];
-      return res.json({ templates: fallbackBuiltins });
+      console.error("[chatbot-templates] falha ao listar built-ins:", err?.message || err);
+      return sendError(res, 500, "BUILTINS_FETCH_FAILED", err?.message || "Falha ao listar templates");
     }
   });
 
