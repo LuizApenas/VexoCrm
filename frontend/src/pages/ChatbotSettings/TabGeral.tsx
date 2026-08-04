@@ -71,7 +71,18 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
 
   const defaultBuiltins: any[] = [];
 
-  const availableBuiltins = builtinModels.length > 0 ? builtinModels : defaultBuiltins;
+  // Built-ins sao globais e incluem personas de clientes que sairam da carteira
+  // (Aureo/Outlier, Lara/Infinie). Só entram na lista se pertencerem a este
+  // tenant ou se o tenant ainda nao tiver template proprio.
+  const builtinsDoTenant = builtinModels.filter(
+    (m: any) => !m.client_id || m.client_id === clientId
+  );
+  const availableBuiltins =
+    customModels.length > 0
+      ? builtinsDoTenant.filter((m: any) => m.client_id === clientId)
+      : builtinsDoTenant.length > 0
+        ? builtinsDoTenant
+        : defaultBuiltins;
 
   const allModels = [
     ...availableBuiltins,
@@ -96,9 +107,16 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
       await updateSettings.mutateAsync({ tenantId: clientId, chatbotModel: value });
       const found = allModels.find((m) => m.template_key === value);
       toast({ title: "Template de Persona atualizado", description: found ? `${found.agent_name} — ${found.display_name}` : value });
-    } catch {
+    } catch (e: any) {
       setModel(prev);
-      toast({ title: "Erro ao salvar template", variant: "destructive" });
+      // Mensagem real do servidor: antes o erro era generico e a selecao
+      // simplesmente voltava, parecendo que o sistema "escolhia sozinho".
+      toast({
+        title: "Erro ao salvar template",
+        description: e?.message || "O servidor recusou a alteração.",
+        variant: "destructive",
+      });
+      console.error("[chatbot-settings] falha ao salvar template:", e);
     }
   }
 

@@ -45,7 +45,7 @@ export default function InboundAgentConfig() {
     () =>
       rawCompanies.length > 0
         ? rawCompanies
-        : [{ id: PLACEHOLDER_COMPANY_ID, name: "Novo agente (não salvo)", company_name: "Novo agente (não salvo)", evolution_instance: "" } as any],
+        : [{ id: PLACEHOLDER_COMPANY_ID, name: "Agente ainda não criado", company_name: "Agente ainda não criado", evolution_instance: "" } as any],
     [rawCompanies]
   );
 
@@ -145,6 +145,16 @@ export default function InboundAgentConfig() {
     // Sem linha em followup_companies o PATCH ia para um id inexistente e o
     // salvar nunca surtia efeito. Aqui a linha e criada no primeiro salvamento.
     if (isPlaceholderCompany) {
+      // O backend exige pelo menos um numero. Sem isto o Salvar devolvia
+      // 400 MISSING_FIELDS e o agente nunca era criado.
+      if (numerosVinculados.length === 0) {
+        toast({
+          title: "Escolha ao menos um número",
+          description: 'Marque os números em "Números atendidos por este agente" antes de salvar.',
+          variant: "destructive",
+        });
+        return;
+      }
       try {
         const instancia = numerosVinculados[0] || "WhatsApp";
         const criada = await createCompany.mutateAsync({
@@ -279,8 +289,9 @@ export default function InboundAgentConfig() {
               <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/20 dark:text-amber-300">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
-                  Esta empresa ainda não tem configuração de agente gravada. Ajuste os campos e clique em
-                  <strong> Salvar Alterações</strong> para criá-la.
+                  Este agente ainda não existe no banco. Marque os números em
+                  <strong> "Números atendidos por este agente"</strong>, ajuste o resto e clique em
+                  <strong> Salvar Alterações</strong> para criá-lo. Enquanto isso, o botão de ligar não tem efeito.
                 </span>
               </div>
             )}
