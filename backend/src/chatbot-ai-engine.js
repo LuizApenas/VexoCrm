@@ -21,8 +21,8 @@ export const LLM_MODELS = [
   // Groq
   { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B (Versatile)", provider: "groq", providerName: "Groq" },
   { id: "llama-3.1-8b-instant", name: "Llama 3.1 8B (Instant)", provider: "groq", providerName: "Groq" },
-  { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B", provider: "groq", providerName: "Groq" },
-  { id: "llama-3.2-11b-vision-preview", name: "Llama 3.2 11B (Vision)", provider: "groq", providerName: "Groq" },
+  // mixtral-8x7b-32768 e llama-3.2-11b-vision-preview sairam: a Groq
+  // descontinuou os dois. Ficavam selecionaveis e falhavam no envio.
 
   // ChatGPT / OpenAI
   { id: "gpt-4o", name: "GPT-4o (Omni)", provider: "openai", providerName: "ChatGPT / OpenAI" },
@@ -48,6 +48,18 @@ export function getLlmProviderStatus() {
     anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
     gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
   };
+}
+
+export const DEFAULT_LLM_MODEL = "llama-3.3-70b-versatile";
+
+// Modelo salvo pode ter sido descontinuado pelo provedor depois de escolhido.
+// Sem isso a chamada seguia com um id morto e falhava no provedor, sem pista.
+export function resolveLlmModel(modelId) {
+  if (modelId && LLM_MODELS.some((m) => m.id === modelId)) return modelId;
+  if (modelId) {
+    console.warn(`[chatbot-ai] modelo "${modelId}" nao esta disponivel; usando ${DEFAULT_LLM_MODEL}.`);
+  }
+  return DEFAULT_LLM_MODEL;
 }
 
 export function detectLlmProvider(modelId) {
@@ -786,7 +798,7 @@ export async function processBatch({ clientId, phone, messages, supabase, model,
   let activeLlmModel = llmModel;
   if (!activeLlmModel) {
     const settings = await getLeadClientN8nSettings(clientId).catch(() => null);
-    activeLlmModel = settings?.chatbot_llm_model || "llama-3.3-70b-versatile";
+    activeLlmModel = resolveLlmModel(settings?.chatbot_llm_model);
   }
 
   const modelConfig = getChatbotModel(model);

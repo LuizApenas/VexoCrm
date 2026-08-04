@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useFupCompanies, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
+import { useLlmModels } from "@/hooks/useChatbotTemplates";
 
 export default function InboundAgentConfig() {
   const [searchParams] = useSearchParams();
@@ -29,6 +30,14 @@ export default function InboundAgentConfig() {
 
   const [companyId, setCompanyId] = useState<string>("all");
   const updateCompany = useUpdateFupCompany();
+
+  // Modelos vem do backend (LLM_MODELS), nao mais de uma lista fixa nesta tela:
+  // ela oferecia ids que o motor nao conhece (llama3-70b-8192, llama3-8b-8192,
+  // claude-3-5-sonnet sem data) e escondia os que funcionam.
+  const { data: llmInfo } = useLlmModels();
+  const llmModels = llmInfo?.models ?? [];
+  const providerStatus = llmInfo?.providerStatus;
+  const providerOrder = ["groq", "openai", "anthropic", "gemini"] as const;
 
   useEffect(() => {
     if (companies.length > 0 && (companyId === "all" || !companies.some((c) => c.id === companyId))) {
@@ -202,14 +211,31 @@ export default function InboundAgentConfig() {
                       <SelectValue placeholder="Selecione o modelo" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gpt-4o">GPT-4 Omni (Recomendado)</SelectItem>
-                      <SelectItem value="gpt-4o-mini">GPT-4 Omni Mini (Rápido)</SelectItem>
-                      <SelectItem value="claude-3-5-sonnet">Claude 3.5 Sonnet</SelectItem>
-                      <SelectItem value="llama3-70b-8192">Llama 3 70B (Groq)</SelectItem>
-                      <SelectItem value="llama3-8b-8192">Llama 3 8B (Groq)</SelectItem>
-                      <SelectItem value="mixtral-8x7b-32768">Mixtral 8x7B (Groq)</SelectItem>
+                      {providerOrder.map((provider) => {
+                        const group = llmModels.filter((m) => m.provider === provider);
+                        if (group.length === 0) return null;
+                        const configured = providerStatus?.[provider];
+                        return (
+                          <SelectGroup key={provider}>
+                            <SelectLabel className="text-[10px] uppercase tracking-wide">
+                              {group[0].providerName}
+                              {configured === false && " — sem chave de API"}
+                            </SelectLabel>
+                            {group.map((m) => (
+                              <SelectItem key={m.id} value={m.id} disabled={configured === false}>
+                                {m.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
+                  {inboundModel && llmModels.length > 0 && !llmModels.some((m) => m.id === inboundModel) && (
+                    <p className="text-xs text-amber-600 dark:text-amber-500">
+                      O modelo salvo ("{inboundModel}") não está mais disponível. Escolha outro e salve.
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
