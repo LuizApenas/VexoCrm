@@ -21,9 +21,6 @@ import { useLlmModels } from "@/hooks/useChatbotTemplates";
 // Empresa "de mentira" mostrada quando o tenant ainda nao tem linha em
 // followup_companies. Salvar com ela cria a linha de verdade.
 const PLACEHOLDER_COMPANY_ID = "__sem_empresa__";
-// Prefixo de opcao "chip conectado que ainda nao tem agente". Salvar cria a linha.
-const CHIP_OPTION_PREFIX = "chip:";
-
 // O nome real da instancia Evolution fica no fim da URL de disparo do chip.
 function instanceNameFromChip(chip: { name?: string; dispatch_webhook_url?: string | null }) {
   const url = chip?.dispatch_webhook_url || "";
@@ -48,7 +45,7 @@ export default function InboundAgentConfig() {
     () =>
       rawCompanies.length > 0
         ? rawCompanies
-        : [{ id: PLACEHOLDER_COMPANY_ID, name: "Instância Padrão / Principal", company_name: "Instância Padrão / Principal", evolution_instance: "WhatsApp" } as any],
+        : [{ id: PLACEHOLDER_COMPANY_ID, name: "Novo agente (não salvo)", company_name: "Novo agente (não salvo)", evolution_instance: "" } as any],
     [rawCompanies]
   );
 
@@ -74,29 +71,12 @@ export default function InboundAgentConfig() {
   const providerOrder = ["groq", "openai", "anthropic", "gemini"] as const;
 
   useEffect(() => {
-    if (companyId.startsWith(CHIP_OPTION_PREFIX)) return;
     if (companies.length > 0 && (companyId === "all" || !companies.some((c) => c.id === companyId))) {
       setCompanyId(companies[0].id);
     }
   }, [companies, companyId]);
 
-  // Chips que ainda nao tem linha em followup_companies.
-  const chipsSemAgente = useMemo(
-    () =>
-      chips.filter((chip) => {
-        const inst = instanceNameFromChip(chip);
-        return inst && !rawCompanies.some((c: any) => (c.evolution_instance || "").trim() === inst);
-      }),
-    [chips, rawCompanies]
-  );
-
-  const selectedChipInstance = companyId.startsWith(CHIP_OPTION_PREFIX)
-    ? companyId.slice(CHIP_OPTION_PREFIX.length)
-    : null;
-
-  const activeCompany = selectedChipInstance
-    ? ({ id: PLACEHOLDER_COMPANY_ID, name: selectedChipInstance, evolution_instance: selectedChipInstance } as any)
-    : companies.find((c) => c.id === companyId);
+  const activeCompany = companies.find((c) => c.id === companyId);
 
   const [inboundEnabled, setInboundEnabled] = useState(false);
   const [inboundModel, setInboundModel] = useState("gpt-4o");
@@ -135,6 +115,20 @@ export default function InboundAgentConfig() {
 
   const isPlaceholderCompany = activeCompany?.id === PLACEHOLDER_COMPANY_ID;
 
+  // Ligar/desligar grava na hora. Antes era estado local ate clicar em Salvar,
+  // entao sair da tela desfazia — parecia que o agente "desligava sozinho".
+  const handleToggleInbound = async (value: boolean) => {
+    setInboundEnabled(value);
+    if (isPlaceholderCompany || !activeCompany) return; // sem linha ainda: salva junto na criacao
+    try {
+      await updateCompany.mutateAsync({ id: activeCompany.id, inbound_enabled: value } as any);
+      toast({ title: value ? "Agente ativado" : "Agente desativado" });
+    } catch (e: any) {
+      setInboundEnabled(!value);
+      toast({ title: "Erro ao salvar status", description: e.message, variant: "destructive" });
+    }
+  };
+
   const handleSave = async () => {
     if (!activeCompany) return;
     const payload = {
@@ -152,9 +146,9 @@ export default function InboundAgentConfig() {
     // salvar nunca surtia efeito. Aqui a linha e criada no primeiro salvamento.
     if (isPlaceholderCompany) {
       try {
-        const instancia = numerosVinculados[0] || selectedChipInstance || "WhatsApp";
+        const instancia = numerosVinculados[0] || "WhatsApp";
         const criada = await createCompany.mutateAsync({
-          name: selectedChipInstance || "Instância Padrão / Principal",
+          name: "Agente de Atendimento",
           evolution_instance: instancia,
           tenant_id: selectedClientId,
           ...payload,
@@ -233,10 +227,10 @@ export default function InboundAgentConfig() {
           </div>
           <div>
             <Label className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-              Número do WhatsApp (Conexão)
+              Agente
             </Label>
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              Selecione o número de WhatsApp que este agente irá assumir.
+              Escolha qual agente editar. Os números que ele atende ficam logo abaixo.
             </p>
           </div>
         </div>
@@ -252,12 +246,6 @@ export default function InboundAgentConfig() {
                   <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
                     ({c.evolution_instance})
                   </span>
-                </SelectItem>
-              ))}
-              {chipsSemAgente.map((chip) => (
-                <SelectItem key={chip.id} value={`${CHIP_OPTION_PREFIX}${instanceNameFromChip(chip)}`}>
-                  {chip.name}
-                  <span className="ml-2 text-xs text-amber-500">(sem agente — salvar para criar)</span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -312,7 +300,7 @@ export default function InboundAgentConfig() {
                       Se ativo, a IA responderá automaticamente às mensagens recebidas neste número.
                     </p>
                   </div>
-                  <Switch checked={inboundEnabled} onCheckedChange={setInboundEnabled} />
+                  <Switch checked={inboundEnabled} onCheckedChange={handleToggleInbound} />
                 </div>
 
                 <div className="space-y-2 max-w-md">

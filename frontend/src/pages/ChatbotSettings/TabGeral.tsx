@@ -48,20 +48,22 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const [enabled, setEnabled] = useState(n8n?.chatbot_enabled ?? false);
   const [model, setModel] = useState(n8n?.chatbot_model ?? "generico");
   const [llmModel, setLlmModel] = useState(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
-  const [agentName, setAgentName] = useState(n8n?.agent_name ?? "");
-  const [savingAgentName, setSavingAgentName] = useState(false);
   const [sdrNumber, setSdrNumber] = useState(n8n?.sdr_whatsapp_number ?? "");
   const [savingSdr, setSavingSdr] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
+  // Depende do TENANT, nao do objeto n8n. Antes qualquer refetch da lista de
+  // clientes (inclusive o disparado por salvar o toggle) reescrevia estes
+  // campos com o valor do servidor: escolher um template novo e ligar o
+  // chatbot em seguida fazia o template voltar para o anterior.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     setEnabled(n8n?.chatbot_enabled ?? false);
     setModel(n8n?.chatbot_model ?? "generico");
     setLlmModel(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
-    setAgentName(n8n?.agent_name ?? "");
     setSdrNumber(n8n?.sdr_whatsapp_number ?? "");
-  }, [clientId, n8n]);
+  }, [clientId]);
 
   const webhookUrl = buildWebhookUrl(clientId);
   const evolutionUrl = n8n?.dispatch_webhook_url ?? null;
@@ -84,18 +86,6 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     } catch {
       setEnabled(!value);
       toast({ title: "Erro ao salvar status do chatbot", variant: "destructive" });
-    }
-  }
-
-  async function handleSaveAgentName() {
-    setSavingAgentName(true);
-    try {
-      await updateSettings.mutateAsync({ tenantId: clientId, agentName: agentName || null });
-      toast({ title: "Nome do Agente salvo com sucesso" });
-    } catch {
-      toast({ title: "Erro ao salvar nome do agente", variant: "destructive" });
-    } finally {
-      setSavingAgentName(false);
     }
   }
 
@@ -199,31 +189,9 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
             </div>
           )}
 
-          {/* Nome do Agente (Persona Editável) */}
-          {canEdit && (
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-indigo-500" /> Nome do Agente de IA (Persona)
-              </Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  placeholder="ex: Assistente Vexo, Sofia, Consultor IA..."
-                  className="h-8 text-xs bg-white dark:bg-slate-900"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleSaveAgentName}
-                  disabled={savingAgentName || updateSettings.isPending}
-                  className="h-8 text-xs font-bold shrink-0"
-                >
-                  Salvar Nome
-                </Button>
-              </div>
-            </div>
-          )}
+          {/* Campo "Nome do Agente de IA (Persona)" removido: o nome vive no
+              template (aba Template -> Nome do agente), que e a fonte usada
+              pelo motor. Ter os dois divergia sem o usuario perceber. */}
 
           {/* Template de Modelo Personalizado (Se houver modelos cadastrados) */}
           {canEdit && allModels.length > 0 && (
