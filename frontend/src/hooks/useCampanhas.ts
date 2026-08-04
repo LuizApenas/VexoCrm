@@ -55,6 +55,8 @@ export interface CampaignDispatch {
 }
 
 export interface CampaignAnalyticsMeta {
+  /** Varias planilhas importadas como origem do disparo. */
+  importIds?: string[];
   segmentation?: CampaignSegmentation;
   message?: string;
   image?: CampaignImageAsset | null;
@@ -172,6 +174,8 @@ export interface CreateCampaignPayload {
   name: string;
   clientId: string;
   importId?: string | null;
+  /** Varias planilhas de uma vez. Quando vem preenchido, prevalece sobre importId. */
+  importIds?: string[];
   limitPerRun?: number;
   scheduledFor?: string | null;
   mode?: "disparo" | "agente";
@@ -194,6 +198,7 @@ export interface UpdateCampaignPayload {
   name?: string;
   status?: CampaignStatus;
   importId?: string | null;
+  importIds?: string[];
   limitPerRun?: number;
   scheduledFor?: string | null;
   startsAt?: string | null;

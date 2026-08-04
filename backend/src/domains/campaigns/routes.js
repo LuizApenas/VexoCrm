@@ -47,6 +47,16 @@ let _evolutionDailyUsageSchemaEnsured = false;
 let _dispatchRunsClaimSchemaEnsured = false;
 let _dueDispatchTimerStarted = false;
 
+// Origem dos leads de uma campanha. Uma campanha pode apontar para varias
+// planilhas importadas: a lista fica em analytics_meta.importIds (jsonb), e a
+// coluna import_id guarda a primeira, para nao quebrar quem le so a coluna.
+function resolveCampaignImportSelection(campaign) {
+  if (campaign?.analytics_meta?.importSource === "__crm__") return "__crm__";
+  const many = campaign?.analytics_meta?.importIds;
+  if (Array.isArray(many) && many.length > 0) return many;
+  return campaign?.import_id || null;
+}
+
 export function registerCampaignsRoutes(app, deps) {
   const {
     CAMPAIGN_SCHEDULER_MAX_BATCH,
@@ -727,7 +737,7 @@ export function registerCampaignsRoutes(app, deps) {
       } else {
         items = await buildDispatchLeads({
           clientId: authorizedClientId,
-          importId: campaign.analytics_meta?.importSource === "__crm__" ? "__crm__" : (campaign.import_id || null),
+          importId: resolveCampaignImportSelection(campaign),
           limit: campaign.limit_per_run,
           segmentation: campaign.analytics_meta?.segmentation || null,
         });
@@ -756,7 +766,12 @@ export function registerCampaignsRoutes(app, deps) {
     if (!clientId) return;
     const reqImportId = normalizeString(req.body?.importId) || null;
     const isCrmSource = reqImportId === "__crm__";
-    const importId = isCrmSource ? null : reqImportId;
+    // importIds (varias planilhas). A coluna import_id recebe a primeira; a
+    // lista completa vai para analytics_meta.importIds mais abaixo.
+    const reqImportIds = Array.isArray(req.body?.importIds)
+      ? req.body.importIds.map((v) => normalizeString(v)).filter(Boolean)
+      : [];
+    const importId = isCrmSource ? null : (reqImportIds[0] || reqImportId);
     
     const rawLimit = Number.parseInt(String(req.body?.limitPerRun ?? "50"), 10);
     const limitPerRun = Number.isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 5000);
@@ -768,6 +783,8 @@ export function registerCampaignsRoutes(app, deps) {
     
     if (isCrmSource) {
       analyticsMeta.importSource = "__crm__";
+    } else if (reqImportIds.length > 0) {
+      analyticsMeta.importIds = reqImportIds;
     }
     const campaignMessage = normalizeString(analyticsMeta.message);
     const scheduledDate = scheduledFor ? new Date(scheduledFor) : null;
@@ -914,12 +931,19 @@ export function registerCampaignsRoutes(app, deps) {
     }
     
     let isCrmSourceUpdate = false;
+    let updatedImportIds = null;
+    if ("importIds" in req.body) {
+      updatedImportIds = Array.isArray(req.body?.importIds)
+        ? req.body.importIds.map((v) => normalizeString(v)).filter(Boolean)
+        : [];
+      updates.import_id = updatedImportIds[0] || null;
+    }
     if ("importId" in req.body) {
       const reqImportId = normalizeString(req.body?.importId) || null;
       if (reqImportId === "__crm__") {
         updates.import_id = null;
         isCrmSourceUpdate = true;
-      } else {
+      } else if (updatedImportIds === null) {
         updates.import_id = reqImportId;
       }
     }
@@ -961,12 +985,17 @@ export function registerCampaignsRoutes(app, deps) {
       const authorizedClientId = resolveAuthorizedClientId(req, res, current.client_id);
       if (!authorizedClientId) return;
       
-      if (isCrmSourceUpdate || ("importId" in req.body && updates.import_id !== null)) {
+      if (isCrmSourceUpdate || updatedImportIds !== null || ("importId" in req.body && updates.import_id !== null)) {
          const currentMeta = updates.analytics_meta || current.analytics_meta || {};
          if (isCrmSourceUpdate) {
             currentMeta.importSource = "__crm__";
+            delete currentMeta.importIds;
          } else {
             delete currentMeta.importSource;
+            if (updatedImportIds !== null) {
+              if (updatedImportIds.length > 0) currentMeta.importIds = updatedImportIds;
+              else delete currentMeta.importIds;
+            }
          }
          updates.analytics_meta = currentMeta;
       }
@@ -1572,7 +1601,7 @@ export function registerCampaignsRoutes(app, deps) {
     // (claimed/sent/failed) → segunda execução do mesmo disparo traz 0 leads.
     const leads = await buildDispatchLeads({
       clientId,
-      importId: campaign.analytics_meta?.importSource === "__crm__" ? "__crm__" : (campaign.import_id || null),
+      importId: resolveCampaignImportSelection(campaign),
       limit: dispatch.limit_per_run ?? campaign.limit_per_run,
       offset: dispatch.offset ?? 0,
       segmentation: validation.analyticsMeta.segmentation || null,
@@ -1904,7 +1933,7 @@ export function registerCampaignsRoutes(app, deps) {
 
       const previewLeads = await buildDispatchLeads({
         clientId: authorizedClientId,
-        importId: campaign.analytics_meta?.importSource === "__crm__" ? "__crm__" : (campaign.import_id || null),
+        importId: resolveCampaignImportSelection(campaign),
         limit: dispatch.limit_per_run,
         offset: dispatch.offset,
         segmentation: dispatch.steps?.[0]?.segmentation || null,
@@ -2215,7 +2244,7 @@ export function registerCampaignsRoutes(app, deps) {
       try {
         const previewLeads = await buildDispatchLeads({
           clientId: authorizedClientId,
-          importId: campaign.analytics_meta?.importSource === "__crm__" ? "__crm__" : (campaign.import_id || null),
+          importId: resolveCampaignImportSelection(campaign),
           limit: limitPerRun,
           offset: offset,
           segmentation: validation.analyticsMeta.sequence?.[0]?.segmentation || null,

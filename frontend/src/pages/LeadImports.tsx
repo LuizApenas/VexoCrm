@@ -3,11 +3,13 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import {
   Building2,
   ChevronLeft,
+  Database,
   ChevronRight,
   FileSpreadsheet,
   History,
   Loader2,
   Megaphone,
+  Trash2,
   Zap,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -79,7 +81,7 @@ import { CampaignsTable } from "./LeadImports/CampaignsTable";
 import { DispatchQueueTable } from "./LeadImports/DispatchQueueTable";
 import { LeadImportAuditReport } from "./LeadImports/LeadImportAuditReport";
 
-type SheetTab = "campanha" | "enviadas" | "agendamentos" | "relatorios";
+type SheetTab = "campanha" | "enviadas" | "agendamentos" | "planilhas" | "relatorios";
 type CampaignTemplateStrategy = "single" | "ai_variations";
 
 interface LeadImportsProps {
@@ -169,6 +171,9 @@ export default function LeadImports({
 
   const [parseError, setParseError] = useState<string | null>(null);
   const [selectedImportId, setSelectedImportId] = useState<string>(ALL_IMPORTS_VALUE);
+  // Selecao de VARIAS planilhas. Quando tem item aqui, manda no disparo;
+  // selectedImportId cobre so os dois modos especiais (todas / CRM).
+  const [selectedImportIds, setSelectedImportIds] = useState<string[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDispatchId, setPreviewDispatchId] = useState<string | null>(null);
 
@@ -586,7 +591,7 @@ export default function LeadImports({
       toast({ title: "Nome ausente", description: "Defina um nome de identificação para o envio.", variant: "destructive" });
       return;
     }
-    if (!selectedFile && selectedImportId === ALL_IMPORTS_VALUE) {
+    if (!selectedFile && selectedImportIds.length === 0 && selectedImportId === ALL_IMPORTS_VALUE) {
       toast({ title: "Base de leads ausente", description: "Por favor, carregue uma planilha ou selecione uma base ativa (ou CRM).", variant: "destructive" });
       return;
     }
@@ -643,6 +648,7 @@ export default function LeadImports({
         name: campaignName.trim(),
         clientId: activeClientId,
         importId: finalImportId === ALL_IMPORTS_VALUE ? null : finalImportId,
+        importIds: selectedFile ? [] : selectedImportIds,
         limitPerRun: limitForCampaign,
         mode: "disparo" as const,
         campaignPromptId: null,
@@ -690,8 +696,14 @@ export default function LeadImports({
       if (selectedFile) {
         totalLeads = finalRowsCount;
       } else {
-        const selectedImportRecord = imports.find(imp => imp.id === selectedImportId);
-        totalLeads = selectedImportRecord ? selectedImportRecord.imported_rows : (pendingData?.total || 0);
+        if (selectedImportIds.length > 0) {
+          totalLeads = imports
+            .filter((imp) => selectedImportIds.includes(imp.id))
+            .reduce((acc, imp) => acc + (imp.imported_rows || 0), 0);
+        } else {
+          const selectedImportRecord = imports.find(imp => imp.id === selectedImportId);
+          totalLeads = selectedImportRecord ? selectedImportRecord.imported_rows : (pendingData?.total || 0);
+        }
       }
 
       if (batchingEnabled && totalLeads > 0) {
@@ -876,9 +888,28 @@ export default function LeadImports({
     setCampaignLimitPerRun(String(c.limit_per_run || 50));
     setCampaignSequence(seq.length > 0 ? seq : [createCampaignStep("text", 1)]);
     setSelectedImportId(c.import_id || ALL_IMPORTS_VALUE);
+    setSelectedImportIds(Array.isArray(meta.importIds) ? meta.importIds : (c.import_id ? [c.import_id] : []));
     setDispatchOptions(meta.dispatchOptions || defaultDispatchOptions);
     setActiveTab("campanha");
     toast({ title: "Carregado para edição", description: `Edite a campanha "${c.name}" no formulário de Novo Disparo.` });
+  };
+
+  // Exclui a planilha importada e as linhas dela (lead_import_items). Campanhas
+  // antigas que apontavam para ela ficam sem base — por isso o aviso no confirm.
+  const handleDeleteImport = async (importId: string, sourceName: string) => {
+    if (!confirm(`Excluir a planilha "${sourceName}" e todos os contatos importados dela?\n\nCampanhas que usam esta base ficarão sem leads. Esta ação não pode ser desfeita.`)) return;
+    try {
+      await deleteLeadImport.mutateAsync(importId);
+      setSelectedImportIds((current) => current.filter((id) => id !== importId));
+      if (selectedImportId === importId) setSelectedImportId(ALL_IMPORTS_VALUE);
+      toast({ title: "Planilha excluída", description: sourceName });
+    } catch (err) {
+      toast({
+        title: "Erro ao excluir",
+        description: err instanceof Error ? err.message : "Não foi possível excluir a planilha.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDeleteCampaign = async (c: Campaign) => {
@@ -942,6 +973,16 @@ export default function LeadImports({
           Fila de Envios
         </button>
         <button
+          onClick={() => setActiveTab("planilhas")}
+          className={cn(
+            "rounded-lg px-4 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all",
+            activeTab === "planilhas" ? "bg-white text-slate-900 shadow dark:bg-slate-700 dark:text-white" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          )}
+        >
+          <Database className="h-3.5 w-3.5" />
+          Planilhas Salvas
+        </button>
+        <button
           onClick={() => setActiveTab("relatorios")}
           className={cn(
             "rounded-lg px-4 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all",
@@ -971,6 +1012,8 @@ export default function LeadImports({
               setSelectedFile={setSelectedFile}
               setParsedRows={setParsedRows}
               selectedImportId={selectedImportId}
+              selectedImportIds={selectedImportIds}
+              setSelectedImportIds={setSelectedImportIds}
               setSelectedImportId={setSelectedImportId}
               imports={imports}
               filterRules={filterRules}
@@ -1066,6 +1109,60 @@ export default function LeadImports({
       )}
 
       {/* 📊 TAB 4: AUDITORIA & RECAMPANHAS */}
+      {activeTab === "planilhas" && (
+        <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+          <div>
+            <h3 className="text-sm font-black text-slate-800 dark:text-white">Planilhas Salvas</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Bases importadas deste cliente. Use a aba "Novo Disparo" para selecionar uma ou mais na campanha.
+            </p>
+          </div>
+
+          {imports.length === 0 ? (
+            <p className="text-xs text-slate-400 py-8 text-center">
+              Nenhuma planilha importada ainda.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Planilha</TableHead>
+                  <TableHead className="text-right">Leads</TableHead>
+                  <TableHead className="text-right">Ignorados</TableHead>
+                  <TableHead>Importada em</TableHead>
+                  <TableHead>Por</TableHead>
+                  <TableHead className="w-[80px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {imports.map((imp) => (
+                  <TableRow key={imp.id}>
+                    <TableCell className="font-semibold text-xs">{imp.source_name}</TableCell>
+                    <TableCell className="text-right text-xs">{imp.imported_rows}</TableCell>
+                    <TableCell className="text-right text-xs text-slate-400">{imp.skipped_rows}</TableCell>
+                    <TableCell className="text-xs text-slate-500">
+                      {imp.created_at ? new Date(imp.created_at).toLocaleString("pt-BR") : "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-500">{imp.uploaded_by_email || "—"}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={deleteLeadImport.isPending}
+                        onClick={() => handleDeleteImport(imp.id, imp.source_name)}
+                        className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      )}
+
       {activeTab === "relatorios" && (
         <LeadImportAuditReport
           activeClientId={activeClientId}

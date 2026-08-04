@@ -116,7 +116,11 @@ export async function buildDispatchLeads({ clientId, importId = null, limit = nu
         .not("telefone", "is", null)
         .order("created_at", { ascending: false });
 
-      if (importId) {
+      if (Array.isArray(importId)) {
+        // Selecao de varias planilhas na tela de disparo: uma campanha pode
+        // apontar para mais de uma base importada.
+        if (importId.length > 0) query = query.in("import_id", importId);
+      } else if (importId) {
         query = query.eq("import_id", importId);
       }
     }

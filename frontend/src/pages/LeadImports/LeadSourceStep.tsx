@@ -1,11 +1,14 @@
 import { type ChangeEvent, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { Filter, Info, Trash2, Plus } from "lucide-react";
+import { Filter, Info, Trash2, Plus, Check, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { InfoTip } from "@/components/InfoTip";
+import { cn } from "@/lib/utils";
 import { ALL_IMPORTS_VALUE, CRM_BASE_VALUE, type LeadImportItem } from "@/hooks/useLeadImports";
 import { getLeadField, type FilterRule } from "@/lib/leadImports/spreadsheet";
 import { darkSelectContentClass, darkSelectItemClass } from "./styles";
@@ -28,6 +31,8 @@ interface LeadSourceStepProps {
 
   selectedImportId: string;
   setSelectedImportId: (value: string) => void;
+  selectedImportIds: string[];
+  setSelectedImportIds: Dispatch<SetStateAction<string[]>>;
   imports: LeadImportItem[];
 
   filterRules: FilterRule[];
@@ -42,6 +47,8 @@ interface LeadSourceStepProps {
 }
 
 export function LeadSourceStep({
+  selectedImportIds,
+  setSelectedImportIds,
   campaignName,
   setCampaignName,
   fileInputRef,
@@ -65,6 +72,16 @@ export function LeadSourceStep({
   setPreviewOpen,
   previewRows,
 }: LeadSourceStepProps) {
+  // Escolher base pronta e planilha nova sao mutuamente exclusivos.
+  const clearUpload = () => {
+    setSelectedFile(null);
+    setParsedRows([]);
+    setFilterRules([]);
+  };
+  const totalSelectedLeads = imports
+    .filter((imp) => selectedImportIds.includes(imp.id))
+    .reduce((acc, imp) => acc + (imp.imported_rows || 0), 0);
+
   return (
     <Card className="border-border bg-card shadow-sm text-card-foreground rounded-2xl">
       <CardHeader className="pb-3">
@@ -108,28 +125,78 @@ export function LeadSourceStep({
 
           <div className="space-y-2">
             <label className="text-xs font-semibold text-slate-500">Ou use uma importada</label>
-            <Select
-              value={selectedImportId}
-              onValueChange={(val) => {
-                setSelectedImportId(val);
-                setSelectedFile(null);
-                setParsedRows([]);
-                setFilterRules([]);
-              }}
-            >
-              <SelectTrigger className="h-12 rounded-xl">
-                <SelectValue placeholder="Selecione uma base existente..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_IMPORTS_VALUE}>Todas as bases importadas</SelectItem>
-                <SelectItem value={CRM_BASE_VALUE}>Todos os leads do CRM</SelectItem>
-                {imports.map((imp) => (
-                  <SelectItem key={imp.id} value={imp.id}>
-                    {imp.source_name} ({imp.imported_rows} leads)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Multi-selecao: da para disparar para varias planilhas de uma vez.
+                "Todas" e "CRM" continuam exclusivos entre si e limpam a lista. */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-12 w-full items-center justify-between rounded-xl border border-input bg-background px-3 text-sm text-left"
+                >
+                  <span className="truncate">
+                    {selectedImportIds.length > 0
+                      ? `${selectedImportIds.length} ${selectedImportIds.length === 1 ? "planilha selecionada" : "planilhas selecionadas"} (${totalSelectedLeads} leads)`
+                      : selectedImportId === CRM_BASE_VALUE
+                        ? "Todos os leads do CRM"
+                        : "Todas as bases importadas"}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[min(28rem,calc(100vw-2rem))] p-1" align="start">
+                <div className="max-h-72 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedImportIds([]); setSelectedImportId(ALL_IMPORTS_VALUE); clearUpload(); }}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+                  >
+                    <Check className={cn("h-4 w-4", selectedImportIds.length === 0 && selectedImportId === ALL_IMPORTS_VALUE ? "opacity-100" : "opacity-0")} />
+                    Todas as bases importadas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedImportIds([]); setSelectedImportId(CRM_BASE_VALUE); clearUpload(); }}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+                  >
+                    <Check className={cn("h-4 w-4", selectedImportIds.length === 0 && selectedImportId === CRM_BASE_VALUE ? "opacity-100" : "opacity-0")} />
+                    Todos os leads do CRM
+                  </button>
+
+                  {imports.length > 0 && (
+                    <div className="my-1 border-t border-border pt-1">
+                      <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Planilhas importadas
+                      </p>
+                      {imports.map((imp) => {
+                        const checked = selectedImportIds.includes(imp.id);
+                        return (
+                          <label
+                            key={imp.id}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() => {
+                                setSelectedImportIds((current) =>
+                                  current.includes(imp.id)
+                                    ? current.filter((id) => id !== imp.id)
+                                    : [...current, imp.id]
+                                );
+                                clearUpload();
+                              }}
+                            />
+                            <span className="truncate">
+                              {imp.source_name}{" "}
+                              <span className="text-slate-400">({imp.imported_rows} leads)</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
 
