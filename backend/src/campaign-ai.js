@@ -257,6 +257,52 @@ Regras:
   });
 }
 
+// A validacao por json_schema so vale para os modelos em STRICT_JSON_MODELS. Com
+// qualquer outro (ex.: llama-3.3-70b-versatile) o payload cai em json_object, que
+// nao impoe minItems/maxItems nem o nome das chaves — o modelo devolvia menos
+// variacoes que o pedido, e as vezes num formato que o front nao sabia ler
+// (a tela ficava vazia). Estas duas funcoes tornam a leitura tolerante e
+// completam o que faltar.
+function extractVariantList(parsed) {
+  const pools = [
+    parsed?.variants,
+    parsed?.variacoes,
+    parsed?.variations,
+    parsed?.mensagens,
+    parsed?.messages,
+    parsed?.items,
+    Array.isArray(parsed) ? parsed : null,
+  ];
+
+  for (const pool of pools) {
+    if (!Array.isArray(pool) || pool.length === 0) continue;
+    const texts = pool
+      .map((entry) => {
+        if (typeof entry === "string") return entry.trim();
+        if (entry && typeof entry === "object") {
+          return normalizeString(entry.text || entry.variant || entry.mensagem || entry.message);
+        }
+        return "";
+      })
+      .filter(Boolean);
+    if (texts.length > 0) return texts;
+  }
+
+  return [];
+}
+
+function dedupeVariants(list) {
+  const seen = new Set();
+  const out = [];
+  for (const item of list) {
+    const key = item.replace(/\s+/g, " ").trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item.trim());
+  }
+  return out;
+}
+
 export async function generateCampaignTemplateVariants(input = {}) {
   const count = Math.min(Math.max(Number.parseInt(String(input.count ?? "8"), 10) || 8, 2), 12);
   const baseText = normalizeString(input.baseText);
@@ -270,22 +316,33 @@ export async function generateCampaignTemplateVariants(input = {}) {
     sequence: sanitizeSequence(input.sequence)
   };
 
-  return callGroqJson({
-    schemaName: "campaign_template_variants",
-    schema: {
-      type: "object",
-      properties: {
-        variants: {
-          type: "array",
-          minItems: count,
-          maxItems: count,
-          items: { type: "string" },
-        },
-        rationale: { type: "string" },
+  const schema = {
+    type: "object",
+    properties: {
+      variants: {
+        type: "array",
+        minItems: count,
+        maxItems: count,
+        items: { type: "string" },
       },
-      required: ["variants", "rationale"],
-      additionalProperties: false,
+      rationale: { type: "string" },
     },
+    required: ["variants", "rationale"],
+    additionalProperties: false,
+  };
+
+  // Formato explicito no prompt: em json_object o modelo nao recebe o schema,
+  // entao a forma precisa estar escrita no texto, senao ele inventa as chaves.
+  const formatoObrigatorio = `
+
+FORMATO DA RESPOSTA (obrigatorio):
+Responda APENAS com um objeto JSON exatamente assim, sem markdown e sem texto fora do JSON:
+{"variants": ["variacao 1", "variacao 2", "..."], "rationale": "explicacao curta"}
+O array "variants" DEVE conter EXATAMENTE ${count} strings diferentes entre si.`;
+
+  const parsed = await callGroqJson({
+    schemaName: "campaign_template_variants",
+    schema,
     taskPrompt: `Você é um especialista em comunicação via WhatsApp (pt-BR). Sua tarefa é gerar ${count} variações humanizadas da mensagem fornecida em "baseText", com o objetivo principal de servir como rotação de texto antiban (Spinfold), mantendo 100% o sentido original.
 
 Contexto da mensagem:
@@ -298,8 +355,44 @@ Regras ABSOLUTAS:
 4. NÃO invente perguntas se a mensagem original não for uma pergunta. NÃO invente ganchos ou promessas que descaracterizem a mensagem original.
 5. Se o "baseText" for curto, as variações devem permanecer curtas, MAS você DEVE ser criativo e variar bastante a saudação inicial (ex: misture "Olá", "Oi", "Opa", "Fala", "Tudo bem?", "Bom dia", "Passando para", etc) para garantir alta diversidade antiban.
 6. Preservar rigorosamente as variáveis no formato {{variavel}}, como {{nome}}, {{empresa}}, etc, exatamente como aparecem no texto original.
-7. Não utilize markdown (negrito, itálico), listas numeradas ou emojis excessivos. Entregue mensagens limpas e prontas para envio.`,
+7. Não utilize markdown (negrito, itálico), listas numeradas ou emojis excessivos. Entregue mensagens limpas e prontas para envio.${formatoObrigatorio}`,
   });
+
+  let variants = dedupeVariants(extractVariantList(parsed));
+
+  // Completa o que faltou numa unica chamada extra. Sem isso, modelo sem
+  // json_schema devolvia 3 de 8 e o usuario ficava sem as variacoes restantes.
+  if (variants.length < count) {
+    try {
+      const faltam = count - variants.length;
+      const extra = await callGroqJson({
+        schemaName: "campaign_template_variants",
+        schema,
+        taskPrompt: `Gere mais ${faltam} variações humanizadas em pt-BR da mensagem base abaixo, para rotação antiban.
+
+Mensagem base:
+"""${baseText}"""
+
+Variações que JÁ existem (não repita nenhuma, nem com pequenas trocas):
+${variants.map((v, i) => `${i + 1}. ${v}`).join("\n")}
+
+Regras: mantenha o sentido, o tom e o tamanho da mensagem base; varie saudação, sinônimos e ordem das frases; preserve as variáveis {{assim}} exatamente como estão; sem markdown.
+
+FORMATO DA RESPOSTA (obrigatorio):
+Responda APENAS com {"variants": ["..."], "rationale": "..."} contendo EXATAMENTE ${faltam} strings.`,
+      });
+      variants = dedupeVariants([...variants, ...extractVariantList(extra)]);
+    } catch (err) {
+      // Uma falha aqui nao pode derrubar as variacoes que ja vieram.
+      console.warn("[campaign-ai] complemento de variacoes falhou:", err?.message || err);
+    }
+  }
+
+  return {
+    variants: variants.slice(0, count),
+    requested: count,
+    rationale: normalizeString(parsed?.rationale),
+  };
 }
 
 export async function suggestCampaignSequence(input = {}) {

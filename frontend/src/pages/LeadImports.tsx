@@ -493,8 +493,26 @@ export default function LeadImports({
       const result = await generateTemplateVariants.mutateAsync({
         baseText: baseText.trim(),
       });
-      updateCampaignStep(stepId, { textVariants: result.variants || [] });
-      toast({ title: "Sucesso!", description: "3 variações humanizadas foram geradas." });
+      const variants = Array.isArray(result.variants) ? result.variants : [];
+      updateCampaignStep(stepId, { textVariants: variants });
+      if (variants.length === 0) {
+        toast({
+          title: "Nenhuma variação gerada",
+          description: "A IA não devolveu variações. Tente de novo ou ajuste a mensagem base.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Antes o texto dizia "3 variações" fixo, independente do que voltava —
+      // por isso 8 pedidas apareciam como 3 na tela.
+      const pedidas = result.requested ?? variants.length;
+      toast({
+        title: "Sucesso!",
+        description:
+          variants.length < pedidas
+            ? `${variants.length} de ${pedidas} variações geradas.`
+            : `${variants.length} variações humanizadas foram geradas.`,
+      });
     } catch (err) {
       toast({
         title: "Erro ao gerar variações",

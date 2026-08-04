@@ -691,6 +691,7 @@ export function useGenerateCampaignCopy() {
 export function useGenerateCampaignTemplateVariants() {
   return useCampaignAiMutation<{
     variants: string[];
+    requested?: number;
     rationale: string;
   }>("/api/campaigns/ai/generate-template-variants", "Erro ao gerar variacoes");
 }
