@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Bot, Save, AlertCircle, Sparkles, Smartphone, Plus, Trash2, Send, Zap } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
@@ -12,8 +12,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
-import { useFupCompanies, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
+import { useCreateFupCompany, useFupCompanies, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
 import { useLlmModels } from "@/hooks/useChatbotTemplates";
+
+// Empresa "de mentira" mostrada quando o tenant ainda nao tem linha em
+// followup_companies. Salvar com ela cria a linha de verdade.
+const PLACEHOLDER_COMPANY_ID = "__sem_empresa__";
 
 export default function InboundAgentConfig() {
   const [searchParams] = useSearchParams();
@@ -24,12 +28,21 @@ export default function InboundAgentConfig() {
   const [activeTab, setActiveTab] = useState("config");
 
   const { data: rawCompanies = [], isLoading: loadingCompanies } = useFupCompanies(selectedClientId);
-  const companies = rawCompanies.length > 0
-    ? rawCompanies
-    : [{ id: selectedClientId || "default", name: "Instância Padrão / Principal", company_name: "Instância Padrão / Principal", evolution_instance: "WhatsApp" } as any];
+  // useMemo obrigatorio: sem ele o fallback criava um array (e um objeto de
+  // empresa) NOVOS a cada render. Como o efeito que preenche o formulario
+  // depende de activeCompany, ele rodava a cada render e resetava todos os
+  // campos — nenhum switch ou select conseguia mudar de valor.
+  const companies = useMemo(
+    () =>
+      rawCompanies.length > 0
+        ? rawCompanies
+        : [{ id: PLACEHOLDER_COMPANY_ID, name: "Instância Padrão / Principal", company_name: "Instância Padrão / Principal", evolution_instance: "WhatsApp" } as any],
+    [rawCompanies]
+  );
 
   const [companyId, setCompanyId] = useState<string>("all");
   const updateCompany = useUpdateFupCompany();
+  const createCompany = useCreateFupCompany();
 
   // Modelos vem do backend (LLM_MODELS), nao mais de uma lista fixa nesta tela:
   // ela oferecia ids que o motor nao conhece (llama3-70b-8192, llama3-8b-8192,
@@ -60,6 +73,8 @@ export default function InboundAgentConfig() {
   ]);
   const [simInput, setSimInput] = useState("");
 
+  // Depende do ID, nao do objeto: recarregar a lista nao pode apagar o que o
+  // usuario acabou de mexer e ainda nao salvou.
   useEffect(() => {
     if (activeCompany) {
       setInboundEnabled(activeCompany.inbound_enabled ?? false);
@@ -70,10 +85,40 @@ export default function InboundAgentConfig() {
       setSpinFields(activeCompany.inbound_spin_fields ?? []);
       setInboundWebhookUrl(activeCompany.inbound_webhook_url ?? "");
     }
-  }, [activeCompany]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCompany?.id]);
+
+  const isPlaceholderCompany = activeCompany?.id === PLACEHOLDER_COMPANY_ID;
 
   const handleSave = async () => {
     if (!activeCompany) return;
+    const payload = {
+      inbound_enabled: inboundEnabled,
+      inbound_model: inboundModel,
+      inbound_prompt: inboundPrompt,
+      inbound_spin_fields: spinFields,
+      inbound_webhook_url: inboundWebhookUrl,
+      sdr_whatsapp_number: sdrPhone,
+      sdr_transfer_enabled: sdrTransferEnabled,
+    };
+
+    // Sem linha em followup_companies o PATCH ia para um id inexistente e o
+    // salvar nunca surtia efeito. Aqui a linha e criada no primeiro salvamento.
+    if (isPlaceholderCompany) {
+      try {
+        await createCompany.mutateAsync({
+          name: "Instância Padrão / Principal",
+          evolution_instance: "WhatsApp",
+          tenant_id: selectedClientId,
+          ...payload,
+        } as any);
+        toast({ title: "Configuração criada", description: "Agente inbound configurado para esta empresa." });
+      } catch (e: any) {
+        toast({ title: "Erro ao criar configuração", description: e.message, variant: "destructive" });
+      }
+      return;
+    }
+
     try {
       await updateCompany.mutateAsync({
         id: activeCompany.id,
@@ -185,6 +230,15 @@ export default function InboundAgentConfig() {
           </TabsList>
 
           <TabsContent value="config" className="space-y-6">
+            {isPlaceholderCompany && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/20 dark:text-amber-300">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  Esta empresa ainda não tem configuração de agente gravada. Ajuste os campos e clique em
+                  <strong> Salvar Alterações</strong> para criá-la.
+                </span>
+              </div>
+            )}
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
