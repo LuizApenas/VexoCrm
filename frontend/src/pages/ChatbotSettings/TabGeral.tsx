@@ -94,7 +94,21 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     const prev = model;
     setModel(value);
     try {
-      await updateSettings.mutateAsync({ tenantId: clientId, chatbotModel: value });
+      // Usa o que o SERVIDOR devolveu, nao o que mandamos. Se o backend gravar
+      // outra coisa (ou ignorar o campo), a tela mostra a divergencia na hora em
+      // vez de fingir que salvou e "voltar sozinho" depois.
+      const salvo = await updateSettings.mutateAsync({ tenantId: clientId, chatbotModel: value });
+      const persistido = salvo?.chatbot_model ?? null;
+      setModel(persistido ?? value);
+      if (persistido !== value) {
+        toast({
+          title: "O servidor não gravou o template escolhido",
+          description: `Enviado: "${value}". Gravado: "${persistido ?? "(nada)"}".`,
+          variant: "destructive",
+        });
+        console.error("[chatbot-settings] divergencia ao salvar template", { enviado: value, persistido, resposta: salvo });
+        return;
+      }
       const found = allModels.find((m) => m.template_key === value);
       toast({ title: "Template de Persona atualizado", description: found ? `${found.agent_name} — ${found.display_name}` : value });
     } catch (e: any) {
@@ -212,6 +226,14 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                   <SelectValue placeholder="Selecione um template..." />
                 </SelectTrigger>
                 <SelectContent>
+                  {/* Template salvo que nao esta mais na lista (ex.: persona de
+                      cliente encerrado) aparece marcado, em vez do campo em
+                      branco que nao dizia nada ao usuario. */}
+                  {model && !allModels.some((m) => m.template_key === model) && (
+                    <SelectItem value={model} className="text-xs text-amber-600">
+                      {model} — não disponível para esta empresa
+                    </SelectItem>
+                  )}
                   {allModels.map((m) => (
                     <SelectItem key={m.template_key} value={m.template_key} className="text-xs">
                       {m.agent_name || m.display_name} — {m.display_name}
