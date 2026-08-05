@@ -60,6 +60,7 @@ async function isAlreadyApplied(pool, filename) {
     "20260508000001_drop_conta_energia_from_leads_outlier.sql": `SELECT TRUE AS ok`,
     "20260508120000_add_campaigns_phones_column.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='campaigns' AND column_name='phones') AS ok`,
     // Novas migrations — verificam se coluna já existe
+    "20260805040000_followup_companies_inbound_role.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='followup_companies' AND column_name='inbound_role') AS ok`,
     "20260804180000_followup_companies_evolution_instances.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='followup_companies' AND column_name='evolution_instances') AS ok`,
     "20260512100000_add_chatbot_enabled_to_n8n_settings.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='chatbot_enabled') AS ok`,
     "20260512110000_add_chatbot_model_to_n8n_settings.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='chatbot_model') AS ok`,

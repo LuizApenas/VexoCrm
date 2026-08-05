@@ -177,7 +177,7 @@ export function registerFollowupRoutes(app, requireFirebaseAuth, requireInternal
 
       let sbQuery = supabase
         .from("followup_companies")
-        .select("id, name, evolution_instance, evolution_instances, webhook_url, panel_access, inbound_enabled, inbound_model, inbound_prompt, inbound_spin_fields, inbound_webhook_url, sdr_whatsapp_number, sdr_transfer_enabled, created_at, tenant_id, engine_scan_interval_hours, never_contacted_delay_hours, no_reply_delay_hours, livpub_inactive_delay_months, last_engine_run_at")
+        .select("id, name, evolution_instance, evolution_instances, inbound_role, webhook_url, panel_access, inbound_enabled, inbound_model, inbound_prompt, inbound_spin_fields, inbound_webhook_url, sdr_whatsapp_number, sdr_transfer_enabled, created_at, tenant_id, engine_scan_interval_hours, never_contacted_delay_hours, no_reply_delay_hours, livpub_inactive_delay_months, last_engine_run_at")
         .is("archived_at", null)
         .order("name", { ascending: true });
 
@@ -238,6 +238,7 @@ function normalizeInstanceList(list, fallback) {
       name,
       evolution_instance,
       evolution_instances,
+      inbound_role,
       webhook_url,
       calendly_webhook_secret,
       panel_access,
@@ -274,6 +275,7 @@ function normalizeInstanceList(list, fallback) {
           name: str(name),
           evolution_instance: instanceList[0],
           evolution_instances: instanceList,
+          inbound_role: inbound_role === "qualificador" ? "qualificador" : "atendimento",
           webhook_url: str(webhook_url),
           calendly_webhook_secret: str(calendly_webhook_secret),
           panel_access: Boolean(panel_access),
@@ -306,6 +308,7 @@ function normalizeInstanceList(list, fallback) {
       name,
       evolution_instance,
       evolution_instances,
+      inbound_role,
       webhook_url,
       calendly_webhook_secret,
       panel_access,
@@ -327,6 +330,9 @@ function normalizeInstanceList(list, fallback) {
     try {
       const patch = { updated_at: new Date().toISOString() };
       if (str(name)) patch.name = str(name);
+      if ("inbound_role" in req.body) {
+        patch.inbound_role = inbound_role === "qualificador" ? "qualificador" : "atendimento";
+      }
       if ("evolution_instances" in req.body) {
         const lista = normalizeInstanceList(evolution_instances, evolution_instance);
         if (lista.length > 0) {

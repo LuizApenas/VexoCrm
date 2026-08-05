@@ -30,7 +30,7 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
   const { data, error } = await supabase
     .from("followup_companies")
     .select(
-      "id, evolution_instance, evolution_instances, inbound_enabled, inbound_model, inbound_prompt, inbound_spin_fields, inbound_webhook_url, sdr_whatsapp_number, sdr_transfer_enabled"
+      "id, evolution_instance, evolution_instances, inbound_role, inbound_enabled, inbound_model, inbound_prompt, inbound_spin_fields, inbound_webhook_url, sdr_whatsapp_number, sdr_transfer_enabled"
     )
     .eq("tenant_id", clientId);
 
@@ -71,6 +71,7 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
     companyId: row.id,
     instanceName: normalize(row.evolution_instance) || null,
     instanceNames: instancesOf(row),
+    role: row.inbound_role === "qualificador" ? "qualificador" : "atendimento",
     enabled: row.inbound_enabled === true,
     model: normalize(row.inbound_model) || null,
     prompt: normalize(row.inbound_prompt) || null,

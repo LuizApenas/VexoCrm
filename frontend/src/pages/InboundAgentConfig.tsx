@@ -91,6 +91,9 @@ export default function InboundAgentConfig() {
   // Números atendidos por ESTE agente. Um agente qualificador pode cobrir os
   // celulares de vários consultores sem duplicar prompt, modelo e SPIN.
   const [numerosVinculados, setNumerosVinculados] = useState<string[]>([]);
+  // Funcao do agente. Qualificador atende quem foi disparado; atendimento
+  // atende quem procurou a empresa. Muda o rotulo e o agrupamento na tela.
+  const [inboundRole, setInboundRole] = useState<"atendimento" | "qualificador">("atendimento");
 
   const [simMessages, setSimMessages] = useState<{ role: "user" | "bot"; text: string }[]>([
     { role: "bot", text: "Olá! Como posso ajudar?" }
@@ -112,6 +115,7 @@ export default function InboundAgentConfig() {
         ? activeCompany.evolution_instances
         : (activeCompany.evolution_instance ? [activeCompany.evolution_instance] : []);
       setNumerosVinculados(lista);
+      setInboundRole(activeCompany.inbound_role === "qualificador" ? "qualificador" : "atendimento");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompany?.id]);
@@ -143,6 +147,7 @@ export default function InboundAgentConfig() {
       sdr_whatsapp_number: sdrPhone,
       sdr_transfer_enabled: sdrTransferEnabled,
       evolution_instances: numerosVinculados,
+      inbound_role: inboundRole,
     };
 
     // Sem linha em followup_companies o PATCH ia para um id inexistente e o
@@ -161,7 +166,7 @@ export default function InboundAgentConfig() {
       try {
         const instancia = numerosVinculados[0] || "WhatsApp";
         const criada = await createCompany.mutateAsync({
-          name: "Agente de Atendimento",
+          name: inboundRole === "qualificador" ? "Agente Qualificador" : "Agente de Atendimento",
           evolution_instance: instancia,
           tenant_id: selectedClientId,
           ...payload,
@@ -281,14 +286,31 @@ export default function InboundAgentConfig() {
               <SelectValue placeholder="Selecione um número..." />
             </SelectTrigger>
             <SelectContent>
-              {companies.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                  <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
-                    ({c.evolution_instance})
-                  </span>
-                </SelectItem>
-              ))}
+              {(["qualificador", "atendimento"] as const).map((papel) => {
+                const doGrupo = companies.filter((c: any) =>
+                  papel === "qualificador"
+                    ? c.inbound_role === "qualificador"
+                    : c.inbound_role !== "qualificador"
+                );
+                if (doGrupo.length === 0) return null;
+                return (
+                  <SelectGroup key={papel}>
+                    <SelectLabel className="text-[10px] uppercase tracking-wide">
+                      {papel === "qualificador" ? "Qualificadores" : "Atendimento"}
+                    </SelectLabel>
+                    {doGrupo.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                        <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
+                          ({Array.isArray(c.evolution_instances) && c.evolution_instances.length > 1
+                            ? `${c.evolution_instances.length} números`
+                            : c.evolution_instance})
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
@@ -343,6 +365,19 @@ export default function InboundAgentConfig() {
                     </p>
                   </div>
                   <Switch checked={inboundEnabled} onCheckedChange={handleToggleInbound} />
+                </div>
+
+                <div className="space-y-2 max-w-md">
+                  <Label>Função deste agente</Label>
+                  <Select value={inboundRole} onValueChange={(v) => setInboundRole(v as "atendimento" | "qualificador")}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="atendimento">Atendimento — responde quem procurou a empresa</SelectItem>
+                      <SelectItem value="qualificador">Qualificador — responde quem recebeu disparo</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2 max-w-md">
