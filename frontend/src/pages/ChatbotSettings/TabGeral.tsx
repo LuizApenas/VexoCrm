@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Check, Copy, Phone, Power, Zap, Cpu, Sparkles, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,17 +53,23 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
-  // Depende do TENANT, nao do objeto n8n. Antes qualquer refetch da lista de
-  // clientes (inclusive o disparado por salvar o toggle) reescrevia estes
-  // campos com o valor do servidor: escolher um template novo e ligar o
-  // chatbot em seguida fazia o template voltar para o anterior.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Hidrata UMA VEZ por tenant, e só quando os dados realmente chegaram.
+  //
+  // Duas tentativas anteriores erraram nos dois extremos: depender do objeto
+  // n8n fazia qualquer refetch reescrever a escolha do usuário (o template
+  // voltava sozinho ao anterior); depender só de clientId fazia o efeito rodar
+  // antes dos dados carregarem e nunca mais, congelando a tela nos valores
+  // iniciais ("generico", chatbot desativado) mesmo com o banco correto.
+  const hidratadoPara = useRef<string | null>(null);
   useEffect(() => {
-    setEnabled(n8n?.chatbot_enabled ?? false);
-    setModel(n8n?.chatbot_model ?? "generico");
-    setLlmModel(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
-    setSdrNumber(n8n?.sdr_whatsapp_number ?? "");
-  }, [clientId]);
+    if (!n8n) return;                          // dados ainda não chegaram
+    if (hidratadoPara.current === clientId) return; // já hidratou; não sobrescreve edição
+    hidratadoPara.current = clientId;
+    setEnabled(n8n.chatbot_enabled ?? false);
+    setModel(n8n.chatbot_model ?? "generico");
+    setLlmModel(n8n.chatbot_llm_model ?? "llama-3.3-70b-versatile");
+    setSdrNumber(n8n.sdr_whatsapp_number ?? "");
+  }, [clientId, n8n]);
 
   const webhookUrl = buildWebhookUrl(clientId);
   const evolutionUrl = n8n?.dispatch_webhook_url ?? null;
