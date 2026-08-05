@@ -15,6 +15,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useCreateFupCompany, useFupCompanies, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchApi } from "@/lib/api";
 import { useLeadClients } from "@/hooks/useLeadClients";
 import { useLlmModels } from "@/hooks/useChatbotTemplates";
 
@@ -32,6 +34,7 @@ export default function InboundAgentConfig() {
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const crmClient = useOptionalCrmClient();
+  const { getIdToken } = useAuth();
   const selectedClientId = crmClient?.selectedClientId || "";
 
   const [activeTab, setActiveTab] = useState("config");
@@ -203,16 +206,44 @@ export default function InboundAgentConfig() {
     setSpinFields((prev) => prev.filter((f) => f.id !== id));
   };
 
-  const handleSimulate = () => {
-    if (!simInput.trim()) return;
-    setSimMessages((prev) => [...prev, { role: "user", text: simInput }]);
+  const [simulando, setSimulando] = useState(false);
+
+  // Chama a IA de verdade, passando o numero vinculado para o backend resolver
+  // o agente inbound daquele numero (prompt, modelo e SPIN desta tela). Antes
+  // era um setTimeout com texto fixo, que nao testava nada.
+  const handleSimulate = async () => {
+    const texto = simInput.trim();
+    if (!texto || simulando) return;
+    setSimMessages((prev) => [...prev, { role: "user", text: texto }]);
     setSimInput("");
-    setTimeout(() => {
-      setSimMessages((prev) => [
-        ...prev,
-        { role: "bot", text: "Simulação: Conexão com LLM (Em breve neste painel de testes)." }
-      ]);
-    }, 1000);
+    setSimulando(true);
+    try {
+      const token = await getIdToken();
+      const res = await fetchApi("/api/chatbot-test", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          clientId: selectedClientId,
+          message: texto,
+          instanceName: numerosVinculados[0] || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.response) {
+        const motivo = data?.error?.message || data?.reason || `HTTP ${res.status}`;
+        setSimMessages((prev) => [...prev, { role: "bot", text: `[falha] ${motivo}` }]);
+        return;
+      }
+      const origem = data?.meta?.agente === "inbound" ? "agente inbound" : "chatbot do tenant";
+      setSimMessages((prev) => [...prev, { role: "bot", text: `${data.response}\n\n— respondido pelo ${origem}` }]);
+    } catch (e: any) {
+      setSimMessages((prev) => [...prev, { role: "bot", text: `[erro] ${e?.message || "falha na simulação"}` }]);
+    } finally {
+      setSimulando(false);
+    }
   };
 
   if (loadingCompanies) {

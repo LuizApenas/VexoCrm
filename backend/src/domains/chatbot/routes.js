@@ -1277,9 +1277,18 @@ export function registerChatbotRoutes(app, deps) {
     if (!clientId) return sendError(res, 400, "MISSING_CLIENT_ID", "clientId obrigatório");
     if (!message) return sendError(res, 400, "MISSING_MESSAGE", "message obrigatório");
 
+    // instanceName opcional: com ele o simulador testa o AGENTE INBOUND daquele
+    // numero (prompt, modelo e SPIN da tela Inbound). Sem ele, testa o chatbot
+    // do tenant, como antes.
+    const instanceName = normalizeString(body.instanceName ?? body.instance) || null;
+
     try {
       const tenantSettings = await getLeadClientN8nSettings(clientId).catch(() => null);
       const chatbotModel = tenantSettings?.chatbot_model;
+
+      const inboundConfig = instanceName
+        ? await resolveInboundAgentConfig({ supabase, clientId, instanceName }).catch(() => null)
+        : null;
 
       const aiResponse = await processBatch({
         clientId,
@@ -1289,13 +1298,26 @@ export function registerChatbotRoutes(app, deps) {
         model: chatbotModel,
         promptType: "padrao",
         campaignPromptId: null,
+        llmModel: inboundConfig?.model || null,
+        inboundPrompt: inboundConfig?.prompt || null,
+        inboundSpinInstruction: inboundConfig ? buildSpinInstruction(inboundConfig.spinFields) : "",
       });
 
       if (!aiResponse?.mensagem) {
         return res.json({ success: true, response: null, reason: "Prompt não configurado ou chatbot silenciado para este cliente." });
       }
 
-      res.json({ success: true, response: aiResponse.mensagem, meta: { classificacao: aiResponse.classificacao, spin_fase: aiResponse.spin_fase, finalizado: aiResponse.finalizado } });
+      res.json({
+        success: true,
+        response: aiResponse.mensagem,
+        meta: {
+          classificacao: aiResponse.classificacao,
+          spin_fase: aiResponse.spin_fase,
+          finalizado: aiResponse.finalizado,
+          agente: inboundConfig ? "inbound" : "tenant",
+          dados: aiResponse.dados || {},
+        },
+      });
     } catch (err) {
       sendError(res, 500, "CHATBOT_TEST_FAILED", err instanceof Error ? err.message : "Erro interno");
     }

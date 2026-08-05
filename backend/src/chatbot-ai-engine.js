@@ -72,7 +72,12 @@ export function detectLlmProvider(modelId) {
 }
 
 const GROQ_BASE = "https://api.groq.com/openai/v1";
-const GROQ_VISION_MODEL = "llama-3.2-11b-vision-preview";
+// Modelo de visao (leitura de imagem recebida no WhatsApp). Configuravel por env
+// porque a Groq troca esses modelos com frequencia: llama-3.2-11b-vision-preview,
+// que estava fixo aqui, foi descontinuado e o caminho de imagem falhava sem
+// nenhum aviso ao usuario.
+const GROQ_VISION_MODEL =
+  process.env.GROQ_VISION_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
 const GROQ_WHISPER_MODEL = "whisper-large-v3-turbo";
 
 function groqKey() {
@@ -472,7 +477,13 @@ export async function describeImage(base64Data, mimetype = "image/jpeg", caption
     });
 
     if (!res.ok) {
-      console.error("[chatbot-ai] Vision error:", res.status);
+      // Corpo do erro junto: sem ele, "Vision error: 400" nao dizia se o
+      // problema era o modelo descontinuado, a chave ou a imagem.
+      const detalhe = await res.text().catch(() => "");
+      console.error(
+        `[chatbot-ai] Vision error ${res.status} (modelo "${GROQ_VISION_MODEL}"):`,
+        detalhe.slice(0, 300)
+      );
       return null;
     }
 
