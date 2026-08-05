@@ -67,7 +67,10 @@ describe("campaign reply flow safeguards", () => {
 
   it("supports rotating AI text variants per lead", () => {
     expect(outboundSource).toContain("textVariants");
-    expect(outboundSource).toContain("leadIndex % variants.length");
+    // Rotacao embaralhada por chip: a ordem vem de (campanha, chip, ciclo) e o
+    // round-robin por leadIndex fica so como fallback quando nao ha chip.
+    expect(outboundSource).toContain("shuffledOrder");
+    expect(outboundSource).toContain("(leadIndex + i) % total");
     expect(routeBundle).toContain("/api/campaigns/ai/generate-template-variants");
   });
 

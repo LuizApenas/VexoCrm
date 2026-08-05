@@ -167,6 +167,8 @@ export function SchedulingStep({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className={darkSelectContentClass}>
+                    <SelectItem value="0.16667" className={darkSelectItemClass}>A cada 10 minutos</SelectItem>
+                    <SelectItem value="0.33333" className={darkSelectItemClass}>A cada 20 minutos</SelectItem>
                     <SelectItem value="0.5" className={darkSelectItemClass}>A cada 30 minutos</SelectItem>
                     <SelectItem value="1" className={darkSelectItemClass}>A cada 1 hora</SelectItem>
                     <SelectItem value="2" className={darkSelectItemClass}>A cada 2 horas</SelectItem>
@@ -176,6 +178,11 @@ export function SchedulingStep({
                     <SelectItem value="24" className={darkSelectItemClass}>A cada 24 horas (diário)</SelectItem>
                   </SelectContent>
                 </Select>
+                {Number.parseFloat(batchIntervalHours) < 0.5 && (
+                  <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                    Frequência alta aumenta o risco de bloqueio. Use apenas com chips totalmente aquecidos.
+                  </p>
+                )}
               </div>
             </div>
           )}

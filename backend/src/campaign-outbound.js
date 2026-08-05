@@ -10,6 +10,9 @@ const DEFAULT_STEP_FAILURE_MODE = true;
 const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 const MAX_REPLY_TIMEOUT_SECONDS = 15 * 60;
 const MAX_REPLY_POLL_INTERVAL_SECONDS = 60;
+// Teto unico de variacoes. Precisa bater com o clamp de campaign-ai.js: se
+// divergirem, a tela mostra N variacoes e o envio usa menos, em silencio.
+export const MAX_TEXT_VARIANTS = 30;
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
@@ -36,7 +39,7 @@ function normalizeTextVariants(value) {
   if (!Array.isArray(value)) return [];
   return Array.from(
     new Set(value.map(normalizeString).filter(Boolean))
-  ).slice(0, 20);
+  ).slice(0, MAX_TEXT_VARIANTS);
 }
 
 /**
@@ -70,10 +73,112 @@ function applyMessagePlaceholders(text, lead, phone) {
   return raw;
 }
 
-function resolveStepTextForLead(step, leadIndex) {
+function hashSeed(value) {
+  let h = 2166136261;
+  const str = String(value);
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Fisher-Yates com PRNG semeado: mesma seed, mesma ordem (reproduzivel p/ debug). */
+function shuffledOrder(length, seed) {
+  const order = Array.from({ length }, (_, i) => i);
+  const rand = mulberry32(seed);
+  for (let i = length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    const swap = order[i];
+    order[i] = order[j];
+    order[j] = swap;
+  }
+  return order;
+}
+
+function leadVariableIsFilled(name, lead, phone) {
+  const key = normalizeString(name).toLowerCase();
+  if (!key) return false;
+  if (key === "nome") return Boolean(normalizeString(lead?.nome));
+  if (key === "telefone") {
+    return Boolean(normalizeString(phone) || normalizeString(lead?.telefone || lead?.phone));
+  }
+
+  const customData = {
+    ...(lead || {}),
+    ...(lead?.normalized_data || {}),
+    ...(lead?.normalizedData || {}),
+  };
+  for (const [dataKey, value] of Object.entries(customData)) {
+    if (dataKey.toLowerCase() !== key) continue;
+    if (typeof value === "number") return Number.isFinite(value);
+    if (typeof value === "string") return value.trim() !== "";
+  }
+  return false;
+}
+
+function variantHasUnfilledVariable(text, lead, phone) {
+  const raw = normalizeString(text);
+  if (!raw) return false;
+  const pattern = /\{\{\s*([\p{L}0-9_]+)\s*\}\}/gu;
+  let match = pattern.exec(raw);
+  while (match) {
+    if (!leadVariableIsFilled(match[1], lead, phone)) return true;
+    match = pattern.exec(raw);
+  }
+  return false;
+}
+
+/**
+ * Escolhe a variacao de texto do passo para este lead.
+ *
+ * Round-robin embaralhado POR CHIP: a ordem vem de (campanha, chip, ciclo), o
+ * indice sequencial e o `sent_count` que a reserva de cota ja devolve. Cada
+ * variacao sai uma vez por ciclo (uniforme) sem a sequencia previsivel do
+ * round-robin puro, e dois chips na mesma campanha andam em ordens diferentes.
+ *
+ * Sem chip (pool vazio ou tabela de cota indisponivel) degrada para o
+ * round-robin antigo por leadIndex — disparo nao pode parar por causa disto.
+ */
+export function resolveStepTextForLead(step, leadIndex, chip = null, options = {}) {
   const variants = normalizeTextVariants(step?.textVariants);
   if (variants.length === 0) return normalizeString(step?.text);
-  return variants[leadIndex % variants.length];
+
+  const { lead = null, phone = "", campaignId = "" } = options || {};
+  const total = variants.length;
+  const sequence = Number.isInteger(chip?.sequence) ? chip.sequence : null;
+
+  let candidates;
+  if (sequence === null) {
+    candidates = Array.from({ length: total }, (_, i) => (leadIndex + i) % total);
+  } else {
+    const cycle = Math.floor(sequence / total);
+    const position = ((sequence % total) + total) % total;
+    const seed = hashSeed(
+      `${normalizeString(campaignId)}|${normalizeString(chip?.instanceId)}|${cycle}`
+    );
+    const order = shuffledOrder(total, seed);
+    candidates = Array.from({ length: total }, (_, i) => order[(position + i) % total]);
+  }
+
+  // Lead sem a variavel que a variacao usa pula para a proxima que nao dependa
+  // dela. Sem isso, toda a base sem nome recebe o mesmo "Ola, cliente!" e a
+  // variacao vira constante justamente no segmento maior.
+  for (const index of candidates) {
+    if (!variantHasUnfilledVariable(variants[index], lead, phone)) return variants[index];
+  }
+  return variants[candidates[0]];
 }
 
 function clampPositiveSize(value) {
@@ -186,7 +291,7 @@ function normalizeDispatchOptions(rawOptions = {}) {
         : "single",
     templateVariantCount: Math.min(
       normalizeNonNegativeInteger(rawOptions.templateVariantCount, 1),
-      5
+      MAX_TEXT_VARIANTS
     ),
     waitForReply,
     replyTimeoutSeconds,
@@ -560,6 +665,9 @@ export async function dispatchCampaignSequence({
 }) {
   const normalizedMeta = normalizeCampaignAnalyticsMeta(analyticsMeta);
   const enabledSteps = normalizedMeta.sequence.filter((step) => step.enabled);
+  // Entra na seed do embaralhamento: campanhas diferentes no mesmo chip nao
+  // repetem a mesma ordem de variacoes.
+  const rotationCampaignId = normalizeString(context?.campaign?.id);
   const summary = {
     successCount: 0,
     failureCount: 0,
@@ -659,7 +767,15 @@ export async function dispatchCampaignSequence({
 
       const stepForPayload = {
         ...step,
-        text: applyMessagePlaceholders(resolveStepTextForLead(step, leadIndex), lead, phone),
+        text: applyMessagePlaceholders(
+          resolveStepTextForLead(step, leadIndex, activeChip, {
+            lead,
+            phone,
+            campaignId: rotationCampaignId,
+          }),
+          lead,
+          phone
+        ),
       };
       const extendedContext = {
         ...context,

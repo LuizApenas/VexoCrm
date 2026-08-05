@@ -22,6 +22,12 @@ interface MessageSequenceStepProps {
   onSelectImageStep: (stepId: string) => void;
   isGeneratingVariants: boolean;
   onGenerateVariants: (stepId: string, baseText: string) => void;
+  variantCount: number;
+  onVariantCountChange: (value: number | null) => void;
+  suggestedVariantCount: number;
+  dailyQuota: number;
+  minVariantCount: number;
+  maxVariantCount: number;
   onAddStepButton: (stepId: string) => void;
   onRemoveStepButton: (stepId: string, btnIndex: number) => void;
   onUpdateStepButton: (stepId: string, btnIndex: number, patch: Partial<StepActionButton>) => void;
@@ -38,10 +44,20 @@ export function MessageSequenceStep({
   onSelectImageStep,
   isGeneratingVariants,
   onGenerateVariants,
+  variantCount,
+  onVariantCountChange,
+  suggestedVariantCount,
+  dailyQuota,
+  minVariantCount,
+  maxVariantCount,
   onAddStepButton,
   onRemoveStepButton,
   onUpdateStepButton,
 }: MessageSequenceStepProps) {
+  const repeticoesPorDia = variantCount > 0 ? Math.ceil(dailyQuota / variantCount) : dailyQuota;
+  const riscoAlto = repeticoesPorDia > 40;
+  const riscoMedio = !riscoAlto && repeticoesPorDia > 20;
+
   return (
     <Card className="border-border bg-card shadow-sm text-card-foreground rounded-2xl">
       <CardHeader className="pb-3">
@@ -163,7 +179,7 @@ export function MessageSequenceStep({
               {/* AI Variations inline trigger */}
               {step.type === "text" && (
                 <div className="border-t border-slate-100 dark:border-white/5 pt-2 space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <button
                       type="button"
                       disabled={isGeneratingVariants}
@@ -173,7 +189,48 @@ export function MessageSequenceStep({
                       <Sparkles className="h-3.5 w-3.5" />
                       {isGeneratingVariants ? "Processando..." : "🤖 Gerar Variações Humanizadas (Evitar Spam)"}
                     </button>
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-[10px] font-bold uppercase text-slate-500">Quantidade</label>
+                      <Input
+                        type="number"
+                        min={minVariantCount}
+                        max={maxVariantCount}
+                        value={variantCount}
+                        onChange={(e) => {
+                          const raw = Number.parseInt(e.target.value, 10);
+                          if (Number.isNaN(raw)) {
+                            onVariantCountChange(null);
+                            return;
+                          }
+                          onVariantCountChange(Math.min(maxVariantCount, Math.max(minVariantCount, raw)));
+                        }}
+                        className="h-8 w-16 text-xs"
+                      />
+                    </div>
                   </div>
+
+                  {/* Consequencia da escolha, em numero — o sistema sugere a partir
+                      da cota ja configurada e mostra o efeito, sem decidir pelo usuario. */}
+                  <p
+                    className={
+                      riscoAlto
+                        ? "text-[10px] font-semibold text-red-600 dark:text-red-400"
+                        : riscoMedio
+                          ? "text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+                          : "text-[10px] text-muted-foreground"
+                    }
+                  >
+                    Com {variantCount} variações e cota de {dailyQuota}/dia, cada mensagem se repete ~
+                    {repeticoesPorDia} vezes por dia por chip.
+                    {riscoAlto
+                      ? " Repetição muito alta — risco elevado de bloqueio."
+                      : riscoMedio
+                        ? " Repetição alta para operação contínua."
+                        : ""}
+                    {variantCount !== suggestedVariantCount
+                      ? ` Sugerido para esta cota: ${suggestedVariantCount}.`
+                      : ""}
+                  </p>
 
                   {step.textVariants && step.textVariants.length > 0 && (
                     <div className="rounded-lg border border-violet-100 bg-violet-50/20 p-2.5 dark:border-violet-900/10 dark:bg-violet-950/5 space-y-2">

@@ -137,11 +137,15 @@ function buildTechniqueContext(style = "") {
   };
 }
 
-function buildChatPayload({ taskPrompt, schemaName, schema }) {
+function buildChatPayload({ taskPrompt, schemaName, schema, preferJsonObject = false }) {
   const model = getGroqModel();
   const basePayload = {
     model,
     temperature: 0.3,
+    // gpt-oss-20b e modelo de raciocinio: medido 05/08/2026, o prompt de
+    // variacoes gasta ~3.4k tokens so pensando. Teto de 6000 cobre raciocinio + resposta
+    // sem estourar o limite de 8000 TPM (Tokens Per Minute) da Groq.
+    max_completion_tokens: 6000,
     messages: [
       {
         role: "system",
@@ -155,7 +159,7 @@ function buildChatPayload({ taskPrompt, schemaName, schema }) {
     ],
   };
 
-  if (STRICT_JSON_MODELS.has(model)) {
+  if (STRICT_JSON_MODELS.has(model) && !preferJsonObject) {
     return {
       ...basePayload,
       response_format: {
@@ -177,7 +181,7 @@ function buildChatPayload({ taskPrompt, schemaName, schema }) {
   };
 }
 
-async function callGroqJson({ taskPrompt, schemaName, schema }) {
+async function callGroqJson({ taskPrompt, schemaName, schema, preferJsonObject = false }) {
   if (!process.env.GROQ_API_KEY) {
     throw new Error("GROQ_DISABLED");
   }
@@ -192,7 +196,7 @@ async function callGroqJson({ taskPrompt, schemaName, schema }) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
       },
-      body: JSON.stringify(buildChatPayload({ taskPrompt, schemaName, schema })),
+      body: JSON.stringify(buildChatPayload({ taskPrompt, schemaName, schema, preferJsonObject })),
       signal: controller.signal,
     });
 
@@ -303,26 +307,132 @@ function dedupeVariants(list) {
   return out;
 }
 
+// Teto de variacoes. Tem que bater com MAX_TEXT_VARIANTS de campaign-outbound.js:
+// se este for maior, o envio corta o excedente em silencio.
+const MAX_TEMPLATE_VARIANTS = 30;
+
+// Buckets estruturais. Pedir "N variacoes diferentes" devolve N parafrases com o
+// mesmo esqueleto; pedir quantidade POR BUCKET impoe a diversidade em vez de
+// esperar por ela.
+const VARIANT_BUCKETS = [
+  { key: "curta_direta", share: 0.15, rule: "no maximo 6 palavras, SEM saudacao. Ex.: \"Consegue falar agora?\"" },
+  { key: "saudacao_pergunta", share: 0.2, rule: "saudacao + pergunta, uma unica frase. Ex.: \"Oi, tudo bem? Pode falar?\"" },
+  { key: "com_nome", share: 0.2, rule: "usa a variavel {{nome}}. Ex.: \"{{nome}}, voce tem um minuto?\"", needsName: true },
+  { key: "com_motivo", share: 0.15, rule: "diz por que voce esta entrando em contato. Ex.: \"Passei aqui pra falar sobre X, tem um momento?\"" },
+  { key: "duas_frases", share: 0.15, rule: "duas frases, entre 15 e 25 palavras no total." },
+  { key: "afirmacao", share: 0.15, rule: "NAO termina em ponto de interrogacao. Ex.: \"Me avisa quando puder falar.\"" },
+];
+
+function sanitizeAvailableVariables(value) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => normalizeString(item).replace(/[{}]/g, "").trim().toLowerCase())
+        .filter((item) => /^[\p{L}0-9_]+$/u.test(item))
+    )
+  );
+}
+
+/**
+ * Distribui `count` entre os buckets por maior-resto, com piso de 1 em cada.
+ * Sem {{nome}} disponivel o bucket com_nome sai e sua cota vai para os outros.
+ */
+function buildVariantBucketPlan(count, hasNameVariable) {
+  const buckets = VARIANT_BUCKETS.filter((bucket) => hasNameVariable || !bucket.needsName);
+  if (count < buckets.length) return [];
+
+  const totalShare = buckets.reduce((acc, bucket) => acc + bucket.share, 0);
+  const raw = buckets.map((bucket) => ({ bucket, exact: (bucket.share / totalShare) * count }));
+  const plan = raw.map((entry) => ({ ...entry, size: Math.max(1, Math.floor(entry.exact)) }));
+
+  let assigned = plan.reduce((acc, entry) => acc + entry.size, 0);
+  const byRemainder = [...plan].sort(
+    (a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact))
+  );
+  let cursor = 0;
+  while (assigned < count) {
+    byRemainder[cursor % byRemainder.length].size += 1;
+    assigned += 1;
+    cursor += 1;
+  }
+  const bySize = [...plan].sort((a, b) => b.size - a.size);
+  cursor = 0;
+  while (assigned > count) {
+    const entry = bySize[cursor % bySize.length];
+    if (entry.size > 1) {
+      entry.size -= 1;
+      assigned -= 1;
+    }
+    cursor += 1;
+  }
+
+  return plan.map((entry) => ({ key: entry.bucket.key, rule: entry.bucket.rule, size: entry.size }));
+}
+
+const GREETING_PATTERN = /^(ola|olá|oi|opa|fala|bom dia|boa tarde|boa noite|tudo bem|e ai|e aí)\b/i;
+
+function countWords(text) {
+  return normalizeString(text).split(/\s+/).filter(Boolean).length;
+}
+
+/** Checagem barata de quais estruturas faltam, para direcionar a chamada de complemento. */
+function describeMissingStructures(variants, hasNameVariable) {
+  const missing = [];
+  if (!variants.some((v) => countWords(v) <= 6 && !GREETING_PATTERN.test(v))) {
+    missing.push("- uma frase curta e direta, no maximo 6 palavras, SEM saudacao");
+  }
+  if (!variants.some((v) => !/\?\s*$/.test(v))) {
+    missing.push('- uma variacao que NAO termine em "?"');
+  }
+  if (!variants.some((v) => v.split(/[.!?]+\s/).filter(Boolean).length >= 2)) {
+    missing.push("- uma variacao de duas frases, entre 15 e 25 palavras");
+  }
+  if (hasNameVariable && !variants.some((v) => /\{\{\s*nome\s*\}\}/i.test(v))) {
+    missing.push("- uma variacao que use {{nome}}");
+  }
+  if (variants.length > 0) {
+    const words = variants.map(countWords);
+    if (Math.max(...words) < Math.min(...words) * 3) {
+      missing.push("- uma variacao bem mais longa que as existentes (3x o tamanho da menor)");
+    }
+  }
+  return missing.length > 0 ? missing.join("\n") : "- nenhuma especifica; apenas varie bastante a estrutura";
+}
+
 export async function generateCampaignTemplateVariants(input = {}) {
-  const count = Math.min(Math.max(Number.parseInt(String(input.count ?? "8"), 10) || 8, 2), 12);
+  const count = Math.min(
+    Math.max(Number.parseInt(String(input.count ?? "8"), 10) || 8, 2),
+    MAX_TEMPLATE_VARIANTS
+  );
   const baseText = normalizeString(input.baseText);
+  const availableVariables = sanitizeAvailableVariables(input.availableVariables);
+  const hasNameVariable = availableVariables.includes("nome");
+  const bucketPlan = buildVariantBucketPlan(count, hasNameVariable);
+  const nameMin = hasNameVariable ? Math.ceil(count * 0.35) : 0;
+  const nameMax = hasNameVariable ? Math.floor(count * 0.6) : 0;
   const context = {
     campaignName: normalizeString(input.campaignName),
     goal: normalizeString(input.goal),
     style: normalizeString(input.style),
     baseText,
     count,
+    availableVariables,
     segmentation: sanitizeSegmentContext(input.segmentation),
     sequence: sanitizeSequence(input.sequence)
   };
 
+  // Bounds folgados de proposito. Medido 05/08/2026 contra a Groq
+  // (openai/gpt-oss-20b): com minItems=maxItems=N o json_schema estrito devolve
+  // 400 json_validate_failed de forma intermitente em N alto (20 e 25 falharam,
+  // 30 passou, na mesma bateria). Quem garante a contagem exata e o nosso
+  // dedupe + complemento + slice, nao o schema.
   const schema = {
     type: "object",
     properties: {
       variants: {
         type: "array",
-        minItems: count,
-        maxItems: count,
+        minItems: Math.min(count, 6),
         items: { type: "string" },
       },
       rationale: { type: "string" },
@@ -340,23 +450,50 @@ Responda APENAS com um objeto JSON exatamente assim, sem markdown e sem texto fo
 {"variants": ["variacao 1", "variacao 2", "..."], "rationale": "explicacao curta"}
 O array "variants" DEVE conter EXATAMENTE ${count} strings diferentes entre si.`;
 
-  const parsed = await callGroqJson({
-    schemaName: "campaign_template_variants",
-    schema,
-    taskPrompt: `Você é um especialista em comunicação via WhatsApp (pt-BR). Sua tarefa é gerar ${count} variações humanizadas da mensagem fornecida em "baseText", com o objetivo principal de servir como rotação de texto antiban (Spinfold), mantendo 100% o sentido original.
+  const taskPrompt = `Você é um especialista em comunicação via WhatsApp (pt-BR). Gere ${count} variações da mensagem em "baseText" para rotação de texto antiban.
+
+O objetivo NÃO é reescrever a mesma frase de ${count} jeitos. Paráfrases com o mesmo esqueleto são agrupadas trivialmente por um classificador de similaridade — que é exatamente o que a detecção de spam do WhatsApp faz. O que protege o chip é DIVERSIDADE ESTRUTURAL: comprimentos diferentes, número de frases diferente, com e sem saudação, com e sem pergunta.
 
 Contexto da mensagem:
 ${JSON.stringify(context, null, 2)}
 
-Regras ABSOLUTAS:
-1. O sentido da mensagem, a oferta e o propósito NÃO PODEM mudar. Apenas altere sinônimos, a estrutura da frase, saudações iniciais e a pontuação, criando variações sutis e naturais.
-2. A mensagem precisa ser extramente coesa e alinhada ao "baseText". Mantenha o mesmo tom de voz e nível de formalidade/informalidade da mensagem original.
-3. NÃO adicione técnicas de copywriting persuasivas (AIDA, PAS), não crie falsa urgência e não invente benefícios ou dores que não estejam no texto base.
-4. NÃO invente perguntas se a mensagem original não for uma pergunta. NÃO invente ganchos ou promessas que descaracterizem a mensagem original.
-5. Se o "baseText" for curto, as variações devem permanecer curtas, MAS você DEVE ser criativo e variar bastante a saudação inicial (ex: misture "Olá", "Oi", "Opa", "Fala", "Tudo bem?", "Bom dia", "Passando para", etc) para garantir alta diversidade antiban.
-6. Preservar rigorosamente as variáveis no formato {{variavel}}, como {{nome}}, {{empresa}}, etc, exatamente como aparecem no texto original.
-7. Não utilize markdown (negrito, itálico), listas numeradas ou emojis excessivos. Entregue mensagens limpas e prontas para envio.${formatoObrigatorio}`,
-  });
+DISTRIBUIÇÃO OBRIGATÓRIA POR ESTRUTURA (some exatamente ${count}):
+${bucketPlan.length > 0
+  ? bucketPlan.map((bucket) => `- ${bucket.size} do tipo "${bucket.key}": ${bucket.rule}`).join("\n")
+  : `- Distribua entre: frase curta e direta sem saudação, saudação + pergunta, mensagem com o motivo do contato, mensagem de duas frases, e ao menos uma que NÃO termine em "?".`}
+
+REGRAS:
+1. O sentido, a oferta e o propósito não podem mudar. Mantenha o tom e o nível de formalidade do "baseText".
+2. VOCÊ PODE E DEVE mudar estrutura, comprimento, número de frases e tipo de frase (pergunta pode virar afirmação e vice-versa). Isso é o objetivo, não um efeito colateral.
+3. A variação mais longa deve ter pelo menos 3× o número de palavras da mais curta.
+4. No máximo 60% das variações podem começar com saudação.
+5. Ao menos uma variação NÃO pode terminar em "?".
+6. ${hasNameVariable
+  ? `Entre ${nameMin} e ${nameMax} das ${count} variações devem usar {{nome}}. As demais NÃO podem usar {{nome}} — leads sem nome preenchido dependem delas.`
+  : `NENHUMA variação pode usar {{nome}}: essa variável não existe nesta campanha.`}
+7. ${availableVariables.length > 0
+  ? `Só é permitido usar estas variáveis: ${availableVariables.map((name) => `{{${name}}}`).join(", ")}. Nenhuma outra, em hipótese alguma.`
+  : `NÃO use nenhuma variável {{...}}. Esta campanha não tem variáveis disponíveis.`}
+8. Nenhuma variação pode ser repetição literal de outra.
+9. Não use AIDA, PAS, falsa urgência, nem invente benefício ou dor que não esteja no "baseText".
+10. Sem markdown, sem lista numerada, sem emoji excessivo. Mensagens limpas, prontas para envio.${formatoObrigatorio}`;
+
+  let parsed;
+  try {
+    parsed = await callGroqJson({ schemaName: "campaign_template_variants", schema, taskPrompt });
+  } catch (err) {
+    // A validacao estrita da Groq falha de forma intermitente em contagem alta e
+    // derruba a requisicao inteira (502 na rota). O json_object nao valida forma,
+    // e a leitura tolerante + complemento abaixo ja cobrem o que vier torto.
+    // Falha nas DUAS tentativas continua subindo — nao engolir erro.
+    console.warn("[campaign-ai] json_schema falhou, repetindo em json_object:", err?.message || err);
+    parsed = await callGroqJson({
+      schemaName: "campaign_template_variants",
+      schema,
+      taskPrompt,
+      preferJsonObject: true,
+    });
+  }
 
   let variants = dedupeVariants(extractVariantList(parsed));
 
@@ -376,7 +513,12 @@ Mensagem base:
 Variações que JÁ existem (não repita nenhuma, nem com pequenas trocas):
 ${variants.map((v, i) => `${i + 1}. ${v}`).join("\n")}
 
-Regras: mantenha o sentido, o tom e o tamanho da mensagem base; varie saudação, sinônimos e ordem das frases; preserve as variáveis {{assim}} exatamente como estão; sem markdown.
+ESTRUTURAS QUE AINDA FALTAM — priorize estas:
+${describeMissingStructures(variants, hasNameVariable)}
+
+Regras: mantenha o sentido e o tom da mensagem base, mas VARIE a estrutura e o comprimento (não parafraseie). ${availableVariables.length > 0
+  ? `Só use estas variáveis: ${availableVariables.map((name) => `{{${name}}}`).join(", ")}.`
+  : `NÃO use nenhuma variável {{...}}.`} Sem markdown.
 
 FORMATO DA RESPOSTA (obrigatorio):
 Responda APENAS com {"variants": ["..."], "rationale": "..."} contendo EXATAMENTE ${faltam} strings.`,
