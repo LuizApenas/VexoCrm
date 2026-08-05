@@ -26,6 +26,7 @@ import {
   type LeadImportPreviewItem,
 } from "@/hooks/useLeadImports";
 import {
+  saveCampaignWithSelfHeal,
   useCampanhas,
   useCampaignAiStatus,
   useCreateCampaign,
@@ -93,6 +94,16 @@ interface LeadImportsProps {
 }
 
 const CAMPAIGN_LIMIT_MAX = 500;
+
+// Cotas default por estado do chip — mesmos valores do backend
+// (EVOLUTION_CHIP_DAILY_QUOTA_DEFAULTS em domains/campaigns/routes.js).
+const COLD_CHIP_DAILY_QUOTA = 100;
+const WARM_CHIP_DAILY_QUOTA = 500;
+// Quantas vezes a MESMA mensagem pode se repetir num chip por dia. Serve so
+// para SUGERIR o numero de variacoes — nao valida e nao trava nada.
+const REPETICOES_MAX = 20;
+const MIN_TEMPLATE_VARIANTS = 12;
+const MAX_TEMPLATE_VARIANTS = 30;
 
 const defaultDispatchOptions: CampaignDispatchOptions = {
   leadDelaySeconds: 2,
@@ -244,9 +255,56 @@ export default function LeadImports({
           id: inst.id,
           name: inst.name || "Evolution",
           isDefault: inst.is_default,
+          chipState: inst.chip_state,
+          dailyLimitOverride: inst.daily_limit_override,
         })),
     [selectedLeadClient]
   );
+
+  // Precedencia identica a resolveEvolutionInstanceDailyLimit no backend
+  // (domains/campaigns/routes.js). Se divergir, a tela mente sobre a cota.
+  const campaignDailyQuota = useMemo(() => {
+    const limitOf = (inst: (typeof evolutionInstanceOptions)[number]) =>
+      inst.dailyLimitOverride && inst.dailyLimitOverride > 0
+        ? inst.dailyLimitOverride
+        : inst.chipState === "warm"
+          ? WARM_CHIP_DAILY_QUOTA
+          : COLD_CHIP_DAILY_QUOTA;
+
+    const selected = dispatchOptions.evolutionInstanceId
+      ? evolutionInstanceOptions.find((inst) => inst.id === dispatchOptions.evolutionInstanceId)
+      : null;
+    if (selected) return limitOf(selected);
+    if (evolutionInstanceOptions.length === 0) return COLD_CHIP_DAILY_QUOTA;
+    return Math.max(...evolutionInstanceOptions.map(limitOf));
+  }, [evolutionInstanceOptions, dispatchOptions.evolutionInstanceId]);
+
+  const suggestedVariantCount = useMemo(
+    () =>
+      Math.min(
+        MAX_TEMPLATE_VARIANTS,
+        Math.max(MIN_TEMPLATE_VARIANTS, Math.ceil(campaignDailyQuota / REPETICOES_MAX))
+      ),
+    [campaignDailyQuota]
+  );
+
+  // null = seguir o sugerido. Assim mudar de chip reflete na tela ate o usuario
+  // digitar um valor proprio.
+  const [variantCountOverride, setVariantCountOverride] = useState<number | null>(null);
+  const variantCount = variantCountOverride ?? suggestedVariantCount;
+
+  // Variaveis que o disparo sabe substituir: nome/telefone sempre
+  // (campaign-outbound.js), colunas da planilha, e scheduling_link so com
+  // multi-agenda ligada (injetado em domains/campaigns/routes.js).
+  const availableVariables = useMemo(() => {
+    const names = new Set<string>(["nome", "telefone"]);
+    spreadsheetColumns.forEach((column) => {
+      const normalized = column.trim().toLowerCase();
+      if (normalized) names.add(normalized);
+    });
+    if (multiAgendaEnabled) names.add("scheduling_link");
+    return Array.from(names);
+  }, [spreadsheetColumns, multiAgendaEnabled]);
 
   const resolvedClientName = fixedClientName || selectedClient?.name || activeClientId;
 
@@ -497,6 +555,8 @@ export default function LeadImports({
       toast({ title: "Gerando variações...", description: "A IA está processando variações humanizadas." });
       const result = await generateTemplateVariants.mutateAsync({
         baseText: baseText.trim(),
+        count: variantCount,
+        availableVariables,
       });
       const variants = Array.isArray(result.variants) ? result.variants : [];
       updateCampaignStep(stepId, { textVariants: variants });
@@ -674,17 +734,20 @@ export default function LeadImports({
         },
       };
 
-      let campaignId = "";
-      if (editingCampaignId) {
-        const updated = await updateCampaign.mutateAsync({
-          id: editingCampaignId,
-          ...campaignPayload,
-        });
-        campaignId = updated.id;
-      } else {
-        const created = await createCampaign.mutateAsync(campaignPayload);
-        campaignId = created.id;
-      }
+      const savedCampaign = await saveCampaignWithSelfHeal({
+        editingCampaignId,
+        payload: campaignPayload,
+        updateCampaign: updateCampaign.mutateAsync,
+        createCampaign: createCampaign.mutateAsync,
+        onOrphanRecovered: () => {
+          setEditingCampaignId(null);
+          toast({
+            title: "A campanha anterior nao existe mais",
+            description: "Criando uma nova campanha com os dados atuais.",
+          });
+        },
+      });
+      const campaignId = savedCampaign.id;
 
       setSubmittingStatus("Registrando lote na fila de envios...");
 
@@ -1037,6 +1100,12 @@ export default function LeadImports({
               onSelectImageStep={setSelectedImageStepId}
               isGeneratingVariants={generateTemplateVariants.isPending}
               onGenerateVariants={handleGenerateStepVariants}
+              variantCount={variantCount}
+              onVariantCountChange={setVariantCountOverride}
+              suggestedVariantCount={suggestedVariantCount}
+              dailyQuota={campaignDailyQuota}
+              minVariantCount={2}
+              maxVariantCount={MAX_TEMPLATE_VARIANTS}
               onAddStepButton={handleAddStepButton}
               onRemoveStepButton={handleRemoveStepButton}
               onUpdateStepButton={handleUpdateStepButton}

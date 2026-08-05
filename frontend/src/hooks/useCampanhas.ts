@@ -268,18 +268,35 @@ export interface CampaignAiSuggestionContext {
   style?: string;
   baseText?: string;
   count?: number;
+  /** Variaveis que a campanha realmente tem. A IA nao pode usar nenhuma fora desta lista. */
+  availableVariables?: string[];
   segmentation?: CampaignSegmentation;
   sequence?: CampaignSequenceStep[];
   dispatchOptions?: CampaignDispatchOptions;
   step?: CampaignSequenceStep;
 }
 
-async function readApiErrorMessage(res: Response, fallback: string): Promise<string> {
+// Erro da API de campanhas preservando o `error.code` do backend, para que o chamador
+// possa tratar UM caso especifico (ex.: CAMPAIGN_NOT_FOUND) sem engolir os demais.
+export class CampaignApiError extends Error {
+  code: string;
+  status: number;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = "CampaignApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export async function readApiErrorDetails(res: Response, fallback: string): Promise<{ code: string; message: string }> {
   const contentType = res.headers.get("content-type") || "";
 
   if (contentType.includes("application/json")) {
     const data = await res.json().catch(() => null);
-    return data?.error?.message || `${fallback}: ${res.status}`;
+    const code = typeof data?.error?.code === "string" ? data.error.code : "";
+    return { code, message: data?.error?.message || `${fallback}: ${res.status}` };
   }
 
   const text = await res.text().catch(() => "");
@@ -288,10 +305,20 @@ async function readApiErrorMessage(res: Response, fallback: string): Promise<str
     (text.includes("Cannot GET") || text.includes("Cannot POST"));
 
   if (isMissingExpressRoute) {
-    return "A API de producao ainda nao publicou esta rota. Reimplante o backend e confirme o deployMarker em /health.";
+    return {
+      code: "",
+      message: "A API de producao ainda nao publicou esta rota. Reimplante o backend e confirme o deployMarker em /health.",
+    };
   }
 
-  return text ? `${fallback}: ${res.status} ${text.slice(0, 240)}` : `${fallback}: ${res.status}`;
+  return {
+    code: "",
+    message: text ? `${fallback}: ${res.status} ${text.slice(0, 240)}` : `${fallback}: ${res.status}`,
+  };
+}
+
+async function readApiErrorMessage(res: Response, fallback: string): Promise<string> {
+  return (await readApiErrorDetails(res, fallback)).message;
 }
 
 async function readCampaignJson<T>(res: Response, context: string): Promise<T> {
@@ -416,12 +443,44 @@ async function fetchCampaignsApi(path: string, init: RequestInit) {
   throw networkError instanceof Error ? networkError : new Error("Falha de conexao com a API de campanhas.");
 }
 
+export function canAccessCampaignsGate(params: {
+  isAuthenticated: boolean;
+  role: string;
+  allowedViews: string[];
+  internalPages: string[];
+  permissions: string[];
+  isAdmin: boolean;
+}): boolean {
+  if (!params.isAuthenticated) return false;
+  if (params.isAdmin) return true;
+  if (params.role === "client") {
+    return params.allowedViews.includes("planilhas") || params.permissions.includes("campaigns.manage");
+  }
+  return (
+    params.internalPages.includes("planilhas") ||
+    params.permissions.includes("campaigns.manage")
+  );
+}
+
+export function useCanAccessCampaigns() {
+  const { isAuthenticated, accessRole, allowedViews, internalPages, permissions, isAdminUser } = useAuth();
+  return canAccessCampaignsGate({
+    isAuthenticated,
+    role: accessRole,
+    allowedViews,
+    internalPages,
+    permissions,
+    isAdmin: isAdminUser,
+  });
+}
+
 export function useCampanhas(clientId?: string) {
-  const { isAuthenticated, canAccessInternalPage, getIdToken } = useAuth();
+  const { getIdToken } = useAuth();
+  const canAccess = useCanAccessCampaigns();
 
   return useQuery({
     queryKey: ["campaigns", clientId || "all"],
-    enabled: isAuthenticated && canAccessInternalPage("planilhas") && !!clientId,
+    enabled: canAccess && !!clientId,
     queryFn: async (): Promise<Campaign[]> => {
       const token = await getIdToken();
       if (!token) throw new Error("Usuário não autenticado.");
@@ -447,11 +506,12 @@ export function useCampanhas(clientId?: string) {
 }
 
 export function useCampaignLeads(campaignId?: string) {
-  const { isAuthenticated, canAccessInternalPage, getIdToken } = useAuth();
+  const { getIdToken } = useAuth();
+  const canAccess = useCanAccessCampaigns();
 
   return useQuery({
     queryKey: ["campaign-leads", campaignId],
-    enabled: isAuthenticated && canAccessInternalPage("planilhas") && !!campaignId,
+    enabled: canAccess && !!campaignId,
     queryFn: async (): Promise<CampaignLead[]> => {
       const token = await getIdToken();
       if (!token) throw new Error("Usuário não autenticado.");
@@ -531,8 +591,8 @@ export function useUpdateCampaign() {
       });
 
       if (!res.ok) {
-        const err = await readApiErrorMessage(res, "Erro ao atualizar campanha");
-        throw new Error(`Erro ao atualizar campanha: ${res.status} ${err}`);
+        const { code, message } = await readApiErrorDetails(res, "Erro ao atualizar campanha");
+        throw new CampaignApiError(`Erro ao atualizar campanha: ${res.status} ${message}`, code, res.status);
       }
 
       const data = await readCampaignJson<{ item: Campaign }>(res, "update_campaign");
@@ -542,6 +602,40 @@ export function useUpdateCampaign() {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
     },
   });
+}
+
+// Auto-cura do id orfao: o id da campanha em edicao vive no localStorage do navegador e pode
+// apontar para uma campanha ja excluida. Nesse caso — e SOMENTE nesse — refaz a operacao como
+// criacao. Qualquer outro erro (403, 500, rede) e repassado ao chamador sem tratamento.
+export async function saveCampaignWithSelfHeal({
+  editingCampaignId,
+  payload,
+  updateCampaign,
+  createCampaign,
+  onOrphanRecovered,
+}: {
+  editingCampaignId: string | null;
+  payload: CreateCampaignPayload;
+  updateCampaign: (args: UpdateCampaignPayload & { id: string }) => Promise<Campaign>;
+  createCampaign: (payload: CreateCampaignPayload) => Promise<Campaign>;
+  onOrphanRecovered?: (staleCampaignId: string) => void;
+}): Promise<Campaign> {
+  if (!editingCampaignId) {
+    return createCampaign(payload);
+  }
+
+  try {
+    return await updateCampaign({ id: editingCampaignId, ...payload });
+  } catch (error) {
+    if (!(error instanceof CampaignApiError) || error.code !== "CAMPAIGN_NOT_FOUND") {
+      throw error;
+    }
+    console.warn("[campanha] auto-cura: id de edicao orfao, criando campanha nova", {
+      staleCampaignId: editingCampaignId,
+    });
+    onOrphanRecovered?.(editingCampaignId);
+    return createCampaign(payload);
+  }
 }
 
 export function useDeleteCampaign() {
@@ -623,11 +717,12 @@ export function useDirectDispatch() {
 }
 
 export function useCampaignAiStatus() {
-  const { isAuthenticated, canAccessInternalPage, getIdToken } = useAuth();
+  const { getIdToken } = useAuth();
+  const canAccess = useCanAccessCampaigns();
 
   return useQuery({
     queryKey: ["campaign-ai-status"],
-    enabled: isAuthenticated && canAccessInternalPage("planilhas"),
+    enabled: canAccess,
     queryFn: async (): Promise<CampaignAiStatus> => {
       const token = await getIdToken();
       if (!token) throw new Error("Usuario nao autenticado.");
