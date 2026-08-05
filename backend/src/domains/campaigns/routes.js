@@ -222,11 +222,11 @@ export function registerCampaignsRoutes(app, deps) {
   // ─────────────────────────────────────────────────────────────
 
   // GET /api/campaigns — lista campanhas do usuário
-  app.get("/api/campaigns/ai/status", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (_req, res) => {
+  app.get("/api/campaigns/ai/status", requireFirebaseAuth, requireCampaignDispatchAccess, async (_req, res) => {
     res.json(getGroqCampaignAiStatus());
   });
 
-  app.post("/api/campaigns/ai/generate-copy", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/ai/generate-copy", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     try {
       if (!getGroqCampaignAiStatus().enabled) {
         sendError(res, 404, "GROQ_DISABLED", "Groq assistivo nao esta configurado neste ambiente");
@@ -247,7 +247,7 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  app.post("/api/campaigns/ai/suggest-sequence", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/ai/suggest-sequence", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     try {
       if (!getGroqCampaignAiStatus().enabled) {
         sendError(res, 404, "GROQ_DISABLED", "Groq assistivo nao esta configurado neste ambiente");
@@ -283,7 +283,7 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  app.post("/api/campaigns/ai/generate-template-variants", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/ai/generate-template-variants", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     try {
       if (!getGroqCampaignAiStatus().enabled) {
         sendError(res, 404, "GROQ_DISABLED", "Groq assistivo nao esta configurado neste ambiente");
@@ -296,6 +296,7 @@ export function registerCampaignsRoutes(app, deps) {
         style: req.body?.style,
         baseText: req.body?.baseText,
         count: req.body?.count,
+        availableVariables: req.body?.availableVariables,
         segmentation: req.body?.segmentation,
         sequence: req.body?.sequence,
       });
@@ -307,7 +308,7 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  app.post("/api/campaigns/ai/suggest-delays", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/ai/suggest-delays", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     try {
       if (!getGroqCampaignAiStatus().enabled) {
         sendError(res, 404, "GROQ_DISABLED", "Groq assistivo nao esta configurado neste ambiente");
@@ -356,7 +357,7 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  app.post("/api/campaigns/ai/rewrite-step", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/ai/rewrite-step", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     try {
       if (!getGroqCampaignAiStatus().enabled) {
         sendError(res, 404, "GROQ_DISABLED", "Groq assistivo nao esta configurado neste ambiente");
@@ -387,7 +388,7 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  app.post("/api/campaigns/direct-dispatch", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/direct-dispatch", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
 
     const requestId = getRequestId(req);
@@ -1081,7 +1082,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // GET /api/campaigns/consultant-schedules — lista agendas/consultores
-  app.get("/api/campaigns/consultant-schedules", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.get("/api/campaigns/consultant-schedules", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.query.clientId);
     const clientId = resolveRequiredAuthorizedClientId({
@@ -1106,7 +1107,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // POST /api/campaigns/consultant-schedules — cria agenda/consultor
-  app.post("/api/campaigns/consultant-schedules", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/consultant-schedules", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.body?.clientId || req.query?.clientId);
     const clientId = resolveRequiredAuthorizedClientId({
@@ -1144,7 +1145,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // PATCH /api/campaigns/consultant-schedules/:id — atualiza agenda/consultor
-  app.patch("/api/campaigns/consultant-schedules/:id", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.patch("/api/campaigns/consultant-schedules/:id", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const id = normalizeString(req.params?.id);
     if (!id) {
@@ -1213,7 +1214,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // DELETE /api/campaigns/consultant-schedules/:id — exclui agenda/consultor
-  app.delete("/api/campaigns/consultant-schedules/:id", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.delete("/api/campaigns/consultant-schedules/:id", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const id = normalizeString(req.params?.id);
     if (!id) {
@@ -1661,6 +1662,9 @@ export function registerCampaignsRoutes(app, deps) {
                   webhookUrl: normalizeString(inst.dispatch_webhook_url),
                   webhookToken: normalizeString(inst.dispatch_webhook_token) || null,
                   instanceId: inst.id,
+                  // Sem contador de cota nao ha indice por chip: a rotacao de
+                  // variacoes cai no fallback por leadIndex.
+                  sequence: null,
                   release: null,
                 };
               }
@@ -1675,6 +1679,9 @@ export function registerCampaignsRoutes(app, deps) {
                 webhookUrl: normalizeString(inst.dispatch_webhook_url),
                 webhookToken: normalizeString(inst.dispatch_webhook_token) || null,
                 instanceId: inst.id,
+                // sent_count do dia deste chip: indice sequencial por chip que a
+                // reserva de cota ja calcula. Alimenta a rotacao de variacoes.
+                sequence: reserved,
                 release: () => releaseEvolutionInstanceDailyQuota(inst.id),
               };
             }
@@ -1998,7 +2005,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // GET /api/campaigns/reports/import-audit — Relatório de auditoria de leads da planilha
-  app.get("/api/campaigns/reports/import-audit", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.get("/api/campaigns/reports/import-audit", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.query.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
@@ -2085,7 +2092,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // POST /api/campaigns/reports/create-import-from-subset — Cria nova base de importação a partir de um subconjunto
-  app.post("/api/campaigns/reports/create-import-from-subset", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/reports/create-import-from-subset", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.body?.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
@@ -2157,7 +2164,7 @@ export function registerCampaignsRoutes(app, deps) {
   });
 
   // POST /api/campaigns/reports/delete-import-items — Deleta itens de importação
-  app.post("/api/campaigns/reports/delete-import-items", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  app.post("/api/campaigns/reports/delete-import-items", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.body?.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
