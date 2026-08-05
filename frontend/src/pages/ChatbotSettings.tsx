@@ -56,7 +56,25 @@ export default function ChatbotSettings() {
     );
   }
 
-  const selectedClient = clients.find((c) => c.id === selectedClientId) || (clients.length > 0 ? clients[0] : null);
+  // NUNCA cair em clients[0]. Enquanto selectedClientId nao esta resolvido, o
+  // fallback antigo exibia (e permitia SALVAR sobre) os dados do primeiro tenant
+  // da lista. Como o tenant "outlier" tem chatbot_model = "outlier", a tela
+  // ficava mostrando esse template no lugar do da empresa selecionada, e voltava
+  // a ele a cada carregamento. Risco maior: currentClientId derivava do mesmo
+  // fallback, entao um clique nessa janela gravava no tenant errado.
+  const selectedClient = selectedClientId
+    ? clients.find((c) => c.id === selectedClientId) || null
+    : null;
+
+  if (loadingClients || !selectedClientId || !selectedClient) {
+    return (
+      <PageShell title="Configurações do Chatbot SPIN" subtitle="Ajuste parâmetros gerais, templates, prompts e simulações por empresa">
+        <div className="flex h-32 items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-slate-900 dark:border-slate-100" />
+        </div>
+      </PageShell>
+    );
+  }
 
   const allowedTabs = selectedClient?.n8n_settings?.allowed_tabs;
   const isSubTabAllowed = (subTabKey: string) => {
@@ -64,7 +82,7 @@ export default function ChatbotSettings() {
     return allowedTabs.includes(`chatbot:${subTabKey}`);
   };
 
-  const currentClientId = selectedClientId || (selectedClient?.id || "global");
+  const currentClientId = selectedClientId;
 
   return (
     <PageShell title="Configurações do Chatbot SPIN" subtitle="Ajuste parâmetros gerais, templates, prompts e simulações por empresa" spacing="space-y-6">
