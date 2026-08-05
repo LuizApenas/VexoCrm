@@ -476,24 +476,26 @@ REGRAS:
   : `NÃO use nenhuma variável {{...}}. Esta campanha não tem variáveis disponíveis.`}
 8. Nenhuma variação pode ser repetição literal de outra.
 9. Não use AIDA, PAS, falsa urgência, nem invente benefício ou dor que não esteja no "baseText".
-10. Sem markdown, sem lista numerada, sem emoji excessivo. Mensagens limpas, prontas para envio.${formatoObrigatorio}`;
+10. Sem markdown, sem lista numerada, sem emoji excessivo. Mensagens limpas, prontas para envio.
+11. NO MÁXIMO 3 variações podem compartilhar as mesmas 3 primeiras palavras. Abrir 10 variações com "Olá, {{nome}}," é template único disfarçado de variação — anula a rotação.${hasNameVariable
+  ? ` Quando usar {{nome}}, VARIE A POSIÇÃO: no meio ("Consegue falar, {{nome}}?"), no fim ("Tem um minuto? {{nome}}") ou seca no início sem saudação antes ("{{nome}}, tudo bem?"). No máximo 3 podem abrir com "Olá, {{nome}},".`
+  : ""}
+12. É mensagem de TEXTO no WhatsApp, não ligação telefônica. PROIBIDO "estou ligando", "pode atender", "atender a chamada" ou qualquer vocabulário de telefonema.${formatoObrigatorio}`;
 
-  let parsed;
-  try {
-    parsed = await callGroqJson({ schemaName: "campaign_template_variants", schema, taskPrompt });
-  } catch (err) {
-    // A validacao estrita da Groq falha de forma intermitente em contagem alta e
-    // derruba a requisicao inteira (502 na rota). O json_object nao valida forma,
-    // e a leitura tolerante + complemento abaixo ja cobrem o que vier torto.
-    // Falha nas DUAS tentativas continua subindo — nao engolir erro.
-    console.warn("[campaign-ai] json_schema falhou, repetindo em json_object:", err?.message || err);
-    parsed = await callGroqJson({
-      schemaName: "campaign_template_variants",
-      schema,
-      taskPrompt,
-      preferJsonObject: true,
-    });
-  }
+  // json_object direto, sem tentar json_schema antes. Medido 05/08/2026: com
+  // este prompt o caminho estrito falha SEMPRE (o raciocinio do gpt-oss-20b
+  // consome o orcamento e a Groq devolve 400 json_validate_failed com
+  // failed_generation vazio), entao a tentativa estrita so servia para gastar
+  // uma chamada. Duas chamadas somam ~14k tokens/min contra o TPM de 8000 da
+  // camada gratuita: o gerador batia em 429 rate_limit_exceeded justamente no
+  // plano que a maioria dos clientes usa. Uma chamada cabe. A leitura tolerante
+  // (extractVariantList) e o complemento abaixo ja cobrem formato torto.
+  const parsed = await callGroqJson({
+    schemaName: "campaign_template_variants",
+    schema,
+    taskPrompt,
+    preferJsonObject: true,
+  });
 
   let variants = dedupeVariants(extractVariantList(parsed));
 
