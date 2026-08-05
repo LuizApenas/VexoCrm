@@ -84,13 +84,24 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, agent_name, persona_template, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
     )
     .eq("client_id", clientId)
     .maybeSingle();
 
   if (error) {
     if (isMissingSchemaError(error)) {
+      // Silencioso ate 05/08/2026: uma coluna inexistente no SELECT (era
+      // persona_template) derrubava a query inteira e esta funcao devolvia
+      // settings: null. Como o upsert usa esse retorno como "existing", TODO
+      // PATCH parcial passava a regravar os campos nao enviados com os
+      // defaults — chatbot_model virava "outlier" e chatbot_enabled virava
+      // false. O sintoma na tela era o template voltando sozinho e o chatbot
+      // desligando ao trocar de template.
+      console.error(
+        `[n8n-settings] SELECT falhou por schema para "${clientId}" — as configuracoes serao lidas como inexistentes:`,
+        error.message
+      );
       return {
         settings: null,
         schemaAvailable: false,
@@ -216,6 +227,27 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
           : token || existing?.inbound_bearer_token || null;
   } else if (!existing) {
     payload.inbound_bearer_token = null;
+  }
+
+  // Sem "existing", os campos nao enviados cairiam nos defaults e sobrescreveriam
+  // o que ja estava gravado (foi assim que chatbot_model virou "outlier" e
+  // chatbot_enabled virou false a cada PATCH parcial). Quando nao sabemos o
+  // estado atual, o seguro e NAO tocar no que o cliente nao mandou: a coluna
+  // omitida do upsert preserva o valor da linha existente.
+  if (!existing) {
+    const enviados = {
+      active: activeProvided,
+      chatbot_enabled: chatbotEnabledProvided,
+      chatbot_model: chatbotModelProvided,
+      chatbot_llm_model: chatbotLlmModelProvided,
+      agent_name: agentNameProvided,
+      segmentation_config: segmentationConfigProvided,
+      sdr_whatsapp_number: sdrWhatsappNumberProvided,
+      allowed_tabs: allowedTabsProvided,
+    };
+    for (const [coluna, foiEnviado] of Object.entries(enviados)) {
+      if (!foiEnviado) delete payload[coluna];
+    }
   }
 
   return payload;
