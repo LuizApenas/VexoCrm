@@ -86,23 +86,15 @@ export default function ChatbotSettings() {
 
   return (
     <PageShell title="Configurações do Chatbot SPIN" subtitle="Ajuste parâmetros gerais, templates, prompts e simulações por empresa" spacing="space-y-6">
-      {/* Seletor de empresa */}
-      <div className="flex items-center gap-3">
-        <Select value={currentClientId} onValueChange={setSelectedClientId} disabled={loadingClients}>
-          <SelectTrigger className="w-64 h-9 text-sm bg-white dark:bg-slate-900">
-            <SelectValue placeholder={loadingClients ? "Carregando..." : "Selecione a empresa"} />
-          </SelectTrigger>
-          <SelectContent>
-            {clients.map((c) => (
-              <SelectItem key={c.id} value={c.id} className="text-sm">
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {currentClientId && currentClientId !== "global" && (
-          <span className="text-xs text-slate-400 font-mono">{currentClientId}</span>
-        )}
+      {/* Empresa vem do seletor do cabecalho. O seletor proprio que existia aqui
+          listava TODOS os tenants (Infinie, Outlier, Vexo...) mesmo com a
+          Geracao Digital escolhida no topo — dois controles para a mesma coisa,
+          um deles mostrando empresas que nao eram a da tela. */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+          {selectedClient?.name || "Empresa"}
+        </span>
+        <span className="text-xs text-slate-400 font-mono">{currentClientId}</span>
       </div>
 
       <Tabs value={subTab} onValueChange={handleSubTabChange} className="w-full">

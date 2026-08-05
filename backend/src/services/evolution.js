@@ -631,7 +631,14 @@ export async function configureEvolutionInstanceWebhook(clientId, dispatchWebhoo
     throw new Error("WEBHOOK_BASE_URL_UNDEFINED");
   }
 
-  const webhookUrl = `${base}/api/hardcoded-chat-webhook?clientId=${encodeURIComponent(clientId)}`;
+  // instanceName vai na URL: assim o backend sabe QUAL chip recebeu a mensagem
+  // sem depender do campo "instance" vir dentro do payload da Evolution. Quando
+  // ele nao vinha, o nome do chip ficava vazio e o agente inbound acabava
+  // respondendo por qualquer numero.
+  const webhookUrl =
+    `${base}/api/hardcoded-chat-webhook` +
+    `?clientId=${encodeURIComponent(clientId)}` +
+    `&instanceName=${encodeURIComponent(instanceName)}`;
 
   // Evolution API v2 exige o payload ANINHADO em { webhook: {...} } e usa
   // webhookByEvents (não byEvents). No formato antigo (plano) a v2 responde

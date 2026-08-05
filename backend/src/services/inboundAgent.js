@@ -58,13 +58,13 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
   // isso, qual agente atende dependia da ordem que o banco devolveu.
   const candidatas = wanted ? data.filter((row) => instancesOf(row).includes(wanted)) : [];
   const byInstance = candidatas.find((row) => row.inbound_enabled === true) || candidatas[0] || null;
-  // Sem o nome da instancia nao da para saber de quem e a mensagem; ai, e so
-  // ai, uma linha unica do tenant serve. Com o nome conhecido e sem casamento,
-  // o numero NAO e atendido por nenhum agente: devolve null e a mensagem cai no
-  // chatbot do tenant. O fallback antigo (linha unica vale para qualquer numero)
-  // fazia o agente responder em chips que o usuario nao marcou.
-  const row = byInstance || (!wanted && data.length === 1 ? data[0] : null);
-  if (!row) return null;
+  // SEM FALLBACK. Um agente so atende os numeros que o usuario marcou. Sem nome
+  // de instancia, ou sem casamento, devolve null e a mensagem cai no chatbot do
+  // tenant. As duas versoes anteriores tinham atalho ("se so existe um agente,
+  // use ele") e o resultado era o agente respondendo em chip nao marcado — o
+  // que o usuario configura na tela tem que ser o que acontece.
+  if (!byInstance) return null;
+  const row = byInstance;
 
   const spinFields = Array.isArray(row.inbound_spin_fields)
     ? row.inbound_spin_fields

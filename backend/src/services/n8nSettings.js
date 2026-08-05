@@ -40,6 +40,7 @@ export function maskN8nSettings(row) {
       active: false,
       chatbot_enabled: false,
       chatbot_model: "outlier",
+      chatbot_instances: [],
       segmentation_config: buildDefaultSegmentationConfig("outlier"),
       sdr_whatsapp_number: null,
       updated_at: null,
@@ -54,6 +55,8 @@ export function maskN8nSettings(row) {
     active: row.active !== false,
     chatbot_enabled: row.chatbot_enabled === true,
     chatbot_model: row.chatbot_model || "outlier",
+    // Chips que este chatbot atende. Vazio = qualquer chip sem agente inbound.
+    chatbot_instances: Array.isArray(row.chatbot_instances) ? row.chatbot_instances : [],
     segmentation_config: sanitizeSegmentationConfig(row.segmentation_config, row.chatbot_model || "outlier"),
     sdr_whatsapp_number: row.sdr_whatsapp_number || null,
     updated_at: row.updated_at || null,
@@ -84,7 +87,7 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
     )
     .eq("client_id", clientId)
     .maybeSingle();
@@ -174,6 +177,7 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
   const chatbotLlmModelProvided = Object.prototype.hasOwnProperty.call(body, "chatbotLlmModel") || Object.prototype.hasOwnProperty.call(body, "chatbot_llm_model");
   const agentNameProvided = Object.prototype.hasOwnProperty.call(body, "agentName") || Object.prototype.hasOwnProperty.call(body, "agent_name");
   const segmentationConfigProvided = Object.prototype.hasOwnProperty.call(body, "segmentationConfig");
+  const chatbotInstancesProvided = Object.prototype.hasOwnProperty.call(body, "chatbotInstances");
   const sdrWhatsappNumberProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumber");
   const allowedTabsProvided = Object.prototype.hasOwnProperty.call(body, "allowedTabs");
 
@@ -182,6 +186,11 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
     chatbot_enabled: chatbotEnabledProvided ? body.chatbotEnabled === true : existing?.chatbot_enabled ?? false,
     chatbot_model: chatbotModelProvided ? (body.chatbotModel || "outlier") : existing?.chatbot_model ?? "outlier",
     chatbot_llm_model: chatbotLlmModelProvided ? (body.chatbotLlmModel || body.chatbot_llm_model || "llama-3.3-70b-versatile") : existing?.chatbot_llm_model ?? "llama-3.3-70b-versatile",
+    chatbot_instances: chatbotInstancesProvided
+      ? (Array.isArray(body.chatbotInstances)
+          ? [...new Set(body.chatbotInstances.map((v) => String(v ?? "").trim()).filter(Boolean))]
+          : [])
+      : existing?.chatbot_instances ?? [],
     agent_name: agentNameProvided ? (normalizeString(body.agentName || body.agent_name) || null) : existing?.agent_name ?? null,
     segmentation_config: segmentationConfigProvided
       ? sanitizeSegmentationConfig(body.segmentationConfig, body.chatbotModel || existing?.chatbot_model || "generico")
@@ -239,6 +248,7 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
       active: activeProvided,
       chatbot_enabled: chatbotEnabledProvided,
       chatbot_model: chatbotModelProvided,
+      chatbot_instances: chatbotInstancesProvided,
       chatbot_llm_model: chatbotLlmModelProvided,
       agent_name: agentNameProvided,
       segmentation_config: segmentationConfigProvided,

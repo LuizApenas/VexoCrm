@@ -968,6 +968,21 @@ export function registerChatbotRoutes(app, deps) {
       return;
     }
 
+    // Chips explicitamente vinculados ao chatbot do tenant (aba Configuracoes).
+    // Lista vazia = comportamento antigo (atende qualquer chip sem agente
+    // inbound). Com a lista preenchida, chip de fora nao e atendido — o vinculo
+    // deixa de ser "o que sobrou" e passa a ser o que o usuario marcou.
+    if (!inboundConfig) {
+      const chipsDoChatbot = Array.isArray(tenantSettings?.chatbot_instances)
+        ? tenantSettings.chatbot_instances.map((v) => String(v ?? "").trim()).filter(Boolean)
+        : [];
+      const chipAtual = String(instanceName || "").trim();
+      if (chipsDoChatbot.length > 0 && (!chipAtual || !chipsDoChatbot.includes(chipAtual))) {
+        res.json({ success: true, ignored: "chip_nao_vinculado" });
+        return;
+      }
+    }
+
     // ── Campaign routing ─────────────────────────────────────────────────
     let chatbotPromptTypeOverride = null; // "campanha" | "padrao" | null
     let activeCampaignForLead = null;

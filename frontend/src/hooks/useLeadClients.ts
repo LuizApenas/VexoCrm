@@ -47,6 +47,7 @@ export interface LeadClientN8nSettingsPayload {
   chatbotEnabled?: boolean;
   chatbotModel?: string;
   chatbotLlmModel?: string;
+  chatbotInstances?: string[];
   segmentationConfig?: LeadClientSegmentationConfig;
   sdrWhatsappNumber?: string | null;
   allowedTabs?: string[] | null;
@@ -109,6 +110,8 @@ export interface LeadClientN8nSettingsSummary {
   chatbot_enabled: boolean;
   chatbot_model: string;
   chatbot_llm_model?: string;
+  /** Chips que este chatbot atende. Vazio = qualquer chip sem agente inbound. */
+  chatbot_instances?: string[];
   segmentation_config?: LeadClientSegmentationConfig;
   sdr_whatsapp_number: string | null;
   evolution_instances?: LeadClientEvolutionInstance[];

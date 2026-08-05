@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from "react";
-import { Check, Copy, Phone, Power, Zap, Cpu, Sparkles, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Check, Copy, Phone, Power, Zap, Cpu, Sparkles, AlertCircle, CheckCircle2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -49,6 +51,8 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const [model, setModel] = useState(n8n?.chatbot_model ?? "generico");
   const [llmModel, setLlmModel] = useState(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
   const [sdrNumber, setSdrNumber] = useState(n8n?.sdr_whatsapp_number ?? "");
+  // Chips que ESTE chatbot atende. Vazio = qualquer chip sem agente inbound.
+  const [chipsDoChatbot, setChipsDoChatbot] = useState<string[]>(n8n?.chatbot_instances ?? []);
   const [savingSdr, setSavingSdr] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -69,6 +73,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     setModel(n8n.chatbot_model ?? "generico");
     setLlmModel(n8n.chatbot_llm_model ?? "llama-3.3-70b-versatile");
     setSdrNumber(n8n.sdr_whatsapp_number ?? "");
+    setChipsDoChatbot(Array.isArray(n8n.chatbot_instances) ? n8n.chatbot_instances : []);
   }, [clientId, n8n]);
 
   const webhookUrl = buildWebhookUrl(clientId);
@@ -93,6 +98,31 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     } catch {
       setEnabled(!value);
       toast({ title: "Erro ao salvar status do chatbot", variant: "destructive" });
+    }
+  }
+
+  // O nome real da instancia Evolution fica no fim da URL de disparo do chip.
+  const chipsDoTenant = (client?.n8n_settings?.evolution_instances ?? []).filter((i: any) => i.active !== false);
+  const nomeInstancia = (chip: any) => {
+    const url = chip?.dispatch_webhook_url || "";
+    const ultimo = url.split("/").filter(Boolean).pop();
+    return (ultimo && !ultimo.includes("?") ? ultimo : chip?.name) || "";
+  };
+
+  async function salvarChipsDoChatbot(lista: string[]) {
+    const anterior = chipsDoChatbot;
+    setChipsDoChatbot(lista);
+    try {
+      await updateSettings.mutateAsync({ tenantId: clientId, chatbotInstances: lista });
+      toast({
+        title: "Chips do chatbot atualizados",
+        description: lista.length === 0
+          ? "Sem chip marcado: atende qualquer número que não tenha agente inbound."
+          : `${lista.length} ${lista.length === 1 ? "chip vinculado" : "chips vinculados"}.`,
+      });
+    } catch (e: any) {
+      setChipsDoChatbot(anterior);
+      toast({ title: "Erro ao salvar chips", description: e?.message, variant: "destructive" });
     }
   }
 
@@ -220,6 +250,59 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
           {/* Campo "Nome do Agente de IA (Persona)" removido: o nome vive no
               template (aba Template -> Nome do agente), que e a fonte usada
               pelo motor. Ter os dois divergia sem o usuario perceber. */}
+
+          {/* Chips atendidos por este chatbot */}
+          {canEdit && (
+            <div className="space-y-1.5 pt-1">
+              <Label className="text-xs text-slate-500 font-medium">
+                Chips que este chatbot atende
+              </Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-white px-2 text-xs dark:bg-slate-900"
+                  >
+                    <span className="truncate">
+                      {chipsDoChatbot.length === 0
+                        ? "Todos sem agente inbound"
+                        : `${chipsDoChatbot.length} ${chipsDoChatbot.length === 1 ? "chip" : "chips"}`}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[min(24rem,calc(100vw-2rem))] p-1" align="start">
+                  <div className="max-h-56 overflow-y-auto">
+                    {chipsDoTenant.length === 0 && (
+                      <p className="px-2 py-3 text-xs text-slate-400">
+                        Nenhum chip conectado. Conecte em "Chips WhatsApp".
+                      </p>
+                    )}
+                    {chipsDoTenant.map((chip: any) => {
+                      const inst = nomeInstancia(chip);
+                      const marcado = chipsDoChatbot.includes(inst);
+                      return (
+                        <label key={chip.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs hover:bg-accent">
+                          <Checkbox
+                            checked={marcado}
+                            onCheckedChange={() =>
+                              void salvarChipsDoChatbot(
+                                marcado ? chipsDoChatbot.filter((i) => i !== inst) : [...chipsDoChatbot, inst]
+                              )
+                            }
+                          />
+                          <span className="truncate">{chip.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <p className="text-[11px] text-slate-500">
+                Sem nenhum marcado, o chatbot atende qualquer chip que não esteja em um agente inbound.
+              </p>
+            </div>
+          )}
 
           {/* Template de Modelo Personalizado (Se houver modelos cadastrados) */}
           {canEdit && allModels.length > 0 && (

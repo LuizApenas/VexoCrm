@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { cn } from "@/lib/utils";
 import { useCreateFupCompany, useFupCompanies, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchApi } from "@/lib/api";
@@ -280,7 +281,9 @@ export default function InboundAgentConfig() {
             </p>
           </div>
         </div>
-        <div className="w-full sm:w-[300px]">
+        {/* Com um agente so, este seletor nao escolhe nada e vira ruido ao lado
+            de "Numeros atendidos por este agente". So aparece a partir de dois. */}
+        <div className={cn("w-full sm:w-[300px]", companies.length < 2 && "hidden")}>
           <Select value={companyId} onValueChange={setCompanyId}>
             <SelectTrigger className="w-full bg-white dark:bg-slate-950">
               <SelectValue placeholder="Selecione um número..." />
