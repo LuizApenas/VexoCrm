@@ -7,6 +7,27 @@ export interface GdDashboardStats {
   propostas_sem_assinatura: number;
   contratos: number;
   briefings: number;
+  /** Fontes que nao responderam. Vazio = numeros completos. */
+  partialFailures?: string[];
+}
+
+// Erro do dashboard GD preservando status e codigo. Sem isso, backend fora do ar
+// vira "0 propostas, 0 contratos, 0 briefings" — indistinguivel de operacao sem
+// dados, e o cliente le como perda de dados (§4 das diretrizes).
+export class GdDashboardError extends Error {
+  code: string;
+  status: number;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = "GdDashboardError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export function isGdDashboardPermissionError(error: unknown): boolean {
+  return error instanceof GdDashboardError && error.status === 403;
 }
 
 export function useGdDashboard() {
@@ -42,6 +63,29 @@ export function useGdDashboard() {
         fetchApi("/api/geracao-digital/briefings", { headers }).catch(() => null),
         fetchApi("/api/gd/implementation-briefings", { headers }).catch(() => null),
       ]);
+
+      // O fallback e resiliente de proposito: uma fonte fora do ar nao deve zerar as outras.
+      // Mas silencio total mente. Se TODAS falharem, o dashboard nao tem numero nenhum e
+      // precisa falhar alto; se algumas falharem, os numeros vao marcados como incompletos.
+      const sources = [
+        { label: "propostas", res: resProps },
+        { label: "contratos", res: resContracts },
+        { label: "briefings de captacao", res: resBriefingsCap },
+        { label: "briefings de implantacao", res: resBriefingsImp },
+      ];
+      const failed = sources.filter((source) => !source.res || !source.res.ok);
+
+      if (failed.length === sources.length) {
+        const statuses = failed.map((source) => source.res?.status ?? 0);
+        const allForbidden = statuses.every((status) => status === 403);
+        throw new GdDashboardError(
+          allForbidden
+            ? "Voce nao tem permissao para ver os dados do modulo GD."
+            : "Nao foi possivel carregar os dados do modulo GD.",
+          allForbidden ? "FORBIDDEN" : "GD_DASHBOARD_LOAD_FAILED",
+          allForbidden ? 403 : statuses.find((status) => status > 0) ?? 0
+        );
+      }
 
       let propostas = 0;
       let propostas_sem_assinatura = 0;
@@ -85,7 +129,10 @@ export function useGdDashboard() {
         propostas_sem_assinatura,
         contratos,
         briefings,
+        partialFailures: failed.map((source) => source.label),
       };
     },
+    // Sem permissao nao melhora com nova tentativa; so falha de carga merece retry.
+    retry: (failureCount, error) => !isGdDashboardPermissionError(error) && failureCount < 1,
   });
 }

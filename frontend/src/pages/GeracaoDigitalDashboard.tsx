@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { PageShell } from "@/components/PageShell";
 import { GeracaoDigitalTabs } from "@/components/GeracaoDigitalTabs";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -11,7 +12,7 @@ import {
   AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
-import { useGdDashboard } from "@/hooks/useGdDashboard";
+import { isGdDashboardPermissionError, useGdDashboard } from "@/hooks/useGdDashboard";
 
 interface StatCardProps {
   icon: LucideIcon;
@@ -63,7 +64,8 @@ function StatCard({ icon: Icon, label, value, caption, accent = "default", loadi
 
 export default function GeracaoDigitalDashboard() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, error } = useGdDashboard();
+  const { data, isLoading, isError, error, refetch } = useGdDashboard();
+  const partialFailures = data?.partialFailures ?? [];
 
   return (
     <PageShell
@@ -73,14 +75,37 @@ export default function GeracaoDigitalDashboard() {
     >
       <GeracaoDigitalTabs />
 
-      {isError ? (
+      {isError && isGdDashboardPermissionError(error) ? (
+        <Card className="border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30">
+          <CardContent className="p-5 text-sm text-amber-700 dark:text-amber-300">
+            Você não tem permissão para ver os dados do módulo GD. Fale com o administrador da sua empresa.
+          </CardContent>
+        </Card>
+      ) : isError ? (
         <Card className="border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-950/30">
-          <CardContent className="p-5 text-sm text-red-700 dark:text-red-300">
-            {(error as Error)?.message || "Erro ao carregar o dashboard."}
+          <CardContent className="p-5 text-sm text-red-700 dark:text-red-300 flex items-center justify-between gap-3">
+            <span>{(error as Error)?.message || "Não foi possível carregar o dashboard. Tente de novo."}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+              Tentar de novo
+            </Button>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="space-y-4">
+          {partialFailures.length > 0 && (
+            <Card className="border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30">
+              <CardContent className="p-4 text-sm text-amber-700 dark:text-amber-300 flex items-center justify-between gap-3">
+                <span>
+                  Números incompletos: não foi possível carregar {partialFailures.join(", ")}. Os cards abaixo estão
+                  contando a menos.
+                </span>
+                <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+                  Tentar de novo
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             icon={FileText}
             label="Propostas"
@@ -114,6 +139,7 @@ export default function GeracaoDigitalDashboard() {
             loading={isLoading}
             onClick={() => navigate("/crm/propostas-gd")}
           />
+          </div>
         </div>
       )}
     </PageShell>
