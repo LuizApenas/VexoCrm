@@ -2,6 +2,13 @@
 .cursor/
 AGENTS.md
 
+# Config de agente e segundo cerebro: acumulam segredo por construcao.
+# .claude/settings.local.json guarda comandos aprovados (uma senha de Postgres ja
+# entrou ali como Bash(psql "postgres://...")), e .cerebro/_knowledge carrega
+# string de conexao por natureza. Ficam no disco, fora do versionamento.
+.claude/
+.cerebro/
+
 # Dependencies
 node_modules/
 
