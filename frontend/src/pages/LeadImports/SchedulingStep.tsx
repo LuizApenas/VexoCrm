@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { InfoTip } from "@/components/InfoTip";
 import { cn } from "@/lib/utils";
 import type { CampaignDispatchOptions } from "@/hooks/useCampanhas";
+import { isConsultantPermissionError } from "@/hooks/useConsultantSchedules";
 import type {
   ConsultantSchedule,
   useCreateConsultantSchedule,
@@ -31,6 +32,9 @@ interface SchedulingStepProps {
   multiAgendaEnabled: boolean;
   setMultiAgendaEnabled: Dispatch<SetStateAction<boolean>>;
   consultants: ConsultantSchedule[];
+  consultantsError?: unknown;
+  loadingConsultants?: boolean;
+  onRetryConsultants?: () => void;
   updateConsultant: ReturnType<typeof useUpdateConsultantSchedule>;
   deleteConsultant: ReturnType<typeof useDeleteConsultantSchedule>;
   activeClientId: string;
@@ -65,6 +69,9 @@ export function SchedulingStep({
   multiAgendaEnabled,
   setMultiAgendaEnabled,
   consultants,
+  consultantsError,
+  loadingConsultants,
+  onRetryConsultants,
   updateConsultant,
   deleteConsultant,
   activeClientId,
@@ -206,8 +213,23 @@ export function SchedulingStep({
               {/* List of consultants */}
               <div className="space-y-2">
                 <label className="text-[10px] uppercase font-bold text-slate-500">Equipe de Agendas Cadastradas</label>
-                {consultants.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic bg-white/50 dark:bg-black/20 p-3 rounded-xl border border-slate-200/50 dark:border-white/5">Nenhum consultor cadastrado para Rotação. Adicione um abaixo.</p>
+                {loadingConsultants ? (
+                  <p className="text-xs text-muted-foreground italic bg-white/50 dark:bg-black/20 p-3 rounded-xl border border-slate-200/50 dark:border-white/5">Carregando consultores...</p>
+                ) : isConsultantPermissionError(consultantsError) ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200/70 dark:border-amber-900/40">
+                    Você não tem permissão para ver os consultores. Fale com o administrador da sua empresa.
+                  </p>
+                ) : consultantsError ? (
+                  <div className="flex items-center justify-between gap-2 text-xs text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-xl border border-red-200/70 dark:border-red-900/40">
+                    <span>Não foi possível carregar os consultores. Tente de novo.</span>
+                    {onRetryConsultants && (
+                      <Button type="button" variant="outline" size="sm" className="h-7 text-[11px]" onClick={() => onRetryConsultants()}>
+                        Tentar de novo
+                      </Button>
+                    )}
+                  </div>
+                ) : consultants.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic bg-white/50 dark:bg-black/20 p-3 rounded-xl border border-slate-200/50 dark:border-white/5">Nenhum consultor cadastrado. Adicione um abaixo.</p>
                 ) : (
                   <div className="grid gap-2 max-h-[220px] overflow-y-auto pr-1">
                     {consultants.map((c) => (

@@ -219,7 +219,12 @@ export default function LeadImports({
   const { data: campaigns = [], isLoading: loadingCampaigns, refetch: refetchCampaigns } = useCampanhas(activeClientId || undefined);
   const { data: dispatches = [], isLoading: loadingDispatches, refetch: refetchDispatches } = useAllDispatches(activeClientId || null);
   const { data: previewLeadsData, isLoading: loadingPreviewLeads } = useDispatchPreviewLeads(previewDispatchId);
-  const { data: consultants = [], refetch: refetchConsultants } = useConsultantSchedules(activeClientId);
+  const {
+    data: consultants = [],
+    error: consultantsError,
+    isLoading: loadingConsultants,
+    refetch: refetchConsultants,
+  } = useConsultantSchedules(activeClientId);
   const createConsultant = useCreateConsultantSchedule();
   const updateConsultant = useUpdateConsultantSchedule();
   const deleteConsultant = useDeleteConsultantSchedule();
@@ -1124,6 +1129,9 @@ export default function LeadImports({
               multiAgendaEnabled={multiAgendaEnabled}
               setMultiAgendaEnabled={setMultiAgendaEnabled}
               consultants={consultants}
+              consultantsError={consultantsError}
+              loadingConsultants={loadingConsultants}
+              onRetryConsultants={refetchConsultants}
               updateConsultant={updateConsultant}
               deleteConsultant={deleteConsultant}
               activeClientId={activeClientId}

@@ -13,6 +13,33 @@ export interface ConsultantSchedule {
   updated_at: string;
 }
 
+// Erro da API de consultores preservando status e `error.code` do backend
+// (backend/src/services/httpInfra.js -> sendError). Sem isso a tela nao consegue
+// distinguir "sem permissao" de "falhou ao carregar" e acaba mostrando "nenhum
+// consultor cadastrado" para os dois — mentira que a §4 das diretrizes proibe.
+export class ConsultantSchedulesError extends Error {
+  code: string;
+  status: number;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = "ConsultantSchedulesError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export function isConsultantPermissionError(error: unknown): boolean {
+  return error instanceof ConsultantSchedulesError && error.status === 403;
+}
+
+async function throwConsultantApiError(res: Response, fallback: string): Promise<never> {
+  const contentType = res.headers.get("content-type") || "";
+  const data = contentType.includes("application/json") ? await res.json().catch(() => null) : null;
+  const code = typeof data?.error?.code === "string" ? data.error.code : "";
+  throw new ConsultantSchedulesError(data?.error?.message || fallback, code, res.status);
+}
+
 export function useConsultantSchedules(clientId: string) {
   const { isAuthenticated, getIdToken } = useAuth();
   return useQuery({
@@ -24,10 +51,12 @@ export function useConsultantSchedules(clientId: string) {
       const res = await fetch(`${API_BASE_URL}/api/campaigns/consultant-schedules?clientId=${encodeURIComponent(clientId)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error("Falha ao buscar consultores.");
+      if (!res.ok) await throwConsultantApiError(res, "Falha ao buscar consultores.");
       const data = await res.json();
       return data.items || [];
     },
+    // Sem permissao nao melhora com nova tentativa; so erro de carga merece retry.
+    retry: (failureCount, error) => !isConsultantPermissionError(error) && failureCount < 1,
     staleTime: 30 * 1000,
   });
 }
