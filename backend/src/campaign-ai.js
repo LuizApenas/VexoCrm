@@ -150,8 +150,13 @@ function buildChatPayload({ taskPrompt, schemaName, schema, preferJsonObject = f
   const basePayload = {
     model,
     temperature: 0.3,
-    // Medido 06/08/2026: completion real fica em ~600 tokens; 3000 e folga.
-    max_completion_tokens: 3000,
+    // Medido 06/08/2026: completion real fica em ~600 tokens. O teto NAO e
+    // consumo, mas a Groq cobra do rate limit o PEDIDO (prompt +
+    // max_completion_tokens): com 3000, as 3 chamadas por geracao somavam
+    // ~12300 contra o TPM de 12000 e o ultimo lote levava 429 em silencio —
+    // o usuario recebia 13 variacoes de 25 sem ver erro nenhum. 1200 cobre o
+    // dobro do consumo real e derruba o pedido para ~2100 por chamada.
+    max_completion_tokens: 1200,
     messages: [
       {
         role: "system",
