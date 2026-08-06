@@ -63,6 +63,8 @@ export interface LeadImportItemDetail {
   row_number: number;
   telefone: string | null;
   normalized_data: Record<string, unknown> | null;
+  /** Linha crua da planilha. So vem nas consultas de lead_import_items. */
+  raw_data?: Record<string, unknown> | null;
   imported: boolean;
   skip_reason: string | null;
   created_at: string;
@@ -73,6 +75,10 @@ interface LeadImportItemsResponse {
   items: LeadImportItemDetail[];
   total: number;
   pendingCount: number;
+  /** Presentes so quando a consulta manda `limit` (paginacao ligada). */
+  page?: number;
+  limit?: number;
+  matched?: number;
 }
 
 export interface DispatchCampaignPayload {
@@ -204,12 +210,28 @@ export function useLeadImports(clientId?: string) {
   });
 }
 
-export function useLeadImportItems(clientId?: string, importId?: string, dispatched?: string) {
+export interface LeadImportItemsOptions {
+  /** "imported" (default, contrato antigo) | "skipped" | "all" */
+  status?: "imported" | "skipped" | "all";
+  search?: string;
+  page?: number;
+  /** Enviar limit liga a paginacao; omitido, a rota devolve tudo como sempre. */
+  limit?: number;
+  enabled?: boolean;
+}
+
+export function useLeadImportItems(
+  clientId?: string,
+  importId?: string,
+  dispatched?: string,
+  options: LeadImportItemsOptions = {}
+) {
   const { isAuthenticated, canAccessView, getIdToken } = useAuth();
+  const { status, search, page, limit, enabled = true } = options;
 
   return useQuery({
-    queryKey: ["lead-import-items", clientId, importId, dispatched],
-    enabled: isAuthenticated && !!clientId && canAccessView("planilhas"),
+    queryKey: ["lead-import-items", clientId, importId, dispatched, status, search, page, limit],
+    enabled: enabled && isAuthenticated && !!clientId && canAccessView("planilhas"),
     queryFn: async (): Promise<LeadImportItemsResponse> => {
       const token = await getIdToken();
       if (!token) throw new Error("Usuario nao autenticado.");
@@ -218,6 +240,10 @@ export function useLeadImportItems(clientId?: string, importId?: string, dispatc
       if (clientId) params.set("clientId", clientId);
       if (importId) params.set("importId", importId);
       if (dispatched !== undefined) params.set("dispatched", dispatched);
+      if (status) params.set("status", status);
+      if (search) params.set("search", search);
+      if (page) params.set("page", String(page));
+      if (limit) params.set("limit", String(limit));
 
       const res = await fetchLeadImports(`/api/lead-import-items?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -233,6 +259,9 @@ export function useLeadImportItems(clientId?: string, importId?: string, dispatc
         items: Array.isArray(payload.items) ? payload.items : [],
         total: Number(payload.total || 0),
         pendingCount: Number(payload.pendingCount || 0),
+        page: payload.page,
+        limit: payload.limit,
+        matched: payload.matched,
       };
     },
     retry: 1,

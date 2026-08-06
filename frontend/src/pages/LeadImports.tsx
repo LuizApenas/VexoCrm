@@ -10,6 +10,7 @@ import {
   Loader2,
   Megaphone,
   Trash2,
+  Eye,
   Zap,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,6 +24,7 @@ import {
   useDeleteLeadImport,
   useLeadImports,
   useLeadImportItems,
+  type LeadImportItem,
   type LeadImportPreviewItem,
 } from "@/hooks/useLeadImports";
 import {
@@ -81,6 +83,7 @@ import { WhatsAppPreviewPanel } from "./LeadImports/WhatsAppPreviewPanel";
 import { CampaignsTable } from "./LeadImports/CampaignsTable";
 import { DispatchQueueTable } from "./LeadImports/DispatchQueueTable";
 import { LeadImportAuditReport } from "./LeadImports/LeadImportAuditReport";
+import { ImportViewerDialog } from "./LeadImports/ImportViewerDialog";
 
 type SheetTab = "campanha" | "enviadas" | "agendamentos" | "planilhas" | "relatorios";
 type CampaignTemplateStrategy = "single" | "ai_variations";
@@ -187,6 +190,7 @@ export default function LeadImports({
   const [selectedImportIds, setSelectedImportIds] = useState<string[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDispatchId, setPreviewDispatchId] = useState<string | null>(null);
+  const [viewingImport, setViewingImport] = useState<LeadImportItem | null>(null);
 
   // Campaign builder states
   const [editingCampaignId, setEditingCampaignId] = useLocalStorage<string | null>(`vexo_campaignId_${activeClientId}`, null);
@@ -1208,12 +1212,16 @@ export default function LeadImports({
                   <TableHead className="text-right">Ignorados</TableHead>
                   <TableHead>Importada em</TableHead>
                   <TableHead>Por</TableHead>
-                  <TableHead className="w-[80px]"></TableHead>
+                  <TableHead className="w-[110px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {imports.map((imp) => (
-                  <TableRow key={imp.id}>
+                  <TableRow
+                    key={imp.id}
+                    className="cursor-pointer"
+                    onClick={() => setViewingImport(imp)}
+                  >
                     <TableCell className="font-semibold text-xs">{imp.source_name}</TableCell>
                     <TableCell className="text-right text-xs">{imp.imported_rows}</TableCell>
                     <TableCell className="text-right text-xs text-slate-400">{imp.skipped_rows}</TableCell>
@@ -1221,7 +1229,16 @@ export default function LeadImports({
                       {imp.created_at ? new Date(imp.created_at).toLocaleString("pt-BR") : "—"}
                     </TableCell>
                     <TableCell className="text-xs text-slate-500">{imp.uploaded_by_email || "—"}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Ver leads desta planilha"
+                        onClick={() => setViewingImport(imp)}
+                        className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -1239,6 +1256,13 @@ export default function LeadImports({
           )}
         </div>
       )}
+
+      <ImportViewerDialog
+        open={!!viewingImport}
+        onOpenChange={(open) => !open && setViewingImport(null)}
+        clientId={activeClientId}
+        importRecord={viewingImport}
+      />
 
       {activeTab === "relatorios" && (
         <LeadImportAuditReport

@@ -1577,6 +1577,20 @@ export function registerLeadsRoutes(app, deps) {
     const importId = normalizeString(req.query.importId);
     const dispatched = req.query.dispatched;
 
+    // Parametros do visualizador de planilha salva. Todos OPCIONAIS: omitidos, a rota
+    // se comporta exatamente como antes (so importados, sem paginacao), porque o preview
+    // de disparo depende desse contrato.
+    //   status=imported (default) | skipped | all
+    //   search=<termo>  filtra por nome/telefone
+    //   limit=<n>       liga a paginacao (sem limit, devolve tudo, como sempre)
+    const status = normalizeString(req.query.status) || "imported";
+    const search = (normalizeString(req.query.search) || "").toLowerCase();
+    const rawLimit = Number.parseInt(String(req.query.limit ?? ""), 10);
+    const paginate = Number.isInteger(rawLimit) && rawLimit > 0;
+    const limit = paginate ? Math.min(rawLimit, 500) : 0;
+    const rawPage = Number.parseInt(String(req.query.page ?? ""), 10);
+    const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+
     try {
       let query;
       if (importId === "__crm__") {
@@ -1589,11 +1603,17 @@ export function registerLeadsRoutes(app, deps) {
       } else {
         query = supabase
           .from("lead_import_items")
-          .select("id, import_id, client_id, row_number, telefone, normalized_data, imported, skip_reason, created_at")
+          .select("id, import_id, client_id, row_number, telefone, normalized_data, raw_data, imported, skip_reason, created_at")
           .eq("client_id", clientId)
-          .eq("imported", true)
-          .not("telefone", "is", null)
           .order("row_number", { ascending: true });
+
+        // Ignorados costumam ser exatamente as linhas SEM telefone, entao o filtro de
+        // telefone nao pode valer quando o pedido inclui ignorados.
+        if (status === "imported") {
+          query = query.eq("imported", true).not("telefone", "is", null);
+        } else if (status === "skipped") {
+          query = query.eq("imported", false);
+        }
 
         if (importId) {
           query = query.eq("import_id", importId);
@@ -1633,13 +1653,37 @@ export function registerLeadsRoutes(app, deps) {
         dispatched: dispatchedPhones.has(item.telefone),
       }));
 
-      if (dispatched === "false") {
-        res.json({ items: enriched.filter((i) => !i.dispatched), total: enriched.length, pendingCount: enriched.filter((i) => !i.dispatched).length });
-      } else if (dispatched === "true") {
-        res.json({ items: enriched.filter((i) => i.dispatched), total: enriched.length, pendingCount: enriched.filter((i) => !i.dispatched).length });
-      } else {
-        res.json({ items: enriched, total: enriched.length, pendingCount: enriched.filter((i) => !i.dispatched).length });
+      const searched = search
+        ? enriched.filter((item) => {
+            const nome = String(item.normalized_data?.nome ?? "").toLowerCase();
+            const telefone = String(item.telefone ?? "").toLowerCase();
+            return nome.includes(search) || telefone.includes(search);
+          })
+        : enriched;
+
+      const byDispatch =
+        dispatched === "false"
+          ? searched.filter((i) => !i.dispatched)
+          : dispatched === "true"
+            ? searched.filter((i) => i.dispatched)
+            : searched;
+
+      // `total` segue significando o universo antes do recorte por dispatched, como antes.
+      const payload = {
+        items: byDispatch,
+        total: searched.length,
+        pendingCount: searched.filter((i) => !i.dispatched).length,
+      };
+
+      if (paginate) {
+        const offset = (page - 1) * limit;
+        payload.items = byDispatch.slice(offset, offset + limit);
+        payload.page = page;
+        payload.limit = limit;
+        payload.matched = byDispatch.length;
       }
+
+      res.json(payload);
     } catch (error) {
       console.error("lead import items query error:", error);
       sendError(res, 500, "LEAD_IMPORT_ITEMS_QUERY_FAILED", "Failed to query import items");
