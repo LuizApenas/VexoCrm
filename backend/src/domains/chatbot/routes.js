@@ -1206,7 +1206,7 @@ export function registerChatbotRoutes(app, deps) {
                   `🔔 *Lead recontato — já qualificado anteriormente*`,
                   `📱 Número: ${phone}`,
                   `🏠 Interesse: ${interesse}`,
-                  `🌡️ Temperatura anterior: ${aiResponse.classificacao || "QUENTE"}${horario}`,
+                  `🌡️ Temperatura: ${aiResponse.classificacao || "não classificada"}${horario}`,
                   `\nLead entrou em contato novamente após ter sido qualificado. Mensagem de reconhecimento enviada.`,
                   `Recomendado: entrar em contato ativo agora.`,
                 ].join("\n");

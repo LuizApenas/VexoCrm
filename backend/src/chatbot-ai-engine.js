@@ -4,6 +4,8 @@ import {
   serializeHistorico,
 } from "./leads-outlier-schema.js";
 import { getLeadClientN8nSettings } from "./services/n8nSettings.js";
+import { qualifyLead } from "./hardcoded-chatbot-persistence.js";
+import { LEADS_OUTLIER_TEMPERATURE } from "./services/leadImport.js";
 
 /**
  * Chatbot AI Engine
@@ -795,6 +797,39 @@ function chatbotLeadsTable(clientId) {
 // Horas de inatividade para considerar lead "abandonado" e reengajar
 const REENGAGEMENT_HOURS = 4;
 
+/**
+ * Reclassifica a temperatura do lead no recontato, do zero, a partir dos dados ja
+ * coletados. Sem fallback: se nao der para classificar, devolve null.
+ *
+ * Antes daqui saia `existing.lead_temperature || "QUENTE"`. Como lead_temperature
+ * esta vazia em toda a base (medido em producao 07/08/2026), o `||` sempre disparava
+ * e TODO recontato virava QUENTE — priorizacao inflada e alerta de SDR sem significado.
+ *
+ * Usa qualifyLead (deterministico, sem LLM) — nao adiciona custo de modelo.
+ */
+function classifyRecontactTemperature(dados, { clientId, phone }) {
+  try {
+    const classificacao = qualifyLead(dados);
+    if (!LEADS_OUTLIER_TEMPERATURE.has(classificacao)) {
+      console.warn("[chatbot-ai] recontato: classificacao fora do dominio, gravando null", {
+        clientId,
+        phone: phone.slice(-4),
+        classificacao,
+      });
+      return null;
+    }
+    return classificacao;
+  } catch (err) {
+    // Null honesto e melhor que QUENTE falso — foi exatamente esse o defeito.
+    console.error("[chatbot-ai] recontato: falha ao classificar, seguindo com null", {
+      clientId,
+      phone: phone.slice(-4),
+      error: err?.message || err,
+    });
+    return null;
+  }
+}
+
 function hoursSince(isoDate) {
   if (!isoDate) return Infinity;
   return (Date.now() - new Date(isoDate).getTime()) / 3_600_000;
@@ -848,13 +883,38 @@ export async function processBatch({ clientId, phone, messages, supabase, model,
       ? `Oi! Vi que já conversamos sobre ${interesse}. Nosso consultor vai entrar em contato com você${horario ? ` de ${horario}` : " em breve"}. Posso ajudar com mais alguma coisa?`
       : "Oi! Vi que já passamos por uma conversa antes. Nosso consultor vai entrar em contato. Posso ajudar com mais alguma coisa?";
 
-    console.log("[chatbot-ai] Recontact from finalized lead", { phone: phone.slice(-4), clientId });
+    const classificacao = classifyRecontactTemperature(dadosAntigos, { clientId, phone });
+
+    console.log("[chatbot-ai] Recontact from finalized lead", {
+      phone: phone.slice(-4),
+      clientId,
+      classificacaoAnterior: existing.lead_temperature ?? null,
+      classificacao,
+    });
+
+    // Persiste na MESMA coluna que este caminho le. Estava vazia porque ninguem
+    // escrevia nela por aqui; escrever fecha o buraco em vez de contorna-lo.
+    // Nao toca em `temperature`/`stage` — sao da extracao de WhatsApp, outro caminho.
+    if (classificacao !== existing.lead_temperature) {
+      const { error: tempError } = await supabase
+        .from(leadsTable)
+        .update({ lead_temperature: classificacao })
+        .eq("id", existing.id)
+        .eq("client_id", clientId);
+      if (tempError) {
+        console.error("[chatbot-ai] recontato: falha ao gravar lead_temperature", {
+          clientId,
+          phone: phone.slice(-4),
+          error: tempError.message,
+        });
+      }
+    }
 
     return {
       mensagem: msgRecontato,
       status_conversa: "finalizado",
       dados: dadosAntigos,
-      classificacao: existing.lead_temperature || "QUENTE",
+      classificacao,
       finalizado: true,
       _recontato: true, // sinal para o webhook notificar SDR de recontato
     };
