@@ -192,17 +192,42 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
       const token = await getIdToken();
       const headers: HeadersInit = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetchApi(`/api/chatbot-ai/test-direct`, {
+      // /api/chatbot-ai/test-direct NUNCA existiu no backend — 404 desde sempre.
+      // A rota real e /api/chatbot-test, que roda o processBatch de verdade
+      // (prompt do tenant + agente inbound do chip) e devolve a resposta gerada.
+      const path = "/api/chatbot-test";
+      const res = await fetchApi(path, {
         method: "POST",
         headers,
-        body: JSON.stringify({ clientId, message: "Olá, teste de conexão do chatbot" }),
+        body: JSON.stringify({
+          clientId,
+          message: "Olá, teste de conexão do chatbot",
+          // Testa o agente do chip marcado; sem chip, testa o chatbot do tenant.
+          instanceName: chipsDoChatbot[0] ?? undefined,
+        }),
       });
+
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        // Antes caia em "Resposta HTML inesperada da API." — generico demais para
+        // achar que o problema era rota inexistente. Agora diz status e caminho.
+        setTestResult(
+          `Erro ${res.status} em ${path}: a API respondeu ${contentType || "sem content-type"} em vez de JSON.` +
+            (res.status === 404 ? " A rota nao existe no backend implantado." : "")
+        );
+        return;
+      }
+
       if (res.ok) {
         const data = await res.json();
-        setTestResult(data?.chatbotResponse?.message ?? "Conexão OK — sem resposta retornada");
+        setTestResult(
+          data?.response ??
+            data?.reason ??
+            "Conexão OK — o chatbot não retornou mensagem (prompt não configurado ou desativado)."
+        );
       } else {
         const err = await readApiErrorMessage(res, "Erro");
-        setTestResult(`Erro: ${err}`);
+        setTestResult(`Erro ${res.status} em ${path}: ${err}`);
       }
     } catch (e) {
       setTestResult(`Falha: ${e instanceof Error ? e.message : "Erro desconhecido"}`);

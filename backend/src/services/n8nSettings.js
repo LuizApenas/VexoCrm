@@ -135,7 +135,11 @@ export async function getLeadClientN8nSettingsMap(clientIds) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
+      // chatbot_instances FALTAVA aqui (existe no SELECT de getLeadClientN8nSettings).
+      // Como maskN8nSettings faz `Array.isArray(row.chatbot_instances) ? ... : []`, a
+      // coluna ausente virava [] e a tela do Agente IA relia "Todos sem agente inbound"
+      // a cada visita — a marcacao de chip era gravada e depois lida como vazia.
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
     )
     .in("client_id", clientIds);
 
