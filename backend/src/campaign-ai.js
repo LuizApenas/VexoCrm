@@ -331,18 +331,94 @@ const MAX_TEMPLATE_VARIANTS = 30;
 // ("pode falar agora?"), entao uma base de cobranca ou lembrete era puxada
 // para o registro do exemplo em vez de variar a mensagem do cliente. A
 // ancoragem tem que vir do baseText, nunca do codigo.
+// ATENCAO: nao existe bucket de comprimento extremo. Havia um ("no maximo 6
+// palavras") e ele era IMPOSSIVEL de cumprir sem jogar fora o pedido da
+// mensagem — numa base real com oferta composta + CTA, o modelo devolveu
+// "Estrategias de vendas para voce": manchete, nao mensagem. Variedade de
+// comprimento continua, mas com piso derivado do baseText em runtime.
 const VARIANT_BUCKETS = [
-  { key: "curta_direta", share: 0.15, rule: "no maximo 6 palavras, SEM saudacao." },
-  { key: "saudacao_pergunta", share: 0.2, rule: "comeca com saudacao e TERMINA EM PONTO DE INTERROGACAO. Uma unica frase." },
+  { key: "direta", share: 0.15, rule: "começa direto no ponto, SEM saudação. Mensagem completa, com o pedido." },
+  { key: "saudacao_pergunta", share: 0.2, rule: "começa com saudação e termina fazendo o pedido em forma de pergunta." },
   // {{nome}} NAO e bucket: virou regra global aplicada dentro de cada lote.
   // Como bucket, so ~20% das variacoes usariam nome, abaixo do piso de 30% que
   // o antiban precisa — e leads sem nome dependem das que nao usam.
   // needsSubject: so entra quando o baseText declara o assunto. Sem assunto o
   // modelo inventa marcador ("falar sobre X") e o "X" chega literal no lead.
-  { key: "com_motivo", share: 0.15, rule: "diz por que voce esta entrando em contato, usando SOMENTE o assunto que ja aparece no baseText. Nao invente assunto novo.", needsSubject: true },
-  { key: "duas_frases", share: 0.15, rule: "duas frases, entre 15 e 25 palavras no total." },
-  { key: "afirmacao", share: 0.15, rule: "PROIBIDO ponto de interrogacao nesta variacao. Nao pergunte nada: termine em ponto final." },
+  { key: "com_motivo", share: 0.15, rule: "diz por que você está entrando em contato, usando SOMENTE o assunto que já aparece no baseText. Não invente assunto novo.", needsSubject: true },
+  { key: "duas_frases", share: 0.15, rule: "duas ou três frases, a variação mais longa do conjunto." },
+  // needsNoQuestion: se a base PERGUNTA, toda variacao tem que perguntar
+  // (invariante do pedido). Um bucket que proibe interrogacao seria
+  // incompativel — some do plano nesse caso, em vez de brigar com o invariante.
+  { key: "afirmacao", share: 0.15, rule: "faz o pedido em forma de afirmação, sem ponto de interrogação.", needsNoQuestion: true },
 ];
+
+function contarPalavras(texto) {
+  return normalizeString(texto).split(/\s+/).filter(Boolean).length;
+}
+
+function semAcentoMinusculo(texto) {
+  return normalizeString(texto)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+// Classe fechada do portugues: artigos, preposicoes, contracoes e possessivos.
+// Nao e heuristica morfologica — e lista finita. O invariante de "mensalidade
+// da sua matricula" e {mensalidade, matricula}; exigir "da" e "sua" reprovava
+// parafrase correta por causa de palavra que nao carrega informacao nenhuma.
+const PALAVRAS_FUNCIONAIS = new Set([
+  "de", "da", "do", "das", "dos", "a", "o", "as", "os", "em", "na", "no", "nas", "nos",
+  "um", "uma", "uns", "umas", "e", "com", "para", "pra", "ao", "aos",
+  "seu", "sua", "seus", "suas", "meu", "minha", "nosso", "nossa",
+]);
+
+function palavrasDeConteudo(elemento) {
+  return semAcentoMinusculo(elemento)
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((palavra) => !PALAVRAS_FUNCIONAIS.has(palavra));
+}
+
+function contemPalavra(alvo, palavra) {
+  const escapado = palavra.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapado}([^\\p{L}\\p{N}]|$)`, "u").test(alvo);
+}
+
+/**
+ * O elemento concreto sobreviveu na variacao?
+ *
+ * Cada palavra e buscada por limite de palavra, NAO por substring: elemento
+ * curto como "IA" casaria dentro de "estrategias" e daria por preservado o que
+ * sumiu.
+ *
+ * Elemento de varias palavras casa FROUXO — todas as palavras presentes, em
+ * qualquer posicao, nao a frase contigua. Rede de seguranca para quando a
+ * extracao escorregar e devolver frase em vez de substantivo: "vaga na oficina"
+ * estava reprovando "na oficina esta semana, temos vaga", que preserva tudo.
+ */
+function variacaoPreservaElemento(variacao, elemento) {
+  const alvo = semAcentoMinusculo(variacao);
+  const palavras = palavrasDeConteudo(elemento);
+  if (palavras.length === 0) return true;
+  return palavras.every((palavra) => contemPalavra(alvo, palavra));
+}
+
+function sanitizeElementos(lista) {
+  if (!Array.isArray(lista)) return [];
+  return Array.from(
+    new Set(
+      lista
+        .map((item) => normalizeString(typeof item === "string" ? item : item?.texto || item?.valor))
+        .filter((item) => item.length >= 2 && item.length <= 40)
+        // Elemento so de palavra funcional nao e invariante de coisa nenhuma:
+        // some da lista em vez de reprovar variacao.
+        .filter((item) => palavrasDeConteudo(item).length > 0)
+    )
+    // Teto de 4: o prompt ja pede no maximo 4, isto e so a rede. Lista longa de
+    // invariantes reprova parafrase legitima e o gerador entrega menos.
+  ).slice(0, 4);
+}
 
 function sanitizeAvailableVariables(value) {
   if (!Array.isArray(value)) return [];
@@ -397,9 +473,12 @@ function baseTextDeclaresSubject(baseText) {
  * Bucket sem pre-requisito atendido ({{nome}} ausente, assunto ausente) sai da
  * lista e sua cota e redistribuida entre os demais pelo peso relativo.
  */
-function buildVariantBucketPlan(count, hasNameVariable, hasSubject) {
+function buildVariantBucketPlan(count, hasNameVariable, hasSubject, baseTemPergunta) {
   const buckets = VARIANT_BUCKETS.filter(
-    (bucket) => (hasNameVariable || !bucket.needsName) && (hasSubject || !bucket.needsSubject)
+    (bucket) =>
+      (hasNameVariable || !bucket.needsName) &&
+      (hasSubject || !bucket.needsSubject) &&
+      (!baseTemPergunta || !bucket.needsNoQuestion)
   );
   if (count < buckets.length) return [];
 
@@ -443,7 +522,11 @@ export async function generateCampaignTemplateVariants(input = {}) {
   const availableVariables = sanitizeAvailableVariables(input.availableVariables);
   const hasNameVariable = availableVariables.includes("nome");
   const hasSubject = baseTextDeclaresSubject(baseText);
-  const bucketPlan = buildVariantBucketPlan(askCount, hasNameVariable, hasSubject);
+  const baseTemPergunta = baseText.includes("?");
+  // Piso de comprimento derivado da BASE, nao chumbado. Mensagem com oferta
+  // composta + CTA nao cabe em 3 palavras: cortar demais joga fora o pedido.
+  const pisoPalavras = Math.max(3, Math.ceil(contarPalavras(baseText) * 0.4));
+  const bucketPlan = buildVariantBucketPlan(askCount, hasNameVariable, hasSubject, baseTemPergunta);
   // Bounds folgados de proposito. Medido 05/08/2026 contra a Groq
   // (openai/gpt-oss-20b): com minItems=maxItems=N o json_schema estrito devolve
   // 400 json_validate_failed de forma intermitente em N alto (20 e 25 falharam,
@@ -452,6 +535,8 @@ export async function generateCampaignTemplateVariants(input = {}) {
   const schema = {
     type: "object",
     properties: {
+      pedido: { type: "string" },
+      elementos: { type: "array", items: { type: "string" } },
       variants: {
         type: "array",
         minItems: Math.min(count, 6),
@@ -467,20 +552,31 @@ export async function generateCampaignTemplateVariants(input = {}) {
   // inteiro de 14 regras por chamada era o que estourava orcamento e fazia o
   // modelo ignorar metade delas.
   const regrasGlobais = [
-    `Nao mude o sentido, a oferta nem o proposito. Mantenha o tom do "baseText".`,
-    `Nunca repita literalmente outra variacao, nem com troca de uma palavra.`,
+    `Escreva em português do Brasil com ortografia correta e TODOS os acentos. Nunca escreva sem acento.`,
+    `INVARIANTE 1 — cada variação tem que ser uma MENSAGEM COMPLETA E ENVIÁVEL, que sozinha faz sentido para quem recebe sem nenhum contexto. Manchete, título ou fragmento não serve.`,
+    `INVARIANTE 2 — cada variação tem que fazer O MESMO PEDIDO da base.${baseTemPergunta ? " A base PERGUNTA, então toda variação tem que perguntar." : ""} Se a base oferece uma escolha, a variação oferece a MESMA escolha.`,
+    `INVARIANTE 3 — todos os elementos concretos da base sobrevivem em cada variação: números, durações, cargos, nomes de serviço ou tecnologia. Se a base cita duas tecnologias, a variação cita as duas.`,
+    `Cada variação tem no mínimo ${pisoPalavras} palavras. Encurtar cortando o pedido é proibido.`,
+    `Não mude o sentido, a oferta nem o propósito. Mantenha o tom do "baseText".`,
+    `Nunca repita literalmente outra variação, nem com troca de uma palavra.`,
     hasSubject
-      ? `Use SOMENTE o assunto que ja esta no "baseText". Nao invente assunto, produto ou beneficio.`
-      : `O "baseText" NAO declara assunto. Nao invente um e nao use marcador de posicao (letra solta, colchetes, parenteses, sublinhado, sinais de menor/maior).`,
+      ? `Use SOMENTE o assunto que já está no "baseText". Não invente assunto, produto ou benefício.`
+      : `O "baseText" NÃO declara assunto. Não invente um e não use marcador de posição (letra solta, colchetes, parênteses, sublinhado, sinais de menor/maior).`,
     availableVariables.length > 0
-      ? `Variaveis permitidas: ${availableVariables.map((name) => `{{${name}}}`).join(", ")}. Nenhuma outra.`
-      : `Nao use nenhuma variavel {{...}}.`,
-    `Proibido vocabulario de chamada telefonica (verbos de ligar/atender). E mensagem de texto. Ex. do erro: "estou ligando", "pode atender".`,
+      ? `Variáveis permitidas: ${availableVariables.map((name) => `{{${name}}}`).join(", ")}. Nenhuma outra.`
+      : `Não use nenhuma variável {{...}}.`,
+    `Proibido vocabulário de chamada telefônica (verbos de ligar/atender). É mensagem de texto. Ex. do erro: "estou ligando", "pode atender".`,
+    // Saudacao temporal e proibida: a variacao e gerada uma vez e disparada
+    // horas depois. Nao existe resolucao por hora em lugar nenhum do envio
+    // (confirmado por grep em campaign-outbound.js), entao "Bom dia" gerado de
+    // manha sai as 19h — horario errado e assinatura de automacao, o oposto do
+    // que a camada antiban existe para esconder.
+    `PROIBIDA saudação que dependa da hora ("bom dia", "boa tarde", "boa noite"). A mensagem é disparada horas depois de ser escrita e sairia com o horário errado. Use apenas saudação atemporal.`,
     hasNameVariable
-      ? `Metade das variacoes deste lote deve usar {{nome}} e a outra metade NAO pode usar (leads sem nome preenchido dependem dessas). Nas que usarem, varie a posicao: em umas no inicio, em outras no meio, em outras no fim.`
+      ? `Metade das variações deste lote deve usar {{nome}} e a outra metade NÃO pode usar (leads sem nome preenchido dependem dessas). Nas que usarem, varie a posição: em umas no início, em outras no meio, em outras no fim.`
       : null,
     hasNameVariable
-      ? `{{nome}} e o DESTINATARIO. Dirija-se a ele em segunda pessoa, nunca fale sobre ele como a um terceiro.`
+      ? `{{nome}} é o DESTINATÁRIO. Dirija-se a ele em segunda pessoa, nunca fale sobre ele como a um terceiro.`
       : null,
     `Sem markdown, sem lista numerada, sem emoji excessivo.`,
   ].filter(Boolean);
@@ -495,7 +591,7 @@ export async function generateCampaignTemplateVariants(input = {}) {
   // pares saiam da ordem da lista. Comprimentos opostos num lote, terminacoes
   // opostas no outro, e com_motivo sozinho porque nao tem antagonista.
   const PARES_ANTAGONICOS = [
-    ["curta_direta", "duas_frases"],
+    ["direta", "duas_frases"],
     ["saudacao_pergunta", "afirmacao"],
     ["com_motivo"],
   ];
@@ -518,6 +614,9 @@ export async function generateCampaignTemplateVariants(input = {}) {
   const aberturasUsadas = [];
   const colhidas = [];
   let rationale = "";
+  let pedidoDaBase = "";
+  const elementosDaBase = [];
+  let invariantesCongelados = false;
 
   for (const grupo of grupos) {
     const alvo = grupo.reduce((acc, bucket) => acc + bucket.size, 0);
@@ -528,23 +627,35 @@ export async function generateCampaignTemplateVariants(input = {}) {
       ? (porChave.get("saudacao_pergunta")?.size ?? 0) + 1
       : cotaPorGrupoSemSaudacao;
 
-    const promptGrupo = `Voce escreve mensagens de WhatsApp em pt-BR. Gere ${pedido} variacoes da mensagem base, para rotacao de texto antiban.
+    const promptGrupo = `Você escreve mensagens de WhatsApp em português do Brasil. Gere ${pedido} variações da mensagem base, para rotação de texto antiban.
 
 Mensagem base:
 """${baseText}"""
 
-FORMATOS OBRIGATORIOS (some ${pedido}; distribua entre os dois):
+FORMATOS OBRIGATÓRIOS (somam ${pedido}; distribua entre os dois):
 ${grupo.map((bucket) => `- ${bucket.size + 1} do tipo "${bucket.key}": ${bucket.rule}`).join("\n")}
 
-COTA DE SAUDACAO NESTE LOTE: no maximo ${cotaSaudacao} das ${pedido} variacoes podem comecar com saudacao (ola, oi, bom dia, boa tarde, boa noite, e ai). As outras ${pedido - cotaSaudacao} tem que comecar direto, SEM saudacao nenhuma.
+COTA DE SAUDAÇÃO NESTE LOTE: no máximo ${cotaSaudacao} das ${pedido} variações podem começar com uma saudação atemporal, do tipo "Olá" ou "Oi". As outras ${pedido - cotaSaudacao} têm que começar direto, SEM saudação nenhuma.
 
 REGRAS:
 ${regrasGlobais.map((regra, i) => `${i + 1}. ${regra}`).join("\n")}
 ${aberturasUsadas.length > 0
-  ? `${regrasGlobais.length + 1}. NAO comece nenhuma variacao com estas aberturas, ja usadas: ${aberturasUsadas.map((abertura) => `"${abertura}"`).join(", ")}. No maximo 3 variacoes no total podem compartilhar as 3 primeiras palavras.\n`
-  : `${regrasGlobais.length + 1}. Varie a abertura: no maximo 3 variacoes podem compartilhar as 3 primeiras palavras.\n`}
-FORMATO DA RESPOSTA (obrigatorio):
-Responda APENAS com {"variants": ["..."], "rationale": "..."} — sem markdown, sem texto fora do JSON.`;
+  ? `${regrasGlobais.length + 1}. NÃO comece nenhuma variação com estas aberturas, já usadas: ${aberturasUsadas.map((abertura) => `"${abertura}"`).join(", ")}. No máximo 3 variações no total podem compartilhar as 3 primeiras palavras.\n`
+  : `${regrasGlobais.length + 1}. Varie a abertura: no máximo 3 variações podem compartilhar as 3 primeiras palavras.\n`}
+ANTES DE ESCREVER AS VARIAÇÕES, extraia da mensagem base:
+- "pedido": em uma frase, o que a mensagem pede de quem recebe.
+- "elementos": no MÁXIMO 4 itens, os de maior valor informativo — aqueles que,
+  se sumissem, mudariam o que está sendo oferecido.
+  É elemento: substantivo concreto, número, valor, duração, nome próprio,
+  cargo, nome de produto, tecnologia ou serviço.
+  NÃO é elemento: verbo em qualquer forma, frase inteira, adjetivo, e
+  substantivo genérico que não identifica nada específico.
+  Escreva cada elemento como ele aparece na base, sem flexionar.
+  Se a base não tiver nenhum, devolva lista vazia.
+Depois gere as variações preservando o pedido e todos os elementos em TODAS elas.
+
+FORMATO DA RESPOSTA (obrigatório):
+Responda APENAS com {"pedido": "...", "elementos": ["..."], "variants": ["..."], "rationale": "..."} — sem markdown, sem texto fora do JSON.`;
 
     try {
       const parsedGrupo = await callGroqJson({
@@ -556,6 +667,20 @@ Responda APENAS com {"variants": ["..."], "rationale": "..."} — sem markdown, 
       const novas = extractVariantList(parsedGrupo);
       colhidas.push(...novas);
       if (!rationale) rationale = normalizeString(parsedGrupo?.rationale);
+      // Invariante e da BASE, nao do lote: congela na primeira extracao. Unir os
+      // 3 lotes furava o teto de 4 (cada um extrai o seu) e ainda misturava
+      // recortes diferentes da mesma ideia — "venceu ontem" de um, "boleto
+      // perdeu a validade" de outro. A uniao virava 5+ invariantes e reprovava
+      // parafrase legitima em massa: 39 descartes numa base so.
+      if (!invariantesCongelados) {
+        const extraidos = sanitizeElementos(parsedGrupo?.elementos);
+        const pedido = normalizeString(parsedGrupo?.pedido);
+        if (pedido || extraidos.length > 0) {
+          pedidoDaBase = pedido;
+          elementosDaBase.push(...extraidos);
+          invariantesCongelados = true;
+        }
+      }
       for (const variante of novas) {
         const abertura = variante.split(/\s+/).slice(0, 3).join(" ");
         if (abertura && !aberturasUsadas.includes(abertura)) aberturasUsadas.push(abertura);
@@ -569,7 +694,119 @@ Responda APENAS com {"variants": ["..."], "rationale": "..."} — sem markdown, 
     }
   }
 
-  const variants = dedupeVariants(colhidas);
+  // Validacao no codigo. O prompt pede o invariante; isto CONFERE. Variacao que
+  // perde o pedido ou um elemento concreto vai para o lixo com motivo — entregar
+  // manchete em vez de mensagem foi o defeito que quebrou em producao.
+  // Pura: mesma entrada, mesmo veredito. Precisa ser reexecutavel porque a
+  // autocorrecao abaixo revalida o mesmo material com a lista de elementos
+  // encurtada, sem gastar chamada nova.
+  const validar = (lista, elementos) => {
+    const aprovadas = [];
+    const descartadas = [];
+    const porElemento = new Map();
+    for (const variacao of lista) {
+      const palavras = contarPalavras(variacao);
+      if (palavras < pisoPalavras) {
+        descartadas.push({ texto: variacao, motivo: `curta demais (${palavras} palavras, piso ${pisoPalavras})` });
+        continue;
+      }
+      if (baseTemPergunta && !variacao.includes("?")) {
+        descartadas.push({ texto: variacao, motivo: "a base pergunta e a variacao nao pergunta" });
+        continue;
+      }
+      const faltando = elementos.filter((elemento) => !variacaoPreservaElemento(variacao, elemento));
+      if (faltando.length > 0) {
+        for (const elemento of faltando) porElemento.set(elemento, (porElemento.get(elemento) || 0) + 1);
+        descartadas.push({ texto: variacao, motivo: `perdeu da base: ${faltando.join(", ")}` });
+        continue;
+      }
+      aprovadas.push(variacao);
+    }
+    return { aprovadas, descartadas, porElemento };
+  };
+
+  let elementosEmUso = [...elementosDaBase];
+  let poolBruto = dedupeVariants(colhidas);
+  let veredito = validar(poolBruto, elementosEmUso);
+  let variants = veredito.aprovadas;
+  let descartadas = veredito.descartadas;
+  let descartesPorElemento = veredito.porElemento;
+  const elementosRemovidos = [];
+
+  // Faltou depois do descarte: pede mais, em vez de entregar menos calado.
+  if (variants.length < count) {
+    const faltam = count - variants.length;
+    try {
+      const reposicao = await callGroqJson({
+        schemaName: "campaign_template_variants",
+        schema,
+        preferJsonObject: true,
+        taskPrompt: `Você escreve mensagens de WhatsApp em português do Brasil, com ortografia correta e todos os acentos. Gere ${faltam + 2} variações da mensagem base.
+
+Mensagem base:
+"""${baseText}"""
+
+O QUE NÃO PODE FALTAR EM NENHUMA VARIAÇÃO:
+- o pedido: ${pedidoDaBase || "o mesmo pedido que a mensagem base faz"}
+${elementosDaBase.length > 0 ? `- estes elementos, todos: ${elementosDaBase.join(", ")}` : "- os elementos concretos da base"}
+- mínimo de ${pisoPalavras} palavras${baseTemPergunta ? "\n- ponto de interrogação: a base pergunta" : ""}
+
+Cada variação é uma MENSAGEM COMPLETA E ENVIÁVEL, não manchete nem fragmento.
+Proibida saudação que dependa da hora ("bom dia", "boa tarde", "boa noite").
+
+Não repita nenhuma destas, que já existem:
+${variants.map((v, i) => `${i + 1}. ${v}`).join("\n")}
+
+FORMATO DA RESPOSTA (obrigatório):
+Responda APENAS com {"variants": ["..."], "rationale": "..."} — sem markdown, sem texto fora do JSON.`,
+      });
+      poolBruto = dedupeVariants([...poolBruto, ...extractVariantList(reposicao)]);
+      veredito = validar(poolBruto, elementosEmUso);
+      variants = veredito.aprovadas;
+      descartadas = veredito.descartadas;
+      descartesPorElemento = veredito.porElemento;
+    } catch (err) {
+      console.warn("[campaign-ai] reposicao de variacoes descartadas falhou:", err?.message || err);
+    }
+  }
+
+  // AUTOCORRECAO SEM CUSTO DE TOKEN. Quando um unico elemento responde pela
+  // maioria dos descartes e a taxa passa de 50%, o defeito esta na EXTRACAO
+  // daquele elemento, nao nas variacoes — o modelo devolveu sintagma em vez de
+  // substantivo. Tira o elemento e revalida o material que ja esta em maos:
+  // o texto ja foi gerado e pago, so o criterio muda.
+  for (let tentativa = 0; tentativa < elementosEmUso.length; tentativa += 1) {
+    const total = variants.length + descartadas.length;
+    if (total === 0 || descartadas.length / total <= 0.5) break;
+
+    const [campeao, vezes] = [...descartesPorElemento.entries()].sort((a, b) => b[1] - a[1])[0] || [];
+    if (!campeao || vezes <= descartadas.length / 2) break;
+
+    const antes = variants.length;
+    elementosEmUso = elementosEmUso.filter((elemento) => elemento !== campeao);
+    elementosRemovidos.push(campeao);
+    veredito = validar(poolBruto, elementosEmUso);
+    variants = veredito.aprovadas;
+    descartadas = veredito.descartadas;
+    descartesPorElemento = veredito.porElemento;
+    console.warn(
+      `[campaign-ai] autocorrecao: elemento "${campeao}" reprovou ${vezes} de ${antes + vezes}; removido da lista. Variacoes aprovadas: ${antes} -> ${variants.length}, sem chamada nova.`
+    );
+  }
+
+  // Entregou menos que o pedido mesmo depois da reposicao: registra QUAL
+  // invariante mais reprovou. Sem isto, a proxima regressao custa outra
+  // investigacao inteira para descobrir que o culpado era um elemento so.
+  if (variants.length < count && descartesPorElemento.size > 0) {
+    const ranking = [...descartesPorElemento.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([elemento, vezes]) => `"${elemento}" (${vezes}x)`)
+      .join(", ");
+    console.warn(
+      `[campaign-ai] entregou ${variants.length} de ${count}; ${descartadas.length} descartadas. Elementos que mais reprovaram: ${ranking}`
+    );
+  }
+
   if (variants.length === 0) {
     throw new Error("Groq nao devolveu nenhuma variacao utilizavel.");
   }
@@ -577,6 +814,9 @@ Responda APENAS com {"variants": ["..."], "rationale": "..."} — sem markdown, 
   return {
     variants: variants.slice(0, count),
     requested: count,
+    discarded: descartadas,
+    discardedCount: descartadas.length,
+    invariants: { pedido: pedidoDaBase, elementos: elementosEmUso, removidos: elementosRemovidos },
     rationale,
   };
 }

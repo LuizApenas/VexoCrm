@@ -580,12 +580,23 @@ export default function LeadImports({
       // Antes o texto dizia "3 variações" fixo, independente do que voltava —
       // por isso 8 pedidas apareciam como 3 na tela.
       const pedidas = result.requested ?? variants.length;
+      // Descarte visível: o backend joga fora variação que perde o pedido da
+      // mensagem (virou manchete, sumiu um número, deixou de perguntar). Sem
+      // isto o usuário só via o resultado e não sabia que metade caiu fora.
+      const descartadas = result.discardedCount ?? 0;
+      const motivos = Array.from(new Set((result.discarded ?? []).map((d) => d.motivo.split(" (")[0])));
       toast({
-        title: "Sucesso!",
-        description:
+        title: descartadas > 0 ? "Variações geradas (com descarte)" : "Sucesso!",
+        description: [
           variants.length < pedidas
             ? `${variants.length} de ${pedidas} variações geradas.`
             : `${variants.length} variações humanizadas foram geradas.`,
+          descartadas > 0
+            ? `${descartadas} descartada(s) por não preservar a mensagem: ${motivos.slice(0, 3).join("; ")}.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       });
     } catch (err) {
       toast({

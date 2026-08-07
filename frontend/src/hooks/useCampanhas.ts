@@ -792,6 +792,10 @@ export function useGenerateCampaignTemplateVariants() {
   return useCampaignAiMutation<{
     variants: string[];
     requested?: number;
+    /** Variacoes que a IA gerou e o backend jogou fora por perderem o pedido da mensagem. */
+    discarded?: Array<{ texto: string; motivo: string }>;
+    discardedCount?: number;
+    invariants?: { pedido?: string; elementos?: string[] };
     rationale: string;
   }>("/api/campaigns/ai/generate-template-variants", "Erro ao gerar variacoes");
 }
