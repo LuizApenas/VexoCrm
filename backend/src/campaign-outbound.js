@@ -270,10 +270,20 @@ function normalizeDispatchOptions(rawOptions = {}, sequence = []) {
   // Deriva da sequencia: passo habilitado com after_reply => o disparo espera
   // resposta. Uma fonte de verdade so — a escolha do passo. Vale tambem para
   // campanhas ja salvas, porque roda na leitura e nao exige reedicao nem migracao.
-  const hasReplyStep = (Array.isArray(sequence) ? sequence : []).some(
-    (step) => step?.enabled !== false && step?.triggerMode === "after_reply"
-  );
-  const waitForReply = hasReplyStep || normalizeBoolean(rawOptions.waitForReply, false);
+  //
+  // A derivacao SO vale quando a sequencia tem os dois lados: pelo menos um passo
+  // imediato E pelo menos um after_reply. E a forma de uma campanha de verdade.
+  //
+  // Uma sequencia formada SO por after_reply nao e campanha: e a continuacao pos
+  // resposta (dispatch.js passa `sequence: remainingSteps` com waitForReply: false
+  // de proposito). Derivar true ali reativava o fluxo de espera, e a validacao
+  // rejeitava o envio com "precisam de pelo menos um passo imediato" — o passo 2
+  // nunca chegava a ser tentado. Regressao introduzida em b935ea7.
+  const passos = (Array.isArray(sequence) ? sequence : []).filter((step) => step?.enabled !== false);
+  const temPassoAposResposta = passos.some((step) => step?.triggerMode === "after_reply");
+  const temPassoImediato = passos.some((step) => step?.triggerMode !== "after_reply");
+  const derivarDaSequencia = temPassoAposResposta && temPassoImediato;
+  const waitForReply = derivarDaSequencia || normalizeBoolean(rawOptions.waitForReply, false);
   const replyTimeoutSeconds = Math.min(
     normalizeNonNegativeInteger(rawOptions.replyTimeoutSeconds, DEFAULT_REPLY_TIMEOUT_SECONDS),
     MAX_REPLY_TIMEOUT_SECONDS
@@ -497,6 +507,8 @@ function formatStepTextWithButtons(baseText, stepButtons, context = {}, phone = 
   for (const btn of urlButtons) {
     const rawUrl = btn.url || btn.href || "";
     const resolvedUrl = applyMessagePlaceholders(rawUrl, context.lead, phone);
+    // Mesmo criterio de buildStepButtons: placeholder nao resolvido nao vira link.
+    if (/\{\{.*?\}\}/.test(resolvedUrl || "")) continue;
     if (resolvedUrl && !text.includes(resolvedUrl)) {
       const label = btn.displayText || btn.label || "Acessar Link";
       appendedLinks.push(`👉 ${label}: ${resolvedUrl}`);
@@ -510,15 +522,53 @@ function formatStepTextWithButtons(baseText, stepButtons, context = {}, phone = 
   return text;
 }
 
-function buildTextPayload(phone, step, context = {}) {
-  const formattedButtons = Array.isArray(step.buttons) && step.buttons.length > 0
-    ? step.buttons.map((btn, idx) => ({
-        type: btn.type === "url" ? "url" : "reply",
+/**
+ * Botao de URL cujo placeholder nao resolveu nao pode ser enviado.
+ *
+ * applyMessagePlaceholders so troca chaves presentes em normalized_data. Com o
+ * Agendamento Integrado (Multi-Agenda) DESLIGADO, scheduling_link nunca entra ali
+ * e o placeholder segue LITERAL — o botao iria para o WhatsApp com a url
+ * "{{scheduling_link}}". Melhor mandar a mensagem sem o botao do que com um botao
+ * quebrado em nome do cliente.
+ */
+function buildStepButtons(step, context, phone) {
+  if (!Array.isArray(step.buttons) || step.buttons.length === 0) return null;
+
+  const formatados = [];
+  for (const [idx, btn] of step.buttons.entries()) {
+    const ehUrl = btn?.type === "url" || Boolean(btn?.url || btn?.href);
+    if (ehUrl) {
+      const bruta = btn?.url || btn?.href || "";
+      const resolvida = normalizeString(applyMessagePlaceholders(bruta, context.lead, phone));
+      if (!resolvida || /\{\{.*?\}\}/.test(resolvida)) {
+        console.warn("[campaign-outbound] botao de url descartado: placeholder nao resolvido", {
+          stepId: step.id,
+          displayText: btn?.displayText || btn?.label || null,
+          urlBruta: bruta,
+        });
+        continue;
+      }
+      formatados.push({
+        type: "url",
         displayText: btn.displayText || btn.label || `Botao ${idx + 1}`,
         id: `btn-${step.id}-${idx}`,
-        url: btn.type === "url" && (btn.url || btn.href) ? applyMessagePlaceholders(btn.url || btn.href, context.lead, phone) : undefined,
-      }))
-    : null;
+        url: resolvida,
+      });
+      continue;
+    }
+    formatados.push({
+      type: "reply",
+      displayText: btn.displayText || btn.label || `Botao ${idx + 1}`,
+      id: `btn-${step.id}-${idx}`,
+      url: undefined,
+    });
+  }
+
+  return formatados.length > 0 ? formatados : null;
+}
+
+function buildTextPayload(phone, step, context = {}) {
+  const formattedButtons = buildStepButtons(step, context, phone);
 
   const textWithButtons = formatStepTextWithButtons(step.text, step.buttons, context, phone);
 
@@ -542,14 +592,7 @@ function buildTextPayload(phone, step, context = {}) {
 
 function buildImagePayload(phone, step, context = {}) {
   const parsedImage = parseDataUrl(step.image?.dataUrl || "");
-  const formattedButtons = Array.isArray(step.buttons) && step.buttons.length > 0
-    ? step.buttons.map((btn, idx) => ({
-        type: btn.type === "url" ? "url" : "reply",
-        displayText: btn.displayText || btn.label || `Botao ${idx + 1}`,
-        id: `btn-${step.id}-${idx}`,
-        url: btn.type === "url" && (btn.url || btn.href) ? applyMessagePlaceholders(btn.url || btn.href, context.lead, phone) : undefined,
-      }))
-    : null;
+  const formattedButtons = buildStepButtons(step, context, phone);
 
   const textWithButtons = formatStepTextWithButtons(step.text || "", step.buttons, context, phone);
 

@@ -528,6 +528,19 @@ export async function executeCampaignDispatch(campaign, { triggerSource = "manua
   const immediateSteps = waitForReply ? stepPlan.immediateSteps : stepPlan.enabledSteps;
   const firstReplyStepIndex = waitForReply ? (stepPlan.replySteps[0]?.index ?? null) : null;
 
+  // Instrumentacao do lado da ESCRITA. Ate aqui so a leitura logava, entao
+  // "progresso sem waitForReply" era indistinguivel de "nunca foi gravado".
+  logCampaignReplyFlow("info", "step_plan", {
+    clientId: claimedCampaign.client_id,
+    campaignId: claimedCampaign.id,
+    shouldUseReplyFlow: stepPlan.shouldUseReplyFlow,
+    enabledSteps: stepPlan.enabledSteps.length,
+    immediateSteps: immediateSteps.length,
+    replySteps: stepPlan.replySteps.length,
+    firstReplyStepIndex,
+    dispatchOptionsWaitForReply: meta.dispatchOptions?.waitForReply ?? null,
+  });
+
   if (waitForReply && immediateSteps.length === 0) {
     const error = new Error("Campanhas com resposta avancada precisam de pelo menos um passo imediato antes da resposta.");
     error.statusCode = 400;
@@ -1226,6 +1239,18 @@ export async function markCampaignLeadWaitingReply({
     : null;
 
   if (lead?.id && campaign?.id && progressPatch) {
+    // Payload exato que vai para normalized_data.progress — e o que a leitura
+    // (findCampaignReplyMatches) exige com waitForReply true + aguardando_usuario.
+    logCampaignReplyFlow("info", "progress_write", {
+      clientId,
+      campaignId: campaign.id,
+      leadImportItemId: lead.id,
+      waitForReply: progressPatch.waitForReply,
+      status: progressPatch.status,
+      nextStepIndex: progressPatch.nextStepIndex,
+      totalSteps: progressPatch.totalSteps,
+      statusConversa,
+    });
     await updateLeadImportItemCampaignProgress({
       clientId,
       leadImportItemId: lead.id,
