@@ -835,6 +835,70 @@ function hoursSince(isoDate) {
   return (Date.now() - new Date(isoDate).getTime()) / 3_600_000;
 }
 
+/**
+ * Primeiro recontato de um lead finalizado: avisa uma vez que ja conversamos e
+ * que o consultor foi acionado, e MARCA que o aviso saiu.
+ *
+ * A marca (`dados.recontato_avisado_em`) e o que impede a repeticao: sem ela o
+ * mesmo aviso saia a cada mensagem, para sempre. Fica em `dados`, que ja e jsonb
+ * e ja e escrito por este caminho — sem coluna nova.
+ *
+ * ATENCAO: o texto abaixo esta CHUMBADO no codigo. Nao e configuravel por
+ * tenant nem por prompt, ao contrario do resto do atendimento. Ver relatorio.
+ */
+async function responderPrimeiroRecontato({ supabase, leadsTable, clientId, phone, existing, dadosAntigos }) {
+  const horario = dadosAntigos.melhor_horario || null;
+  const interesse = dadosAntigos.interesse || null;
+
+  const msgRecontato = interesse
+    ? `Oi! Vi que já conversamos sobre ${interesse}. Nosso consultor vai entrar em contato com você${horario ? ` de ${horario}` : " em breve"}. Posso ajudar com mais alguma coisa?`
+    : "Oi! Vi que já passamos por uma conversa antes. Nosso consultor vai entrar em contato. Posso ajudar com mais alguma coisa?";
+
+  const classificacao = classifyRecontactTemperature(dadosAntigos, { clientId, phone });
+
+  console.log("[chatbot-ai] Recontact from finalized lead", {
+    phone: phone.slice(-4),
+    clientId,
+    classificacaoAnterior: existing.lead_temperature ?? null,
+    classificacao,
+  });
+
+  // Grava a marca do aviso JUNTO com a temperatura, numa so ida ao banco. Sem a
+  // marca, a proxima mensagem cairia de novo aqui em vez de reabrir.
+  const patch = {
+    dados: { ...dadosAntigos, recontato_avisado_em: new Date().toISOString() },
+  };
+  if (classificacao !== existing.lead_temperature) {
+    // Persiste na MESMA coluna que este caminho le. Estava vazia porque ninguem
+    // escrevia nela por aqui. Nao toca em `temperature`/`stage` — sao da
+    // extracao de WhatsApp, outro caminho.
+    patch.lead_temperature = classificacao;
+  }
+
+  const { error: patchError } = await supabase
+    .from(leadsTable)
+    .update(patch)
+    .eq("id", existing.id)
+    .eq("client_id", clientId);
+
+  if (patchError) {
+    console.error("[chatbot-ai] recontato: falha ao gravar marca/temperatura", {
+      clientId,
+      phone: phone.slice(-4),
+      error: patchError.message,
+    });
+  }
+
+  return {
+    mensagem: msgRecontato,
+    status_conversa: "finalizado",
+    dados: dadosAntigos,
+    classificacao,
+    finalizado: true,
+    _recontato: true, // sinal para o webhook notificar SDR de recontato
+  };
+}
+
 export async function processBatch({ clientId, phone, messages, supabase, model, promptType: promptTypeOverride = null, campaignPromptId = null, llmModel = null, inboundPrompt = null, inboundSpinInstruction = "" }) {
   if (!model) {
     console.error("[chatbot-ai] model não configurado para cliente — chatbot silenciado", { clientId });
@@ -874,51 +938,58 @@ export async function processBatch({ clientId, phone, messages, supabase, model,
   const existing = existingArray?.[0] || null;
 
   // ── Cenário 1: lead já finalizado voltou a contatar ──────────────────────
+  //
+  // O aviso de recontato sai UMA vez. Da segunda mensagem em diante a conversa
+  // REABRE e o lead volta ao atendimento normal.
+  //
+  // Antes isto era beco sem saida: `finalizado` nunca voltava para false, entao
+  // toda mensagem do lead recebia a mesma frase. Um lead finalizado num teste
+  // perguntou "quando irao entrar em contato" e levou a mesma cortesia de volta,
+  // indefinidamente — o numero ficava inutilizado.
   if (existing?.finalizado) {
     const dadosAntigos = existing.dados || {};
-    const horario = dadosAntigos.melhor_horario || null;
-    const interesse = dadosAntigos.interesse || null;
+    const jaAvisadoEm = String(dadosAntigos.recontato_avisado_em ?? "").trim();
 
-    const msgRecontato = interesse
-      ? `Oi! Vi que já conversamos sobre ${interesse}. Nosso consultor vai entrar em contato com você${horario ? ` de ${horario}` : " em breve"}. Posso ajudar com mais alguma coisa?`
-      : "Oi! Vi que já passamos por uma conversa antes. Nosso consultor vai entrar em contato. Posso ajudar com mais alguma coisa?";
-
-    const classificacao = classifyRecontactTemperature(dadosAntigos, { clientId, phone });
-
-    console.log("[chatbot-ai] Recontact from finalized lead", {
-      phone: phone.slice(-4),
-      clientId,
-      classificacaoAnterior: existing.lead_temperature ?? null,
-      classificacao,
-    });
-
-    // Persiste na MESMA coluna que este caminho le. Estava vazia porque ninguem
-    // escrevia nela por aqui; escrever fecha o buraco em vez de contorna-lo.
-    // Nao toca em `temperature`/`stage` — sao da extracao de WhatsApp, outro caminho.
-    if (classificacao !== existing.lead_temperature) {
-      const { error: tempError } = await supabase
+    if (jaAvisadoEm) {
+      // Segunda mensagem: reabre e SEGUE para o fluxo normal (nao retorna aqui).
+      const dadosReabertos = {
+        ...dadosAntigos,
+        recontato_avisado_em: null,
+        recontato_reaberto_em: new Date().toISOString(),
+      };
+      const { error: reopenError } = await supabase
         .from(leadsTable)
-        .update({ lead_temperature: classificacao })
+        .update({ finalizado: false, status_conversa: "em_atendimento", dados: dadosReabertos })
         .eq("id", existing.id)
         .eq("client_id", clientId);
-      if (tempError) {
-        console.error("[chatbot-ai] recontato: falha ao gravar lead_temperature", {
+
+      if (reopenError) {
+        console.error("[chatbot-ai] recontato: falha ao reabrir conversa", {
           clientId,
           phone: phone.slice(-4),
-          error: tempError.message,
+          error: reopenError.message,
+        });
+      } else {
+        console.log("[chatbot-ai] recontato: conversa reaberta", {
+          clientId,
+          phone: phone.slice(-4),
         });
       }
-    }
 
-    return {
-      mensagem: msgRecontato,
-      status_conversa: "finalizado",
-      dados: dadosAntigos,
-      classificacao,
-      finalizado: true,
-      _recontato: true, // sinal para o webhook notificar SDR de recontato
-    };
+      existing.finalizado = false;
+      existing.dados = dadosReabertos;
+    } else {
+      return await responderPrimeiroRecontato({
+        supabase,
+        leadsTable,
+        clientId,
+        phone,
+        existing,
+        dadosAntigos,
+      });
+    }
   }
+
 
   const storedDados = normalizeLeadsOutlierDados(existing?.dados || {});
   const storedHistorico = parseStoredHistorico(existing?.historico) || parseStoredHistorico(existing?.dados?.historico);

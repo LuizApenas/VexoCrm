@@ -96,7 +96,8 @@ describe("recontato: temperatura reclassificada, sem fallback QUENTE", () => {
     expect(result.classificacao).toBe("MORNO");
     expect(result.classificacao).not.toBe("QUENTE");
     // Persistiu na coluna que este caminho le.
-    expect(supabase.updates).toEqual([{ lead_temperature: "MORNO" }]);
+    expect(supabase.updates).toHaveLength(1);
+    expect(supabase.updates[0].lead_temperature).toBe("MORNO");
     // UPDATE escopado por tenant.
     expect(supabase.filters).toContainEqual(["client_id", CLIENT_ID]);
     expect(supabase.filters).toContainEqual(["id", "lead-1"]);
@@ -105,20 +106,27 @@ describe("recontato: temperatura reclassificada, sem fallback QUENTE", () => {
   it("lead sem dado nenhum vira FRIO, nao QUENTE", async () => {
     const { result, supabase } = await runRecontact({ dados: DADOS_FRIO, leadTemperature: null });
     expect(result.classificacao).toBe("FRIO");
-    expect(supabase.updates).toEqual([{ lead_temperature: "FRIO" }]);
+    expect(supabase.updates).toHaveLength(1);
+    expect(supabase.updates[0].lead_temperature).toBe("FRIO");
   });
 
   it("lead JA classificado: reclassifica e atualiza quando muda", async () => {
     // Estava FRIO no banco, mas os dados atuais qualificam QUENTE → grava a mudanca.
     const { result, supabase } = await runRecontact({ dados: DADOS_QUENTE, leadTemperature: "FRIO" });
     expect(result.classificacao).toBe("QUENTE");
-    expect(supabase.updates).toEqual([{ lead_temperature: "QUENTE" }]);
+    expect(supabase.updates).toHaveLength(1);
+    expect(supabase.updates[0].lead_temperature).toBe("QUENTE");
   });
 
   it("nao escreve quando a classificacao nao mudou", async () => {
     const { result, supabase } = await runRecontact({ dados: DADOS_QUENTE, leadTemperature: "QUENTE" });
     expect(result.classificacao).toBe("QUENTE");
-    expect(supabase.updates).toEqual([]);
+    // O update agora SEMPRE acontece: grava dados.recontato_avisado_em, a marca que
+    // impede o aviso de sair uma segunda vez. O contrato preservado e o outro —
+    // temperatura igual nao e reescrita.
+    expect(supabase.updates).toHaveLength(1);
+    expect(supabase.updates[0]).not.toHaveProperty("lead_temperature");
+    expect(supabase.updates[0].dados.recontato_avisado_em).toBeTruthy();
   });
 
   it("falha no UPDATE nao derruba o recontato", async () => {

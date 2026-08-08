@@ -1341,6 +1341,85 @@ export function registerChatbotRoutes(app, deps) {
    * POST /api/chatbot-test — endpoint síncrono para simulador de conversa no painel
    * Processa a mensagem diretamente (sem buffer, sem Evolution) e retorna a resposta da IA.
    */
+  /**
+   * POST /api/chatbot-leads/reabrir  { clientId, phone }
+   *
+   * Destrava um lead preso em "finalizado". Ate aqui nao existia jeito nenhum
+   * de reverter pela tela: um lead finalizado num teste ficava com o numero
+   * inutilizado, recebendo a mesma frase de recontato para sempre.
+   *
+   * Escopo de tenant por resolveAuthorizedClientId — um tenant nao reabre lead
+   * de outro. O filtro client_id vai TAMBEM no UPDATE, nao so na autorizacao.
+   */
+  app.post("/api/chatbot-leads/reabrir", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+
+    try {
+      const requestedClientId = normalizeString(req.body?.clientId);
+      const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+      if (!clientId) return;
+
+      const phone = sanitizePhone(req.body?.phone || req.body?.telefone);
+      if (!phone) {
+        sendError(res, 400, "INVALID_BODY", "Missing phone");
+        return;
+      }
+
+      const leadsTable = leadsTableName(clientId);
+      const { data: encontrados, error: readError } = await supabase
+        .from(leadsTable)
+        .select("id, dados, finalizado")
+        .eq("client_id", clientId)
+        .eq("telefone", phone)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (readError) {
+        console.error("[chatbot-leads] reabrir: falha ao ler lead:", readError.message);
+        sendError(res, 500, "LEAD_READ_FAILED", "Falha ao ler o lead", readError.message);
+        return;
+      }
+
+      const lead = encontrados?.[0] || null;
+      if (!lead) {
+        sendError(res, 404, "LEAD_NOT_FOUND", "Lead nao encontrado neste tenant");
+        return;
+      }
+
+      const dados = lead.dados || {};
+      const { error: updateError } = await supabase
+        .from(leadsTable)
+        .update({
+          finalizado: false,
+          status_conversa: "em_atendimento",
+          dados: {
+            ...dados,
+            recontato_avisado_em: null,
+            recontato_reaberto_em: new Date().toISOString(),
+          },
+        })
+        .eq("id", lead.id)
+        .eq("client_id", clientId);
+
+      if (updateError) {
+        console.error("[chatbot-leads] reabrir: falha ao gravar:", updateError.message);
+        sendError(res, 500, "LEAD_REOPEN_FAILED", "Falha ao reabrir o lead", updateError.message);
+        return;
+      }
+
+      console.log("[chatbot-leads] lead reaberto", {
+        clientId,
+        phone: maskPhoneForLog(phone),
+        estavaFinalizado: lead.finalizado === true,
+      });
+
+      res.json({ success: true, reopened: true, wasFinalized: lead.finalizado === true });
+    } catch (error) {
+      console.error("[chatbot-leads] reabrir error:", error);
+      sendError(res, 500, "INTERNAL_ERROR", "Internal server error", internalErrorPayloadDetails(error));
+    }
+  });
+
   app.post("/api/chatbot-test", requireFirebaseAuth, async (req, res) => {
     if (!ensureDb(res)) return;
     const body = req.body && typeof req.body === "object" ? req.body : {};
