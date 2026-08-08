@@ -29,7 +29,12 @@ import {
 } from "../../hardcoded-chatbot-persistence.js";
 import { parseStoredHistorico } from "../../leads-outlier-schema.js";
 import { resolveInboundAgentConfig, buildSpinInstruction, fireInboundCompletionWebhook } from "../../services/inboundAgent.js";
-import { shouldIgnoreInboundEvent } from "../../services/inboundGuard.js";
+import {
+  shouldIgnoreInboundEvent,
+  resolveInboundEventName,
+  isFromMe,
+  resolveMessageId,
+} from "../../services/inboundGuard.js";
 
 export function registerChatbotRoutes(app, deps) {
   const {
@@ -924,9 +929,25 @@ export function registerChatbotRoutes(app, deps) {
     // que nao e mensagem de lead (o webhook e assinado tambem em SEND_MESSAGE) e
     // reprocessamento do mesmo id. Incidente real: o alerta de recontato do SDR
     // voltou como entrada e disparou outro alerta, 8 vezes.
+    // Instrumentacao do caminho de entrada. Toda saida daqui para baixo LOGA o
+    // motivo: tres rodadas de depuracao se perderam porque a mensagem do lead
+    // sumia em silencio e nao dava para saber em qual descarte.
+    const descartar = (motivo, extra = {}) => {
+      console.log("[chatbot-webhook] descartado", { motivo, ...extra });
+      res.json({ success: true, ignored: motivo });
+    };
+
+    const eventoBruto = body?.event ?? body?.Event ?? body?.eventName ?? null;
     const guarda = shouldIgnoreInboundEvent(body);
+    console.log("[chatbot-webhook] entrada", {
+      evento: eventoBruto,
+      eventoNormalizado: resolveInboundEventName(body) || null,
+      fromMe: isFromMe(body),
+      messageId: resolveMessageId(body) || null,
+      passou: !guarda.ignore,
+      motivo: guarda.reason,
+    });
     if (guarda.ignore) {
-      console.log("[chatbot-webhook] evento ignorado", { motivo: guarda.reason });
       res.json({ success: true, ignored: guarda.reason });
       return;
     }
@@ -934,7 +955,7 @@ export function registerChatbotRoutes(app, deps) {
     // Descarta mensagem de GRUPO/broadcast antes de qualquer lookup no banco ou chatbot.
     const rawRemoteJid = body.data?.key?.remoteJid ?? body.remoteJid ?? body.senderJid ?? null;
     if (isGroupJid(rawRemoteJid)) {
-      res.json({ success: true, ignored: "group" });
+      descartar("group", { remoteJid: rawRemoteJid });
       return;
     }
 
@@ -945,7 +966,7 @@ export function registerChatbotRoutes(app, deps) {
     // Verificar se chatbot está habilitado para este tenant
     const tenantSettings = await getLeadClientN8nSettings(clientId).catch(() => null);
     if (tenantSettings && tenantSettings.chatbot_enabled === false) {
-      res.json({ success: true, ignored: "chatbot_disabled" });
+      descartar("chatbot_disabled", { clientId });
       return;
     }
 
@@ -955,6 +976,7 @@ export function registerChatbotRoutes(app, deps) {
     );
 
     if (!phone) {
+      console.log("[chatbot-webhook] descartado", { motivo: "missing_phone", clientId, remoteJid: rawRemoteJid });
       res.json({ success: false, error: "Missing phone" });
       return;
     }
@@ -970,7 +992,7 @@ export function registerChatbotRoutes(app, deps) {
     });
 
     if (inboundConfig && !inboundConfig.enabled) {
-      res.json({ success: true, ignored: "inbound_disabled" });
+      descartar("inbound_disabled", { clientId, instanceName });
       return;
     }
 
@@ -983,9 +1005,25 @@ export function registerChatbotRoutes(app, deps) {
         ? tenantSettings.chatbot_instances.map((v) => String(v ?? "").trim()).filter(Boolean)
         : [];
       const chipAtual = String(instanceName || "").trim();
-      if (chipsDoChatbot.length > 0 && (!chipAtual || !chipsDoChatbot.includes(chipAtual))) {
-        res.json({ success: true, ignored: "chip_nao_vinculado" });
-        return;
+      if (chipsDoChatbot.length > 0) {
+        // O mesmo chip tem TRES nomes: o amigavel, o id, e o ultimo segmento da URL
+        // de disparo. A tela grava o da URL (TabGeral: nomeInstancia), e o webhook
+        // manda body.instance. Comparar string crua descartava resposta legitima de
+        // lead assim que o usuario marcasse um chip — o filtro so parecia funcionar
+        // enquanto a lista estava vazia. resolveInstanceNameAliases ja existe neste
+        // arquivo exatamente para reconciliar os tres.
+        const aliasesDoChip = (await resolveInstanceNameAliases(clientId, chipAtual).catch(() => null)) || [];
+        const nomesDoChipAtual = new Set([chipAtual, ...aliasesDoChip].filter(Boolean));
+        const vinculado = chipsDoChatbot.some((marcado) => nomesDoChipAtual.has(marcado));
+        if (!chipAtual || !vinculado) {
+          descartar("chip_nao_vinculado", {
+            clientId,
+            chipAtual: chipAtual || null,
+            aliasesDoChipAtual: Array.from(nomesDoChipAtual),
+            chipsMarcados: chipsDoChatbot,
+          });
+          return;
+        }
       }
     }
 
@@ -998,6 +1036,21 @@ export function registerChatbotRoutes(app, deps) {
       const campaignReplyContext = await findCampaignReplyMatches({ clientId, phone });
       const activeWaitCampaign = campaignReplyContext.processingWaitForReplyMatches[0] || null;
       activeCampaignForLead = campaignReplyContext.activePeriodCampaign;
+
+      // Por que este lead caiu (ou nao) no fluxo de resposta. Sem isto, "nao
+      // disparou" e indistinguivel de "progresso sem waitForReply" e de "lead
+      // nao encontrado em nenhuma campanha".
+      const progressoConsultado = activeWaitCampaign?.leadImportItem?.progress ?? null;
+      console.log("[campaign-routing] contexto", {
+        clientId,
+        phone: maskPhoneForLog(phone),
+        campanhasCasadas: campaignReplyContext.matches.length,
+        comWaitForReply: campaignReplyContext.waitForReplyMatches.length,
+        emProcessamento: campaignReplyContext.processingWaitForReplyMatches.length,
+        progressWaitForReply: progressoConsultado?.waitForReply ?? null,
+        progressStatus: progressoConsultado?.status ?? null,
+        periodoAtivo: activeCampaignForLead?.id ?? null,
+      });
 
       if (activeWaitCampaign) {
         // Lead aguardando resposta de disparo com waitForReply → avança sequência, silencia chatbot
