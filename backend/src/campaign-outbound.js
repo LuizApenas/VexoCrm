@@ -260,8 +260,20 @@ function normalizeSequenceStep(step, index) {
   };
 }
 
-function normalizeDispatchOptions(rawOptions = {}) {
-  const waitForReply = normalizeBoolean(rawOptions.waitForReply, false);
+function normalizeDispatchOptions(rawOptions = {}, sequence = []) {
+  // A tela NAO tem controle para dispatchOptions.waitForReply — o default do
+  // frontend e `false` fixo (LeadImports.tsx). O usuario expressa a intencao no
+  // PASSO, escolhendo "Enviar após resposta do lead" (triggerMode: after_reply).
+  // Enquanto isso nao era derivado aqui, a flag ficava false para sempre,
+  // shouldUseReplyFlow nunca ligava e o passo 2 jamais era enviado.
+  //
+  // Deriva da sequencia: passo habilitado com after_reply => o disparo espera
+  // resposta. Uma fonte de verdade so — a escolha do passo. Vale tambem para
+  // campanhas ja salvas, porque roda na leitura e nao exige reedicao nem migracao.
+  const hasReplyStep = (Array.isArray(sequence) ? sequence : []).some(
+    (step) => step?.enabled !== false && step?.triggerMode === "after_reply"
+  );
+  const waitForReply = hasReplyStep || normalizeBoolean(rawOptions.waitForReply, false);
   const replyTimeoutSeconds = Math.min(
     normalizeNonNegativeInteger(rawOptions.replyTimeoutSeconds, DEFAULT_REPLY_TIMEOUT_SECONDS),
     MAX_REPLY_TIMEOUT_SECONDS
@@ -331,7 +343,7 @@ export function normalizeCampaignAnalyticsMeta(rawMeta = {}) {
     message: normalizeString(meta.message) || firstTextStep?.text || "",
     image: normalizeImageAsset(meta.image) || firstImageStep?.image || null,
     sequence,
-    dispatchOptions: normalizeDispatchOptions(meta.dispatchOptions),
+    dispatchOptions: normalizeDispatchOptions(meta.dispatchOptions, sequence),
   };
 }
 
