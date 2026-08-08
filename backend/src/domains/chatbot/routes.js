@@ -29,6 +29,7 @@ import {
 } from "../../hardcoded-chatbot-persistence.js";
 import { parseStoredHistorico } from "../../leads-outlier-schema.js";
 import { resolveInboundAgentConfig, buildSpinInstruction, fireInboundCompletionWebhook } from "../../services/inboundAgent.js";
+import { shouldIgnoreInboundEvent } from "../../services/inboundGuard.js";
 
 export function registerChatbotRoutes(app, deps) {
   const {
@@ -918,10 +919,15 @@ export function registerChatbotRoutes(app, deps) {
   app.post("/api/hardcoded-chat-webhook", async (req, res) => {
     const body = req.body && typeof req.body === "object" ? req.body : {};
 
-    // Ignorar mensagens enviadas pelo próprio bot (fromMe) para evitar loop
-    const fromMe = body.data?.key?.fromMe === true || body.fromMe === true;
-    if (fromMe) {
-      res.json({ success: true, ignored: "fromMe" });
+    // Guarda de loop. Roda ANTES de qualquer buffering, chamada de LLM ou envio.
+    // Cobre tres casos: mensagem que nos mesmos enviamos (fromMe), eco de evento
+    // que nao e mensagem de lead (o webhook e assinado tambem em SEND_MESSAGE) e
+    // reprocessamento do mesmo id. Incidente real: o alerta de recontato do SDR
+    // voltou como entrada e disparou outro alerta, 8 vezes.
+    const guarda = shouldIgnoreInboundEvent(body);
+    if (guarda.ignore) {
+      console.log("[chatbot-webhook] evento ignorado", { motivo: guarda.reason });
+      res.json({ success: true, ignored: guarda.reason });
       return;
     }
 
