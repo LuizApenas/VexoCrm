@@ -1305,14 +1305,31 @@ export function registerCampaignsRoutes(app, deps) {
             throw new Error(campErr?.message || "Campaign not found");
           }
 
-          await supabase
+          // CLAIM ATOMICO DO DISPARO. O UPDATE precisa carregar `status = scheduled`:
+          // sem isso, entre o SELECT (status=scheduled) e este UPDATE existe uma janela
+          // em que o proximo ciclo do scheduler (60s) pega o MESMO disparo e roda uma
+          // segunda vez em paralelo. Foi o que reenviou o passo 1 ao mesmo lead as
+          // 19:50, 20:21, 02:08 e 10:58. Se nenhuma linha voltar, outro worker ja pegou.
+          const { data: claimed, error: claimErr } = await supabase
             .from("campaign_dispatches")
             .update({
               status: "running",
               triggered_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             })
-            .eq("id", dispatch.id);
+            .eq("id", dispatch.id)
+            .eq("status", "scheduled")
+            .select("id");
+
+          if (claimErr) throw claimErr;
+          if (!claimed || claimed.length === 0) {
+            console.log("[campaign-dispatch-scheduler] disparo ja reivindicado por outro ciclo, pulando", {
+              dispatchId: dispatch.id,
+              campaignId: dispatch.campaign_id,
+            });
+            results.push({ id: dispatch.id, campaignId: dispatch.campaign_id, status: "already_claimed" });
+            continue;
+          }
 
           await runCampaignDispatch({ dispatch, campaign, supabase });
 
@@ -1578,6 +1595,26 @@ export function registerCampaignsRoutes(app, deps) {
         }
       : campaignMeta;
     const steps = dispatchSteps ?? campaignMeta.sequence;
+
+    // Este e o caminho de envio REALMENTE em uso (fila de campaign_dispatches, acionada
+    // pelo scheduler) — e ele NAO passa por getCampaignStepPlan, entao nunca produziu
+    // step_plan nem gravou progresso via markCampaignLeadWaitingReply. Foi por isso que
+    // a instrumentacao do runCampaignDispatch de campaign/dispatch.js nunca apareceu no
+    // log: o codigo estava no ar, o caminho e que era outro.
+    console.info("[campaign-dispatch] plano", {
+      dispatchId,
+      campaignId: campaign.id,
+      clientId,
+      origemDosPassos: dispatchSteps ? "dispatch.steps" : "campaign.analytics_meta.sequence",
+      totalPassos: Array.isArray(steps) ? steps.length : 0,
+      passosAposResposta: Array.isArray(steps)
+        ? steps.filter((s) => s?.triggerMode === "after_reply").length
+        : 0,
+      waitForReplyDoMeta: campaignMeta.dispatchOptions?.waitForReply ?? null,
+      // true = este caminho envia TODOS os passos de uma vez, inclusive os after_reply,
+      // sem deixar progresso pendente para a resposta do lead.
+      ignoraFluxoDeResposta: true,
+    });
     const validation = validateCampaignAnalyticsMeta({
       ...campaignMeta,
       sequence: steps,
@@ -1702,7 +1739,40 @@ export function registerCampaignsRoutes(app, deps) {
     // lead como 'claimed' ANTES do envio. Se a linha não foi inserida (conflito), o lead
     // já foi tocado neste disparo → pular (evita duplicidade mesmo em retomada/concorrência).
     const claimLead = async ({ lead, phone }) => {
-      if (!pgDatabasePool || !lead?.id) return true; // sem lead_id não há como garantir idempotência → permite (legado)
+      if (!pgDatabasePool) return true;
+
+      // Sem lead_id (base "__crm__", por exemplo) o claim por (dispatch_id, lead_id)
+      // nao se aplica — e ate aqui isso liberava o envio "por legado", ou seja, SEM
+      // nenhuma trava. Reenvio duplicado nao pode depender de o lead ter id: cai para
+      // uma trava por TELEFONE dentro do mesmo disparo.
+      if (!lead?.id) {
+        const alvo = normalizeString(phone);
+        if (!alvo) return true;
+        const { rows } = await pgDatabasePool.query(
+          `SELECT 1 FROM public.campaign_dispatch_runs
+             WHERE dispatch_id = $1 AND phone = $2 LIMIT 1`,
+          [dispatchId, alvo]
+        );
+        if (rows.length > 0) {
+          console.warn("[campaign-dispatch] reenvio bloqueado: telefone ja tocado neste disparo", {
+            dispatchId,
+            campaignId: campaign.id,
+          });
+          return false;
+        }
+        await pgDatabasePool
+          .query(
+            `INSERT INTO public.campaign_dispatch_runs
+               (dispatch_id, campaign_id, client_id, lead_id, phone, status, claimed_at, created_at)
+             VALUES ($1, $2, $3, NULL, $4, 'claimed', now(), now())`,
+            [dispatchId, campaign.id, clientId, alvo]
+          )
+          .catch((err) => {
+            console.warn("[campaign-dispatch] claim por telefone falhou:", err?.message || err);
+          });
+        return true;
+      }
+
       const { rows } = await pgDatabasePool.query(
         `
           INSERT INTO public.campaign_dispatch_runs
@@ -1713,6 +1783,13 @@ export function registerCampaignsRoutes(app, deps) {
         `,
         [dispatchId, campaign.id, clientId, lead.id, phone || ""]
       );
+      if (rows.length === 0) {
+        console.warn("[campaign-dispatch] reenvio bloqueado: lead ja tocado neste disparo", {
+          dispatchId,
+          campaignId: campaign.id,
+          leadId: lead.id,
+        });
+      }
       return rows.length > 0;
     };
 
@@ -2413,8 +2490,22 @@ export function registerCampaignsRoutes(app, deps) {
       const authorizedClientId = resolveAuthorizedClientId(req, res, campaign.client_id);
       if (!authorizedClientId) return;
 
-      // Marca como running
-      await supabase.from("campaign_dispatches").update({ status: "running", triggered_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", dispatchId);
+      // Claim atomico tambem no gatilho manual: `.neq("status","running")` impede que
+      // dois cliques no botao — ou um clique concorrente com o ciclo do scheduler —
+      // iniciem duas execucoes do mesmo disparo. Sem isso o mesmo passo sai duas vezes.
+      const { data: claimedManual, error: claimManualErr } = await supabase
+        .from("campaign_dispatches")
+        .update({ status: "running", triggered_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq("id", dispatchId)
+        .neq("status", "running")
+        .select("id");
+
+      if (claimManualErr) {
+        return sendError(res, 500, "DISPATCH_CLAIM_FAILED", "Falha ao reivindicar o disparo", claimManualErr.message);
+      }
+      if (!claimedManual || claimedManual.length === 0) {
+        return sendError(res, 409, "DISPATCH_ALREADY_RUNNING", "Este disparo já está em execução");
+      }
 
       res.json({ success: true, status: "running", dispatchId });
 
