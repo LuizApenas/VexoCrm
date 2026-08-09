@@ -1,5 +1,6 @@
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { readFileSync } from "fs";
 import { randomUUID } from "crypto";
 import { gunzipSync } from "zlib";
 import cors from "cors";
@@ -306,9 +307,33 @@ dotenv.config({ path: join(__dirname, "..", ".env") });
 // GIT_COMMIT=... BUILD_TIME=...), nunca por git em runtime: o .dockerignore exclui
 // .git do contexto de proposito. "desconhecido" significa que a imagem foi
 // construida sem passar os args — nesse caso o deploy nao e rastreavel.
+// Fallback do carimbo: build-info.json, gerado por `npm run stamp` e commitado.
+// Existe porque o Easypanel nao passa os build-args hoje — sem isto o carimbo sai
+// "desconhecido" e o deploy volta a nao ser rastreavel. Env var tem precedencia:
+// se um dia o painel passar GIT_COMMIT, ele ganha do arquivo.
+function readBuildInfoFile() {
+  try {
+    const bruto = readFileSync(join(__dirname, "..", "build-info.json"), "utf8");
+    const dados = JSON.parse(bruto);
+    return {
+      commit: typeof dados.commit === "string" ? dados.commit : null,
+      builtAt: typeof dados.builtAt === "string" ? dados.builtAt : null,
+    };
+  } catch {
+    return { commit: null, builtAt: null };
+  }
+}
+
+const buildFromFile = readBuildInfoFile();
+
 export const BUILD_INFO = {
-  commit: process.env.GIT_COMMIT || process.env.SOURCE_COMMIT || "desconhecido",
-  builtAt: process.env.BUILD_TIME || "desconhecido",
+  commit: process.env.GIT_COMMIT || process.env.SOURCE_COMMIT || buildFromFile.commit || "desconhecido",
+  builtAt: process.env.BUILD_TIME || buildFromFile.builtAt || "desconhecido",
+  origem: process.env.GIT_COMMIT || process.env.SOURCE_COMMIT
+    ? "build-arg"
+    : buildFromFile.commit
+      ? "build-info.json"
+      : "nenhuma",
   startedAt: new Date().toISOString(),
 };
 

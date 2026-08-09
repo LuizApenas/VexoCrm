@@ -53,6 +53,9 @@ ENV GIT_COMMIT=$GIT_COMMIT \
 
 COPY src ./src
 COPY scripts ./scripts
+# Plano B do carimbo, para quando o painel nao passa os build-args acima.
+# Gerado por `npm run stamp` e commitado; ausente, o servidor cai em "desconhecido".
+COPY build-info.jso[n] ./
 COPY supabase ./supabase
 COPY start.sh ./start.sh
 
