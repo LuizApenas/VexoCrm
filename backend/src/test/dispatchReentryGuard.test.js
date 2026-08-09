@@ -81,6 +81,9 @@ describe("o caminho de envio real esta instrumentado", () => {
     const bloco = trecho('console.info("[campaign-dispatch] plano"', "});");
     expect(bloco).toContain("origemDosPassos");
     expect(bloco).toContain("passosAposResposta");
-    expect(bloco).toContain("ignoraFluxoDeResposta");
+    // ignoraFluxoDeResposta saiu junto com o defeito que ele descrevia: este caminho
+    // passou a respeitar o fluxo de resposta, entao o log diz o que decidiu.
+    expect(bloco).toContain("usaFluxoDeResposta");
+    expect(bloco).toContain("passosNesteEnvio");
   });
 });

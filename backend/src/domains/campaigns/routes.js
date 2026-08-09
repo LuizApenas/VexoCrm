@@ -26,9 +26,11 @@
 import { createLeadMessaging, isGroupJid } from "../shared/leadMessaging.js";
 import {
   dispatchCampaignSequence,
+  getCampaignStepPlan,
   normalizeCampaignAnalyticsMeta,
   validateCampaignAnalyticsMeta,
 } from "../../campaign-outbound.js";
+import { markCampaignLeadWaitingReply } from "../../campaign/dispatch.js";
 import {
   generateCampaignCopySuggestion,
   generateCampaignTemplateVariants,
@@ -1601,20 +1603,34 @@ export function registerCampaignsRoutes(app, deps) {
     // step_plan nem gravou progresso via markCampaignLeadWaitingReply. Foi por isso que
     // a instrumentacao do runCampaignDispatch de campaign/dispatch.js nunca apareceu no
     // log: o codigo estava no ar, o caminho e que era outro.
+    // Fluxo de resposta no caminho da fila. Ate aqui este runCampaignDispatch mandava
+    // TODOS os passos de uma vez, inclusive os after_reply, e nunca gravava progresso
+    // pendente — por isso o passo 2 saia na rajada inicial (ou nao saia) e
+    // continueCampaignLeadFromReply nunca era alcancado.
+    //
+    // Reaproveita getCampaignStepPlan e markCampaignLeadWaitingReply, as mesmas do
+    // outro caminho. Nao existe segunda implementacao da regra: ter duas foi o que
+    // custou as ultimas rodadas.
+    const stepPlan = getCampaignStepPlan({ ...campaignMeta, sequence: steps });
+    const usaFluxoDeResposta = stepPlan.shouldUseReplyFlow && stepPlan.immediateSteps.length > 0;
+    const passosDoEnvio = usaFluxoDeResposta ? stepPlan.immediateSteps : stepPlan.enabledSteps;
+    const primeiroPassoAposResposta = usaFluxoDeResposta
+      ? (stepPlan.replySteps[0]?.index ?? null)
+      : null;
+
     console.info("[campaign-dispatch] plano", {
       dispatchId,
       campaignId: campaign.id,
       clientId,
       origemDosPassos: dispatchSteps ? "dispatch.steps" : "campaign.analytics_meta.sequence",
       totalPassos: Array.isArray(steps) ? steps.length : 0,
-      passosAposResposta: Array.isArray(steps)
-        ? steps.filter((s) => s?.triggerMode === "after_reply").length
-        : 0,
-      waitForReplyDoMeta: campaignMeta.dispatchOptions?.waitForReply ?? null,
-      // true = este caminho envia TODOS os passos de uma vez, inclusive os after_reply,
-      // sem deixar progresso pendente para a resposta do lead.
-      ignoraFluxoDeResposta: true,
+      passosAposResposta: stepPlan.replySteps.length,
+      waitForReplyDoMeta: stepPlan.analyticsMeta.dispatchOptions?.waitForReply ?? null,
+      usaFluxoDeResposta,
+      passosNesteEnvio: passosDoEnvio.length,
+      primeiroPassoAposResposta,
     });
+
     const validation = validateCampaignAnalyticsMeta({
       ...campaignMeta,
       sequence: steps,
@@ -1843,7 +1859,16 @@ export function registerCampaignsRoutes(app, deps) {
       webhookUrl,
       webhookToken,
       leads,
-      analyticsMeta,
+      // Com fluxo de resposta, so os passos imediatos entram na rajada; os after_reply
+      // ficam pendentes ate o lead responder. waitForReply: false aqui e proposital —
+      // quem representa a espera e o progresso gravado, nao esta chamada.
+      analyticsMeta: usaFluxoDeResposta
+        ? {
+            ...analyticsMeta,
+            sequence: passosDoEnvio,
+            dispatchOptions: { ...analyticsMeta.dispatchOptions, waitForReply: false },
+          }
+        : analyticsMeta,
       context: {
         campaign: {
           id: campaign.id,
@@ -1858,10 +1883,34 @@ export function registerCampaignsRoutes(app, deps) {
       onLeadFailed: async ({ lead, reason }) => {
         await finalizeLeadFailed({ lead, reason });
       },
-      onLeadDispatched: async ({ lead, phone, sentAt }) => {
+      onLeadDispatched: async ({ lead, phone, sentAt, lastStep, lastStepIndex }) => {
         sentCount += 1;
         // Finaliza o registro de claim deste lead como 'sent' (UPDATE da linha já reservada).
         await finalizeLeadSent({ lead, sentAt });
+
+        // Progresso pendente: e o que continueCampaignLeadFromReply exige para avancar
+        // (waitForReply true + status "aguardando_usuario" + nextStepIndex). Mesma funcao
+        // usada pelo outro caminho — sem segunda implementacao da regra.
+        if (usaFluxoDeResposta) {
+          await markCampaignLeadWaitingReply({
+            clientId,
+            lead,
+            phone,
+            campaign,
+            step: lastStep,
+            stepIndex: Number.isInteger(lastStepIndex) ? lastStepIndex : passosDoEnvio.length - 1,
+            totalSteps: stepPlan.enabledSteps.length,
+            dispatchedAt: sentAt || new Date().toISOString(),
+            nextStepIndex: primeiroPassoAposResposta,
+            status: "aguardando_usuario",
+          }).catch((err) => {
+            console.warn("[campaign-dispatch] falha ao gravar progresso de espera", {
+              dispatchId,
+              campaignId: campaign.id,
+              error: err?.message || err,
+            });
+          });
+        }
         const leadPatch = {
           // "aguardando_usuario": pós-disparo, esperando o lead responder. Valor permitido
           // pela CHECK lead_import_items_status_conversa_check (aguardando_usuario|

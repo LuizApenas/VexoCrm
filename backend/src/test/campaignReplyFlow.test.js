@@ -78,7 +78,10 @@ describe("campaign reply flow safeguards", () => {
     expect(routeBundle).toContain('followup_status: "pending"');
     expect(routeBundle).toContain('status_conversa: "aguardando_usuario"');
     expect(routeBundle).toContain('ultima_interacao_bot: sentAt || new Date().toISOString()');
-    expect(routeBundle).toContain('onLeadDispatched: async ({ lead, phone, sentAt })');
+    // A assinatura ganhou lastStep/lastStepIndex para o caminho da fila poder gravar o
+    // progresso de espera (markCampaignLeadWaitingReply). Os tres campos que este teste
+    // protege — followup_status, status_conversa e ultima_interacao_bot — seguem iguais.
+    expect(routeBundle).toContain("onLeadDispatched: async ({ lead, phone, sentAt");
   });
 
   it("allows the followup queue to load all companies", () => {
