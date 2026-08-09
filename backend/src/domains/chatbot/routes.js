@@ -1040,15 +1040,27 @@ export function registerChatbotRoutes(app, deps) {
       // Por que este lead caiu (ou nao) no fluxo de resposta. Sem isto, "nao
       // disparou" e indistinguivel de "progresso sem waitForReply" e de "lead
       // nao encontrado em nenhuma campanha".
-      const progressoConsultado = activeWaitCampaign?.leadImportItem?.progress ?? null;
+      // O progresso tem de sair do MATCH, nao de activeWaitCampaign: activeWaitCampaign
+      // e processingWaitForReplyMatches[0], que so existe quando o progresso ja esta
+      // pendente. Ler dali era circular — quando emProcessamento e 0 o log dizia null
+      // sem distinguir "item nao encontrado" de "item sem progresso gravado".
+      const candidato = campaignReplyContext.waitForReplyMatches[0] || campaignReplyContext.matches[0] || null;
+      const progressoConsultado = candidato?.leadImportItem?.progress ?? null;
       console.log("[campaign-routing] contexto", {
         clientId,
         phone: maskPhoneForLog(phone),
         campanhasCasadas: campaignReplyContext.matches.length,
         comWaitForReply: campaignReplyContext.waitForReplyMatches.length,
         emProcessamento: campaignReplyContext.processingWaitForReplyMatches.length,
+        campanhaCandidata: candidato?.id ?? null,
+        matchSource: candidato?.matchSource ?? null,
+        // null aqui = a linha de lead_import_items nao foi encontrada para este
+        // telefone; preenchido = achou o item, o progresso e que nao tem a campanha.
+        leadImportItemId: candidato?.leadImportItem?.id ?? null,
+        temProgresso: progressoConsultado !== null,
         progressWaitForReply: progressoConsultado?.waitForReply ?? null,
         progressStatus: progressoConsultado?.status ?? null,
+        progressNextStepIndex: progressoConsultado?.nextStepIndex ?? null,
         periodoAtivo: activeCampaignForLead?.id ?? null,
       });
 
