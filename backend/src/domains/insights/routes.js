@@ -92,6 +92,12 @@ export function registerInsightsRoutes(app, deps) {
     res.json({
       ok: true,
       timestamp: new Date().toISOString(),
+      // Qual codigo esta no ar. "desconhecido" = imagem construida sem os
+      // build-args; ver [build] no log de subida e o Dockerfile.
+      build: {
+        commit: process.env.GIT_COMMIT || process.env.SOURCE_COMMIT || "desconhecido",
+        builtAt: process.env.BUILD_TIME || "desconhecido",
+      },
       uptimeSeconds: process.uptime(),
       services,
     });

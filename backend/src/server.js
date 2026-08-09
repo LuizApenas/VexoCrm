@@ -302,6 +302,16 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env") });
 
+// Identidade do build. Preenchida por ARG no Dockerfile (docker build --build-arg
+// GIT_COMMIT=... BUILD_TIME=...), nunca por git em runtime: o .dockerignore exclui
+// .git do contexto de proposito. "desconhecido" significa que a imagem foi
+// construida sem passar os args — nesse caso o deploy nao e rastreavel.
+export const BUILD_INFO = {
+  commit: process.env.GIT_COMMIT || process.env.SOURCE_COMMIT || "desconhecido",
+  builtAt: process.env.BUILD_TIME || "desconhecido",
+  startedAt: new Date().toISOString(),
+};
+
 const app = express();
 app.use(express.json({ limit: "15mb" }));
 const isProduction = process.env.NODE_ENV === "production";
@@ -745,6 +755,12 @@ function listenWithRetry(attempt = 1) {
   const server = app.listen(port, () => {
     httpServer = server;
     console.log(`VexoApi listening on port ${port}`);
+    // Carimbo do build. Sem isto so da para saber qual codigo esta em producao
+    // inferindo por comportamento — ja custou uma rodada inteira de depuracao
+    // procurando um log que nao subiu porque o deploy nao pegou o commit.
+    // Valores vem de ARG no Dockerfile (build), nunca de git em runtime: o
+    // .dockerignore exclui .git de proposito.
+    console.log("[build]", JSON.stringify(BUILD_INFO));
     startBackgroundServices();
   });
 

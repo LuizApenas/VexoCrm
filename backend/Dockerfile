@@ -42,6 +42,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY package*.json ./
 RUN npm ci --omit=dev
 
+# Identidade do build. Declarados DEPOIS do npm ci para nao invalidar a camada de
+# dependencias (que e a cara), e ANTES do COPY src para que um commit novo sempre
+# produza uma imagem nova — mesmo que o conteudo de src casasse com o cache.
+# Sem isto nao ha como saber qual codigo esta rodando em producao.
+ARG GIT_COMMIT=desconhecido
+ARG BUILD_TIME=desconhecido
+ENV GIT_COMMIT=$GIT_COMMIT \
+    BUILD_TIME=$BUILD_TIME
+
 COPY src ./src
 COPY scripts ./scripts
 COPY supabase ./supabase
