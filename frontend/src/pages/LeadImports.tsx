@@ -211,6 +211,10 @@ export default function LeadImports({
   const [batchingEnabled, setBatchingEnabled] = useLocalStorage(`vexo_batching_${activeClientId}`, false);
   const [batchSize, setBatchSize] = useLocalStorage(`vexo_batchSize_${activeClientId}`, "100");
   const [batchIntervalHours, setBatchIntervalHours] = useLocalStorage(`vexo_batchInterval_${activeClientId}`, "1");
+  // Qual cerebro atende quem responder. Default "atendimento" = comportamento de
+  // hoje (waitForReply false, mode disparo): campanha existente nao muda.
+  const [replyAgent, setReplyAgent] = useLocalStorage<"passos" | "campanha" | "atendimento">(`vexo_replyAgent_${activeClientId}`, "atendimento");
+  const [campaignAgentPrompt, setCampaignAgentPrompt] = useLocalStorage(`vexo_replyAgentPrompt_${activeClientId}`, "");
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sequenceImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -247,6 +251,7 @@ export default function LeadImports({
   const deleteCampaign = useDeleteCampaign();
   const triggerCampaign = useTriggerCampaign();
   const generateTemplateVariants = useGenerateCampaignTemplateVariants();
+  const saveCampaignPrompt = useSaveCampaignPrompt();
   const createDispatch = useCreateDispatch(""); // campaign-specific instances are created dynamically
   const deleteDispatch = useDeleteDispatch("");
   const triggerDispatch = useTriggerDispatch("");
@@ -724,14 +729,31 @@ export default function LeadImports({
 
       const limitForCampaign = batchingEnabled ? (Number.parseInt(batchSize, 10) || 100) : limitPerRun;
 
+      // Quem responde o lead que reagir a este disparo. O backend escolhe o
+      // cerebro pelo ROTEIRO existir (campaign_prompt_id), nao pelo mode — entao
+      // campanha sem roteiro continua caindo no agente de atendimento, que e o
+      // comportamento de hoje.
+      let campaignMode: "disparo" | "agente" = "disparo";
+      let campaignPromptId: string | null = null;
+      if (replyAgent === "campanha" && campaignAgentPrompt.trim()) {
+        setSubmittingStatus("Salvando o roteiro da campanha...");
+        const promptSalvo = await saveCampaignPrompt.mutateAsync({
+          clientId: activeClientId,
+          name: `Roteiro — ${campaignName.trim()}`,
+          content: campaignAgentPrompt.trim(),
+        });
+        campaignMode = "agente";
+        campaignPromptId = promptSalvo.id;
+      }
+
       const campaignPayload = {
         name: campaignName.trim(),
         clientId: activeClientId,
         importId: finalImportId === ALL_IMPORTS_VALUE ? null : finalImportId,
         importIds: selectedFile ? [] : selectedImportIds,
         limitPerRun: limitForCampaign,
-        mode: "disparo" as const,
-        campaignPromptId: null,
+        mode: campaignMode,
+        campaignPromptId,
         startsAt: null,
         endsAt: null,
         analyticsMeta: {
@@ -747,6 +769,10 @@ export default function LeadImports({
           sequence: campaignSequence,
           dispatchOptions: {
             ...dispatchOptions,
+            // "Só enviar os passos" silencia o chatbot: e o waitForReply que faz
+            // o roteamento parar em skipped_disparo_only. Nas outras duas opcoes
+            // o lead segue para um agente.
+            waitForReply: replyAgent === "passos" ? true : dispatchOptions.waitForReply,
             aiAssisted: hasVariants,
             templateStrategy,
             templateVariantCount: hasVariants ? (campaignSequence.find(s => s.type === "text")?.textVariants?.length || 0) : 0,
@@ -1141,6 +1167,10 @@ export default function LeadImports({
               setBatchSize={setBatchSize}
               batchIntervalHours={batchIntervalHours}
               setBatchIntervalHours={setBatchIntervalHours}
+              replyAgent={replyAgent}
+              setReplyAgent={setReplyAgent}
+              campaignAgentPrompt={campaignAgentPrompt}
+              setCampaignAgentPrompt={setCampaignAgentPrompt}
               multiAgendaEnabled={multiAgendaEnabled}
               setMultiAgendaEnabled={setMultiAgendaEnabled}
               consultants={consultants}

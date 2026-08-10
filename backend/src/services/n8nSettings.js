@@ -41,6 +41,7 @@ export function maskN8nSettings(row) {
       chatbot_enabled: false,
       chatbot_model: "outlier",
       chatbot_instances: [],
+      chatbot_inbound_scope: "leads_only",
       segmentation_config: buildDefaultSegmentationConfig("outlier"),
       sdr_whatsapp_number: null,
       updated_at: null,
@@ -57,6 +58,9 @@ export function maskN8nSettings(row) {
     chatbot_model: row.chatbot_model || "outlier",
     // Chips que este chatbot atende. Vazio = qualquer chip sem agente inbound.
     chatbot_instances: Array.isArray(row.chatbot_instances) ? row.chatbot_instances : [],
+    // Quem o chatbot atende. Default seguro: so lead conhecido. So o literal
+    // "all" abre para qualquer inbound.
+    chatbot_inbound_scope: row.chatbot_inbound_scope === "all" ? "all" : "leads_only",
     segmentation_config: sanitizeSegmentationConfig(row.segmentation_config, row.chatbot_model || "outlier"),
     sdr_whatsapp_number: row.sdr_whatsapp_number || null,
     updated_at: row.updated_at || null,
@@ -87,7 +91,7 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
     )
     .eq("client_id", clientId)
     .maybeSingle();
@@ -139,7 +143,7 @@ export async function getLeadClientN8nSettingsMap(clientIds) {
       // Como maskN8nSettings faz `Array.isArray(row.chatbot_instances) ? ... : []`, a
       // coluna ausente virava [] e a tela do Agente IA relia "Todos sem agente inbound"
       // a cada visita — a marcacao de chip era gravada e depois lida como vazia.
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
     )
     .in("client_id", clientIds);
 

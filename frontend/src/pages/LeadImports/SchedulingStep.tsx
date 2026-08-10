@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { InfoTip } from "@/components/InfoTip";
 import { cn } from "@/lib/utils";
 import type { CampaignDispatchOptions } from "@/hooks/useCampanhas";
@@ -28,6 +29,12 @@ interface SchedulingStepProps {
   setBatchSize: Dispatch<SetStateAction<string>>;
   batchIntervalHours: string;
   setBatchIntervalHours: Dispatch<SetStateAction<string>>;
+
+  /** Qual cerebro atende quem responder a este disparo. */
+  replyAgent: "passos" | "campanha" | "atendimento";
+  setReplyAgent: Dispatch<SetStateAction<"passos" | "campanha" | "atendimento">>;
+  campaignAgentPrompt: string;
+  setCampaignAgentPrompt: Dispatch<SetStateAction<string>>;
 
   multiAgendaEnabled: boolean;
   setMultiAgendaEnabled: Dispatch<SetStateAction<boolean>>;
@@ -66,6 +73,10 @@ export function SchedulingStep({
   setBatchSize,
   batchIntervalHours,
   setBatchIntervalHours,
+  replyAgent,
+  setReplyAgent,
+  campaignAgentPrompt,
+  setCampaignAgentPrompt,
   multiAgendaEnabled,
   setMultiAgendaEnabled,
   consultants,
@@ -191,6 +202,64 @@ export function SchedulingStep({
                   </p>
                 )}
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Quando o lead responder — qual cérebro atende */}
+        <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-white/5 dark:bg-slate-900/10 space-y-3">
+          <div className="space-y-0.5">
+            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+              Quando o lead responder
+              <InfoTip text="Mesmo número, dois cérebros: o roteiro desta campanha ou o agente de atendimento. Escolhido pelo contexto de quem respondeu." />
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              Quem responde o lead que reagir a este disparo
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {[
+              { valor: "passos" as const, titulo: "Só enviar os passos configurados (sem IA)", ajuda: "O lead recebe a sequência e mais nada. Nenhum agente responde." },
+              { valor: "campanha" as const, titulo: "Agente da campanha", ajuda: "Responde com o roteiro desta campanha, não com o de atendimento." },
+              { valor: "atendimento" as const, titulo: "Agente de atendimento (inbound)", ajuda: "O mesmo agente que atende quem procura a empresa." },
+            ].map((opcao) => (
+              <label
+                key={opcao.valor}
+                className={cn(
+                  "flex gap-2.5 rounded-lg border p-2.5 cursor-pointer transition-colors",
+                  replyAgent === opcao.valor
+                    ? "border-indigo-300 bg-indigo-50/40 dark:border-indigo-800 dark:bg-indigo-950/20"
+                    : "border-slate-200/80 dark:border-white/5"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="reply-agent"
+                  className="mt-0.5"
+                  checked={replyAgent === opcao.valor}
+                  onChange={() => setReplyAgent(opcao.valor)}
+                />
+                <span className="space-y-0.5">
+                  <span className="block text-xs font-semibold text-slate-800 dark:text-slate-100">{opcao.titulo}</span>
+                  <span className="block text-[10px] text-muted-foreground">{opcao.ajuda}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          {replyAgent === "campanha" && (
+            <div className="space-y-1.5 animate-fadeIn">
+              <label className="text-[10px] uppercase font-bold text-slate-500">Roteiro desta campanha</label>
+              <Textarea
+                value={campaignAgentPrompt}
+                onChange={(e) => setCampaignAgentPrompt(e.target.value)}
+                placeholder="Como o agente deve conduzir a conversa de quem responder a este disparo."
+                className="min-h-[110px] text-xs rounded-xl"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Salvo junto com a campanha. Sem roteiro preenchido, o atendimento assume.
+              </p>
             </div>
           )}
         </div>

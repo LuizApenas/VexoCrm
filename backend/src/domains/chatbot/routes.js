@@ -35,6 +35,13 @@ import {
   isFromMe,
   resolveMessageId,
 } from "../../services/inboundGuard.js";
+import {
+  resolveInboundScope,
+  shouldEngageInbound,
+  INBOUND_SCOPE_ALL,
+} from "../../services/inboundEngagementPolicy.js";
+import { resolveSdrTarget } from "../../services/sdrTarget.js";
+import { resolveCampaignAgent } from "../../services/campaignAgentRouting.js";
 
 export function registerChatbotRoutes(app, deps) {
   const {
@@ -103,6 +110,34 @@ export function registerChatbotRoutes(app, deps) {
     }
 
     return Array.from(aliases);
+  }
+
+  /**
+   * Ja existe registro de lead com este telefone neste tenant?
+   *
+   * Em caso de erro devolve TRUE de proposito: falha de leitura nao pode
+   * silenciar lead legitimo. Errar para o lado permissivo custa uma resposta
+   * indevida; para o lado restritivo custa perder cliente que respondeu.
+   */
+  async function telefoneEhLeadConhecido(clientId, phone) {
+    if (!supabase || !clientId || !phone) return false;
+    try {
+      const { data, error } = await supabase
+        .from(leadsTableName(clientId))
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("telefone", phone)
+        .limit(1);
+
+      if (error) {
+        console.warn("[chatbot-webhook] falha ao checar lead conhecido:", error.message);
+        return true;
+      }
+      return Array.isArray(data) && data.length > 0;
+    } catch (err) {
+      console.warn("[chatbot-webhook] falha ao checar lead conhecido:", err?.message || err);
+      return true;
+    }
   }
 
   // n8n / automação: insere leads no formato do chat outlier em `leads_outlier` (Bearer inbound por tenant).
@@ -963,8 +998,21 @@ export function registerChatbotRoutes(app, deps) {
       body.clientId ?? body.client_id ?? req.query.clientId ?? req.query.client_id
     ) || "outlier";
 
-    // Verificar se chatbot está habilitado para este tenant
-    const tenantSettings = await getLeadClientN8nSettings(clientId).catch(() => null);
+    // Verificar se chatbot está habilitado para este tenant.
+    //
+    // `catch (() => null)` engolia o erro e a falha de LEITURA ficava
+    // indistinguivel de "nao configurado": o numero do SDR sumia e o log dizia
+    // "no SDR number configured" com o numero salvo na tela. Falha de leitura
+    // agora aparece no log e e sinalizada, como manda a §4 das diretrizes.
+    let tenantSettingsReadFailed = false;
+    const tenantSettings = await getLeadClientN8nSettings(clientId).catch((err) => {
+      tenantSettingsReadFailed = true;
+      console.error("[chatbot-webhook] falha ao ler settings do tenant", {
+        clientId,
+        error: err?.message || String(err),
+      });
+      return null;
+    });
     if (tenantSettings && tenantSettings.chatbot_enabled === false) {
       descartar("chatbot_disabled", { clientId });
       return;
@@ -1031,11 +1079,13 @@ export function registerChatbotRoutes(app, deps) {
     let chatbotPromptTypeOverride = null; // "campanha" | "padrao" | null
     let activeCampaignForLead = null;
     let campaignPromptIdOverride = null;
+    let temCampanhaParaEsteTelefone = false;
 
     try {
       const campaignReplyContext = await findCampaignReplyMatches({ clientId, phone });
       const activeWaitCampaign = campaignReplyContext.processingWaitForReplyMatches[0] || null;
       activeCampaignForLead = campaignReplyContext.activePeriodCampaign;
+      temCampanhaParaEsteTelefone = (campaignReplyContext.matches?.length ?? 0) > 0;
 
       // Por que este lead caiu (ou nao) no fluxo de resposta. Sem isto, "nao
       // disparou" e indistinguivel de "progresso sem waitForReply" e de "lead
@@ -1118,38 +1168,64 @@ export function registerChatbotRoutes(app, deps) {
           return;
         }
       } else if (activeCampaignForLead) {
-        // Lead dentro do período de uma campanha ativa
-        if (activeCampaignForLead.mode === "agente") {
-          campaignPromptIdOverride = activeCampaignForLead.campaignPromptId || null;
-          if (!campaignPromptIdOverride) {
-            console.error("[campaign-routing] campanha agente sem campaignPromptId — usando prompt padrão", {
-              clientId, campaignId: activeCampaignForLead.id,
-            });
-          }
-          console.log("[campaign-routing] active_period_agente", {
-            clientId, phone: maskPhoneForLog(phone),
-            campaignId: activeCampaignForLead.id,
-            campaignName: activeCampaignForLead.name,
-            campaignPromptId: campaignPromptIdOverride,
-            endsAt: activeCampaignForLead.endsAt,
-          });
-        } else {
-          // Modo disparo → chatbot usa prompt padrão, ignora campanha
-          console.log("[campaign-routing] active_period_disparo_only", {
-            clientId, phone: maskPhoneForLog(phone),
-            campaignId: activeCampaignForLead.id,
+        // Lead dentro do periodo de uma campanha ativa.
+        //
+        // DOIS CEREBROS NO MESMO NUMERO, escolhidos pelo CONTEXTO:
+        //   campanha ativa COM roteiro proprio -> agente da campanha
+        //   qualquer outro caso               -> agente de atendimento (inbound)
+        //
+        // O gatilho e o roteiro existir (campaignPromptId), nao o `mode`. Assim
+        // uma campanha antiga — que tem campaign_prompt_id nulo — continua
+        // EXATAMENTE como hoje, e o lead que respondeu a um disparo para de ser
+        // atendido com o roteiro de quem procurou a empresa.
+        const escolha = resolveCampaignAgent(activeCampaignForLead);
+        campaignPromptIdOverride = escolha.campaignPromptId;
+        if (escolha.configuracaoIncompleta) {
+          console.error("[campaign-routing] campanha marcada como agente SEM roteiro — caindo no atendimento", {
+            clientId, campaignId: activeCampaignForLead.id,
           });
         }
-      } else {
-        // Sem campanha ativa no período → prompt padrão
-        console.log("[campaign-routing] no_active_campaign", {
+        console.log("[campaign-routing] agente escolhido", {
           clientId, phone: maskPhoneForLog(phone),
+          agente: escolha.agente,
+          porque: escolha.porque,
+          campaignId: activeCampaignForLead.id,
+          campaignName: activeCampaignForLead.name,
+          campaignPromptId: escolha.campaignPromptId,
+          mode: activeCampaignForLead.mode || null,
+          endsAt: activeCampaignForLead.endsAt,
+        });
+      } else {
+        // Sem campanha ativa no período → agente de atendimento (inbound)
+        console.log("[campaign-routing] agente escolhido", {
+          clientId, phone: maskPhoneForLog(phone),
+          agente: "atendimento",
+          porque: "nenhuma campanha ativa para este telefone",
         });
       }
     } catch (err) {
       console.warn("[chatbot-webhook] campaign routing check failed, continuing normal flow:", err.message);
     }
     // ─────────────────────────────────────────────────────────────────────
+
+    // Quem o chatbot pode atender. Sem isto, QUALQUER pessoa que escreva para o
+    // numero da empresa recebe atendimento de robo — aconteceu com contato
+    // pessoal do dono. Escopo padrao ('leads_only') so engaja lead conhecido do
+    // tenant ou telefone vindo de campanha; desconhecido fica em silencio, para
+    // atendimento humano.
+    const escopoInbound = resolveInboundScope(tenantSettings);
+    if (escopoInbound !== INBOUND_SCOPE_ALL) {
+      const leadConhecido = await telefoneEhLeadConhecido(clientId, phone);
+      const decisao = shouldEngageInbound({
+        scope: escopoInbound,
+        isKnownLead: leadConhecido,
+        hasCampaignMatch: temCampanhaParaEsteTelefone,
+      });
+      if (!decisao.engage) {
+        descartar(decisao.reason, { clientId, phone: maskPhoneForLog(phone), escopo: escopoInbound });
+        return;
+      }
+    }
 
     // Responde imediatamente ao Evolution (evita timeout)
     res.json({ success: true, status: "buffering" });
@@ -1259,12 +1335,20 @@ export function registerChatbotRoutes(app, deps) {
             console.error("[chatbot-webhook] Evolution send failed:", evolutionResponse.status, errText.slice(0, 200));
           }
 
-          // Transbordo configurado na tela do Inbound tem precedencia sobre o
-          // numero do tenant. Com "Permitir Transferencia" desligado naquele
-          // numero, nao notifica ninguem.
-          const sdrNumber = inboundConfig
-            ? (inboundConfig.sdrTransferEnabled ? (inboundConfig.sdrPhone || tenantSettings?.sdr_whatsapp_number) : null)
-            : tenantSettings?.sdr_whatsapp_number;
+          // PRECEDENCIA DO SDR, documentada porque ja gerou confusao:
+          //
+          // 1. Agente inbound com "Permitir Transferencia" DESLIGADO -> ninguem
+          //    e notificado. E escolha explicita do usuario naquele numero e
+          //    vence o padrao do tenant. Nao e falta de configuracao.
+          // 2. Agente inbound com transferencia ligada -> numero do proprio
+          //    agente; sem ele, cai no numero do tenant.
+          // 3. Sem agente inbound -> numero do tenant.
+          //
+          // O motivo entra no log separado do numero: antes, transferencia
+          // desligada e leitura falha apareciam as duas como "no SDR number
+          // configured", com o numero salvo na tela.
+          const sdr = resolveSdrTarget({ inboundConfig, tenantSettings, tenantSettingsReadFailed });
+          const sdrNumber = sdr.number;
 
           // Recontato: lead finalizado voltou a falar — avisa SDR sem gerar novo briefing
           if (aiResponse._recontato) {
@@ -1338,7 +1422,14 @@ export function registerChatbotRoutes(app, deps) {
                 console.error("[chatbot-webhook] SDR briefing send error:", briefErr.message);
               }
             } else {
-              console.log("[chatbot-webhook] Conversation finalized — no SDR number configured for", clientId);
+              console.log("[chatbot-webhook] conversa finalizada sem notificar SDR", {
+                clientId,
+                motivo: sdr.reason,
+                // leitura_falhou NAO e "nao configurado": o numero pode existir
+                // e a consulta ter falhado. Confundir os dois custou uma
+                // investigacao inteira.
+                temNumeroNoTenant: Boolean(tenantSettings?.sdr_whatsapp_number),
+              });
             }
           }
         } catch (err) {
