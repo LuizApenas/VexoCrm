@@ -50,6 +50,7 @@ export interface LeadClientN8nSettingsPayload {
   chatbotInstances?: string[];
   segmentationConfig?: LeadClientSegmentationConfig;
   sdrWhatsappNumber?: string | null;
+  sdrWhatsappNumbers?: string[];
   allowedTabs?: string[] | null;
 }
 
@@ -114,6 +115,8 @@ export interface LeadClientN8nSettingsSummary {
   chatbot_instances?: string[];
   segmentation_config?: LeadClientSegmentationConfig;
   sdr_whatsapp_number: string | null;
+  /** Destinos do briefing. Substitui o campo único; os dois convivem no deploy. */
+  sdr_whatsapp_numbers?: string[];
   evolution_instances?: LeadClientEvolutionInstance[];
   updated_at: string | null;
   updated_by_email?: string | null;

@@ -257,7 +257,33 @@ function normalizeSequenceStep(step, index) {
       DEFAULT_STEP_DELAY_SECONDS
     ),
     triggerMode,
+    // buttons NAO estava aqui, e por isso o passo com botao saia como sendText.
+    // A normalizacao roda em TODO caminho de envio (disparo inicial e
+    // continuacao apos resposta), entao o botao era descartado antes de
+    // buildStepButtons ter chance de olhar para ele: `step.buttons` chegava
+    // undefined e a funcao devolvia null. Nao era disparo congelado nem falta de
+    // montagem na continuacao — o campo morria na porta de entrada.
+    buttons: normalizeStepButtons(step?.buttons),
   };
+}
+
+/**
+ * Preserva os botoes do passo. Aceita os dois shapes que a tela ja gravou
+ * (`url`/`href` e `label`/`displayText`) sem reescrever nenhum deles —
+ * buildStepButtons e quem resolve placeholder e decide o formato final.
+ */
+function normalizeStepButtons(buttons) {
+  if (!Array.isArray(buttons)) return [];
+  return buttons
+    .filter((btn) => btn && typeof btn === "object")
+    .map((btn) => ({
+      type: normalizeString(btn.type).toLowerCase() === "url" || btn.url || btn.href ? "url" : "reply",
+      label: normalizeString(btn.label || btn.displayText),
+      displayText: normalizeString(btn.displayText || btn.label),
+      url: normalizeString(btn.url || btn.href),
+      value: normalizeString(btn.value),
+    }))
+    .filter((btn) => btn.label || btn.displayText || btn.url);
 }
 
 function normalizeDispatchOptions(rawOptions = {}, sequence = []) {

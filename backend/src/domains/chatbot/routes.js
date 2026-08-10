@@ -113,6 +113,42 @@ export function registerChatbotRoutes(app, deps) {
   }
 
   /**
+   * Manda a mesma mensagem para TODOS os numeros de SDR do tenant.
+   *
+   * Um numero que falha nao pode levar os outros junto: cada envio tem o proprio
+   * try/catch e a falha e logada com o numero MASCARADO. Antes era um numero so
+   * e um await solto — bastava a Evolution recusar para ninguem ser avisado.
+   */
+  async function enviarParaSdrs({ numeros, texto, evolutionUrl, evolutionHeaders, contexto = {} }) {
+    const falhas = [];
+    let enviados = 0;
+
+    for (const numero of numeros) {
+      try {
+        const resposta = await fetch(evolutionUrl, {
+          method: "POST",
+          headers: evolutionHeaders,
+          body: JSON.stringify({ number: numero, text: texto, message: texto }),
+        });
+        if (!resposta.ok) {
+          const corpo = await resposta.text().catch(() => "");
+          throw new Error(`HTTP ${resposta.status} ${corpo.slice(0, 120)}`);
+        }
+        enviados += 1;
+      } catch (err) {
+        falhas.push({ numero: maskPhoneForLog(numero), erro: err?.message || String(err) });
+        console.error("[chatbot-webhook] falha ao notificar SDR", {
+          ...contexto,
+          sdr: maskPhoneForLog(numero),
+          erro: err?.message || String(err),
+        });
+      }
+    }
+
+    return { enviados, falhas };
+  }
+
+  /**
    * Ja existe registro de lead com este telefone neste tenant?
    *
    * Em caso de erro devolve TRUE de proposito: falha de leitura nao pode
@@ -1348,11 +1384,13 @@ export function registerChatbotRoutes(app, deps) {
           // desligada e leitura falha apareciam as duas como "no SDR number
           // configured", com o numero salvo na tela.
           const sdr = resolveSdrTarget({ inboundConfig, tenantSettings, tenantSettingsReadFailed });
-          const sdrNumber = sdr.number;
+          // Lista, nao numero unico: a mesma configuracao do tenant serve aos
+          // dois agentes.
+          const temSdr = sdr.numbers.length > 0;
 
           // Recontato: lead finalizado voltou a falar — avisa SDR sem gerar novo briefing
           if (aiResponse._recontato) {
-            if (sdrNumber && evolutionUrl) {
+            if (temSdr && evolutionUrl) {
               try {
                 const dados = aiResponse.dados || {};
                 const interesse = dados.interesse || "consórcio";
@@ -1366,12 +1404,17 @@ export function registerChatbotRoutes(app, deps) {
                   `Recomendado: entrar em contato ativo agora.`,
                 ].join("\n");
 
-                await fetch(evolutionUrl, {
-                  method: "POST",
-                  headers: evolutionHeaders,
-                  body: JSON.stringify({ number: sdrNumber, text: recontatoMsg, message: recontatoMsg }),
+                const entrega = await enviarParaSdrs({
+                  numeros: sdr.numbers,
+                  texto: recontatoMsg,
+                  evolutionUrl,
+                  evolutionHeaders,
+                  contexto: { clientId, tipo: "recontato" },
                 });
-                console.log("[chatbot-webhook] SDR recontact alert sent", { sdrNumber, clientId, phone: maskPhoneForLog(phone) });
+                console.log("[chatbot-webhook] alerta de recontato enviado ao SDR", {
+                  clientId, phone: maskPhoneForLog(phone),
+                  enviados: entrega.enviados, falhas: entrega.falhas.length,
+                });
               } catch (err) {
                 console.error("[chatbot-webhook] SDR recontact alert error:", err.message);
               }
@@ -1393,7 +1436,7 @@ export function registerChatbotRoutes(app, deps) {
 
           // Finalizado pela primeira vez: gerar briefing completo e notificar SDR
           if (aiResponse.finalizado && !aiResponse._recontato) {
-            if (sdrNumber && evolutionUrl) {
+            if (temSdr && evolutionUrl) {
               try {
                 // Tenta briefing via IA com prompt "extrato" do banco; fallback para determinístico
                 const aiBriefing = await extractBriefingWithAI({
@@ -1411,12 +1454,19 @@ export function registerChatbotRoutes(app, deps) {
                 const briefingMsg = aiBriefing;
 
                 if (briefingMsg) {
-                  await fetch(evolutionUrl, {
-                    method: "POST",
-                    headers: evolutionHeaders,
-                    body: JSON.stringify({ number: sdrNumber, text: briefingMsg, message: briefingMsg }),
+                  const entrega = await enviarParaSdrs({
+                    numeros: sdr.numbers,
+                    texto: briefingMsg,
+                    evolutionUrl,
+                    evolutionHeaders,
+                    contexto: { clientId, tipo: "briefing" },
                   });
-                  console.log("[chatbot-webhook] SDR briefing sent", { sdrNumber, clientId, source: aiBriefing ? "ai" : "deterministic" });
+                  console.log("[chatbot-webhook] briefing enviado ao SDR", {
+                    clientId,
+                    enviados: entrega.enviados,
+                    falhas: entrega.falhas.length,
+                    source: aiBriefing ? "ai" : "deterministic",
+                  });
                 }
               } catch (briefErr) {
                 console.error("[chatbot-webhook] SDR briefing send error:", briefErr.message);

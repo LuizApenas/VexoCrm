@@ -40,6 +40,15 @@ export function DispatchQueueTable({
         <div>
           <CardTitle className="text-base font-bold">Fila de Disparos em Massa</CardTitle>
           <CardDescription>Acompanhe e gerencie lotes de disparos criados por planilha diretamente</CardDescription>
+          {/* O disparo guarda os passos do momento em que foi criado
+              (dispatch.steps tem precedência sobre a sequência da campanha).
+              Sem este aviso, o usuário edita a campanha, vê a tela certa e o
+              disparo antigo continua enviando o texto velho — sem botão. */}
+          <p className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+            Cada disparo guarda os passos de quando foi criado. Editar a campanha
+            não altera disparo já enfileirado — exclua e crie de novo para usar a
+            sequência atual.
+          </p>
         </div>
         <Button
           variant="outline"

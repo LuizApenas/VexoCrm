@@ -50,7 +50,10 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const [enabled, setEnabled] = useState(n8n?.chatbot_enabled ?? false);
   const [model, setModel] = useState(n8n?.chatbot_model ?? "generico");
   const [llmModel, setLlmModel] = useState(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
-  const [sdrNumber, setSdrNumber] = useState(n8n?.sdr_whatsapp_number ?? "");
+  const [sdrNumber, setSdrNumber] = useState("");
+  // Lista de destinos do briefing. Vem do backend ja com o numero antigo
+  // migrado, entao ninguem perde configuracao.
+  const [sdrNumbers, setSdrNumbers] = useState<string[]>(n8n?.sdr_whatsapp_numbers ?? []);
   // Chips que ESTE chatbot atende. Vazio = qualquer chip sem agente inbound.
   const [chipsDoChatbot, setChipsDoChatbot] = useState<string[]>(n8n?.chatbot_instances ?? []);
   const [savingSdr, setSavingSdr] = useState(false);
@@ -72,7 +75,10 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     setEnabled(n8n.chatbot_enabled ?? false);
     setModel(n8n.chatbot_model ?? "generico");
     setLlmModel(n8n.chatbot_llm_model ?? "llama-3.3-70b-versatile");
-    setSdrNumber(n8n.sdr_whatsapp_number ?? "");
+    // O campo de texto e so a caixa de digitacao; a lista vem do backend ja
+    // com o numero antigo migrado.
+    setSdrNumber("");
+    setSdrNumbers(Array.isArray(n8n.sdr_whatsapp_numbers) ? n8n.sdr_whatsapp_numbers : (n8n.sdr_whatsapp_number ? [n8n.sdr_whatsapp_number] : []));
     setChipsDoChatbot(Array.isArray(n8n.chatbot_instances) ? n8n.chatbot_instances : []);
   }, [clientId, n8n]);
 
@@ -173,16 +179,32 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     }
   }
 
-  async function handleSaveSdr() {
+  // Mesmo criterio do backend (services/sdrTarget.js): so digitos, 10 a 15.
+  // Numero invalido nao entra na lista.
+  const sdrNumberValido = /^\d{10,15}$/.test(sdrNumber.replace(/\D/g, ""));
+
+  async function salvarListaSdr(novaLista: string[]) {
     setSavingSdr(true);
     try {
-      await updateSettings.mutateAsync({ tenantId: clientId, sdrWhatsappNumber: sdrNumber || null });
-      toast({ title: "Número SDR salvo" });
+      await updateSettings.mutateAsync({ tenantId: clientId, sdrWhatsappNumbers: novaLista });
+      setSdrNumbers(novaLista);
+      toast({ title: "Números SDR salvos" });
     } catch {
-      toast({ title: "Erro ao salvar número SDR", variant: "destructive" });
+      toast({ title: "Erro ao salvar números SDR", variant: "destructive" });
     } finally {
       setSavingSdr(false);
     }
+  }
+
+  async function adicionarSdr() {
+    const numero = sdrNumber.replace(/\D/g, "");
+    if (!sdrNumberValido || sdrNumbers.includes(numero)) return;
+    await salvarListaSdr([...sdrNumbers, numero]);
+    setSdrNumber("");
+  }
+
+  async function removerSdr(numero: string) {
+    await salvarListaSdr(sdrNumbers.filter((n) => n !== numero));
   }
 
   async function handleTestChatbot() {
@@ -459,12 +481,39 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
             </div>
           )}
 
-          {/* SDR */}
+          {/* SDR — lista de destinos do briefing, usada pelos DOIS agentes */}
           {canEdit && (
             <div className="space-y-1.5 pt-1">
               <Label className="text-xs text-slate-500 flex items-center gap-1">
-                <Phone className="h-3 w-3" /> Número SDR/Closer (recebe briefing)
+                <Phone className="h-3 w-3" /> Números SDR/Closer (recebem o briefing)
               </Label>
+
+              {sdrNumbers.length > 0 ? (
+                <div className="space-y-1">
+                  {sdrNumbers.map((numero) => (
+                    <div
+                      key={numero}
+                      className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-white/10 dark:bg-slate-800/50"
+                    >
+                      <span className="text-xs font-mono text-slate-700 dark:text-slate-200">{numero}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-[10px] text-red-500 hover:text-red-600"
+                        onClick={() => removerSdr(numero)}
+                        disabled={savingSdr}
+                      >
+                        Excluir
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                  Nenhum número cadastrado — ninguém receberá o briefing.
+                </p>
+              )}
+
               <div className="flex gap-2">
                 <Input
                   value={sdrNumber}
@@ -473,10 +522,20 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                   className="h-8 text-xs font-mono"
                   disabled={savingSdr}
                 />
-                <Button variant="outline" size="sm" className="shrink-0 h-8 text-xs" onClick={handleSaveSdr} disabled={savingSdr}>
-                  {savingSdr ? "..." : "Salvar"}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 h-8 text-xs"
+                  onClick={adicionarSdr}
+                  disabled={savingSdr || !sdrNumberValido}
+                  title={sdrNumber && !sdrNumberValido ? "Número inválido: use só dígitos, 10 a 15" : undefined}
+                >
+                  {savingSdr ? "..." : "Adicionar"}
                 </Button>
               </div>
+              {sdrNumber !== "" && !sdrNumberValido && (
+                <p className="text-[10px] text-red-500">Número inválido: só dígitos, de 10 a 15.</p>
+              )}
             </div>
           )}
         </CardContent>

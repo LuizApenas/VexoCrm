@@ -42,6 +42,7 @@ export function maskN8nSettings(row) {
       chatbot_model: "outlier",
       chatbot_instances: [],
       chatbot_inbound_scope: "leads_only",
+      sdr_whatsapp_numbers: [],
       segmentation_config: buildDefaultSegmentationConfig("outlier"),
       sdr_whatsapp_number: null,
       updated_at: null,
@@ -61,6 +62,11 @@ export function maskN8nSettings(row) {
     // Quem o chatbot atende. Default seguro: so lead conhecido. So o literal
     // "all" abre para qualquer inbound.
     chatbot_inbound_scope: row.chatbot_inbound_scope === "all" ? "all" : "leads_only",
+    // Lista de destinos do briefing. Cai no numero antigo enquanto houver linha
+    // nao migrada — durante o deploy as duas colunas convivem.
+    sdr_whatsapp_numbers: Array.isArray(row.sdr_whatsapp_numbers) && row.sdr_whatsapp_numbers.length > 0
+      ? row.sdr_whatsapp_numbers
+      : (row.sdr_whatsapp_number ? [row.sdr_whatsapp_number] : []),
     segmentation_config: sanitizeSegmentationConfig(row.segmentation_config, row.chatbot_model || "outlier"),
     sdr_whatsapp_number: row.sdr_whatsapp_number || null,
     updated_at: row.updated_at || null,
@@ -91,7 +97,7 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
     )
     .eq("client_id", clientId)
     .maybeSingle();
@@ -143,7 +149,7 @@ export async function getLeadClientN8nSettingsMap(clientIds) {
       // Como maskN8nSettings faz `Array.isArray(row.chatbot_instances) ? ... : []`, a
       // coluna ausente virava [] e a tela do Agente IA relia "Todos sem agente inbound"
       // a cada visita — a marcacao de chip era gravada e depois lida como vazia.
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, sdr_whatsapp_numbers, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
     )
     .in("client_id", clientIds);
 
@@ -187,6 +193,7 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
   const segmentationConfigProvided = Object.prototype.hasOwnProperty.call(body, "segmentationConfig");
   const chatbotInstancesProvided = Object.prototype.hasOwnProperty.call(body, "chatbotInstances");
   const sdrWhatsappNumberProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumber");
+  const sdrWhatsappNumbersProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumbers");
   const allowedTabsProvided = Object.prototype.hasOwnProperty.call(body, "allowedTabs");
 
   const payload = {
@@ -194,6 +201,13 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
     chatbot_enabled: chatbotEnabledProvided ? body.chatbotEnabled === true : existing?.chatbot_enabled ?? false,
     chatbot_model: chatbotModelProvided ? (body.chatbotModel || "outlier") : existing?.chatbot_model ?? "outlier",
     chatbot_llm_model: chatbotLlmModelProvided ? (body.chatbotLlmModel || body.chatbot_llm_model || "llama-3.3-70b-versatile") : existing?.chatbot_llm_model ?? "llama-3.3-70b-versatile",
+    // Numero invalido nao entra na lista: o mesmo criterio do frontend, aqui
+    // tambem, porque o backend nao pode confiar na tela.
+    sdr_whatsapp_numbers: sdrWhatsappNumbersProvided
+      ? [...new Set((Array.isArray(body.sdrWhatsappNumbers) ? body.sdrWhatsappNumbers : [])
+          .map((v) => String(v ?? "").replace(/\D/g, ""))
+          .filter((v) => /^[0-9]{10,15}$/.test(v)))]
+      : existing?.sdr_whatsapp_numbers ?? [],
     chatbot_instances: chatbotInstancesProvided
       ? (Array.isArray(body.chatbotInstances)
           ? [...new Set(body.chatbotInstances.map((v) => String(v ?? "").trim()).filter(Boolean))]
