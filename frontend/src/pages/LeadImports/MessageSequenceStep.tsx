@@ -1,10 +1,11 @@
-import { type ChangeEvent, type RefObject } from "react";
+import { useRef, type ChangeEvent, type RefObject } from "react";
 import { ArrowDown, ArrowUp, ImagePlus, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { EmojiPicker } from "./EmojiPicker";
 import { Badge } from "@/components/ui/badge";
 import type { CampaignSequenceStep } from "@/hooks/useCampanhas";
 import type { StepActionButton } from "@/lib/leadImports/spreadsheet";
@@ -54,6 +55,29 @@ export function MessageSequenceStep({
   onRemoveStepButton,
   onUpdateStepButton,
 }: MessageSequenceStepProps) {
+  // Insere o emoji na POSICAO DO CURSOR, nao no fim: escrever no meio do texto e o
+  // uso normal, e concatenar quebraria a frase. Sem cursor (campo nunca focado),
+  // cai para o fim. So texto entra, entao {{nome}} e a contagem de caracteres do
+  // proprio campo seguem valendo.
+  const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+
+  function inserirNoCursor(stepId: string, textoAtual: string, trecho: string) {
+    const campo = textareaRefs.current[stepId];
+    const base = textoAtual || "";
+    const inicio = campo?.selectionStart ?? base.length;
+    const fim = campo?.selectionEnd ?? base.length;
+    const novoTexto = base.slice(0, inicio) + trecho + base.slice(fim);
+    updateCampaignStep(stepId, { text: novoTexto });
+    // Reposiciona o cursor depois do que foi inserido, para continuar digitando.
+    requestAnimationFrame(() => {
+      const alvo = textareaRefs.current[stepId];
+      if (!alvo) return;
+      const posicao = inicio + trecho.length;
+      alvo.focus();
+      alvo.setSelectionRange(posicao, posicao);
+    });
+  }
+
   const repeticoesPorDia = variantCount > 0 ? Math.ceil(dailyQuota / variantCount) : dailyQuota;
   const riscoAlto = repeticoesPorDia > 40;
   const riscoMedio = !riscoAlto && repeticoesPorDia > 20;
@@ -131,6 +155,7 @@ export function MessageSequenceStep({
               {/* Message editor */}
               <div className="space-y-2">
                 <Textarea
+                  ref={(el) => { textareaRefs.current[step.id] = el; }}
                   placeholder={step.type === "image" ? "Legenda opcional para a imagem" : "Olá {{nome}}, tudo bem? Escreva a mensagem de envio..."}
                   className="min-h-[96px] text-xs font-sans"
                   value={step.text}
@@ -138,7 +163,8 @@ export function MessageSequenceStep({
                 />
 
                 {/* Variables helper */}
-                <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <EmojiPicker onSelect={(emoji) => inserirNoCursor(step.id, step.text, emoji)} />
                   <span>Variáveis:</span>
                   <button type="button" onClick={() => updateCampaignStep(step.id, { text: step.text + " {{nome}}" })} className="rounded-full bg-slate-100 hover:bg-slate-200 px-2 py-0.5 dark:bg-slate-800 dark:hover:bg-slate-700">{"{{nome}}"}</button>
                   <button type="button" onClick={() => updateCampaignStep(step.id, { text: step.text + " {{telefone}}" })} className="rounded-full bg-slate-100 hover:bg-slate-200 px-2 py-0.5 dark:bg-slate-800 dark:hover:bg-slate-700">{"{{telefone}}"}</button>
