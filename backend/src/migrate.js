@@ -61,6 +61,11 @@ async function isAlreadyApplied(pool, filename) {
     "20260508120000_add_campaigns_phones_column.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='campaigns' AND column_name='phones') AS ok`,
     // Novas migrations — verificam se coluna já existe
     "20260805060000_n8n_settings_chatbot_instances.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='chatbot_instances') AS ok`,
+    // Sentinela cobre o efeito COMPLETO (coluna E indice). Uma sentinela que testa
+    // menos do que a migration faz pode marca-la como aplicada sem ter rodado —
+    // foi o que aconteceu com 20260730000000, cujas constraints nunca existiram
+    // porque a coluna que ela checava era criada por outro caminho.
+    "20260811090000_campaign_dispatches_prompt_copy.sql": `SELECT (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='campaign_dispatches' AND column_name='campaign_prompt_id') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_campaign_dispatches_prompt')) AS ok`,
     "20260805040000_followup_companies_inbound_role.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='followup_companies' AND column_name='inbound_role') AS ok`,
     "20260804180000_followup_companies_evolution_instances.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='followup_companies' AND column_name='evolution_instances') AS ok`,
     "20260512100000_add_chatbot_enabled_to_n8n_settings.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='chatbot_enabled') AS ok`,

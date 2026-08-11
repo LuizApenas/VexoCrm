@@ -2351,7 +2351,7 @@ export function registerCampaignsRoutes(app, deps) {
       // Verifica que a campanha pertence ao cliente autorizado
       const { data: campaign, error: campaignErr } = await supabase
         .from("campaigns")
-        .select("id, client_id, analytics_meta")
+        .select("id, client_id, analytics_meta, campaign_prompt_id")
         .eq("id", campaignId)
         .single();
       if (campaignErr || !campaign) return sendError(res, 404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
@@ -2388,6 +2388,48 @@ export function registerCampaignsRoutes(app, deps) {
         console.error("Erro ao calcular target_count:", err);
       }
 
+      // Roteiro do agente ISOLADO por disparo: o disparo nasce com uma COPIA da linha
+      // de campaign_prompts da campanha, nao com um ponteiro para ela. Assim, editar o
+      // roteiro da campanha nao muda disparo em andamento, e corrigir o roteiro de um
+      // disparo nao afeta a campanha nem os outros disparos.
+      //
+      // Copia, e nao congelamento: o roteiro do disparo continua editavel. Roteiro
+      // imutavel prenderia o dono numa campanha defeituosa — se a IA responde errado,
+      // a unica saida seria cancelar, e quem ja recebeu nao abre a mensagem de novo.
+      //
+      // Falha na copia nao impede o disparo: fica NULL e o caminho antigo (roteiro da
+      // campanha) assume, que e o comportamento de hoje.
+      let dispatchPromptId = null;
+      if (campaign.campaign_prompt_id) {
+        try {
+          const { data: promptOrigem } = await supabase
+            .from("campaign_prompts")
+            .select("name, content")
+            .eq("id", campaign.campaign_prompt_id)
+            .eq("client_id", authorizedClientId)
+            .maybeSingle();
+
+          if (promptOrigem?.content) {
+            const { data: copia, error: copiaErr } = await supabase
+              .from("campaign_prompts")
+              .insert({
+                client_id: authorizedClientId,
+                name: `${promptOrigem.name || "Roteiro"} — disparo ${name}`.slice(0, 200),
+                content: promptOrigem.content,
+              })
+              .select("id")
+              .single();
+            if (copiaErr) throw copiaErr;
+            dispatchPromptId = copia?.id || null;
+          }
+        } catch (err) {
+          console.warn("[campaign-dispatch] falha ao copiar roteiro do agente; usando o da campanha", {
+            campaignId,
+            error: err?.message || err,
+          });
+        }
+      }
+
       const { data, error } = await supabase
         .from("campaign_dispatches")
         .insert({
@@ -2395,6 +2437,7 @@ export function registerCampaignsRoutes(app, deps) {
           client_id: authorizedClientId,
           name,
           steps: validation.analyticsMeta.sequence,
+          campaign_prompt_id: dispatchPromptId,
           trigger_type: triggerType,
           scheduled_at: scheduledAt,
           evolution_instance_id: requestedEvolutionInstanceId,

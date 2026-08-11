@@ -1093,6 +1093,27 @@ export async function findCampaignReplyMatches({ clientId, phone }) {
   if (importItemsResult.error) throw importItemsResult.error;
   if (campaignsResult.error) throw campaignsResult.error;
 
+  // Roteiro proprio do disparo mais recente de cada campanha. A copia isolada vive em
+  // campaign_dispatches.campaign_prompt_id; quem responde deve ser atendido pelo roteiro
+  // DAQUELE disparo, nao pelo da campanha (que pode ter sido editado depois).
+  // Coluna ausente (deploy antigo) ou erro: cai no roteiro da campanha, sem quebrar.
+  const promptDoDisparoPorCampanha = {};
+  try {
+    const { data: disparos } = await supabase
+      .from("campaign_dispatches")
+      .select("campaign_id, campaign_prompt_id, created_at")
+      .eq("client_id", clientId)
+      .not("campaign_prompt_id", "is", null)
+      .order("created_at", { ascending: false });
+    for (const linha of disparos || []) {
+      if (linha.campaign_id && !promptDoDisparoPorCampanha[linha.campaign_id]) {
+        promptDoDisparoPorCampanha[linha.campaign_id] = linha.campaign_prompt_id;
+      }
+    }
+  } catch {
+    /* sem coluna ou consulta indisponivel: o roteiro da campanha assume */
+  }
+
   const importIds = Array.from(
     new Set(
       (importItemsResult.data || [])
@@ -1145,7 +1166,10 @@ export async function findCampaignReplyMatches({ clientId, phone }) {
         analyticsMeta,
         isInActivePeriod,
         mode: campaign.mode || null,
-        campaignPromptId: campaign.campaign_prompt_id || null,
+        // Roteiro do agente: o do DISPARO manda; sem ele, cai no da campanha.
+        // Disparo antigo tem campaign_prompt_id nulo em campaign_dispatches e continua
+        // usando o da campanha — nenhum comportamento existente muda.
+        campaignPromptId: promptDoDisparoPorCampanha[campaign.id] || campaign.campaign_prompt_id || null,
         chatbotPromptType: campaign.chatbot_prompt_type || null,
         startsAt: campaign.starts_at || null,
         endsAt: campaign.ends_at || null,
