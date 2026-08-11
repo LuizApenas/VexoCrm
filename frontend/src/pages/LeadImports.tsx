@@ -1014,7 +1014,20 @@ export default function LeadImports({
   };
 
   const handleDeleteDispatchBatch = async (dispId: string) => {
-    if (!confirm("Excluir lote permanentemente do histórico?")) return;
+    // Quantos leads ficam sem receber. Excluir um lote pausado com milhares de
+    // leads pendentes e irreversivel, e o numero e a unica coisa que deixa o
+    // tamanho da decisao visivel antes do clique.
+    const lote = dispatches.find((d) => d.id === dispId);
+    const enviados = lote?.sent_count ?? 0;
+    const alvo = lote?.target_count ?? null;
+    const pendentes = alvo != null ? Math.max(0, alvo - enviados - (lote?.failed_count ?? 0)) : null;
+
+    const aviso =
+      pendentes != null && pendentes > 0
+        ? `Excluir o lote "${lote?.name || dispId}" permanentemente?\n\n${pendentes} ${pendentes === 1 ? "lead ficará" : "leads ficarão"} sem receber. Quem já recebeu não é afetado.\n\nEsta ação não pode ser desfeita.`
+        : `Excluir o lote "${lote?.name || dispId}" permanentemente do histórico?\n\nEsta ação não pode ser desfeita.`;
+
+    if (!confirm(aviso)) return;
     try {
       const token = await getIdToken();
       const res = await fetch(`${API_BASE_URL}/api/campaigns/dispatches/${dispId}`, {

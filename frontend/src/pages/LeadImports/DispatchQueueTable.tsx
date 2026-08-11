@@ -128,14 +128,19 @@ export function DispatchQueueTable({
                       </TableCell>
                       <TableCell className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {disp.status === "draft" && (
+                          {(disp.status === "draft" || disp.status === "paused") && (
                             <Button
                               size="sm"
                               variant="default"
+                              title={
+                                disp.status === "paused"
+                                  ? "Continua de onde parou: quem já recebeu não recebe de novo"
+                                  : "Iniciar o envio deste lote"
+                              }
                               onClick={() => onTriggerDispatchBatch(disp.id)}
                               className="h-8 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs px-2.5 font-bold shadow-sm"
                             >
-                              <Play className="h-3.5 w-3.5 mr-1" /> Iniciar
+                              <Play className="h-3.5 w-3.5 mr-1" /> {disp.status === "paused" ? "Retomar" : "Iniciar"}
                             </Button>
                           )}
                           {disp.status === "running" && (
@@ -170,7 +175,7 @@ export function DispatchQueueTable({
                           >
                             <Bot className="h-3.5 w-3.5 text-indigo-500" />
                           </Button>
-                          {(disp.status === "draft" || disp.status === "failed" || disp.status === "done") && (
+                          {(disp.status === "draft" || disp.status === "failed" || disp.status === "done" || disp.status === "paused") && (
                             <Button
                               size="sm"
                               variant="outline"
