@@ -46,11 +46,16 @@ export function DispatchQueueTable({
           {/* O disparo guarda os passos do momento em que foi criado
               (dispatch.steps tem precedência sobre a sequência da campanha).
               Sem este aviso, o usuário edita a campanha, vê a tela certa e o
-              disparo antigo continua enviando o texto velho — sem botão. */}
+              disparo antigo continua enviando o texto velho.
+              BOTÕES sao caso especial e por isso estao citados no texto:
+              normalizeSequenceStep DESCARTAVA `buttons` ate 0fee253, entao
+              disparo criado antes daquele commit tem steps congelados SEM botao
+              nenhum — nao ha o que consertar naquele disparo, so criar outro. */}
           <p className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-            Cada disparo guarda os passos de quando foi criado. Editar a campanha
-            não altera disparo já enfileirado — exclua e crie de novo para usar a
-            sequência atual.
+            Cada disparo guarda os passos de quando foi criado — texto, imagem, gatilho
+            e <strong>botões</strong>. Editar a campanha não altera disparo já enfileirado.
+            Botão adicionado depois só sai em um disparo novo: exclua e crie de novo, ou
+            crie outro lote.
           </p>
         </div>
         <Button
