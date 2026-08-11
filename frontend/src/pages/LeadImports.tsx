@@ -84,6 +84,7 @@ import { CampaignsTable } from "./LeadImports/CampaignsTable";
 import { DispatchQueueTable } from "./LeadImports/DispatchQueueTable";
 import { LeadImportAuditReport } from "./LeadImports/LeadImportAuditReport";
 import { ImportViewerDialog } from "./LeadImports/ImportViewerDialog";
+import { DispatchPromptDialog } from "./LeadImports/DispatchPromptDialog";
 
 type SheetTab = "campanha" | "enviadas" | "agendamentos" | "planilhas" | "relatorios";
 type CampaignTemplateStrategy = "single" | "ai_variations";
@@ -191,6 +192,7 @@ export default function LeadImports({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDispatchId, setPreviewDispatchId] = useState<string | null>(null);
   const [viewingImport, setViewingImport] = useState<LeadImportItem | null>(null);
+  const [promptDispatchId, setPromptDispatchId] = useState<string | null>(null);
 
   // Campaign builder states
   const [editingCampaignId, setEditingCampaignId] = useLocalStorage<string | null>(`vexo_campaignId_${activeClientId}`, null);
@@ -1348,6 +1350,7 @@ export default function LeadImports({
           onDownloadFailedCsv={handleDownloadFailedCsv}
           onDeleteDispatchBatch={handleDeleteDispatchBatch}
           onPreviewDispatch={(dispId) => setPreviewDispatchId(dispId)}
+          onEditDispatchPrompt={(dispId) => setPromptDispatchId(dispId)}
         />
       )}
 
@@ -1418,6 +1421,11 @@ export default function LeadImports({
           )}
         </div>
       )}
+
+      <DispatchPromptDialog
+        dispatchId={promptDispatchId}
+        onOpenChange={(open) => !open && setPromptDispatchId(null)}
+      />
 
       <ImportViewerDialog
         open={!!viewingImport}

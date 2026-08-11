@@ -74,3 +74,48 @@ export function useDeleteCampaignPrompt() {
     },
   });
 }
+
+/**
+ * Roteiro do agente DAQUELE disparo — a copia isolada, editavel.
+ * Endpoint por dispatchId (e nao o PUT por nome) porque copias de disparos
+ * diferentes compartilham o nome de origem e colidiriam no upsert.
+ */
+export function useDispatchPrompt(dispatchId: string | null) {
+  const { isAuthenticated, getIdToken } = useAuth();
+
+  return useQuery({
+    queryKey: ["dispatch-prompt", dispatchId],
+    enabled: isAuthenticated && !!dispatchId,
+    queryFn: async (): Promise<{ prompt: CampaignPrompt | null; dispatchName: string | null }> => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+      const res = await fetchApi(`/api/campaigns/dispatches/${dispatchId}/prompt`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao carregar o roteiro do disparo"));
+      return readApiJson(res, "dispatch_prompt_fetch");
+    },
+  });
+}
+
+export function useSaveDispatchPrompt() {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ dispatchId, content }: { dispatchId: string; content: string }) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+      const res = await fetchApi(`/api/campaigns/dispatches/${dispatchId}/prompt`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao salvar o roteiro do disparo"));
+      return readApiJson<{ prompt: CampaignPrompt }>(res, "dispatch_prompt_save");
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["dispatch-prompt", variables.dispatchId] });
+    },
+  });
+}

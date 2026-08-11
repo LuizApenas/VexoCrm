@@ -1,4 +1,4 @@
-import { Download, Pause, Play, RefreshCw, Trash2 } from "lucide-react";
+import { Bot, Download, Pause, Play, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,6 +22,8 @@ interface DispatchQueueTableProps {
   onDownloadFailedCsv: (disp: CampaignDispatch) => void;
   onDeleteDispatchBatch: (dispId: string) => void;
   onPreviewDispatch: (dispId: string) => void;
+  /** Abre o roteiro do agente DAQUELE disparo (copia isolada, editavel). */
+  onEditDispatchPrompt: (dispId: string) => void;
 }
 
 export function DispatchQueueTable({
@@ -33,6 +35,7 @@ export function DispatchQueueTable({
   onDownloadFailedCsv,
   onDeleteDispatchBatch,
   onPreviewDispatch,
+  onEditDispatchPrompt,
 }: DispatchQueueTableProps) {
   return (
     <Card className="border-border bg-card shadow-lg text-card-foreground rounded-2xl">
@@ -156,6 +159,17 @@ export function DispatchQueueTable({
                               <Download className="h-3.5 w-3.5 text-slate-700 dark:text-white/80" />
                             </Button>
                           )}
+                          {/* Roteiro do agente DESTE disparo: corrigir em andamento sem
+                              cancelar a campanha nem afetar outros disparos. */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            title="Roteiro do agente deste disparo"
+                            onClick={() => onEditDispatchPrompt(disp.id)}
+                            className="h-8 w-8 p-0 rounded-xl"
+                          >
+                            <Bot className="h-3.5 w-3.5 text-indigo-500" />
+                          </Button>
                           {(disp.status === "draft" || disp.status === "failed" || disp.status === "done") && (
                             <Button
                               size="sm"

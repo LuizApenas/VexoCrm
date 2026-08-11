@@ -2976,6 +2976,85 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
+  // Roteiro do agente DAQUELE disparo. Endpoint proprio, por dispatchId, porque o
+  // PUT /api/campaign-prompts faz upsert por (client_id, name) — editar por nome
+  // colidiria entre copias de disparos diferentes, que e justamente o que o
+  // isolamento evita.
+  app.get("/api/campaigns/dispatches/:dispatchId/prompt", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const dispatchId = normalizeString(req.params.dispatchId);
+    if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");
+    try {
+      const { data: dispatch, error: dispatchErr } = await supabase
+        .from("campaign_dispatches")
+        .select("id, client_id, name, campaign_prompt_id")
+        .eq("id", dispatchId)
+        .single();
+      if (dispatchErr || !dispatch) return sendError(res, 404, "DISPATCH_NOT_FOUND", "Dispatch not found");
+
+      const authorizedClientId = resolveAuthorizedClientId(req, res, dispatch.client_id);
+      if (!authorizedClientId) return;
+
+      if (!dispatch.campaign_prompt_id) {
+        // Disparo antigo, ou campanha sem roteiro: nao ha copia para editar.
+        return res.json({ prompt: null, dispatchName: dispatch.name });
+      }
+
+      const { data: prompt } = await supabase
+        .from("campaign_prompts")
+        .select("id, name, content, updated_at")
+        .eq("id", dispatch.campaign_prompt_id)
+        .eq("client_id", authorizedClientId)
+        .maybeSingle();
+
+      res.json({ prompt: prompt || null, dispatchName: dispatch.name });
+    } catch (err) {
+      sendError(res, 500, "DISPATCH_PROMPT_FETCH_FAILED", err instanceof Error ? err.message : "Failed");
+    }
+  });
+
+  app.patch("/api/campaigns/dispatches/:dispatchId/prompt", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const dispatchId = normalizeString(req.params.dispatchId);
+    const content = typeof req.body?.content === "string" ? req.body.content : null;
+    if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");
+    if (content === null) return sendError(res, 400, "INVALID_BODY", "content is required");
+
+    try {
+      const { data: dispatch, error: dispatchErr } = await supabase
+        .from("campaign_dispatches")
+        .select("id, client_id, campaign_prompt_id")
+        .eq("id", dispatchId)
+        .single();
+      if (dispatchErr || !dispatch) return sendError(res, 404, "DISPATCH_NOT_FOUND", "Dispatch not found");
+
+      const authorizedClientId = resolveAuthorizedClientId(req, res, dispatch.client_id);
+      if (!authorizedClientId) return;
+      if (!dispatch.campaign_prompt_id) {
+        return sendError(res, 409, "DISPATCH_WITHOUT_PROMPT", "Este disparo não tem roteiro próprio para editar");
+      }
+
+      // Escopo por tenant no proprio UPDATE: o roteiro de um tenant nao pode ser
+      // reescrito a partir do disparo de outro.
+      const { data, error } = await supabase
+        .from("campaign_prompts")
+        .update({
+          content,
+          updated_at: new Date().toISOString(),
+          updated_by_email: req.authAccess?.email ?? null,
+        })
+        .eq("id", dispatch.campaign_prompt_id)
+        .eq("client_id", authorizedClientId)
+        .select("id, name, content, updated_at")
+        .single();
+      if (error) throw error;
+
+      res.json({ prompt: data });
+    } catch (err) {
+      sendError(res, 500, "DISPATCH_PROMPT_SAVE_FAILED", err instanceof Error ? err.message : "Failed");
+    }
+  });
+
   // DELETE /api/campaign-prompts/:id — remove prompt de campanha
   app.delete("/api/campaign-prompts/:id", requireFirebaseAuth, async (req, res) => {
     if (!ensureDb(res)) return;
