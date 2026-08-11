@@ -1086,7 +1086,8 @@ export default function LeadImports({
     if (
       formularioTemAlteracao() &&
       !window.confirm(
-        "Há conteúdo preenchido no formulário. Duplicar esta campanha substitui o que está lá. Continuar?"
+        "O formulário será substituído pelos dados desta campanha, e o que está preenchido nele agora será descartado.\n\n" +
+          "A campanha original NÃO é alterada — você vai editar uma cópia nova.\n\nContinuar?"
       )
     ) {
       return;

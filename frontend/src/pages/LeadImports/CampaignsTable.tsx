@@ -69,7 +69,7 @@ export function CampaignsTable({ campaigns, loadingCampaigns, onEditCampaign, on
                         <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Editar" onClick={() => onEditCampaign(c)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Duplicar campanha" onClick={() => onDuplicateCampaign(c)}>
+                        <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Duplicar: cria uma cópia no formulário. A campanha original não muda." onClick={() => onDuplicateCampaign(c)}>
                           <Copy className="h-3.5 w-3.5" />
                         </Button>
                         <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-rose-500 border-rose-200/40 hover:bg-rose-50 dark:hover:bg-rose-950/20" title="Excluir" onClick={() => void onDeleteCampaign(c)}>
