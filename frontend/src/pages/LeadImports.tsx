@@ -1171,6 +1171,9 @@ export default function LeadImports({
               setReplyAgent={setReplyAgent}
               campaignAgentPrompt={campaignAgentPrompt}
               setCampaignAgentPrompt={setCampaignAgentPrompt}
+              passosAposResposta={
+                campaignSequence.filter((s) => s.enabled !== false && s.triggerMode === "after_reply").length
+              }
               multiAgendaEnabled={multiAgendaEnabled}
               setMultiAgendaEnabled={setMultiAgendaEnabled}
               consultants={consultants}

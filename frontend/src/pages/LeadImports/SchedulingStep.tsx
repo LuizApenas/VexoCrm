@@ -35,6 +35,14 @@ interface SchedulingStepProps {
   setReplyAgent: Dispatch<SetStateAction<"passos" | "campanha" | "atendimento">>;
   campaignAgentPrompt: string;
   setCampaignAgentPrompt: Dispatch<SetStateAction<string>>;
+  /**
+   * Quantos passos estao com o GATILHO "Enviar após resposta do lead".
+   * Zero e o caso perigoso: sem passo marcado, a sequencia inteira sai de uma vez
+   * e quem responder e atendido no primeiro contato. Foi assim que uma campanha
+   * saiu com as duas mensagens juntas — o gatilho do passo ficou em "immediate"
+   * enquanto o usuario achava que escolher o agente aqui bastava.
+   */
+  passosAposResposta: number;
 
   multiAgendaEnabled: boolean;
   setMultiAgendaEnabled: Dispatch<SetStateAction<boolean>>;
@@ -77,6 +85,7 @@ export function SchedulingStep({
   setReplyAgent,
   campaignAgentPrompt,
   setCampaignAgentPrompt,
+  passosAposResposta,
   multiAgendaEnabled,
   setMultiAgendaEnabled,
   consultants,
@@ -217,6 +226,34 @@ export function SchedulingStep({
               Quem responde o lead que reagir a este disparo
             </p>
           </div>
+
+          {/* Quantos passos esperam a resposta. Este controle escolhe QUEM responde;
+              quem decide SE o passo 2 espera e o GATILHO do passo, em outra secao.
+              Deixar o numero a vista e o que liga os dois na cabeca do usuario. */}
+          <p
+            className={cn(
+              "text-[10px] rounded-lg px-2.5 py-1.5 border",
+              passosAposResposta > 0
+                ? "text-slate-600 border-slate-200/80 bg-white/60 dark:text-slate-300 dark:border-white/5 dark:bg-black/20"
+                : "text-amber-800 border-amber-200 bg-amber-50 dark:text-amber-300 dark:border-amber-900/50 dark:bg-amber-950/20"
+            )}
+          >
+            {passosAposResposta > 0
+              ? `${passosAposResposta} ${passosAposResposta === 1 ? "passo aguarda" : "passos aguardam"} a resposta do lead (gatilho "Enviar após resposta").`
+              : 'Nenhum passo está com o gatilho "Enviar após resposta do lead".'}
+          </p>
+
+          {/* O caso que causou o incidente: agente escolhido, nenhum passo esperando. */}
+          {passosAposResposta === 0 && replyAgent !== "passos" && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[10px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+              <p className="font-semibold">O agente só entra depois que o lead responder.</p>
+              <p className="mt-0.5">
+                Como nenhum passo está marcado como "Enviar após resposta do lead", a sequência inteira sai de
+                uma vez e o agente responderá já ao primeiro contato. Se a intenção é aguardar, volte em
+                <strong> Mensagens</strong> e mude o GATILHO do passo desejado.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
             {[
