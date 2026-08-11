@@ -667,6 +667,58 @@ export default function LeadImports({
   }
 
   // Consolidated linear creation submit trigger
+  // Editar uma campanha deixava o formulario preenchido sem como limpar: so restava
+  // cancelar a edicao (que zerava nome e passos, mas nao o resto) ou sobrescrever a
+  // campanha aberta sem perceber. Este handler zera TUDO e volta ao estado de campanha
+  // nova — inclusive base selecionada, agendamento, lotes e agente de resposta.
+  function formularioTemAlteracao() {
+    if (campaignName.trim()) return true;
+    if (campaignAgentPrompt.trim()) return true;
+    if (selectedFile) return true;
+    if (selectedImportIds.length > 0) return true;
+    const passosComConteudo = campaignSequence.filter(
+      (step) => (step.text || "").trim() || step.image || (step.buttons || []).length > 0
+    );
+    return passosComConteudo.length > 0;
+  }
+
+  function handleNovaCampanha() {
+    if (
+      formularioTemAlteracao() &&
+      !window.confirm(
+        editingCampaignId
+          ? "Você está editando uma campanha. Começar uma nova descarta as alterações não salvas. Continuar?"
+          : "Há conteúdo preenchido neste formulário. Começar uma nova campanha descarta o que não foi salvo. Continuar?"
+      )
+    ) {
+      return;
+    }
+
+    setEditingCampaignId(null);
+    setCampaignName("");
+    setCampaignSequence([createCampaignStep("text", 1)]);
+    setCampaignTemplateStrategy("single");
+    setCampaignLimitPerRun("50");
+    setDispatchOptions(defaultDispatchOptions);
+    setReplyAgent("atendimento");
+    setCampaignAgentPrompt("");
+    setNewTriggerType("manual");
+    setNewScheduledAt("");
+    setBatchingEnabled(false);
+    setBatchSize("100");
+    setBatchIntervalHours("1");
+    setMultiAgendaEnabled(false);
+    setSelectedImportIds([]);
+    setSelectedImportId(ALL_IMPORTS_VALUE);
+    setSelectedFile(null);
+    setParsedRows([]);
+    setFilterRules([]);
+    setParseError(null);
+    setSelectedImageStepId(null);
+
+    toast({ title: "Formulário limpo", description: "Pronto para uma nova campanha." });
+  }
+
   async function handleCreateAndDispatch() {
     if (!activeClientId) {
       toast({ title: "Seção Inválida", description: "Selecione uma empresa no seletor.", variant: "destructive" });
@@ -1201,6 +1253,7 @@ export default function LeadImports({
                 setCampaignName("");
                 setCampaignSequence([createCampaignStep("text", 1)]);
               }}
+              onNovaCampanha={handleNovaCampanha}
             />
           </div>
 

@@ -1,5 +1,5 @@
 import { type Dispatch, type SetStateAction } from "react";
-import { Archive, Clock3, Pause, Play, Plus, Trash2, Zap } from "lucide-react";
+import { Archive, Clock3, FilePlus2, Pause, Play, Plus, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -69,6 +69,8 @@ interface SchedulingStepProps {
   isSubmitting: boolean;
   editingCampaignId: string | null;
   onCancelEdit: () => void;
+  /** Zera o formulario inteiro e volta ao estado de campanha nova. */
+  onNovaCampanha: () => void;
 }
 
 export function SchedulingStep({
@@ -109,6 +111,7 @@ export function SchedulingStep({
   isSubmitting,
   editingCampaignId,
   onCancelEdit,
+  onNovaCampanha,
 }: SchedulingStepProps) {
   return (
     <Card className="border-border bg-card shadow-sm text-card-foreground rounded-2xl">
@@ -473,9 +476,20 @@ export function SchedulingStep({
               onClick={onCancelEdit}
               className="w-full h-11 text-xs font-bold mt-2 rounded-xl"
             >
-              Cancelar Edição / Nova Campanha
+              Cancelar Edição
             </Button>
           )}
+          {/* Sempre visivel: editando ou nao, o formulario acumula estado (base
+              selecionada, agendamento, lotes, agente) e nao havia como zerar. */}
+          <Button
+            variant="ghost"
+            onClick={onNovaCampanha}
+            disabled={isSubmitting}
+            className="w-full h-10 text-xs font-semibold mt-2 rounded-xl gap-2 text-slate-600 dark:text-slate-300"
+          >
+            <FilePlus2 className="h-3.5 w-3.5" />
+            Criar nova campanha (limpa o formulário)
+          </Button>
         </div>
       </CardContent>
     </Card>
