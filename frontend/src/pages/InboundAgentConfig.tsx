@@ -62,6 +62,17 @@ export default function InboundAgentConfig() {
     return (tenant?.n8n_settings?.evolution_instances ?? []).filter((i) => i.active !== false);
   }, [leadClients, selectedClientId]);
 
+  // Lista de SDR do TENANT — a mesma que o disparo usa. O backend ja resolve por
+  // ela (services/sdrTarget.js: resolveSdrTarget), entao aqui e so leitura: mostrar
+  // quem recebe hoje evita a impressao de que o inbound so aceita um numero.
+  const sdrNumbersDoTenant = useMemo(() => {
+    const tenant = leadClients.find((c) => c.id === selectedClientId);
+    const lista = tenant?.n8n_settings?.sdr_whatsapp_numbers;
+    if (Array.isArray(lista) && lista.length > 0) return lista;
+    const unico = tenant?.n8n_settings?.sdr_whatsapp_number;
+    return unico ? [unico] : [];
+  }, [leadClients, selectedClientId]);
+
   const [companyId, setCompanyId] = useState<string>("all");
   const updateCompany = useUpdateFupCompany();
   const createCompany = useCreateFupCompany();
@@ -486,15 +497,59 @@ export default function InboundAgentConfig() {
                 </div>
 
                 {sdrTransferEnabled && (
-                  <div className="space-y-2 max-w-md">
-                    <Label>WhatsApp do SDR (Notificação)</Label>
-                    <Input
-                      placeholder="Ex: 5511999999999"
-                      value={sdrPhone}
-                      onChange={(e) => setSdrPhone(e.target.value)}
-                    />
+                  <div className="space-y-4">
+                    {/* Quem recebe de fato, em ordem de precedencia — a mesma de
+                        resolveSdrTarget. Antes a tela mostrava so o campo unico e
+                        parecia que o inbound aceitava um numero apenas. */}
+                    <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-sm">Equipe que recebe o transbordo</Label>
+                        <a
+                          href="/crm/agente?tab=settings&subtab=geral"
+                          className="text-xs font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                        >
+                          Editar lista
+                        </a>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        É a mesma lista usada pelos disparos, configurada em Agente IA → Configurações.
+                        Vale para todos os números deste tenant.
+                      </p>
+                      {sdrNumbersDoTenant.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {sdrNumbersDoTenant.map((numero) => (
+                            <span
+                              key={numero}
+                              className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-mono dark:bg-slate-800"
+                            >
+                              {numero}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                          Nenhum número na lista do tenant. Sem um número abaixo, ninguém recebe o
+                          resumo do transbordo.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2 max-w-md">
+                      <Label>WhatsApp do SDR só deste número (opcional)</Label>
+                      <Input
+                        placeholder="Ex: 5511999999999"
+                        value={sdrPhone}
+                        onChange={(e) => setSdrPhone(e.target.value)}
+                      />
+                      <p className="text-xs text-slate-500">
+                        Preenchido, <strong>substitui</strong> a lista do tenant para este número de
+                        WhatsApp — só ele recebe. Em branco, vale a lista acima.
+                      </p>
+                    </div>
+
                     <p className="text-xs text-slate-500">
-                      Número que receberá o resumo quando o robô transferir o lead.
+                      O botão <strong>Permitir Transferência</strong> sobrepõe tudo: desligado, ninguém
+                      recebe, mesmo com a lista preenchida.
                     </p>
                   </div>
                 )}
