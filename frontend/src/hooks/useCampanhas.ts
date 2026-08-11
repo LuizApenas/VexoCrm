@@ -80,6 +80,13 @@ export interface CampaignSequenceStep {
   image: CampaignImageAsset | null;
   enabled: boolean;
   delayAfterSeconds: number;
+  /**
+   * "with_previous" e LEGADO: nao e mais oferecido na tela porque nunca teve
+   * consumidor no backend — o passo caia no filtro de imediato e virava dois
+   * envios seguidos, com o atraso normal. O tipo e a normalizacao continuam
+   * aceitando o valor para nao reescrever passo ja gravado; a tela o exibe
+   * como "Imediato", que e o que ele de fato faz.
+   */
   triggerMode?: "immediate" | "after_reply" | "with_previous";
   buttons?: {
     displayText: string;

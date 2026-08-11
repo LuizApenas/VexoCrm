@@ -111,9 +111,13 @@ export function MessageSequenceStep({
 
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Gatilho:</span>
+                    {/* "with_previous" foi removido da tela: nao havia consumidor no
+                        backend, e o passo era tratado como imediato (dois envios
+                        seguidos, com o atraso normal). Passo antigo gravado assim
+                        aparece como "Imediato", que e o que ele de fato faz. */}
                     <Select
-                      value={step.triggerMode || "immediate"}
-                      onValueChange={(val) => updateCampaignStep(step.id, { triggerMode: val as "immediate" | "after_reply" | "with_previous" })}
+                      value={step.triggerMode === "after_reply" ? "after_reply" : "immediate"}
+                      onValueChange={(val) => updateCampaignStep(step.id, { triggerMode: val as "immediate" | "after_reply" })}
                     >
                       <SelectTrigger className="h-7 text-[11px] font-semibold bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 w-[210px]">
                         <SelectValue />
@@ -121,7 +125,6 @@ export function MessageSequenceStep({
                       <SelectContent>
                         <SelectItem value="immediate">⚡ Enviar na hora (Imediato)</SelectItem>
                         <SelectItem value="after_reply">💬 Enviar após resposta do lead</SelectItem>
-                        <SelectItem value="with_previous">🔗 Enviar junto com a anterior</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -143,12 +146,6 @@ export function MessageSequenceStep({
               {step.triggerMode === "after_reply" && (
                 <div className="flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200/80 dark:border-amber-900/40">
                   <span className="font-bold">💬 Aguardar resposta:</span> Esta mensagem só será enviada quando o lead responder à mensagem anterior.
-                </div>
-              )}
-
-              {step.triggerMode === "with_previous" && (
-                <div className="flex items-center gap-1.5 text-[10px] font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30 p-2 rounded-lg border border-indigo-200/80 dark:border-indigo-900/40">
-                  <span className="font-bold">🔗 Enviar junto:</span> Esta mensagem será disparada na mesma sequência da mensagem anterior, sem aguardar uma nova resposta do lead.
                 </div>
               )}
 
