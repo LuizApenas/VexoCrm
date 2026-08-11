@@ -1,4 +1,4 @@
-import { Pencil, Trash2 } from "lucide-react";
+import { Copy, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,10 +11,11 @@ interface CampaignsTableProps {
   campaigns: Campaign[];
   loadingCampaigns: boolean;
   onEditCampaign: (campaign: Campaign) => void;
+  onDuplicateCampaign: (campaign: Campaign) => void;
   onDeleteCampaign: (campaign: Campaign) => void;
 }
 
-export function CampaignsTable({ campaigns, loadingCampaigns, onEditCampaign, onDeleteCampaign }: CampaignsTableProps) {
+export function CampaignsTable({ campaigns, loadingCampaigns, onEditCampaign, onDuplicateCampaign, onDeleteCampaign }: CampaignsTableProps) {
   return (
     <Card className="border-border bg-card shadow-lg text-card-foreground rounded-2xl">
       <CardHeader className="pb-3 flex flex-row items-center justify-between">
@@ -67,6 +68,9 @@ export function CampaignsTable({ campaigns, loadingCampaigns, onEditCampaign, on
                       <div className="flex items-center justify-end gap-1.5">
                         <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Editar" onClick={() => onEditCampaign(c)}>
                           <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Duplicar campanha" onClick={() => onDuplicateCampaign(c)}>
+                          <Copy className="h-3.5 w-3.5" />
                         </Button>
                         <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-rose-500 border-rose-200/40 hover:bg-rose-50 dark:hover:bg-rose-950/20" title="Excluir" onClick={() => void onDeleteCampaign(c)}>
                           <Trash2 className="h-3.5 w-3.5" />

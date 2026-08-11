@@ -252,6 +252,13 @@ export default function LeadImports({
   const triggerCampaign = useTriggerCampaign();
   const generateTemplateVariants = useGenerateCampaignTemplateVariants();
   const saveCampaignPrompt = useSaveCampaignPrompt();
+  // Usado ao duplicar: a copia leva o TEXTO do roteiro, nao o id, para nascer com
+  // roteiro proprio em vez de compartilhar a linha da origem.
+  const { data: campaignPrompts = [] } = useCampaignPrompts(activeClientId || null);
+  const campaignPromptsById = useMemo(
+    () => Object.fromEntries(campaignPrompts.map((p) => [p.id, p.content])),
+    [campaignPrompts]
+  );
   const createDispatch = useCreateDispatch(""); // campaign-specific instances are created dynamically
   const deleteDispatch = useDeleteDispatch("");
   const triggerDispatch = useTriggerDispatch("");
@@ -1055,6 +1062,63 @@ export default function LeadImports({
     toast({ title: "Carregado para edição", description: `Edite a campanha "${c.name}" no formulário de Novo Disparo.` });
   };
 
+  // Duplicar: carrega a campanha no formulario como NOVA (editingCampaignId nulo),
+  // com "(cópia)" no nome. Existe para o dono nao ter de editar campanha em
+  // andamento por falta de alternativa barata — copia, ajusta, dispara a copia, e a
+  // original segue intacta. A copia nasce sem disparo: so vira campanha de verdade
+  // quando ele salvar.
+  const handleDuplicateCampaign = (c: Campaign) => {
+    if (
+      formularioTemAlteracao() &&
+      !window.confirm(
+        "Há conteúdo preenchido no formulário. Duplicar esta campanha substitui o que está lá. Continuar?"
+      )
+    ) {
+      return;
+    }
+
+    const meta = c.analytics_meta || {};
+    const seq = normalizeCampaignSequence(c.analytics_meta);
+
+    // Passos ganham ids novos: reaproveitar os da origem faria as duas campanhas
+    // compartilharem identidade de passo, e um id de passo repetido atrapalha o
+    // rastreio de envio (campaign_dispatch_runs guarda stepId).
+    const passosCopiados = (seq.length > 0 ? seq : [createCampaignStep("text", 1)]).map((step, idx) => ({
+      ...step,
+      id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 8)}`,
+      order: idx + 1,
+    }));
+
+    setEditingCampaignId(null);
+    setCampaignName(`${c.name || "Campanha"} (cópia)`);
+    setCampaignLimitPerRun(String(c.limit_per_run || 50));
+    setCampaignSequence(passosCopiados);
+    setCampaignTemplateStrategy(
+      meta.dispatchOptions?.templateStrategy === "ai_variations" ? "ai_variations" : "single"
+    );
+    setSelectedImportId(c.import_id || ALL_IMPORTS_VALUE);
+    setSelectedImportIds(Array.isArray(meta.importIds) ? meta.importIds : (c.import_id ? [c.import_id] : []));
+    setDispatchOptions(meta.dispatchOptions || defaultDispatchOptions);
+    // Roteiro do agente: a copia leva o TEXTO, nao o id. Salvar cria um
+    // campaign_prompt proprio, entao editar o roteiro da copia nao mexe no original.
+    if (c.campaign_prompt_id && campaignPromptsById[c.campaign_prompt_id]) {
+      setReplyAgent("campanha");
+      setCampaignAgentPrompt(campaignPromptsById[c.campaign_prompt_id]);
+    } else {
+      setReplyAgent(c.mode === "agente" ? "campanha" : "atendimento");
+      setCampaignAgentPrompt("");
+    }
+    // Agendamento nao e copiado de proposito: data antiga dispararia na hora.
+    setNewTriggerType("manual");
+    setNewScheduledAt("");
+    setActiveTab("campanha");
+
+    toast({
+      title: "Campanha duplicada",
+      description: "Ajuste o que precisar e salve. A campanha original não foi alterada.",
+    });
+  };
+
   // Exclui a planilha importada e as linhas dela (lead_import_items). Campanhas
   // antigas que apontavam para ela ficam sem base — por isso o aviso no confirm.
   const handleDeleteImport = async (importId: string, sourceName: string) => {
@@ -1268,6 +1332,7 @@ export default function LeadImports({
           campaigns={campaigns}
           loadingCampaigns={loadingCampaigns}
           onEditCampaign={handleEditCampaign}
+          onDuplicateCampaign={handleDuplicateCampaign}
           onDeleteCampaign={handleDeleteCampaign}
         />
       )}
