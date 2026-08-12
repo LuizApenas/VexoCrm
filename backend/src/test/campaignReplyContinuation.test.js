@@ -81,19 +81,26 @@ describe("o que a derivacao NAO pode quebrar", () => {
 
 describe("botao de url com placeholder nao resolvido", () => {
   // Com o Agendamento Integrado desligado, scheduling_link nao entra em
-  // normalized_data e o placeholder fica LITERAL. Botao com url "{{scheduling_link}}"
-  // nao pode ir para o WhatsApp.
+  // normalized_data e o placeholder fica LITERAL. O link nao pode ser anexado assim.
+  //
+  // buildStepButtons foi REMOVIDA junto com o sendButtons: o WhatsApp descontinuou
+  // botao interativo para conexoes nao-oficiais, e o passo com botao chegava como
+  // "visualizacao unica" ilegivel — sem texto e sem botao. Hoje o unico caminho e
+  // formatStepTextWithButtons, que anexa o link no corpo da mensagem.
   const source = new URL("../campaign-outbound.js", import.meta.url);
 
-  it("descarta o botao e nao anexa o link no texto", async () => {
+  it("nao anexa link com placeholder pendente, e nao existe mais rota de botao", async () => {
     const { readFileSync } = await import("fs");
     const code = readFileSync(source, "utf8");
 
-    expect(code).toContain("function buildStepButtons");
-    // Os dois builders usam o mesmo caminho — nada de regra duplicada divergindo.
-    expect(code).toContain("const formattedButtons = buildStepButtons(step, context, phone);");
-    // A guarda do placeholder existe nos dois pontos: botao e texto anexado.
-    const ocorrencias = code.match(/\/\\\{\\\{\.\*\?\\\}\\\}\//g) || code.match(/\{\\\{\.\*\?\\\}\\\}/g) || [];
-    expect(ocorrencias.length).toBeGreaterThanOrEqual(2);
+    // A guarda do placeholder segue de pe no caminho unico.
+    expect(code).toContain("function formatStepTextWithButtons");
+    const bloco = code.slice(code.indexOf("function formatStepTextWithButtons"), code.indexOf("function buildTextPayload"));
+    expect(bloco).toContain("placeholder nao resolvido nao vira link");
+    expect(bloco).toContain("continue");
+
+    // sendButtons nao pode voltar: era ele que tornava a mensagem ilegivel.
+    expect(code).not.toContain('"/message/sendButtons/"');
+    expect(code).not.toContain("buttons: formattedButtons");
   });
 });

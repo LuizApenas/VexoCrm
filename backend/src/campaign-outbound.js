@@ -505,9 +505,17 @@ function resolveStepWebhookUrl(webhookUrl, payload) {
     if (payload?.type === "image") {
       return webhookUrl.replace("/message/sendText/", "/message/sendMedia/");
     }
-    if (Array.isArray(payload?.buttons) && payload.buttons.length > 0) {
-      return webhookUrl.replace("/message/sendText/", "/message/sendButtons/");
-    }
+    // sendButtons REMOVIDO. Botao interativo foi descontinuado pelo WhatsApp para
+    // conexoes nao-oficiais (Baileys): a API aceita e envia, e o celular recebe uma
+    // mensagem que nao sabe renderizar — chegou como "visualizacao unica" que nao
+    // abre, sem texto e sem botao.
+    //
+    // O pior nao era perder o botao: o texto ia no MESMO payload (txt/text/message,
+    // com os links ja anexados por formatStepTextWithButtons) e sumia junto. Passo
+    // com botao chegava invisivel, o que por muito tempo pareceu "o passo nao envia".
+    //
+    // Agora tudo sai por sendText e o link vai no corpo — o WhatsApp torna URL
+    // clicavel sozinho.
   }
   return webhookUrl;
 }
@@ -526,7 +534,21 @@ function formatStepTextWithButtons(baseText, stepButtons, context = {}, phone = 
   let text = baseText || "";
   if (!Array.isArray(stepButtons) || stepButtons.length === 0) return text;
 
+  // Caminho UNICO desde a remocao do sendButtons. Botao de URL vira link no corpo,
+  // e o WhatsApp o torna clicavel sozinho.
   const urlButtons = stepButtons.filter((b) => b && (b.type === "url" || b.url) && (b.url || b.href));
+
+  // Resposta rapida NAO tem equivalente em texto puro: o valor dela era o toque
+  // que responde sozinho, e isso morre com o botao interativo. Logado para nao
+  // sumir em silencio — a decisao do que fazer com o recurso e do dono.
+  const replyButtons = stepButtons.filter((b) => b && b.type !== "url" && !b.url && !b.href);
+  if (replyButtons.length > 0) {
+    console.warn("[campaign-outbound] botao de resposta rapida ignorado: WhatsApp nao renderiza botao nesta conexao", {
+      quantidade: replyButtons.length,
+      rotulos: replyButtons.map((b) => b.displayText || b.label || null),
+    });
+  }
+
   if (urlButtons.length === 0) return text;
 
   const appendedLinks = [];
@@ -548,54 +570,7 @@ function formatStepTextWithButtons(baseText, stepButtons, context = {}, phone = 
   return text;
 }
 
-/**
- * Botao de URL cujo placeholder nao resolveu nao pode ser enviado.
- *
- * applyMessagePlaceholders so troca chaves presentes em normalized_data. Com o
- * Agendamento Integrado (Multi-Agenda) DESLIGADO, scheduling_link nunca entra ali
- * e o placeholder segue LITERAL — o botao iria para o WhatsApp com a url
- * "{{scheduling_link}}". Melhor mandar a mensagem sem o botao do que com um botao
- * quebrado em nome do cliente.
- */
-function buildStepButtons(step, context, phone) {
-  if (!Array.isArray(step.buttons) || step.buttons.length === 0) return null;
-
-  const formatados = [];
-  for (const [idx, btn] of step.buttons.entries()) {
-    const ehUrl = btn?.type === "url" || Boolean(btn?.url || btn?.href);
-    if (ehUrl) {
-      const bruta = btn?.url || btn?.href || "";
-      const resolvida = normalizeString(applyMessagePlaceholders(bruta, context.lead, phone));
-      if (!resolvida || /\{\{.*?\}\}/.test(resolvida)) {
-        console.warn("[campaign-outbound] botao de url descartado: placeholder nao resolvido", {
-          stepId: step.id,
-          displayText: btn?.displayText || btn?.label || null,
-          urlBruta: bruta,
-        });
-        continue;
-      }
-      formatados.push({
-        type: "url",
-        displayText: btn.displayText || btn.label || `Botao ${idx + 1}`,
-        id: `btn-${step.id}-${idx}`,
-        url: resolvida,
-      });
-      continue;
-    }
-    formatados.push({
-      type: "reply",
-      displayText: btn.displayText || btn.label || `Botao ${idx + 1}`,
-      id: `btn-${step.id}-${idx}`,
-      url: undefined,
-    });
-  }
-
-  return formatados.length > 0 ? formatados : null;
-}
-
 function buildTextPayload(phone, step, context = {}) {
-  const formattedButtons = buildStepButtons(step, context, phone);
-
   const textWithButtons = formatStepTextWithButtons(step.text, step.buttons, context, phone);
 
   return {
@@ -610,7 +585,9 @@ function buildTextPayload(phone, step, context = {}) {
     message: textWithButtons,
     title: textWithButtons,
     description: textWithButtons,
-    buttons: formattedButtons,
+    // `buttons` NAO vai mais no payload: sem o sendButtons, a Evolution enviaria
+    // por sendText e o campo seria ignorado — mandar sugeriria um recurso que nao
+    // existe nesta conexao. Os links ja estao no corpo (textWithButtons).
     campaign: context.campaign || null,
     client: context.client || null,
   };
@@ -618,7 +595,6 @@ function buildTextPayload(phone, step, context = {}) {
 
 function buildImagePayload(phone, step, context = {}) {
   const parsedImage = parseDataUrl(step.image?.dataUrl || "");
-  const formattedButtons = buildStepButtons(step, context, phone);
 
   const textWithButtons = formatStepTextWithButtons(step.text || "", step.buttons, context, phone);
 
@@ -631,7 +607,7 @@ function buildImagePayload(phone, step, context = {}) {
     number: phone,
     txt: textWithButtons,
     caption: textWithButtons,
-    buttons: formattedButtons,
+    // Mesmo motivo do payload de texto: sem sendButtons, o campo nao tem consumidor.
     fileName: step.image?.name || null,
     filename: step.image?.name || null,
     mimeType: parsedImage?.mimeType || step.image?.type || null,

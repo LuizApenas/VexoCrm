@@ -281,15 +281,23 @@ export function MessageSequenceStep({
               {step.type === "text" && (
                 <div className="border-t border-slate-100 dark:border-white/5 pt-2 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-slate-500">Botões de Ação do WhatsApp (Max 3)</span>
+                    <span className="text-[11px] font-semibold text-slate-500">Links da mensagem (Max 3)</span>
                     <button
                       type="button"
                       onClick={() => onAddStepButton(step.id)}
                       className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1"
                     >
-                      <Plus className="h-3 w-3" /> Adicionar Botão
+                      <Plus className="h-3 w-3" /> Adicionar link
                     </button>
                   </div>
+
+                  {/* O WhatsApp descontinuou botao interativo para conexoes nao-oficiais.
+                      A mensagem chegava como "visualizacao unica" ilegivel — sem texto e
+                      sem botao. A tela nao pode prometer um recurso que nao sai. */}
+                  <p className="text-[10px] rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                    O link será <strong>anexado ao final da mensagem</strong> — o WhatsApp não
+                    suporta botões nesta conexão e o próprio app deixa a URL clicável.
+                  </p>
 
                   {step.buttons && step.buttons.length > 0 && (
                     <div className="grid gap-2 pt-1">
@@ -343,8 +351,8 @@ export function MessageSequenceStep({
 
                           <p className="text-[10px] text-slate-500 pl-1">
                             {btn.type === "url"
-                              ? "🔗 Link externo: Direciona o lead para o link ao ser clicado."
-                              : "💬 Resposta Rápida: Quando o lead clica no botão, o WhatsApp envia este texto automaticamente de volta no chat para dar prosseguimento ao atendimento."}
+                              ? "🔗 Link externo: vai anexado ao final da mensagem, clicável."
+                              : "⚠️ Resposta Rápida NÃO é enviada: dependia do botão interativo, que o WhatsApp descontinuou nesta conexão. Escreva a instrução no texto da mensagem."}
                           </p>
                         </div>
                       ))}
