@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Lightbulb,
   CheckCircle2,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
@@ -555,6 +556,82 @@ const ACADEMY_MODULES: AcademyModule[] = [
       "Dê o mínimo necessário: vendedor não precisa de permissão de excluir base nem de trocar LLM.",
       "A lista de permissões se atualiza sozinha quando uma ferramenta nova entra no sistema.",
       "Nunca compartilhe login: crie um usuário por pessoa para medir SLA e responsabilidade.",
+    ],
+  },
+  {
+    value: "planilhas_antiban",
+    label: "Envios & Variações Antiban",
+    icon: Send,
+    permissions: ["planilhas.view"],
+    title: "Envios em Massa & Variações Humanizadas (Groq AI)",
+    summary: "Como criar sequências de mensagens em massa protegidas contra bloqueios do WhatsApp utilizando rotação inteligente de texto.",
+    goal: "Objetivo: Alcançar 100% da base com taxa de entrega máxima e zero bloqueios de chip.",
+    ctaHref: "/crm/planilhas",
+    ctaLabel: "Abrir Envios por Planilha",
+    sections: [
+      {
+        title: "Passo a passo do envio seguro",
+        steps: [
+          "1. Carregue a planilha de contatos em formato CSV ou XLSX no Passo 1.",
+          "2. Redija a mensagem base utilizando as variáveis {{nome}}, {{telefone}} e {{scheduling_link}}.",
+          "3. Clique em 'Gerar Variações Humanizadas' e escolha a quantidade (de 2 a 30 variações).",
+          "4. Selecione a frequência de disparo adequada (10 min ou 20 min para chips em aquecimento).",
+          "5. Revise a prévia no Simulador de WhatsApp ao lado antes de disparar.",
+        ],
+      },
+    ],
+    tips: [
+      "💡 Dica Antiban: Para bases com mais de 200 contatos, utilize sempre pelo menos 15 variações de texto.",
+      "⚠️ Frequência: Chips novos (frios) devem utilizar a frequência de 20 minutos por envio.",
+    ],
+  },
+  {
+    value: "agente_campanha",
+    label: "Agente IA de Campanha",
+    icon: Bot,
+    permissions: ["whatsapp.reply"],
+    title: "Agente IA com Roteiro Personalizado por Campanha",
+    summary: "Como criar uma campanha onde o chatbot de IA qualifica o lead usando uma proposta de vendas exclusiva daquele produto.",
+    goal: "Objetivo: Automatizar a negociação sem perder o tom de conversa nem errar o preço da oferta.",
+    ctaHref: "/crm/planilhas",
+    ctaLabel: "Criar Campanha com Agente",
+    sections: [
+      {
+        title: "Como configurar a IA no disparo",
+        steps: [
+          "1. Na Timeline de Envio, altere a opção para 'Com Agente IA'.",
+          "2. Escreva o Roteiro do Agente especificando o produto, preço, benefícios e objeções comuns.",
+          "3. Ao disparar, o sistema congela uma cópia estática deste roteiro para este lote.",
+          "4. Quando o cliente responder à mensagem, a IA responderá utilizando exatamente estas regras.",
+        ],
+      },
+    ],
+    tips: [
+      "💡 Dica de Roteiro: Seja específico no preço e nas opções de resposta rápida (ex: 1. Quero agendar | 2. Prefiro orçamento).",
+    ],
+  },
+  {
+    value: "sdr_broadcast",
+    label: "Alertas SDR & Recontato",
+    icon: Zap,
+    permissions: ["dashboard.view"],
+    title: "Lista de SDRs & Alerta Simultâneo (Broadcast)",
+    summary: "Como direcionar automaticamente os leads qualificados como QUENTES para a equipe de consultores humanos.",
+    goal: "Objetivo: Garantir tempo de resposta imediato para leads prontas para fechar negócio.",
+    ctaHref: "/crm/agente?tab=inbound",
+    ctaLabel: "Configurar Números de SDR",
+    sections: [
+      {
+        title: "Como cadastrar a equipe de vendas",
+        steps: [
+          "1. Acesse Agente IA no menu lateral e vá na aba Configurações/Inbound.",
+          "2. No campo 'WhatsApp dos SDRs', insira os números de celular dos consultores (com DDD, separados por vírgula).",
+          "3. Assim que um cliente for classificado como QUENTE ou solicitar atendente humano, todos os números cadastrados receberão o alerta de WhatsApp na mesma hora.",
+        ],
+      },
+    ],
+    tips: [
+      "💡 Recontato: Se um cliente finalizado chamar de novo, a IA avisa o SDR e disponibiliza o botão 'Reabrir Atendimento' no Inbox.",
     ],
   },
 ];
