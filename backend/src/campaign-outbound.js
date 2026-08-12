@@ -546,7 +546,7 @@ function formatStepTextWithButtons(baseText, stepButtons, context = {}, phone = 
   // O rotulo (displayText) e o que vai escrito — e o que o dono redigiu para o
   // lead ler. replyText, quando existe, vira contexto do agente, nao texto da
   // mensagem: sao dois campos com papeis diferentes, e nenhum se perde.
-  const optionButtons = stepButtons.filter((b) => b && b.type !== "url" && !b.url && !b.href);
+  const optionButtons = stepButtons.filter((b) => b && (b.type === "reply" || (b.type !== "url" && !b.url && !b.href)));
   const optionLines = [];
   for (const [idx, btn] of optionButtons.entries()) {
     const rotulo = normalizeString(

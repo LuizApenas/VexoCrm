@@ -322,7 +322,12 @@ export function MessageSequenceStep({
                             )}
                             <Select
                               value={btn.type}
-                              onValueChange={(val) => onUpdateStepButton(step.id, btnIdx, { type: val as "url" | "reply" })}
+                              onValueChange={(val) =>
+                                onUpdateStepButton(step.id, btnIdx, {
+                                  type: val as "url" | "reply",
+                                  ...(val === "reply" ? { url: "" } : {}),
+                                })
+                              }
                             >
                               <SelectTrigger className="h-8 text-[11px] max-w-[125px]">
                                 <SelectValue />
@@ -353,7 +358,7 @@ export function MessageSequenceStep({
                                   onUpdateStepButton(step.id, btnIdx, {
                                     displayText: e.target.value,
                                     replyText: e.target.value,
-                                    url: e.target.value,
+                                    url: "",
                                   })
                                 }
                               />

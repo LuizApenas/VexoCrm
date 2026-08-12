@@ -32,8 +32,8 @@ export function WhatsAppPreviewPanel({ campaignSequence, multiAgendaEnabled }: W
               // um botao que nunca chega — era exatamente isso que enganava.
               const botoes = step.type === "text" ? (step.buttons || []) : [];
               const linhasOpcoes = botoes
-                .filter((b) => b.type !== "url" && !b.url)
-                .map((b) => (b.displayText || "").trim())
+                .filter((b) => b && (b.type === "reply" || (b.type !== "url" && !b.url)))
+                .map((b) => (b.displayText || b.replyText || "").trim())
                 .filter(Boolean)
                 .map((rotulo, i) => `${i + 1}. ${rotulo}`);
               const linhasLinks = botoes
