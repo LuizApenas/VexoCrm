@@ -14,6 +14,11 @@ import {
   SDR_MOTIVOS,
 } from "../services/sdrTarget.js";
 import { normalizeCampaignAnalyticsMeta } from "../campaign-outbound.js";
+import {
+  shouldEngageInbound,
+  INBOUND_SCOPE_ALL,
+  INBOUND_SCOPE_LEADS_ONLY,
+} from "../services/inboundEngagementPolicy.js";
 
 describe("lista de numeros de SDR", () => {
   it("valida formato: so digitos, 10 a 15", () => {
@@ -147,5 +152,54 @@ describe("botoes do passo sobrevivem a normalizacao", () => {
       sequence: [{ id: "s1", type: "text", order: 1, text: "oi", enabled: true }],
     });
     expect(meta.sequence[0].buttons).toEqual([]);
+  });
+});
+
+describe("o loop do alerta de SDR nao pode voltar", () => {
+  it("alerta NUNCA vai para o telefone da propria conversa", () => {
+    // Foi assim que o loop voltou: com o destino virando lista, um dos numeros
+    // era o da conversa, o alerta chegava de volta como inbound e disparava
+    // outro alerta.
+    const alvo = resolveSdrTarget({
+      inboundConfig: null,
+      tenantSettings: { sdr_whatsapp_numbers: ["5534984085015", "5534997817660"] },
+      excludeNumbers: ["5534997817660"],
+    });
+    expect(alvo.numbers).toEqual(["5534984085015"]);
+    expect(alvo.excluded).toEqual(["5534997817660"]);
+  });
+
+  it("todos os destinos excluidos: motivo proprio, nao 'sem numero'", () => {
+    const alvo = resolveSdrTarget({
+      inboundConfig: null,
+      tenantSettings: { sdr_whatsapp_numbers: ["5534997817660"] },
+      excludeNumbers: ["5534997817660"],
+    });
+    expect(alvo.numbers).toEqual([]);
+    expect(alvo.reason).toBe(SDR_MOTIVOS.TODOS_EXCLUIDOS);
+    expect(alvo.reason).not.toBe(SDR_MOTIVOS.SEM_NUMERO);
+  });
+
+  it("inbound vindo do numero do SDR nao vira conversa de lead", () => {
+    const decisao = shouldEngageInbound({
+      scope: INBOUND_SCOPE_LEADS_ONLY,
+      isKnownLead: true,
+      hasCampaignMatch: true,
+      isSdrNumber: true,
+    });
+    expect(decisao.engage).toBe(false);
+    expect(decisao.reason).toBe("numero_e_do_sdr");
+  });
+
+  it("a trava do SDR vale INCLUSIVE no escopo 'all'", () => {
+    // "all" e sobre quem o cliente quer atender; nao autoriza o bot a conversar
+    // com a propria notificacao.
+    const decisao = shouldEngageInbound({
+      scope: INBOUND_SCOPE_ALL,
+      isKnownLead: false,
+      hasCampaignMatch: false,
+      isSdrNumber: true,
+    });
+    expect(decisao.engage).toBe(false);
   });
 });

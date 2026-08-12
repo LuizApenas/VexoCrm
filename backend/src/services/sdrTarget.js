@@ -12,6 +12,9 @@ export const SDR_MOTIVOS = {
   OK: "ok",
   TRANSFERENCIA_DESLIGADA: "transferencia_desligada",
   SEM_NUMERO: "sem_numero_configurado",
+  // Todos os destinos fechariam o ciclo (proprio telefone da conversa ou numero
+  // da instancia). Nao e falta de configuracao — e protecao contra loop.
+  TODOS_EXCLUIDOS: "todos_os_destinos_fechariam_loop",
   LEITURA_FALHOU: "leitura_de_settings_falhou",
 };
 
@@ -60,25 +63,46 @@ export function resolveTenantSdrNumbers(tenantSettings) {
  * Devolve `numbers` (lista) e `number` (o primeiro), este ultimo so para nao
  * quebrar chamador antigo.
  */
-export function resolveSdrTarget({ inboundConfig, tenantSettings, tenantSettingsReadFailed = false }) {
+export function resolveSdrTarget({
+  inboundConfig,
+  tenantSettings,
+  tenantSettingsReadFailed = false,
+  excludeNumbers = [],
+}) {
   if (inboundConfig && !inboundConfig.sdrTransferEnabled) {
-    return { numbers: [], number: null, reason: SDR_MOTIVOS.TRANSFERENCIA_DESLIGADA };
+    return { numbers: [], number: null, reason: SDR_MOTIVOS.TRANSFERENCIA_DESLIGADA, excluded: [] };
   }
 
   const doAgente = normalizeSdrNumber(inboundConfig?.sdrPhone);
-  const numeros = doAgente && isValidSdrNumber(doAgente)
+  const candidatos = doAgente && isValidSdrNumber(doAgente)
     ? [doAgente]
     : resolveTenantSdrNumbers(tenantSettings);
 
+  // NUNCA mandar o alerta para um numero que fecha o ciclo — o telefone da
+  // propria conversa, ou o numero da instancia que envia. O alerta chegaria de
+  // volta como inbound e dispararia outro alerta: foi assim que o loop voltou
+  // depois que o destino virou uma lista.
+  const proibidos = new Set(
+    (Array.isArray(excludeNumbers) ? excludeNumbers : [excludeNumbers])
+      .map(normalizeSdrNumber)
+      .filter(Boolean)
+  );
+  const numeros = candidatos.filter((n) => !proibidos.has(n));
+  const excluded = candidatos.filter((n) => proibidos.has(n));
+
   if (numeros.length > 0) {
-    return { numbers: numeros, number: numeros[0], reason: SDR_MOTIVOS.OK };
+    return { numbers: numeros, number: numeros[0], reason: SDR_MOTIVOS.OK, excluded };
+  }
+
+  if (excluded.length > 0) {
+    return { numbers: [], number: null, reason: SDR_MOTIVOS.TODOS_EXCLUIDOS, excluded };
   }
 
   // Sem numero E a leitura falhou: nao afirmar "nao configurado". A lista pode
   // existir e a consulta ter caido.
   if (tenantSettingsReadFailed) {
-    return { numbers: [], number: null, reason: SDR_MOTIVOS.LEITURA_FALHOU };
+    return { numbers: [], number: null, reason: SDR_MOTIVOS.LEITURA_FALHOU, excluded: [] };
   }
 
-  return { numbers: [], number: null, reason: SDR_MOTIVOS.SEM_NUMERO };
+  return { numbers: [], number: null, reason: SDR_MOTIVOS.SEM_NUMERO, excluded: [] };
 }

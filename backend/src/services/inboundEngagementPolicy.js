@@ -33,7 +33,14 @@ export function resolveInboundScope(tenantSettings) {
  * @param {boolean} params.isKnownLead     existe registro de lead com esse telefone
  * @param {boolean} params.hasCampaignMatch telefone casa com alguma campanha
  */
-export function shouldEngageInbound({ scope, isKnownLead, hasCampaignMatch }) {
+export function shouldEngageInbound({ scope, isKnownLead, hasCampaignMatch, isSdrNumber = false }) {
+  // O SDR e equipe, nao lead. Ele RECEBE o briefing; se a chegada desse briefing
+  // fosse tratada como mensagem de lead, o chatbot responderia, qualificaria e
+  // mandaria outro briefing — o loop que voltou quando o destino virou lista.
+  // Esta trava vale inclusive no escopo "all", porque nao e sobre quem o cliente
+  // quer atender: e sobre nao conversar com a propria notificacao.
+  if (isSdrNumber) return { engage: false, reason: "numero_e_do_sdr" };
+
   if (scope === INBOUND_SCOPE_ALL) return { engage: true, reason: null };
   if (isKnownLead) return { engage: true, reason: null };
   if (hasCampaignMatch) return { engage: true, reason: null };

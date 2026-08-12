@@ -306,12 +306,20 @@ export function MessageSequenceStep({
                       {step.buttons.map((btn, btnIdx) => (
                         <div key={btnIdx} className="space-y-1 bg-slate-50 dark:bg-slate-900/40 p-2 rounded-lg border border-slate-200/60 dark:border-white/5">
                           <div className="flex gap-2 items-center">
-                            <Input
-                              value={btn.displayText}
-                              placeholder="Nome do Botão (Ex: Agendar)"
-                              className="h-8 text-[11px] max-w-[130px]"
-                              onChange={(e) => onUpdateStepButton(step.id, btnIdx, { displayText: e.target.value })}
-                            />
+                            {/* "Opção de resposta" tem UM campo só. Com dois, o
+                                usuário preenchia um deles, a opção ficava sem
+                                rótulo e era descartada no envio — as opções
+                                simplesmente sumiam da mensagem. Link continua
+                                com dois, porque texto e URL são coisas
+                                diferentes. */}
+                            {btn.type === "url" && (
+                              <Input
+                                value={btn.displayText}
+                                placeholder="Nome do Botão (Ex: Agendar)"
+                                className="h-8 text-[11px] max-w-[130px]"
+                                onChange={(e) => onUpdateStepButton(step.id, btnIdx, { displayText: e.target.value })}
+                              />
+                            )}
                             <Select
                               value={btn.type}
                               onValueChange={(val) => onUpdateStepButton(step.id, btnIdx, { type: val as "url" | "reply" })}
@@ -334,10 +342,20 @@ export function MessageSequenceStep({
                               />
                             ) : (
                               <Input
-                                value={btn.replyText || btn.url || ""}
-                                placeholder="Texto de resposta do lead (Ex: Quero agendar)"
+                                // Compatibilidade: quem ja tem os dois campos
+                                // preenchidos nao perde nada — usa o rotulo se
+                                // existir, senao o valor. E a escrita alimenta
+                                // os tres para o envio nao depender de qual foi.
+                                value={btn.displayText || btn.replyText || btn.url || ""}
+                                placeholder="Texto da opção (Ex: Quero agendar)"
                                 className="h-8 text-[11px] flex-1"
-                                onChange={(e) => onUpdateStepButton(step.id, btnIdx, { replyText: e.target.value, url: e.target.value })}
+                                onChange={(e) =>
+                                  onUpdateStepButton(step.id, btnIdx, {
+                                    displayText: e.target.value,
+                                    replyText: e.target.value,
+                                    url: e.target.value,
+                                  })
+                                }
                               />
                             )}
 

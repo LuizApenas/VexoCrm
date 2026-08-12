@@ -482,15 +482,15 @@ export default function InboundAgentConfig() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Transbordo Humano (SDR)</CardTitle>
-                <CardDescription>Configuração de encaminhamento para atendentes humanos.</CardDescription>
+                <CardTitle className="text-lg">Envio da qualificação</CardTitle>
+                <CardDescription>Quem recebe o resumo da qualificação quando o agente termina de qualificar um lead. O robô continua atendendo — não há transferência da conversa.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="flex items-center justify-between rounded-lg border border-slate-200 p-4 dark:border-slate-800">
                   <div className="space-y-0.5">
-                    <Label className="text-base">Permitir Transferência</Label>
+                    <Label className="text-base">Enviar a qualificação</Label>
                     <p className="text-sm text-slate-500">
-                      O robô poderá avisar ou transferir o lead para um humano quando necessário.
+                      Ao qualificar um lead, manda o resumo para os números abaixo. Vale no atendimento e nas campanhas. Desligado, ninguém é avisado.
                     </p>
                   </div>
                   <Switch checked={sdrTransferEnabled} onCheckedChange={setSdrTransferEnabled} />
@@ -503,7 +503,7 @@ export default function InboundAgentConfig() {
                         parecia que o inbound aceitava um numero apenas. */}
                     <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800 space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <Label className="text-sm">Equipe que recebe o transbordo</Label>
+                        <Label className="text-sm">Quem recebe a qualificação</Label>
                         <a
                           href="/crm/agente?tab=settings&subtab=geral"
                           className="text-xs font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
@@ -529,7 +529,7 @@ export default function InboundAgentConfig() {
                       ) : (
                         <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
                           Nenhum número na lista do tenant. Sem um número abaixo, ninguém recebe o
-                          resumo do transbordo.
+                          resumo da qualificação.
                         </p>
                       )}
                     </div>

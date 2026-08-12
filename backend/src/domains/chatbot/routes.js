@@ -40,7 +40,7 @@ import {
   shouldEngageInbound,
   INBOUND_SCOPE_ALL,
 } from "../../services/inboundEngagementPolicy.js";
-import { resolveSdrTarget } from "../../services/sdrTarget.js";
+import { resolveSdrTarget, resolveTenantSdrNumbers, normalizeSdrNumber } from "../../services/sdrTarget.js";
 import { resolveCampaignAgent } from "../../services/campaignAgentRouting.js";
 
 export function registerChatbotRoutes(app, deps) {
@@ -110,6 +110,60 @@ export function registerChatbotRoutes(app, deps) {
     }
 
     return Array.from(aliases);
+  }
+
+  /**
+   * Esta conversa ja teve briefing enviado?
+   *
+   * Dedup por CONVERSA, sem TTL. A guarda de mensagem duplicada
+   * (services/inboundGuard.js) expira em 10 min e nao segura um ciclo mais
+   * lento — foi assim que qualificacoes ANTIGAS voltaram a ser reenviadas.
+   *
+   * Erro de leitura devolve TRUE: na duvida, NAO reenviar. Alerta repetido em
+   * loop custa mais que alerta perdido, e o SDR ainda ve a conversa na tela.
+   */
+  async function briefingJaEnviado(clientId, phone) {
+    if (!supabase || !clientId || !phone) return false;
+    try {
+      const { data, error } = await supabase
+        .from(leadsTableName(clientId))
+        .select("dados")
+        .eq("client_id", clientId)
+        .eq("telefone", phone)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (error) {
+        console.warn("[chatbot-webhook] falha ao checar briefing ja enviado:", error.message);
+        return true;
+      }
+      return Boolean(data?.[0]?.dados?.briefing_enviado_em);
+    } catch (err) {
+      console.warn("[chatbot-webhook] falha ao checar briefing ja enviado:", err?.message || err);
+      return true;
+    }
+  }
+
+  /** Marca a conversa como notificada, para o proximo evento nao reenviar. */
+  async function marcarBriefingEnviado(clientId, phone) {
+    if (!supabase || !clientId || !phone) return;
+    try {
+      const { data } = await supabase
+        .from(leadsTableName(clientId))
+        .select("id, dados")
+        .eq("client_id", clientId)
+        .eq("telefone", phone)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const lead = data?.[0];
+      if (!lead?.id) return;
+      await supabase
+        .from(leadsTableName(clientId))
+        .update({ dados: { ...(lead.dados || {}), briefing_enviado_em: new Date().toISOString() } })
+        .eq("id", lead.id)
+        .eq("client_id", clientId);
+    } catch (err) {
+      console.warn("[chatbot-webhook] falha ao marcar briefing enviado:", err?.message || err);
+    }
   }
 
   /**
@@ -1250,12 +1304,16 @@ export function registerChatbotRoutes(app, deps) {
     // tenant ou telefone vindo de campanha; desconhecido fica em silencio, para
     // atendimento humano.
     const escopoInbound = resolveInboundScope(tenantSettings);
-    if (escopoInbound !== INBOUND_SCOPE_ALL) {
-      const leadConhecido = await telefoneEhLeadConhecido(clientId, phone);
+    // O numero do SDR e barrado SEMPRE, inclusive no escopo "all": o briefing
+    // que chega nele nao pode virar conversa de lead.
+    const telefoneEhSdr = resolveTenantSdrNumbers(tenantSettings).includes(normalizeSdrNumber(phone));
+    if (escopoInbound !== INBOUND_SCOPE_ALL || telefoneEhSdr) {
+      const leadConhecido = telefoneEhSdr ? false : await telefoneEhLeadConhecido(clientId, phone);
       const decisao = shouldEngageInbound({
         scope: escopoInbound,
         isKnownLead: leadConhecido,
         hasCampaignMatch: temCampanhaParaEsteTelefone,
+        isSdrNumber: telefoneEhSdr,
       });
       if (!decisao.engage) {
         descartar(decisao.reason, { clientId, phone: maskPhoneForLog(phone), escopo: escopoInbound });
@@ -1383,7 +1441,20 @@ export function registerChatbotRoutes(app, deps) {
           // O motivo entra no log separado do numero: antes, transferencia
           // desligada e leitura falha apareciam as duas como "no SDR number
           // configured", com o numero salvo na tela.
-          const sdr = resolveSdrTarget({ inboundConfig, tenantSettings, tenantSettingsReadFailed });
+          // excludeNumbers fecha o ciclo pelo outro lado: o alerta nunca vai
+          // para o telefone da propria conversa.
+          const sdr = resolveSdrTarget({
+            inboundConfig,
+            tenantSettings,
+            tenantSettingsReadFailed,
+            excludeNumbers: [phone],
+          });
+          if (sdr.excluded?.length > 0) {
+            console.warn("[chatbot-webhook] destino de SDR excluido para nao fechar loop", {
+              clientId,
+              excluidos: sdr.excluded.map(maskPhoneForLog),
+            });
+          }
           // Lista, nao numero unico: a mesma configuracao do tenant serve aos
           // dois agentes.
           const temSdr = sdr.numbers.length > 0;
@@ -1435,7 +1506,11 @@ export function registerChatbotRoutes(app, deps) {
           }
 
           // Finalizado pela primeira vez: gerar briefing completo e notificar SDR
-          if (aiResponse.finalizado && !aiResponse._recontato) {
+          // Dedup do ALERTA por CONVERSA, nao por id de mensagem: a guarda do
+          // inboundGuard tem TTL de 10 min e um loop mais lento que isso passa
+          // por baixo dela. A marca fica no lead e nao expira — briefing sai uma
+          // vez por qualificacao, e conversa ja notificada nao gera outro.
+          if (aiResponse.finalizado && !aiResponse._recontato && !(await briefingJaEnviado(clientId, phone))) {
             if (temSdr && evolutionUrl) {
               try {
                 // Tenta briefing via IA com prompt "extrato" do banco; fallback para determinístico
@@ -1461,6 +1536,9 @@ export function registerChatbotRoutes(app, deps) {
                     evolutionHeaders,
                     contexto: { clientId, tipo: "briefing" },
                   });
+                  // Marca assim que ao menos um destino recebeu. Marcar mesmo
+                  // com falha total esconderia a qualificacao para sempre.
+                  if (entrega.enviados > 0) await marcarBriefingEnviado(clientId, phone);
                   console.log("[chatbot-webhook] briefing enviado ao SDR", {
                     clientId,
                     enviados: entrega.enviados,
