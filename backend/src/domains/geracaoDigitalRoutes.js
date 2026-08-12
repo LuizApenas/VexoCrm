@@ -44,7 +44,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
         INSERT INTO public.leads_clients (id, name)
-        VALUES ('geracao-digital', 'Geração Digital'), ('infinie', 'Infinie Energia Solar'), ('outlier', 'Outlier Consórcios'), ('vexo', 'Vexo OS')
+        VALUES ('geracao-digital', 'Geração Digital')
         ON CONFLICT (id) DO NOTHING;
 
         CREATE TABLE IF NOT EXISTS public.lead_client_n8n_settings (
@@ -68,7 +68,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         ALTER TABLE public.lead_client_n8n_settings ADD COLUMN IF NOT EXISTS agent_name TEXT;
 
         INSERT INTO public.lead_client_n8n_settings (client_id, active, chatbot_enabled)
-        VALUES ('geracao-digital', true, false), ('infinie', true, false), ('outlier', true, false), ('vexo', true, false)
+        VALUES ('geracao-digital', true, false)
         ON CONFLICT (client_id) DO NOTHING;
 
         -- public.leads NÃO é criada aqui. O schema desta função era mínimo (sem

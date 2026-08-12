@@ -60,6 +60,34 @@ export default function Tenants() {
         </div>
       }
     >
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800">
+        <div>
+          <h2 className="text-lg font-black text-slate-900 dark:text-white">Empresas & Tenants</h2>
+          <p className="text-xs text-slate-500">Crie e organize os tenants que vão operar dentro do CRM e portal do cliente.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className="border border-cyan-400/25 bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-700 dark:text-cyan-200">
+            {tenants.length} tenants
+          </Badge>
+          <Badge className="border border-slate-300/80 bg-white/90 px-2 py-0.5 text-[11px] text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/80">
+            {canManageTenants ? "Criação liberada" : "Consulta apenas"}
+          </Badge>
+          <Badge className="border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-200">
+            {canManageN8n ? "Disparo Evolution liberado" : "Evolution restrito a admins"}
+          </Badge>
+          <CreateTenantDialog
+            onTenantCreated={(tenant) => {
+              if (tenant.leads_table) {
+                setTableStatuses((current) => ({
+                  ...current,
+                  [tenant.id]: tenant.leads_table!,
+                }));
+              }
+            }}
+          />
+        </div>
+      </div>
+
       <div className="grid gap-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Card>
