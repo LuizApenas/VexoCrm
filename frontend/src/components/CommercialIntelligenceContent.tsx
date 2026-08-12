@@ -261,6 +261,16 @@ export function CommercialIntelligenceContent({ clientId }: { clientId: string }
     };
   }, [clientId, getIdToken]);
 
+  const consultants = useMemo(() => {
+    if (data?.rankings?.consultants && Array.isArray(data.rankings.consultants)) {
+      return data.rankings.consultants;
+    }
+    if (data?.consultants?.items && Array.isArray(data.consultants.items)) {
+      return data.consultants.items;
+    }
+    return [];
+  }, [data]);
+
   const attributionByChannel = useMemo(() => {
     const map: Record<string, { total: number; qualified: number; revenue: number }> = {
       "📸 Instagram": { total: 0, qualified: 0, revenue: 0 },

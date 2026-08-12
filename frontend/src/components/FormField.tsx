@@ -17,7 +17,7 @@ interface FormFieldProps {
 export function FormField({ label, id, children }: FormFieldProps) {
   return (
     <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className="text-slate-200 dark:text-slate-200 font-semibold">{label}</Label>
       {children}
     </div>
   );

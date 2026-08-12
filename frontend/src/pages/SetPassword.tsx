@@ -87,6 +87,7 @@ export default function SetPassword() {
           onChange={(e) => setCurrentPassword(e.target.value)}
           autoComplete="current-password"
           disabled={submitting || loading}
+          className="text-white bg-slate-900/80 border-slate-700 placeholder:text-slate-400"
           required
         />
       </FormField>
@@ -100,6 +101,7 @@ export default function SetPassword() {
             onChange={(e) => setNewPassword(e.target.value)}
             autoComplete="new-password"
             disabled={submitting || loading}
+            className="text-white bg-slate-900/80 border-slate-700 placeholder:text-slate-400"
             required
           />
           {newPassword && <PasswordStrengthIndicator validation={passwordValidation} />}
@@ -114,6 +116,7 @@ export default function SetPassword() {
           onChange={(e) => setConfirmPassword(e.target.value)}
           autoComplete="new-password"
           disabled={submitting || loading}
+          className="text-white bg-slate-900/80 border-slate-700 placeholder:text-slate-400"
           required
         />
       </FormField>

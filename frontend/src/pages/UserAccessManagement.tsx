@@ -1631,10 +1631,9 @@ function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, ed
               <label className="text-sm font-bold text-foreground flex items-center gap-2">
                 Tipo de Acesso
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 {([
-                  { value: "internal", title: "Equipe Vexo (Interno)", hint: "Acessa o back-office da Vexo." },
-                  { value: "client", title: "Cliente / Tenant", hint: "Usuário da empresa cliente." },
+                  { value: "internal", title: "Usuário / Cliente", hint: "Acessa o sistema e módulos autorizados." },
                 ] as const).map((option) => (
                   <button
                     key={option.value}
@@ -2423,10 +2422,9 @@ export default function UserAccessManagement() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Tipo de Acesso</label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 gap-2">
                       {([
-                        { value: "internal", title: "Equipe Vexo", hint: "Back-office interno." },
-                        { value: "client", title: "Cliente / Tenant", hint: "Usuário da empresa." },
+                        { value: "internal", title: "Usuário / Cliente", hint: "Acesso total aos módulos autorizados." },
                       ] as const).map((option) => (
                         <button
                           key={option.value}
@@ -2860,10 +2858,9 @@ export default function UserAccessManagement() {
                                     <div className="grid gap-6 md:grid-cols-2">
                                       <div className="space-y-2">
                                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Tipo de Acesso</label>
-                                        <div className="grid grid-cols-2 gap-2">
+                                        <div className="grid grid-cols-1 gap-2">
                                           {([
-                                            { value: "internal", title: "Equipe Vexo", hint: "Back-office interno." },
-                                            { value: "client", title: "Cliente / Tenant", hint: "Usuário da empresa." },
+                                            { value: "internal", title: "Usuário / Cliente", hint: "Acesso aos módulos autorizados." },
                                           ] as const).map((option) => (
                                             <button
                                               key={option.value}

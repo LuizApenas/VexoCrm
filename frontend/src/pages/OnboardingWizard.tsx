@@ -16,6 +16,7 @@ import {
   Lightbulb,
   CheckCircle2,
   Zap,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
@@ -683,121 +684,141 @@ export default function OnboardingWizard() {
     };
   }, [context]);
 
-  const visibleModules = useMemo(() => ACADEMY_MODULES.filter(canSee), [canSee]);
+  const visibleModules = ACADEMY_MODULES;
   const [activeTab, setActiveTab] = useState<string>(ACADEMY_MODULES[0].value);
-
-  useEffect(() => {
-    if (visibleModules.length === 0) return;
-    if (!visibleModules.some((module) => module.value === activeTab)) {
-      setActiveTab(visibleModules[0].value);
-    }
-  }, [visibleModules, activeTab]);
 
   return (
     <PageShell
       title="Vexo Academy"
-      subtitle="Domine cada ferramenta que você tem acesso — o que ela faz, o passo a passo para operar e as dicas de ouro (inclusive anti-ban) para escalar suas vendas."
+      subtitle="Domine cada ferramenta — o que ela faz, o passo a passo para operar e as dicas de ouro (inclusive anti-ban) para escalar suas vendas."
     >
-      {visibleModules.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-8 text-center text-sm text-muted-foreground">
-          Nenhum módulo de treinamento disponível para o seu perfil ainda. Assim que novas
-          ferramentas forem liberadas para você, elas aparecerão aqui automaticamente.
-        </div>
-      ) : (
-        <div className="flex flex-col lg:flex-row gap-6 animate-fade-in-up">
-          {/* Menu lateral (sem numeração, filtrado por permissão) */}
-          <div className="lg:w-1/4 shrink-0">
-            <Tabs value={activeTab} onValueChange={setActiveTab} orientation="vertical" className="w-full">
-              <div className="sticky top-6">
-                <Card className="border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                  <CardHeader className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 pb-4">
-                    <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-500">
-                      Trilha de Aprendizado
-                    </CardTitle>
-                  </CardHeader>
-                  <TabsList className="flex-col items-stretch h-auto bg-transparent p-0">
-                    {visibleModules.map((module) => {
-                      const ModuleIcon = module.icon;
-                      return (
-                        <TabsTrigger
-                          key={module.value}
-                          value={module.value}
-                          className="justify-start gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
-                        >
+      <div className="flex flex-col lg:flex-row gap-6 animate-fade-in-up">
+        {/* Menu lateral completo (vitrine) */}
+        <div className="lg:w-1/4 shrink-0">
+          <Tabs value={activeTab} onValueChange={setActiveTab} orientation="vertical" className="w-full">
+            <div className="sticky top-6">
+              <Card className="border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <CardHeader className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 pb-4">
+                  <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-500">
+                    Trilha de Aprendizado
+                  </CardTitle>
+                </CardHeader>
+                <TabsList className="flex-col items-stretch h-auto bg-transparent p-0">
+                  {visibleModules.map((module) => {
+                    const ModuleIcon = module.icon;
+                    const isUnlocked = canSee(module);
+                    return (
+                      <TabsTrigger
+                        key={module.value}
+                        value={module.value}
+                        className="justify-between items-center gap-3 rounded-none border-b border-slate-100 dark:border-slate-800 px-4 py-3 data-[state=active]:bg-indigo-50 dark:data-[state=active]:bg-indigo-900/20 data-[state=active]:text-indigo-600 dark:data-[state=active]:text-indigo-400"
+                      >
+                        <div className="flex items-center gap-2 text-left">
                           <ModuleIcon className="h-4 w-4 shrink-0" />
-                          <span className="text-left font-semibold">{module.label}</span>
-                        </TabsTrigger>
-                      );
-                    })}
-                  </TabsList>
-                </Card>
-              </div>
-            </Tabs>
-          </div>
-
-          {/* Conteúdo do módulo (data-driven) */}
-          <div className="lg:w-3/4">
-            <Tabs value={activeTab}>
-              {visibleModules.map((module) => {
-                const ModuleIcon = module.icon;
-                return (
-                  <TabsContent key={module.value} value={module.value} className="m-0 space-y-6 animate-fade-in-up">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
-                          <ModuleIcon className="h-6 w-6" />
-                          {module.title}
-                        </CardTitle>
-                        <CardDescription className="text-base">{module.summary}</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
-                        <div className="rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 p-4 text-sm text-indigo-800 dark:text-indigo-300">
-                          {module.goal}
+                          <span className="font-semibold text-xs">{module.label}</span>
                         </div>
+                        {!isUnlocked && <Lock className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </Card>
+            </div>
+          </Tabs>
+        </div>
 
-                        {module.sections.map((section) => (
-                          <div key={section.title} className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-2">
-                            <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">{section.title}</h4>
-                            {section.intro && <p className="text-sm">{section.intro}</p>}
-                            {section.steps && (
-                              <ol className="mt-1 space-y-2 list-decimal list-inside text-sm">
-                                {section.steps.map((step, index) => (
-                                  <li key={index}>{step}</li>
-                                ))}
-                              </ol>
-                            )}
-                          </div>
-                        ))}
+        {/* Conteúdo do módulo ou Card de UPSELL */}
+        <div className="lg:w-3/4">
+          <Tabs value={activeTab}>
+            {visibleModules.map((module) => {
+              const ModuleIcon = module.icon;
+              const isUnlocked = canSee(module);
 
-                        {module.tips.length > 0 && (
-                          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-5 flex gap-4">
-                            <Lightbulb className="h-6 w-6 text-amber-500 shrink-0" />
-                            <div className="space-y-2">
-                              <h4 className="font-bold text-amber-800 dark:text-amber-500">Dicas de Ouro</h4>
-                              <ul className="space-y-1.5 text-sm text-amber-700 dark:text-amber-400">
-                                {module.tips.map((tip, index) => (
-                                  <li key={index} className="flex gap-2">
-                                    <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
-                                    <span>{tip}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        )}
-
-                        <Button onClick={() => (window.location.href = module.ctaHref)} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
-                          {module.ctaLabel} <ArrowRight className="ml-2 h-4 w-4" />
-                        </Button>
-                      </CardContent>
+              if (!isUnlocked) {
+                return (
+                  <TabsContent key={module.value} value={module.value} className="m-0 animate-fade-in-up">
+                    <Card className="border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-slate-900/50 to-slate-950 p-8 shadow-xl text-center space-y-6">
+                      <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center mx-auto">
+                        <Lock className="w-8 h-8" />
+                      </div>
+                      <div className="space-y-3 max-w-lg mx-auto">
+                        <h3 className="text-2xl font-black text-amber-500">🔒 Recurso do Plano Avançado</h3>
+                        <p className="text-sm text-slate-300 leading-relaxed">
+                          Este módulo faz parte da Trilha Avançada do Vexo OS. Fale com seu consultor para solicitar o upgrade de plano e liberar esta ferramenta na sua operação.
+                        </p>
+                      </div>
+                      <div>
+                        <a
+                          href="https://wa.me/5511999999999?text=Olá,%20gostaria%20de%20solicitar%20o%20upgrade%20para%20a%20Trilha%20Avançada%20do%20Vexo%20OS"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg hover:shadow-emerald-500/25 transition-all"
+                        >
+                          🔒 Solicitar Upgrade no WhatsApp
+                        </a>
+                      </div>
                     </Card>
                   </TabsContent>
                 );
-              })}
-            </Tabs>
-          </div>
+              }
+
+              return (
+                <TabsContent key={module.value} value={module.value} className="m-0 space-y-6 animate-fade-in-up">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
+                        <ModuleIcon className="h-6 w-6" />
+                        {module.title}
+                      </CardTitle>
+                      <CardDescription className="text-base">{module.summary}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6 text-slate-700 dark:text-slate-300">
+                      <div className="rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 p-4 text-sm text-indigo-800 dark:text-indigo-300">
+                        {module.goal}
+                      </div>
+
+                      {module.sections.map((section) => (
+                        <div key={section.title} className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-2">
+                          <h4 className="font-bold text-base text-indigo-600 dark:text-indigo-400">{section.title}</h4>
+                          {section.intro && <p className="text-sm">{section.intro}</p>}
+                          {section.steps && (
+                            <ol className="mt-1 space-y-2 list-decimal list-inside text-sm">
+                              {section.steps.map((step, index) => (
+                                <li key={index}>{step}</li>
+                              ))}
+                            </ol>
+                          )}
+                        </div>
+                      ))}
+
+                      {module.tips.length > 0 && (
+                        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-5 flex gap-4">
+                          <Lightbulb className="h-6 w-6 text-amber-500 shrink-0" />
+                          <div className="space-y-2">
+                            <h4 className="font-bold text-amber-800 dark:text-amber-500">Dicas de Ouro</h4>
+                            <ul className="space-y-1.5 text-sm text-amber-700 dark:text-amber-400">
+                              {module.tips.map((tip, index) => (
+                                <li key={index} className="flex gap-2">
+                                  <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                                  <span>{tip}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+
+                      <Button onClick={() => (window.location.href = module.ctaHref)} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700">
+                        {module.ctaLabel} <ArrowRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              );
+            })}
+          </Tabs>
         </div>
-      )}
+      </div>
     </PageShell>
   );
 }
