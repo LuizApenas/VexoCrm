@@ -1479,9 +1479,15 @@ export default function GeracaoDigitalProposals() {
                               className="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg px-2 h-8 text-xs text-slate-800 dark:text-white focus:outline-none"
                             >
                               <option value="">Selecione o segmento…</option>
-                              {segmentsList.map((sg: any) => (
-                                <option key={sg.id} value={sg.id}>{sg.nome}</option>
-                              ))}
+                              {(() => {
+                                const allSegs = [...segmentsList];
+                                if (!allSegs.some(s => String(s.nome).toLowerCase().includes("turismo"))) {
+                                  allSegs.unshift({ id: "turismo", nome: "Agências de Turismo & Viagens" });
+                                }
+                                return allSegs.map((sg: any) => (
+                                  <option key={sg.id} value={sg.id}>{sg.nome}</option>
+                                ));
+                              })()}
                             </select>
                           </div>
                           <div className="space-y-1">

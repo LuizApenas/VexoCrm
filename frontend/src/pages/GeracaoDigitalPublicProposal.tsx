@@ -593,10 +593,32 @@ export default function GeracaoDigitalPublicProposal() {
                     .toLowerCase();
                   return `nome:${nome}`;
                 };
-                const uniqueItems = items
-                  // A linha do pacote é o PLANO, não um serviço do escopo.
-                  // Listá-la aqui repetia "Pacote: X — R$ 6000" dentro de uma
-                  // caixa que já diz "tudo incluído no pacote".
+                const hasAvancado = items.some(i => i.descricao?.toLowerCase().includes("avançado") || i.descricao?.toLowerCase().includes("avancado"));
+                const hasEssencial = items.some(i => i.descricao?.toLowerCase().includes("essencial") || i.categoria === "vexo");
+
+                const vexoScopeItems: ProposalItem[] = hasAvancado
+                  ? [
+                      { descricao: "Conexões de Chips WhatsApp Múltiplas", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "Variações Antiban com IA (Groq AI)", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "Agente IA por Campanha (Prompt Dedicado)", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "Base de Conhecimento RAG (PDFs & Docs)", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "Broadcast SDR & Distribuição da Fila", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "Rastreamento de Origem do Lead (Mkt Attribution)", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "Follow-up Avançado com Reabertura", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                    ]
+                  : hasEssencial
+                  ? [
+                      { descricao: "1 Conexão de Chip WhatsApp", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "IA de Atendimento & Vendas Automático", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "Disparos por Planilha (Gerador de Mensagens)", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "Inbox de Atendimento ao Vivo", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                      { descricao: "Follow-up Inteligente Simples", categoria: "vexo", valor: 0, recorrencia: "mensal" },
+                    ]
+                  : [];
+
+                const allItems = [...items, ...vexoScopeItems];
+
+                const uniqueItems = allItems
                   .filter((item) => {
                     const d = String(item.descricao || "");
                     return !d.startsWith("Pacote:") && !d.startsWith("Pacote Vexo:");

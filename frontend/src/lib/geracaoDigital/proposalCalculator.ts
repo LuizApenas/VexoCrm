@@ -15,6 +15,14 @@ export interface ProposalCalculatedValues {
   vpTotal: number;
   /** Total geral derivado (setup + compromisso do período). Nunca ler valor_total do banco. */
   totalGeral: number;
+
+  descontoSetupPorcentagem: number;
+  descontoMensalPorcentagem: number;
+
+  isCombo: boolean;
+  repasseVexoMensal: number;
+  repasseVexoSetup: number;
+  repasseVexoPercentual: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +119,12 @@ export interface ProposalLike {
   package_vexo_id?: string | null;
   periodo_plano?: string | null;
   itens?: any[] | null;
+  desconto_setup_pct?: number | null;
+  desconto_mensal_pct?: number | null;
+  descontoSetupPorcentagem?: number | null;
+  descontoMensalPorcentagem?: number | null;
+  repasse_vexo_pct?: number | null;
+  vexoPlan?: "essencial" | "avancado" | null;
 }
 
 export function calculateProposalValues(
@@ -157,19 +171,13 @@ export function calculateProposalValues(
     }
   }
 
-  // Setup final. A camada de concessões (descontos_concedidos, da antiga Mesa de
-  // Negociação) foi removida na fase 5c: o preço negociado agora é editado
-  // direto na proposta. A coluna segue no banco apenas como histórico.
-  const setupFinal = setupOriginal;
+  // Descontos em %
+  const descontoSetupPorcentagem = Math.max(0, Math.min(100, Number(proposal.desconto_setup_pct ?? proposal.descontoSetupPorcentagem ?? 0)));
+  const descontoMensalPorcentagem = Math.max(0, Math.min(100, Number(proposal.desconto_mensal_pct ?? proposal.descontoMensalPorcentagem ?? 0)));
+
+  const setupFinal = Math.max(0, setupOriginal * (1 - descontoSetupPorcentagem / 100));
 
   // Monthly Original
-  //
-  // Precedência (fase 5a): preço NEGOCIADO da proposta > pacote vivo do
-  // catálogo > valor congelado no item.
-  // O override vive no próprio item (`valor_override: true`), dentro do JSONB
-  // `itens` — sem coluna nova. Assim continuam valendo as duas regras:
-  //   - editar o pacote no catálogo propaga para propostas SEM override;
-  //   - proposta negociada mantém o preço combinado (decisão: valores flexíveis).
   const savedGdPkgItem = items.find(i => i.categoria === "gd" && i.recorrencia === "mensal" && i.descricao?.startsWith("Pacote:"));
   const gdOverride = savedGdPkgItem?.valor_override === true;
 
@@ -199,15 +207,13 @@ export function calculateProposalValues(
     }
   }
 
-  // Vexo avulsos: items in proposal that are Vexo but NOT the Vexo package itself
-  // nem já inclusos no pacote selecionado.
+  // Vexo avulsos
   const vexoAvulsos = items.filter(item => {
     return item.categoria === "vexo" && item.product_id !== null && !item.descricao?.startsWith("Pacote Vexo") && isCobrancaMensal(item) && naoInclusoNoPacote(item);
   });
   const avulsosMonthly = pacoteFechado ? 0 : vexoAvulsos.reduce((sum, item) => sum + Number(item.valor || 0), 0);
 
-  // Legacy items (for backward compatibility): itens GD avulsos com valor,
-  // excluindo os que já compõem o pacote selecionado.
+  // Legacy items
   const legacyItems = items.filter(item => {
     return item.categoria === "gd" && Number(item.valor || 0) > 0 && !item.descricao?.startsWith("Pacote:") && isCobrancaMensal(item) && naoInclusoNoPacote(item);
   });
@@ -219,12 +225,9 @@ export function calculateProposalValues(
   const faturamentoMensalExtra = pacoteFechado ? 0 : faturamentoMensalItems.reduce((sum, item) => sum + Number(item.valor || 0), 0);
 
   const mensalidadeOriginal = gdMonthly + vexoMonthly + avulsosMonthly + legacyMonthly + faturamentoMensalExtra;
-  const mensalidadeFinal = mensalidadeOriginal;
+  const mensalidadeFinal = Math.max(0, mensalidadeOriginal * (1 - descontoMensalPorcentagem / 100));
 
-
-  // Meses do contrato (Compromisso do Período): robusto mesmo sem availablePackages.
-  // Ordem: periodo_plano da proposta → período do pacote (catálogo) →
-  // metadados do item "Pacote:" salvo na proposta → mensal.
+  // Meses do contrato
   const pkgItem = items.find(i =>
     i.descricao?.startsWith("Pacote:") || i.descricao?.startsWith("Pacote Vexo:")
   );
@@ -235,10 +238,29 @@ export function calculateProposalValues(
   const compromissoOriginal = mensalidadeOriginal * mesesPeriodo;
   const compromissoFinal = mensalidadeFinal * mesesPeriodo;
 
-  // VP pela MESMA regra de dedupe (antes era somado solto no wizard).
+  // Lógica de Repasse Percentual Vexo OS x Geração Digital (Combos)
+  const hasGdServices = gdMonthly > 0 || items.some(i => i.categoria === "gd");
+  const hasVexoServices = vexoMonthly > 0 || items.some(i => i.categoria === "vexo") || !!proposal.vexoPlan;
+  const isCombo = hasGdServices && hasVexoServices;
+
+  const repasseVexoPercentual = Number(proposal.repasse_vexo_pct ?? 15);
+
+  let repasseVexoMensal = 0;
+  let repasseVexoSetup = 0;
+
+  if (isCombo) {
+    // Em combo conjunto GD + Vexo: o repasse devido à Vexo incide como porcentagem sobre valor bruto
+    repasseVexoMensal = Math.round((mensalidadeOriginal * (repasseVexoPercentual / 100)) * 100) / 100;
+    repasseVexoSetup = Math.round((setupOriginal * (repasseVexoPercentual / 100)) * 100) / 100;
+  } else if (hasVexoServices) {
+    // Venda Direta Standalone Vexo: Preço de tabela fixa
+    const planType = proposal.vexoPlan || (items.some(i => i.descricao?.toLowerCase().includes("avançado")) ? "avancado" : "essencial");
+    repasseVexoMensal = planType === "avancado" ? 897 : 397;
+    repasseVexoSetup = planType === "avancado" ? 1490 : 690;
+  }
+
+  // VP pela MESMA regra de dedupe
   const vpTotal = computeVpFromItems(items);
-  // Total geral SEMPRE derivado: setup final + compromisso do período.
-  // Nunca usar gd_proposals.valor_total (o backend recomputa sem dedupe e infla).
   const totalGeral = Math.round((setupFinal + compromissoFinal) * 100) / 100;
 
   return {
@@ -250,6 +272,12 @@ export function calculateProposalValues(
     compromissoOriginal: Math.round(compromissoOriginal * 100) / 100,
     compromissoFinal: Math.round(compromissoFinal * 100) / 100,
     vpTotal,
-    totalGeral
+    totalGeral,
+    descontoSetupPorcentagem,
+    descontoMensalPorcentagem,
+    isCombo,
+    repasseVexoMensal,
+    repasseVexoSetup,
+    repasseVexoPercentual
   };
 }

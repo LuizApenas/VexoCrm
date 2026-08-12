@@ -231,6 +231,47 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
           })}
         </div>
 
+        <div className="grid gap-3 sm:grid-cols-2 pt-3 border-t border-dashed border-slate-200 dark:border-white/10">
+          <div className="space-y-1">
+            <Label className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
+              Desconto no Setup (%)
+            </Label>
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={(plano as any).descontoSetupPorcentagem || ""}
+                onChange={(e) =>
+                  onChange({ ...plano, descontoSetupPorcentagem: Math.max(0, Math.min(100, Number(e.target.value))) } as any)
+                }
+                placeholder="0"
+                className="h-8 text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10"
+              />
+              <span className="text-xs text-slate-500">%</span>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
+              Desconto na Mensalidade (%)
+            </Label>
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={(plano as any).descontoMensalPorcentagem || ""}
+                onChange={(e) =>
+                  onChange({ ...plano, descontoMensalPorcentagem: Math.max(0, Math.min(100, Number(e.target.value))) } as any)
+                }
+                placeholder="0"
+                className="h-8 text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10"
+              />
+              <span className="text-xs text-slate-500">%</span>
+            </div>
+          </div>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2 pt-1">
           <div className="space-y-1">
             <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">

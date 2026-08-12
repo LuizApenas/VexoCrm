@@ -249,9 +249,15 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 h-10 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
               >
                 <option value="">Selecione o segmento…</option>
-                {segmentsList.map((s: any) => (
-                  <option key={s.id} value={s.id}>{s.nome}</option>
-                ))}
+                {(() => {
+                  const segs = [...segmentsList];
+                  if (!segs.some(s => String(s.nome).toLowerCase().includes("turismo"))) {
+                    segs.unshift({ id: "turismo", nome: "Agências de Turismo & Viagens" });
+                  }
+                  return segs.map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.nome}</option>
+                  ));
+                })()}
               </select>
               <p className="text-[10px] text-slate-400 italic">Define o roteiro da apresentação comercial ao iniciar a partir desta proposta.</p>
             </div>
