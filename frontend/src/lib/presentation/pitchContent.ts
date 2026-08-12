@@ -149,12 +149,36 @@ export const BENCHMARKS = {
     // folga do meio de semana é onde mora o crescimento recuperável.
     taxaRecuperavelDoGap: 0.6,
   },
+  imobiliario: {
+    // Corretor autônomo / dupla de corretores, médio e alto padrão. Números da
+    // realidade do próprio corretor — o valor do imóvel e a comissão são dele,
+    // não benchmark inventado. Ajustável por praça e faixa de preço.
+    ticketImovel: 800000,          // valor médio do imóvel na faixa trabalhada
+    vendasPerdidasMes: 2,          // negócios que escapam por mês (lead frio, demora, sumiço)
+    comissaoDireta: 0.05,          // venda própria
+    comissaoParceria: 0.025,       // dividida com outro corretor — usada no cálculo por ser a pior hipótese
+  },
 } as const;
 
 // Ocupação diluída ao mudar para um ponto maior: o público é o mesmo, o salão
 // não. Números da própria casa — sem benchmark inventado.
 export function estimateOcupacaoNovoPonto() {
   return BENCHMARKS.entretenimento_local;
+}
+
+// Comissão que escapa do corretor. Deliberadamente pela comissão DIVIDIDA
+// (2,5%): é a pior hipótese, então o número não pode ser contestado como
+// otimista. Na venda direta o valor dobra.
+export function estimateBrokerLoss() {
+  const b = BENCHMARKS.imobiliario;
+  const mensalParceria = b.vendasPerdidasMes * b.ticketImovel * b.comissaoParceria;
+  const mensalDireta = b.vendasPerdidasMes * b.ticketImovel * b.comissaoDireta;
+  return {
+    mensal: mensalParceria,
+    anual: mensalParceria * 12,
+    mensalDireta,
+    anualDireta: mensalDireta * 12,
+  };
 }
 
 // Perda anual estimada com horários vagos na agenda (saude_estetica).
@@ -1160,6 +1184,121 @@ export const SEGMENT_GROUPS: Record<string, SegmentGroup> = {
       ];
     },
   },
+  imobiliario: {
+    id: "imobiliario",
+    label: "Corretores de Imóveis",
+    focus: "Parar de perder comissão por lead frio e demora na resposta (corretores autônomos e duplas).",
+    accent: "#0f766e",
+    buildSlides: ({ companyName }) => {
+      const nome = companyName?.trim() || "sua corretagem";
+      const { mensal, anual, mensalDireta } = estimateBrokerLoss();
+      const b = BENCHMARKS.imobiliario;
+      return [
+        {
+          id: 1,
+          kind: "impact",
+          eyebrow: "APRESENTAÇÃO COMERCIAL",
+          title: "O Cliente Certo, Antes do Concorrente.",
+          subtitle: `A ${nome} deixa de depender do portal e da indicação. Lead atendido em segundos, carteira que volta sozinha e comissão que não escapa mais para quem respondeu primeiro.`,
+        },
+        {
+          id: 2,
+          kind: "pain",
+          eyebrow: "A DOR ATUAL",
+          title: "Quem responde primeiro leva a venda.",
+          body:
+            `No alto padrão, o comprador não manda mensagem para um corretor: manda para cinco. ` +
+            `Quem responde primeiro entra na conversa; os outros recebem o "obrigado, já estou vendo com alguém". ` +
+            `E como o cliente pesquisa à noite e no fim de semana, a mensagem que chega às 22h costuma ser respondida na manhã seguinte — quando o interesse já esfriou. ` +
+            `Fora isso, quem visitou um imóvel e não fechou vira contato parado na agenda: ninguém retoma, e ele compra com outro seis meses depois.`,
+        },
+        {
+          id: 3,
+          kind: "implication",
+          eyebrow: "A IMPLICAÇÃO",
+          title: "A comissão que escapa todo mês.",
+          body:
+            `Com imóveis na faixa de ${brl(b.ticketImovel)}, bastam ${b.vendasPerdidasMes} negócios perdidos por mês ` +
+            `para o prejuízo virar dinheiro grande. Mesmo na hipótese pior — comissão dividida com outro corretor, ` +
+            `${(b.comissaoParceria * 100).toFixed(1).replace(".", ",")}% em vez de ${(b.comissaoDireta * 100).toFixed(0)}% — ` +
+            `são ${brl(mensal)} por mês que deixaram de entrar. Na venda direta, ${brl(mensalDireta)}. ` +
+            `Não é falta de cliente: é cliente que existiu e foi atendido tarde demais.`,
+          metric: {
+            value: `${milhar(anual)}/ano`,
+            caption: `comissão estimada que escapa, calculada pela divisão de ${(b.comissaoParceria * 100).toFixed(1).replace(".", ",")}% — a hipótese mais conservadora`,
+          },
+        },
+        {
+          id: 4,
+          kind: "solution",
+          eyebrow: "A SOLUÇÃO",
+          title: "A Máquina de Captação e Atendimento.",
+          steps: [
+            "Atraímos comprador e proprietário da sua praça e da sua faixa de preço, com anúncios que falam de bairro e padrão, não de imóvel genérico.",
+            "Nossa Recepcionista Digital 24h responde em segundos, a qualquer hora: entende o que a pessoa procura, faixa de valor e prazo, e já agenda a visita.",
+            "Toda pessoa que falou com você vira ficha na carteira: o que procura, quanto pode pagar, quais imóveis já viu.",
+            "Quem visitou e não fechou entra em acompanhamento automático, com o imóvel novo que bate com o perfil dele.",
+            "Captação de proprietário no mesmo motor: quem quer vender também recebe resposta imediata, e você amplia o portfólio sem depender de parceria.",
+          ],
+        },
+        {
+          id: 5,
+          kind: "partnership",
+          eyebrow: "A PARCERIA COMPLETA",
+          title: "Duas forças, um só resultado.",
+          subtitle: `A Geração Digital coloca a ${nome} na frente de quem está comprando e vendendo na sua praça. A Vexo garante que ninguém que chegou seja esquecido. Juntas, tiram a corretagem da dependência do portal e da indicação.`,
+          fronts: [
+            {
+              label: "Geração Digital",
+              tag: "Atração & Autoridade Local",
+              items: [
+                "Sistema de atração de comprador e proprietário na sua região",
+                "Anúncios segmentados por bairro, faixa de preço e perfil",
+                "Você achado no Google quando pesquisam imóvel na sua praça",
+                "Autoridade de quem conhece o mercado da cidade, não de quem só repassa anúncio",
+                "Conteúdo que atrai proprietário querendo vender, não só comprador",
+                "Presença profissional mesmo sem estrutura de imobiliária",
+              ],
+            },
+            {
+              label: "Vexo OS",
+              tag: "Carteira, Resposta Imediata & Follow-up",
+              items: [
+                "Recepcionista Digital 24h no seu WhatsApp, inclusive de madrugada",
+                "Carteira com o perfil de busca de cada cliente",
+                "Acompanhamento automático de quem visitou e não fechou",
+                "Aviso quando entra imóvel que casa com um cliente da base",
+                "Histórico completo da conversa antes de você ligar",
+                "Disparo para a base quando você capta um imóvel novo",
+              ],
+            },
+          ],
+        },
+        {
+          id: 6,
+          kind: "vision",
+          eyebrow: "VISÃO DE FUTURO",
+          title: "Deixar de correr atrás.",
+          body:
+            `Imagine abrir o WhatsApp de manhã com as visitas do dia já agendadas, sabendo o que cada pessoa procura e quanto pode pagar. ` +
+            `Um imóvel novo captado e, em minutos, os clientes da sua base que se encaixam nele já avisados. ` +
+            `A ${nome} deixa de depender de quem indica e passa a ter fluxo próprio — inclusive nos meses em que o mercado desacelera.`,
+        },
+        {
+          id: 7,
+          kind: "close",
+          eyebrow: "A DECISÃO",
+          title: "O custo da inércia.",
+          body: `Quantos clientes a ${nome} atendeu tarde demais neste mês? E quantos compraram com outro corretor depois de visitar com você?`,
+          metric: {
+            value: `${brl(mensal)}/mês`,
+            caption: "comissão estimada que escapa por lead frio e resposta tardia, na hipótese mais conservadora",
+          },
+          punch: "A pergunta não é quanto custa começar. É quanto custa perder mais um comprador para quem respondeu primeiro. No alto padrão, uma única venda recuperada paga o ano inteiro de investimento.",
+        },
+      ];
+    },
+  },
 };
 
 // Mapeamento de segment_id específico -> grupo. Adicione novos ids aqui conforme
@@ -1208,6 +1347,13 @@ const SEGMENT_ID_TO_GROUP: Record<string, string> = {
   lavanderia_self_service: "lavanderia",
   lavanderia_self: "lavanderia",
   lava_e_seca: "lavanderia",
+  // Corretores de imóveis
+  imobiliario: "imobiliario",
+  imobiliaria: "imobiliario",
+  corretor: "imobiliario",
+  corretor_de_imoveis: "imobiliario",
+  corretores: "imobiliario",
+  imoveis: "imobiliario",
 };
 
 export const DEFAULT_GROUP_ID = "entretenimento_local";
@@ -1237,6 +1383,12 @@ const GROUP_KEYWORDS: Record<string, string[]> = {
     "lavanderia", "lavanderias", "lava e seca", "lava-e-seca", "lavagem",
     "lavar roupa", "secadora", "self-service", "self service", "selfservice",
     "laundromat", "lavabem", "lava jato de roupa",
+  ],
+  imobiliario: [
+    "imobiliaria", "imobiliária", "imovel", "imóvel", "imoveis", "imóveis",
+    "corretor", "corretora", "corretores", "creci", "apartamento", "casa",
+    "terreno", "lancamento", "lançamento", "alto padrao", "alto padrão",
+    "incorporadora", "loteamento", "aluguel", "locacao", "locação",
   ],
   otica: [
     "otica", "ótica", "oticas", "óticas", "optica", "óptica", "oculos", "óculos",
