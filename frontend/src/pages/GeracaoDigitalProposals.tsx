@@ -197,6 +197,7 @@ export default function GeracaoDigitalProposals() {
   const {
     showNewForm,
     setShowNewForm,
+    newCondicoes,
     resetWizard,
     setNewProspect,
     setNewSegmentId,
