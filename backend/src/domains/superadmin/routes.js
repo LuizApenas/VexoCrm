@@ -200,4 +200,48 @@ export function registerSuperAdminRoutes(app, deps) {
       await targetPool.end().catch(() => {});
     }
   });
+
+  let inMemorySettings = {
+    upsellWhatsappNumber: "5511999999999",
+  };
+
+  // GET /api/system/settings -> Obter configurações globais do sistema
+  app.get("/api/system/settings", requireFirebaseAuth, async (req, res) => {
+    try {
+      const { data } = await supabase.from("system_settings").select("key, value");
+      if (data && Array.isArray(data) && data.length > 0) {
+        data.forEach((row) => {
+          if (row.key === "upsell_whatsapp") {
+            inMemorySettings.upsellWhatsappNumber = row.value;
+          }
+        });
+      }
+    } catch (e) {
+      // Ignora erro e usa fallback em memória
+    }
+    res.json(inMemorySettings);
+  });
+
+  // POST /api/system/settings -> Atualizar configurações globais do sistema (SuperAdmin)
+  app.post("/api/system/settings", requireFirebaseAuth, requireSuperAdminGuard, async (req, res) => {
+    try {
+      const { upsellWhatsappNumber } = req.body || {};
+      if (upsellWhatsappNumber) {
+        const cleanNumber = String(upsellWhatsappNumber).replace(/\D/g, "");
+        inMemorySettings.upsellWhatsappNumber = cleanNumber;
+        try {
+          await supabase.from("system_settings").upsert(
+            [{ key: "upsell_whatsapp", value: cleanNumber, updated_at: new Date().toISOString() }],
+            { onConflict: "key" }
+          );
+        } catch (dbErr) {
+          // Mantém em memória se tabela não existir
+        }
+      }
+      res.json({ success: true, settings: inMemorySettings });
+    } catch (error) {
+      console.error("Erro ao salvar system settings:", error);
+      res.status(500).json({ error: "FAILED", message: error.message });
+    }
+  });
 }

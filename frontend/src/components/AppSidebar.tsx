@@ -125,8 +125,8 @@ export function AppSidebar() {
   const visibleInteligencia = filterItems(INTELIGENCIA_ITEMS);
   const visibleAgenteIa = filterItems(AGENTE_IA_ITEMS);
   const visibleCanais = filterItems(CANAIS_ITEMS);
-  const visibleGeracaoDigital = filterItems(GERACAO_DIGITAL_ITEMS);
-  const visibleLivpub = filterItems(LIVPUB_ITEMS);
+  const visibleGeracaoDigital = selectedClientId === "geracao-digital" ? filterItems(GERACAO_DIGITAL_ITEMS) : [];
+  const visibleLivpub = (isAdminUser || selectedClientId === "livpub") ? filterItems(LIVPUB_ITEMS) : [];
   // Itens de AJUDA (Treinamento Vexo, Apresentação) são ajuda/onboarding e NÃO dependem de
   // uma página interna gerenciável — o conteúdo do treino já é filtrado por permissão dentro
   // da própria tela. Sempre visíveis para usuário interno (e p/ cliente conforme allowed_tabs).

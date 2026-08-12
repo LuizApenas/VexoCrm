@@ -42,19 +42,49 @@ export default function SuperAdmin() {
   const crmClient = useOptionalCrmClient();
   const [activeTab, setActiveTab] = useState("overview");
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedTenantFilter, setSelectedTenantFilter] = useState<string>("all");
-  const [loading, setLoading] = useState(false);
+  const [upsellWhatsapp, setUpsellWhatsapp] = useState("5511999999999");
+  const [savingSettings, setSavingSettings] = useState(false);
 
-  const [tenants, setTenants] = useState<SuperAdminTenant[]>([
-    {
-      id: "geracao-digital",
-      name: "Geração Digital",
-      created_at: new Date().toISOString(),
-      status: "active",
-      modules: ["dashboard", "conversas", "followup", "campanhas", "geracao-digital", "inteligencia-comercial"],
-      userCount: 1,
-    },
-  ]);
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const token = await getIdToken();
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const res = await fetch("/api/system/settings", { headers });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.upsellWhatsappNumber) {
+            setUpsellWhatsapp(json.upsellWhatsappNumber);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load system settings:", err);
+      }
+    }
+    loadSettings();
+  }, [getIdToken]);
+
+  const handleSaveSettings = async () => {
+    try {
+      setSavingSettings(true);
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/system/settings", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ upsellWhatsappNumber: upsellWhatsapp }),
+      });
+      if (res.ok) {
+        toast.success("Número de WhatsApp para Upsell salvo com sucesso!");
+      } else {
+        toast.error("Erro ao salvar configurações.");
+      }
+    } catch (err) {
+      toast.error("Falha ao salvar número de WhatsApp.");
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   const [rawMetrics, setRawMetrics] = useState({
     totalTenants: 1,
@@ -295,6 +325,9 @@ export default function SuperAdmin() {
           <TabsTrigger value="health" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">
             <Activity className="mr-2 h-4 w-4" /> Saúde & Logs
           </TabsTrigger>
+          <TabsTrigger value="settings" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">
+            <Zap className="mr-2 h-4 w-4" /> Configurações & Upsell
+          </TabsTrigger>
         </TabsList>
 
         {/* Aba 1: Gestão de Empresas */}
@@ -495,6 +528,41 @@ export default function SuperAdmin() {
                   <span className="text-emerald-600 dark:text-emerald-400 font-bold">ATIVO</span>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Aba 4: Configurações & Upsell */}
+        <TabsContent value="settings" className="space-y-4">
+          <Card className="border-border bg-card text-card-foreground shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-lg text-foreground flex items-center gap-2">
+                <Zap className="h-5 w-5 text-amber-500" />
+                Configurações Globais & Motor de Upsell
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Defina os canais de contato e regras de conversão comercial do Vexo OS.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2 max-w-md">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  WhatsApp para Solicitação de Upgrade / Upsell
+                </label>
+                <Input
+                  value={upsellWhatsapp}
+                  onChange={(e) => setUpsellWhatsapp(e.target.value)}
+                  placeholder="5511999999999"
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Número de WhatsApp (com DDD e 55) acionado quando os clientes clicarem em <strong>Solicitar Upgrade no WhatsApp</strong> nas telas bloqueadas da Academy.
+                </p>
+              </div>
+
+              <Button onClick={handleSaveSettings} disabled={savingSettings} className="bg-purple-600 hover:bg-purple-700 text-white font-bold">
+                {savingSettings ? "Salvando..." : "Salvar Configurações"}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

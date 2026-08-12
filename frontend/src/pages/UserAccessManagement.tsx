@@ -2458,6 +2458,45 @@ export default function UserAccessManagement() {
                     </div>
                   </div>
                   <div className="space-y-2">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Plano de Funcionalidades</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateCreateDraft({
+                            accessPreset: "commercial",
+                          });
+                        }}
+                        className={cn(
+                          "rounded-xl border p-3 text-left transition-colors",
+                          createDraft.accessPreset !== "admin"
+                            ? "border-emerald-500 bg-emerald-500/10 shadow-sm"
+                            : "border-border/60 bg-muted/5 hover:bg-muted/10"
+                        )}
+                      >
+                        <p className="font-bold text-xs text-foreground">🟢 Plano Essencial (R$ 397/mês)</p>
+                        <p className="text-[10px] text-muted-foreground leading-3 mt-1">Dashboard, Inbox, Disparos, IA Atendimento</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateCreateDraft({
+                            accessPreset: "admin",
+                          });
+                        }}
+                        className={cn(
+                          "rounded-xl border p-3 text-left transition-colors",
+                          createDraft.accessPreset === "admin"
+                            ? "border-purple-500 bg-purple-500/10 shadow-sm"
+                            : "border-border/60 bg-muted/5 hover:bg-muted/10"
+                        )}
+                      >
+                        <p className="font-bold text-xs text-foreground">🟣 Plano Avançado (R$ 897/mês)</p>
+                        <p className="text-[10px] text-muted-foreground leading-3 mt-1">Antiban, Agente Campanha, Base, SDR, Origem</p>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Empresa / Tenant</label>
                     <Select
                       value={createDraft.clientIds[0] || "__none"}

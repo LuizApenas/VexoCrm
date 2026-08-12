@@ -675,6 +675,28 @@ export default function OnboardingWizard() {
     };
   }, [getIdToken]);
 
+  const [upsellWhatsappNumber, setUpsellWhatsappNumber] = useState("5511999999999");
+
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const token = await getIdToken();
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const res = await fetch("/api/system/settings", { headers });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.upsellWhatsappNumber) {
+            setUpsellWhatsappNumber(json.upsellWhatsappNumber);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load system settings in academy:", err);
+      }
+    }
+    loadSettings();
+  }, [getIdToken]);
+
   const canSee = useMemo(() => {
     return (module: AcademyModule) => {
       if (!context) return module.permissions.length > 0;
@@ -735,24 +757,40 @@ export default function OnboardingWizard() {
               const isUnlocked = canSee(module);
 
               if (!isUnlocked) {
+                const priceText = module.priceBadge || "Incluso no Plano Avançado (R$ 897/mês)";
+                const whatsappMsg = `Olá! Gostaria de solicitar o upgrade do módulo ${module.title} no Vexo OS.`;
+                const whatsappUrl = `https://wa.me/${upsellWhatsappNumber.replace(/\D/g, "")}?text=${encodeURIComponent(whatsappMsg)}`;
+
                 return (
                   <TabsContent key={module.value} value={module.value} className="m-0 animate-fade-in-up">
-                    <Card className="border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-slate-900/50 to-slate-950 p-8 shadow-xl text-center space-y-6">
+                    <Card className="border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-slate-900/60 to-slate-950 p-8 shadow-xl text-center space-y-6">
                       <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center mx-auto">
                         <Lock className="w-8 h-8" />
                       </div>
-                      <div className="space-y-3 max-w-lg mx-auto">
-                        <h3 className="text-2xl font-black text-amber-500">🔒 Recurso do Plano Avançado</h3>
-                        <p className="text-sm text-slate-300 leading-relaxed">
-                          Este módulo faz parte da Trilha Avançada do Vexo OS. Fale com seu consultor para solicitar o upgrade de plano e liberar esta ferramenta na sua operação.
+                      <div className="space-y-3 max-w-xl mx-auto">
+                        <div className="flex items-center justify-center gap-2 flex-wrap">
+                          <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-xs px-3 py-1 font-bold">
+                            🔒 Recurso do Plano Avançado
+                          </Badge>
+                          <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-xs px-3 py-1 font-bold">
+                            {priceText}
+                          </Badge>
+                        </div>
+                        <h3 className="text-2xl font-black text-amber-400">{module.title}</h3>
+                        <p className="text-sm text-slate-300 leading-relaxed font-medium">
+                          {module.summary}
                         </p>
+                        <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-4 text-xs text-amber-200 text-left">
+                          <strong>💡 Benefício Comercial: </strong>
+                          <span>{module.goal}</span>
+                        </div>
                       </div>
                       <div>
                         <a
-                          href="https://wa.me/5511999999999?text=Olá,%20gostaria%20de%20solicitar%20o%20upgrade%20para%20a%20Trilha%20Avançada%20do%20Vexo%20OS"
+                          href={whatsappUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg hover:shadow-emerald-500/25 transition-all"
+                          className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg hover:shadow-emerald-500/25 transition-all"
                         >
                           🔒 Solicitar Upgrade no WhatsApp
                         </a>

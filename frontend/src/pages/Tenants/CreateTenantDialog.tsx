@@ -35,6 +35,7 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
   const [formError, setFormError] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [chatbotModel, setChatbotModel] = useState<ChatbotModelValue>("energia-solar");
+  const [planTier, setPlanTier] = useState<"essencial" | "avancado">("essencial");
   const [tenantIdEdited, setTenantIdEdited] = useState(false);
   const canManageTenants = hasPermission("tenants.manage");
   const canManageN8n = isAdminUser;
@@ -93,16 +94,13 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
           version: 1,
           kpis: [],
         },
-        ...(hasN8nSettings
-          ? {
-              n8nSettings: {
-                dispatchWebhookUrl: dispatchWebhookUrl.trim() || null,
-                dispatchWebhookToken: dispatchWebhookToken.trim() || null,
-                inboundBearerToken: inboundBearerToken.trim() || null,
-                active: true,
-              },
-            }
-          : {}),
+        n8nSettings: {
+          dispatchWebhookUrl: dispatchWebhookUrl.trim() || null,
+          dispatchWebhookToken: dispatchWebhookToken.trim() || null,
+          inboundBearerToken: inboundBearerToken.trim() || null,
+          active: true,
+          plan_tier: planTier,
+        },
       });
 
       onTenantCreated(createdTenant);
@@ -211,6 +209,19 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
               onChange={(event) => setName(event.target.value)}
               disabled={!canManageTenants || createTenant.isPending}
             />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-foreground">Plano do Cliente</label>
+            <Select value={planTier} onValueChange={(val: "essencial" | "avancado") => setPlanTier(val)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione o plano" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="essencial">🟢 Plano Essencial (R$ 397/mês) — Base (Dashboard, Inbox, Disparos, IA)</SelectItem>
+                <SelectItem value="avancado">🟣 Plano Avançado (R$ 897/mês) — Completo (Antiban, Agente, SDR, Origem)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

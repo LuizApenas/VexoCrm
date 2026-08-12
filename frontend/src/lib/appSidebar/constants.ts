@@ -57,7 +57,7 @@ export const CANAIS_ITEMS: SidebarItem[] = [
   { key: "chips-whatsapp", label: "Chips WhatsApp", url: "/crm/chips-whatsapp", icon: Wifi, page: "conexoes" },
 ];
 
-// ━━ MÓDULOS ━━
+// ━━ MÓDULOS DE TERCEIROS (Restritos por Tenant/Admin) ━━
 export const GERACAO_DIGITAL_ITEMS: SidebarItem[] = [
   { key: "geracao-digital", label: "Geração Digital", url: "/crm/apresentacao-gd", icon: Briefcase, page: "apresentacao-gd" }
 ];
