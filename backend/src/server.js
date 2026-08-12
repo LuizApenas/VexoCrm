@@ -1,6 +1,7 @@
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { readFileSync } from "fs";
+import { calcularCodeHash } from "../scripts/codehash.mjs";
 import { randomUUID } from "crypto";
 import { gunzipSync } from "zlib";
 import cors from "cors";
@@ -307,33 +308,47 @@ dotenv.config({ path: join(__dirname, "..", ".env") });
 // GIT_COMMIT=... BUILD_TIME=...), nunca por git em runtime: o .dockerignore exclui
 // .git do contexto de proposito. "desconhecido" significa que a imagem foi
 // construida sem passar os args — nesse caso o deploy nao e rastreavel.
-// Fallback do carimbo: build-info.json, gerado por `npm run stamp` e commitado.
-// Existe porque o Easypanel nao passa os build-args hoje — sem isto o carimbo sai
-// "desconhecido" e o deploy volta a nao ser rastreavel. Env var tem precedencia:
-// se um dia o painel passar GIT_COMMIT, ele ganha do arquivo.
-function readBuildInfoFile() {
+// Identidade do que esta rodando.
+//
+// O carimbo por SHA falhou de tres jeitos: o Easypanel nao passa build-args; o ARG
+// do Dockerfile tinha default "desconhecido", entao a env var SEMPRE existia com
+// esse valor e vencia a precedencia; e o build-info.json era gerado antes do commit,
+// gravando o commit anterior. build-info.json foi REMOVIDO — dois mecanismos
+// meia-boca sao piores que um que funciona.
+//
+// codeHash e a peca que sempre funciona: hash do conteudo de src/, calculado no
+// build (scripts/codehash.mjs --write) e reproduzivel na maquina com o mesmo script.
+// Responde a pergunta real — "o que roda e igual ao que esta em main?".
+//
+// commit/builtAt continuam OPCIONAIS: aparecem so quando o painel passar os
+// build-args. Valor vazio ou "desconhecido" e tratado como AUSENTE, e o campo some
+// do /health em vez de mentir.
+function valorPresente(bruto) {
+  const valor = String(bruto ?? "").trim();
+  if (!valor || valor.toLowerCase() === "desconhecido" || valor.toLowerCase() === "unknown") {
+    return null;
+  }
+  return valor;
+}
+
+function lerCodeHash() {
   try {
-    const bruto = readFileSync(join(__dirname, "..", "build-info.json"), "utf8");
-    const dados = JSON.parse(bruto);
-    return {
-      commit: typeof dados.commit === "string" ? dados.commit : null,
-      builtAt: typeof dados.builtAt === "string" ? dados.builtAt : null,
-    };
+    return readFileSync(join(__dirname, "..", "code-hash.txt"), "utf8").trim() || null;
   } catch {
-    return { commit: null, builtAt: null };
+    // Fora do container (dev local) o arquivo nao existe: calcular na hora e
+    // barato e mantem o /health util em qualquer ambiente.
+    try {
+      return calcularCodeHash();
+    } catch {
+      return null;
+    }
   }
 }
 
-const buildFromFile = readBuildInfoFile();
-
 export const BUILD_INFO = {
-  commit: process.env.GIT_COMMIT || process.env.SOURCE_COMMIT || buildFromFile.commit || "desconhecido",
-  builtAt: process.env.BUILD_TIME || buildFromFile.builtAt || "desconhecido",
-  origem: process.env.GIT_COMMIT || process.env.SOURCE_COMMIT
-    ? "build-arg"
-    : buildFromFile.commit
-      ? "build-info.json"
-      : "nenhuma",
+  codeHash: lerCodeHash(),
+  commit: valorPresente(process.env.GIT_COMMIT) || valorPresente(process.env.SOURCE_COMMIT),
+  builtAt: valorPresente(process.env.BUILD_TIME),
   startedAt: new Date().toISOString(),
 };
 
@@ -780,12 +795,14 @@ function listenWithRetry(attempt = 1) {
   const server = app.listen(port, () => {
     httpServer = server;
     console.log(`VexoApi listening on port ${port}`);
-    // Carimbo do build. Sem isto so da para saber qual codigo esta em producao
-    // inferindo por comportamento — ja custou uma rodada inteira de depuracao
-    // procurando um log que nao subiu porque o deploy nao pegou o commit.
-    // Valores vem de ARG no Dockerfile (build), nunca de git em runtime: o
-    // .dockerignore exclui .git de proposito.
-    console.log("[build]", JSON.stringify(BUILD_INFO));
+    // Carimbo do build. codeHash e a impressao digital de src/ — compare com
+    // `npm run codehash --prefix backend` para saber se o deploy pegou o codigo
+    // atual. Campo nulo nao e impresso: "desconhecido" no log foi o que escondeu
+    // um deploy desatualizado por varias rodadas.
+    console.log(
+      "[build]",
+      JSON.stringify(Object.fromEntries(Object.entries(BUILD_INFO).filter(([, v]) => v !== null)))
+    );
     startBackgroundServices();
   });
 

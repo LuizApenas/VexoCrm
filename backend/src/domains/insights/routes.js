@@ -1,3 +1,6 @@
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 // backend/src/domains/insights/routes.js
 // Movimento puro (extraído de registerAllDomainRoutes.js): health/live, health, helpdesk
 // status+chat, dashboard, revenue-ops e as 9 rotas de /api/commercial-intelligence*, mais
@@ -12,6 +15,8 @@ import {
   buildCommercialIntelligencePayload,
   getCommercialIntelligenceDefaultSettings,
 } from "../../commercial-intelligence.js";
+
+const dirnameInsights = dirname(fileURLToPath(import.meta.url));
 
 export function registerInsightsRoutes(app, deps) {
   const {
@@ -46,6 +51,29 @@ export function registerInsightsRoutes(app, deps) {
   app.get("/health/live", (_req, res) => {
     res.json({ ok: true, status: "live", uptimeSeconds: process.uptime() });
   });
+
+  // Espelha a regra de BUILD_INFO do server sem importar server.js (evita ciclo):
+  // valor vazio ou "desconhecido" e ausente, e campo ausente nao aparece.
+  const BUILD_INFO_PUBLICO = () => {
+    const presente = (bruto) => {
+      const valor = String(bruto ?? "").trim();
+      if (!valor || valor.toLowerCase() === "desconhecido" || valor.toLowerCase() === "unknown") return null;
+      return valor;
+    };
+    const build = {};
+    let codeHash = null;
+    try {
+      codeHash = readFileSync(join(dirnameInsights, "..", "..", "..", "code-hash.txt"), "utf8").trim() || null;
+    } catch {
+      codeHash = null;
+    }
+    if (codeHash) build.codeHash = codeHash;
+    const commit = presente(process.env.GIT_COMMIT) || presente(process.env.SOURCE_COMMIT);
+    if (commit) build.commit = commit;
+    const builtAt = presente(process.env.BUILD_TIME);
+    if (builtAt) build.builtAt = builtAt;
+    return build;
+  };
 
   app.get("/health", async (_req, res) => {
     let postgresPing = null;
@@ -92,12 +120,11 @@ export function registerInsightsRoutes(app, deps) {
     res.json({
       ok: true,
       timestamp: new Date().toISOString(),
-      // Qual codigo esta no ar. "desconhecido" = imagem construida sem os
-      // build-args; ver [build] no log de subida e o Dockerfile.
-      build: {
-        commit: process.env.GIT_COMMIT || process.env.SOURCE_COMMIT || "desconhecido",
-        builtAt: process.env.BUILD_TIME || "desconhecido",
-      },
+      // Qual codigo esta no ar. codeHash e a impressao digital de src/ — compare
+      // com `npm run codehash --prefix backend`. commit/builtAt so aparecem quando
+      // o painel passa os build-args; ausentes, o campo NAO vem, em vez de mentir
+      // "desconhecido".
+      build: BUILD_INFO_PUBLICO(),
       uptimeSeconds: process.uptime(),
       services,
     });

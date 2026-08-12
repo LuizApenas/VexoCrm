@@ -83,3 +83,4 @@ _memoria/
 .env.vercel
 frontend/.env.vercel
 backups/
+code-hash.txt

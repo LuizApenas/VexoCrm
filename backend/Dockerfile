@@ -42,22 +42,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Identidade do build. Declarados DEPOIS do npm ci para nao invalidar a camada de
-# dependencias (que e a cara), e ANTES do COPY src para que um commit novo sempre
-# produza uma imagem nova — mesmo que o conteudo de src casasse com o cache.
-# Sem isto nao ha como saber qual codigo esta rodando em producao.
-ARG GIT_COMMIT=desconhecido
-ARG BUILD_TIME=desconhecido
+# Identidade do build — OPCIONAIS, e sem default. Um ARG com default
+# "desconhecido" criava a env var SEMPRE preenchida com esse valor; como build-arg
+# tinha precedencia sobre o arquivo, o carimbo mentia "desconhecido" em todo
+# deploy e o fallback nunca era lido. Vazio agora significa ausente de verdade.
+ARG GIT_COMMIT=
+ARG BUILD_TIME=
 ENV GIT_COMMIT=$GIT_COMMIT \
     BUILD_TIME=$BUILD_TIME
 
 COPY src ./src
 COPY scripts ./scripts
-# Plano B do carimbo, para quando o painel nao passa os build-args acima.
-# Gerado por `npm run stamp` e commitado; ausente, o servidor cai em "desconhecido".
-COPY build-info.jso[n] ./
 COPY supabase ./supabase
 COPY start.sh ./start.sh
+
+# Impressao digital do codigo, calculada DENTRO da imagem sobre o que foi copiado.
+# Nao depende de build-arg, de .git nem de hook — e a unica peca que sempre
+# funciona. Compare com `npm run codehash --prefix backend` na maquina.
+RUN node scripts/codehash.mjs --write
 
 RUN groupadd --gid 1001 appgroup && \
     useradd --uid 1001 --gid appgroup --create-home appuser && \

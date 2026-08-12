@@ -10,7 +10,7 @@
     "prestart": "node scripts/conditional-migrate.mjs",
     "test": "vitest run",
     "start": "node src/server.js",
-    "stamp": "node scripts/stamp-build.mjs",
+    "codehash": "node scripts/codehash.mjs",
     "import-leads": "node scripts/import-leads.js"
   },
   "dependencies": {
