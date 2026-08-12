@@ -204,6 +204,16 @@ export function buildDefaultSegmentationConfig(model = "generico") {
       { id: "visita", label: "Última Visita", field: "ultima_visita", type: "date", enabled: true },
       { id: "nascimento", label: "Nascimento", field: "data_nascimento", type: "date", enabled: true }
     ],
+    "agencia-turismo": [
+      { id: "destino", label: "Destino", field: "destino", type: "category", enabled: true },
+      { id: "orcamento", label: "Orçamento", field: "orcamento", type: "money", enabled: true },
+      { id: "viajantes", label: "Viajantes", field: "numero_viajantes", type: "number", enabled: true }
+    ],
+    turismo: [
+      { id: "destino", label: "Destino", field: "destino", type: "category", enabled: true },
+      { id: "orcamento", label: "Orçamento", field: "orcamento", type: "money", enabled: true },
+      { id: "viajantes", label: "Viajantes", field: "numero_viajantes", type: "number", enabled: true }
+    ],
     generico: [
       { id: "origem", label: "Origem", field: "origem", type: "category", enabled: true },
       { id: "interesse", label: "Interesse", field: "interesse", type: "category", enabled: true },

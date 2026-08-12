@@ -65,9 +65,14 @@ export const CHATBOT_MODEL_OPTIONS = [
     description: "Foco em cotação de seguros (auto, vida, residencial, empresarial), vigência e sinistros.",
   },
   {
+    value: "agencia-turismo",
+    title: "Agência de Turismo & Viagens",
+    description: "Foco em pacotes de viagem, passagens aéreas, hospedagem, passeios, destino e número de viajantes.",
+  },
+  {
     value: "eventos",
     title: "Eventos & Cerimonial",
-    description: "Foco em orçamento de festas, masamentos, buffet, decoração, data estimada e número de convidados.",
+    description: "Foco em orçamento de festas, casamentos, buffet, decoração, data estimada e número de convidados.",
   },
   {
     value: "tecnologia-saas",
