@@ -59,6 +59,46 @@ function resolveCampaignImportSelection(campaign) {
   return campaign?.import_id || null;
 }
 
+/**
+ * Bloco de contexto com as opcoes de resposta que o lead recebeu escritas na
+ * mensagem. Vai anexado ao roteiro copiado para o disparo.
+ *
+ * O rotulo (displayText) e o que o lead LEU; replyText, quando existe, e a
+ * intencao que o dono associou aquela opcao — os dois entram, porque o lead pode
+ * responder pelo numero, pelo texto do rotulo ou por algo parecido.
+ *
+ * Nada e inventado: sem opcao escrita, devolve string vazia e o roteiro fica como
+ * estava.
+ */
+function buildStepOptionsContext(sequence) {
+  const linhas = [];
+  for (const step of Array.isArray(sequence) ? sequence : []) {
+    const opcoes = (Array.isArray(step?.buttons) ? step.buttons : []).filter(
+      (b) => b && b.type !== "url" && !b.url && !b.href
+    );
+    if (opcoes.length === 0) continue;
+
+    const doPasso = [];
+    opcoes.forEach((btn, idx) => {
+      const rotulo = String(btn.displayText || btn.label || "").trim();
+      if (!rotulo) return;
+      const intencao = String(btn.replyText || btn.value || "").trim();
+      doPasso.push(intencao ? `${idx + 1}. ${rotulo} (significa: ${intencao})` : `${idx + 1}. ${rotulo}`);
+    });
+    if (doPasso.length > 0) linhas.push(...doPasso);
+  }
+
+  if (linhas.length === 0) return "";
+
+  return [
+    "OPCOES OFERECIDAS AO LEAD NESTA CAMPANHA:",
+    "A mensagem enviada listou as opcoes abaixo, numeradas. O lead pode responder com o",
+    "numero, com o texto da opcao ou com algo equivalente — trate como a mesma escolha e",
+    "siga o roteiro a partir dela, sem recomecar a conversa.",
+    ...linhas,
+  ].join("\n");
+}
+
 export function registerCampaignsRoutes(app, deps) {
   const {
     CAMPAIGN_SCHEDULER_MAX_BATCH,
@@ -2410,12 +2450,21 @@ export function registerCampaignsRoutes(app, deps) {
             .maybeSingle();
 
           if (promptOrigem?.content) {
+            // As opcoes de resposta dos passos entram no roteiro DESTE disparo. Sem
+            // isso o lead le "1. Quero agendar", responde "1", e o agente nao faz
+            // ideia do que e — o recurso viraria texto decorativo. Como a copia e
+            // por disparo, o agente sabe exatamente as opcoes que aquele lead viu.
+            const contextoDasOpcoes = buildStepOptionsContext(validation.analyticsMeta.sequence);
+            const conteudoFinal = contextoDasOpcoes
+              ? `${promptOrigem.content}\n\n${contextoDasOpcoes}`
+              : promptOrigem.content;
+
             const { data: copia, error: copiaErr } = await supabase
               .from("campaign_prompts")
               .insert({
                 client_id: authorizedClientId,
                 name: `${promptOrigem.name || "Roteiro"} — disparo ${name}`.slice(0, 200),
-                content: promptOrigem.content,
+                content: conteudoFinal,
               })
               .select("id")
               .single();

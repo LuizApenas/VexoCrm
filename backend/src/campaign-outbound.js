@@ -538,15 +538,29 @@ function formatStepTextWithButtons(baseText, stepButtons, context = {}, phone = 
   // e o WhatsApp o torna clicavel sozinho.
   const urlButtons = stepButtons.filter((b) => b && (b.type === "url" || b.url) && (b.url || b.href));
 
-  // Resposta rapida NAO tem equivalente em texto puro: o valor dela era o toque
-  // que responde sozinho, e isso morre com o botao interativo. Logado para nao
-  // sumir em silencio — a decisao do que fazer com o recurso e do dono.
-  const replyButtons = stepButtons.filter((b) => b && b.type !== "url" && !b.url && !b.href);
-  if (replyButtons.length > 0) {
-    console.warn("[campaign-outbound] botao de resposta rapida ignorado: WhatsApp nao renderiza botao nesta conexao", {
-      quantidade: replyButtons.length,
-      rotulos: replyButtons.map((b) => b.displayText || b.label || null),
-    });
+  // Opcoes de resposta escritas no corpo. O valor do recurso nunca foi o toque no
+  // botao: era oferecer caminhos para o lead nao ter que formular a resposta
+  // sozinho. Texto entrega isso, e o agente reconhece a escolha (as opcoes entram
+  // no roteiro copiado para o disparo).
+  //
+  // O rotulo (displayText) e o que vai escrito — e o que o dono redigiu para o
+  // lead ler. replyText, quando existe, vira contexto do agente, nao texto da
+  // mensagem: sao dois campos com papeis diferentes, e nenhum se perde.
+  const optionButtons = stepButtons.filter((b) => b && b.type !== "url" && !b.url && !b.href);
+  const optionLines = [];
+  for (const [idx, btn] of optionButtons.entries()) {
+    const rotulo = normalizeString(
+      applyMessagePlaceholders(btn.displayText || btn.label || btn.replyText || btn.value, context.lead, phone)
+    );
+    // Nada e inventado: opcao sem texto escrito nao vira linha.
+    if (!rotulo || /\{\{.*?\}\}/.test(rotulo)) continue;
+    optionLines.push(`${idx + 1}. ${rotulo}`);
+  }
+
+  if (optionLines.length === 0 && urlButtons.length === 0) return text;
+
+  if (optionLines.length > 0) {
+    text = text ? `${text}\n\n${optionLines.join("\n")}` : optionLines.join("\n");
   }
 
   if (urlButtons.length === 0) return text;

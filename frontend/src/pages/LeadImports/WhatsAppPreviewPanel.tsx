@@ -27,6 +27,26 @@ export function WhatsAppPreviewPanel({ campaignSequence, multiAgendaEnabled }: W
                 .replace(/\{\{\s*telefone\s*\}\}/gi, "5511999999999")
                 .replace(/\{\{\s*scheduling_link\s*\}\}/gi, multiAgendaEnabled ? "https://calendly.com/consultor" : "(Link da Agenda)");
 
+              // O WhatsApp nao renderiza botao nesta conexao: opcoes e links vao
+              // ESCRITOS no fim da mensagem. O simulador mostra o texto final, e nao
+              // um botao que nunca chega — era exatamente isso que enganava.
+              const botoes = step.type === "text" ? (step.buttons || []) : [];
+              const linhasOpcoes = botoes
+                .filter((b) => b.type !== "url" && !b.url)
+                .map((b) => (b.displayText || "").trim())
+                .filter(Boolean)
+                .map((rotulo, i) => `${i + 1}. ${rotulo}`);
+              const linhasLinks = botoes
+                .filter((b) => b.type === "url" && (b.url || "").trim())
+                .map((b) => {
+                  const url = (b.url || "").trim()
+                    .replace(/\{\{\s*scheduling_link\s*\}\}/gi, multiAgendaEnabled ? "https://calendly.com/consultor" : "");
+                  if (!url || /\{\{.*?\}\}/.test(url)) return null;
+                  return `👉 ${b.displayText || "Acessar Link"}: ${url}`;
+                })
+                .filter(Boolean) as string[];
+              const textoFinal = [resolvedText, ...(linhasOpcoes.length ? ["", ...linhasOpcoes] : []), ...(linhasLinks.length ? ["", ...linhasLinks] : [])].join("\n");
+
               return (
                 <div key={idx} className="flex flex-col items-start gap-1 max-w-[85%] animate-fadeIn">
                   <div className="rounded-2xl rounded-tl-none bg-slate-800 border border-white/5 p-3 text-xs shadow space-y-2 text-slate-200">
@@ -41,53 +61,8 @@ export function WhatsAppPreviewPanel({ campaignSequence, multiAgendaEnabled }: W
                       </div>
                     )}
 
-                    <p className="whitespace-pre-wrap leading-relaxed">{resolvedText}</p>
+                    <p className="whitespace-pre-wrap leading-relaxed">{textoFinal}</p>
                   </div>
-
-                  {/* Interactive WhatsApp buttons mockup */}
-                  {step.type === "text" && step.buttons && step.buttons.length > 0 && (
-                    <div className="grid gap-1 w-full pl-2 mt-1">
-                      {step.buttons.map((btn, bIdx) => {
-                        // A URL só é clicável quando não sobrou placeholder por
-                        // resolver. Antes o botão parecia funcional e não fazia
-                        // nada — o dono clicava para conferir o link e nada abria.
-                        const url = (btn.url || "").trim();
-                        const temPlaceholder = /\{\{.*?\}\}/.test(url);
-                        const abrivel = btn.type === "url" && url !== "" && !temPlaceholder;
-                        const motivo = btn.type !== "url"
-                          ? "Resposta rápida: não abre link"
-                          : url === ""
-                            ? "Sem URL configurada"
-                            : temPlaceholder
-                              ? "A URL ainda tem variável não preenchida"
-                              : "";
-                        const rotulo = btn.displayText || (btn.type === "url" ? "Link" : "Resposta Rápida");
-
-                        return abrivel ? (
-                          <a
-                            key={bIdx}
-                            href={url}
-                            target="_blank"
-                            rel="noreferrer noopener"
-                            title={`Abrir ${url}`}
-                            className="w-full bg-slate-800 hover:bg-slate-700/80 border border-white/5 text-center text-[10px] font-bold text-indigo-400 py-1.5 rounded-xl shadow-sm cursor-pointer block"
-                          >
-                            🔗 {rotulo}
-                          </a>
-                        ) : (
-                          <div
-                            key={bIdx}
-                            title={motivo}
-                            aria-disabled="true"
-                            className="w-full bg-slate-800/50 border border-white/5 text-center text-[10px] font-bold text-slate-500 py-1.5 rounded-xl shadow-sm cursor-not-allowed"
-                          >
-                            {btn.type === "url" ? "🔗 " : "💬 "} {rotulo}
-                            <span className="block text-[8px] font-normal text-slate-500/80">{motivo}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
 
                   {step.triggerMode === "after_reply" && (
                     <span className="text-[9px] font-mono text-amber-400/90 pl-2">

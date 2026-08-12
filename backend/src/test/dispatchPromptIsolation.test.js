@@ -80,7 +80,10 @@ describe("a criacao do disparo copia o roteiro em vez de apontar", () => {
   it("insere uma linha NOVA em campaign_prompts", () => {
     expect(bloco).toContain('.from("campaign_prompts")');
     expect(bloco).toContain(".insert({");
-    expect(bloco).toContain("content: promptOrigem.content");
+    // O conteudo copiado passou a ser `conteudoFinal` — o roteiro da origem MAIS o
+    // bloco de opcoes daquele disparo. Continua sendo copia, nao ponteiro.
+    expect(bloco).toContain("content: conteudoFinal");
+    expect(bloco).toContain("promptOrigem.content");
   });
 
   it("le e grava a copia escopadas por tenant", () => {

@@ -281,22 +281,24 @@ export function MessageSequenceStep({
               {step.type === "text" && (
                 <div className="border-t border-slate-100 dark:border-white/5 pt-2 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-slate-500">Links da mensagem (Max 3)</span>
+                    <span className="text-[11px] font-semibold text-slate-500">Links e opções de resposta (Max 3)</span>
                     <button
                       type="button"
                       onClick={() => onAddStepButton(step.id)}
                       className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1"
                     >
-                      <Plus className="h-3 w-3" /> Adicionar link
+                      <Plus className="h-3 w-3" /> Adicionar
                     </button>
                   </div>
 
-                  {/* O WhatsApp descontinuou botao interativo para conexoes nao-oficiais.
-                      A mensagem chegava como "visualizacao unica" ilegivel — sem texto e
-                      sem botao. A tela nao pode prometer um recurso que nao sai. */}
-                  <p className="text-[10px] rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
-                    O link será <strong>anexado ao final da mensagem</strong> — o WhatsApp não
-                    suporta botões nesta conexão e o próprio app deixa a URL clicável.
+                  {/* O WhatsApp descontinuou botao interativo para conexoes nao-oficiais,
+                      entao links e opcoes vao ESCRITOS no corpo. Opcao em texto ainda
+                      cumpre o papel: oferece caminhos para o lead nao ter que formular a
+                      resposta sozinho, e o agente reconhece a escolha. */}
+                  <p className="text-[10px] rounded-md border border-slate-200 bg-slate-50 p-2 text-slate-600 dark:border-white/10 dark:bg-slate-900/30 dark:text-slate-300">
+                    Links e opções são <strong>escritos no final da mensagem</strong>, numerados. O
+                    WhatsApp deixa a URL clicável, e o agente da campanha reconhece a opção que o
+                    lead escolher — por número ou por texto.
                   </p>
 
                   {step.buttons && step.buttons.length > 0 && (
@@ -319,7 +321,7 @@ export function MessageSequenceStep({
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="url">Link / URL</SelectItem>
-                                <SelectItem value="reply">Resposta Rápida</SelectItem>
+                                <SelectItem value="reply">Opção de resposta</SelectItem>
                               </SelectContent>
                             </Select>
 
@@ -352,7 +354,7 @@ export function MessageSequenceStep({
                           <p className="text-[10px] text-slate-500 pl-1">
                             {btn.type === "url"
                               ? "🔗 Link externo: vai anexado ao final da mensagem, clicável."
-                              : "⚠️ Resposta Rápida NÃO é enviada: dependia do botão interativo, que o WhatsApp descontinuou nesta conexão. Escreva a instrução no texto da mensagem."}
+                              : "💬 Opção de resposta: aparece escrita e numerada no final da mensagem. O agente reconhece a escolha do lead — pelo número ou pelo texto."}
                           </p>
                         </div>
                       ))}
