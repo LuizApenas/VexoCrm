@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useCreateFupCompany, useFupCompanies, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchApi } from "@/lib/api";
-import { useLeadClients } from "@/hooks/useLeadClients";
+import { useLeadClients, useUpdateLeadClientN8nSettings } from "@/hooks/useLeadClients";
 import { useLlmModels } from "@/hooks/useChatbotTemplates";
 
 // Empresa "de mentira" mostrada quando o tenant ainda nao tem linha em
