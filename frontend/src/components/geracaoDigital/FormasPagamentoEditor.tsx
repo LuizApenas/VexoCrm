@@ -24,6 +24,8 @@ interface Props {
   /** Mensalidade e meses do plano, para o parcelamento do total do período. */
   mensalidade: number;
   meses: number;
+  condicaoEspecialTexto?: string;
+  onCondicaoEspecialChange?: (text: string) => void;
 }
 
 /**
@@ -36,9 +38,10 @@ export default function FormasPagamentoEditor({
   totalSetup,
   mensalidade,
   meses,
+  condicaoEspecialTexto,
+  onCondicaoEspecialChange,
 }: Props) {
-  const baseDe = (def: FormaDef) =>
-    def.id === "cartao_total_parcelado" ? mensalidade * meses : totalSetup;
+  const baseDe = (def: FormaDef) => totalSetup;
 
   const Linha = ({ def }: { def: FormaDef }) => {
     const on = formas.marcadas.includes(def.id);
@@ -133,7 +136,7 @@ export default function FormasPagamentoEditor({
       <div className="space-y-1.5">
         <div className="flex items-baseline justify-between">
           <span className="text-[10px] font-black uppercase tracking-wider text-pink-600 dark:text-pink-300">
-            Mensalidade
+            Mensalidade / Projeto
           </span>
           <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
             {brl(mensalidade)}/mês · {meses} {meses === 1 ? "mês" : "meses"}
@@ -142,6 +145,19 @@ export default function FormasPagamentoEditor({
         {FORMAS_MENSALIDADE.map((def) => (
           <Linha key={def.id} def={def} />
         ))}
+      </div>
+
+      <div className="space-y-1.5 pt-3 border-t border-slate-100 dark:border-white/5">
+        <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+          Condições Especiais Personalizadas (Opcional)
+        </Label>
+        <textarea
+          value={condicaoEspecialTexto || ""}
+          onChange={(e) => onCondicaoEspecialChange?.(e.target.value)}
+          placeholder="Ex: Pix à vista para o projeto pontual + saldo em 2x no boleto pós go-live."
+          rows={2}
+          className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+        />
       </div>
     </div>
   );

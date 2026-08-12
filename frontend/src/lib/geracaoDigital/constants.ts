@@ -100,6 +100,38 @@ export const TRANSCRIPT_OPTIONS: TranscriptOption[] = [
     }
   },
   {
+    id: "turismo",
+    title: "✈️ Agência de Turismo & Viagens (Vexo Tour)",
+    description: "Briefing focado em pacotes turísticos, cruzeiros e viagens internacionais com automação de atendimento.",
+    text: "Contratamos a gestão completa de tráfego pago e automação de atendimento de WhatsApp para vendas de pacotes de viagens. Nossa logo está em drive.google.com/vexotour-hd. Nosso Instagram é @vexotour com senha turismosaless2026, a página do Facebook é fb.com/vexotour e nosso site é vexotour.com.br. Atendimento via WhatsApp Comercial no (11) 96666-3333. Nossos maiores concorrentes são CVC, Azul Viagens e Decolar. Nossa inspiração é a BeFly. Oferecemos pacotes internacionais para Orlando, Europa, cruzeiros marítimos e resorts all-inclusive no Nordeste. Público alvo são famílias e casais de 28 a 60 anos, classe A/B/C que planejam férias com segurança e parcelamento facilitado. As maiores dificuldades do segmento são o tempo longo de cotação manual no WhatsApp e leads curiosos sem orçamento real. Queremos automação com IA para qualificar destino, orçamento e quantidade de viajantes antes de passar para o consultor humano.",
+    extractedValues: {
+      produtos: "Gestão de tráfego google/meta ads, Agente IA Atendimento & Vendas, Automação WhatsApp",
+      logo: "drive.google.com/vexotour-hd",
+      instagram: "User: @vexotour | Senha: turismosaless2026",
+      facebook: "User: fb.com/vexotour | Senha: turismosaless2026",
+      possui_bm: "Sim",
+      google: "User: vexotour@gmail.com | Senha: vexotourgoogle",
+      site: "vexotour.com.br",
+      dominios_dns: "Registro.br",
+      whatsapp: "(11) 96666-3333",
+      concorrentes: "CVC, Azul Viagens, Decolar",
+      inspiracao: "BeFly",
+      servicos: "Pacotes internacionais (Orlando/Disney, Europa), Cruzeiros e Resorts All-Inclusive no Nordeste",
+      localizacao: "São Paulo - SP (Atendimento Nacional Online)",
+      produtos_trafego: "Pacotes de férias em família e roteiros europeus",
+      objetivo_trafego: "Qualificação prévia por IA + Direcionamento pro WhatsApp do Consultor",
+      verba: "R$ 3.000,00 / mês",
+      tipo_pagamento: "PIX / Cartão de Crédito",
+      genero: "Todos (Famílias e Casais)",
+      idade: "28 a 60 anos",
+      classe: "Classe A/B/C",
+      interesses: "Viagens internacionais, resorts all-inclusive, passagens aéreas, Disney, cruzeiros",
+      outros_detalhes: "Gargalos do segmento: demorar para cotar roteiros e atender leads sem orçamento.",
+      bloqueado: "Promoções enganosas sem taxas inclusas e polêmicas gerais",
+      temas: "Roteiros imperdíveis de viagem, comparativos de resorts, dicas de bagagem e depoimentos de viajantes felizes"
+    }
+  },
+  {
     id: "audio1",
     title: "🎙️ Áudio 1 — Visão do Produto & Assinatura",
     description: "Transcrição do áudio sobre o conceito comercial do briefing white-label.",

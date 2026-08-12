@@ -1592,6 +1592,8 @@ export default function GeracaoDigitalProposals() {
                                 totalSetup={c.setupFinal}
                                 mensalidade={c.mensalidadeFinal}
                                 meses={c.mesesPeriodo}
+                                condicaoEspecialTexto={newCondicoes}
+                                onCondicaoEspecialChange={setNewCondicoes}
                               />
                             );
                           })()}

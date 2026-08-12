@@ -88,17 +88,82 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
           </div>
         </div>
 
-        <div className="space-y-1.5 pt-2 border-t border-dashed border-slate-200 dark:border-white/10">
-          <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500 dark:text-indigo-300">
-            Vexo OS
+        <div className="space-y-2 pt-2 border-t border-dashed border-slate-200 dark:border-white/10">
+          <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500 dark:text-indigo-300 block">
+            Plano Estruturado Vexo OS (Selecione 1)
           </span>
-          <div className="flex flex-wrap gap-1.5">
-            {vexoProducts.map((p: any) => (
-              <ItemEscopo key={p.id} id={p.id} nome={p.nome} lista="vexoIds" />
-            ))}
-            {vexoProducts.length === 0 && (
-              <span className="text-[10px] text-slate-400 italic">Nenhum módulo Vexo cadastrado.</span>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {/* Card Plano Essencial */}
+            <button
+              type="button"
+              onClick={() => {
+                const currentPlan = (plano as any).vexoPlan === "essencial" ? null : "essencial";
+                onChange({
+                  ...plano,
+                  vexoPlan: currentPlan,
+                  precos: currentPlan === "essencial"
+                    ? { ...plano.precos, mensal: 397 }
+                    : plano.precos,
+                } as any);
+              }}
+              className={cn(
+                "p-3 rounded-xl border text-left transition-all relative space-y-1.5",
+                (plano as any).vexoPlan === "essencial" || plano.vexoIds.includes("essencial")
+                  ? "bg-emerald-500/10 border-emerald-500 shadow-sm"
+                  : "bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 hover:border-emerald-400"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                  🟢 Plano Essencial Vexo OS
+                </span>
+                {((plano as any).vexoPlan === "essencial" || plano.vexoIds.includes("essencial")) && (
+                  <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                )}
+              </div>
+              <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                R$ 397/mês <span className="text-[10px] font-normal text-slate-500">| Setup R$ 690</span>
+              </p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                1 Conexão de Chip, IA de Atendimento & Vendas, Disparos por Planilha, Inbox e Follow-up simples.
+              </p>
+            </button>
+
+            {/* Card Plano Avançado */}
+            <button
+              type="button"
+              onClick={() => {
+                const currentPlan = (plano as any).vexoPlan === "avancado" ? null : "avancado";
+                onChange({
+                  ...plano,
+                  vexoPlan: currentPlan,
+                  precos: currentPlan === "avancado"
+                    ? { ...plano.precos, mensal: 897 }
+                    : plano.precos,
+                } as any);
+              }}
+              className={cn(
+                "p-3 rounded-xl border text-left transition-all relative space-y-1.5",
+                (plano as any).vexoPlan === "avancado" || plano.vexoIds.includes("avancado")
+                  ? "bg-purple-500/10 border-purple-500 shadow-sm"
+                  : "bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 hover:border-purple-400"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
+                  🟣 Plano Avançado Vexo OS
+                </span>
+                {((plano as any).vexoPlan === "avancado" || plano.vexoIds.includes("avancado")) && (
+                  <CheckCircle className="h-4 w-4 text-purple-500 shrink-0" />
+                )}
+              </div>
+              <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                R$ 897/mês <span className="text-[10px] font-normal text-slate-500">| Setup R$ 1.490</span>
+              </p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                Múltiplos Chips, Variações Antiban (Groq AI), Agente por Campanha, Base de Conhecimento RAG, Broadcast SDR, Origem de Leads e Follow-up Avançado.
+              </p>
+            </button>
           </div>
         </div>
 

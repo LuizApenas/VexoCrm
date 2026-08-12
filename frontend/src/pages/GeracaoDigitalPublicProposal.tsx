@@ -694,6 +694,51 @@ export default function GeracaoDigitalPublicProposal() {
             </div>
           )}
 
+          {/* Card Destacado do Plano Vexo OS */}
+          {(() => {
+            const hasAvancado = items.some(i => i.descricao.toLowerCase().includes("avançado") || i.descricao.toLowerCase().includes("avancado"));
+            const hasEssencial = items.some(i => i.descricao.toLowerCase().includes("essencial") || i.categoria === "vexo");
+            const planType = hasAvancado ? "avancado" : hasEssencial ? "essencial" : null;
+
+            if (!planType) return null;
+
+            return (
+              <div className={cn(
+                "rounded-2xl p-5 border backdrop-blur-xl space-y-3",
+                planType === "avancado"
+                  ? "bg-purple-500/15 border-purple-500/40"
+                  : "bg-emerald-500/15 border-emerald-500/40"
+              )}>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <Badge className={planType === "avancado" ? "bg-purple-600 text-white font-bold text-xs" : "bg-emerald-600 text-white font-bold text-xs"}>
+                    {planType === "avancado" ? "🟣 Plano Avançado Vexo OS" : "🟢 Plano Essencial Vexo OS"}
+                  </Badge>
+                  <span className="text-xs font-mono font-bold text-slate-300">
+                    {planType === "avancado" ? "R$ 897/mês · Setup R$ 1.490" : "R$ 397/mês · Setup R$ 690"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                  {planType === "avancado"
+                    ? "Inclui Múltiplos Chips, Variações Antiban (Groq AI), Agente por Campanha, Base de Conhecimento RAG, Broadcast SDR, Origem de Leads e Follow-up Avançado."
+                    : "Inclui 1 Conexão de Chip, IA de Atendimento & Vendas, Disparos por Planilha, Inbox e Follow-up simples."}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* Quadro: CONDIÇÕES DE PAGAMENTO OFERECIDAS / CONDIÇÃO ESPECIAL */}
+          {(proposal.condicoes || (proposal as any).condicao_especial) && (
+            <div className="rounded-2xl bg-gradient-to-r from-amber-500/10 to-amber-600/10 border border-amber-500/30 p-5 space-y-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                <Info className="h-4 w-4 text-amber-400" />
+                Condições de Pagamento Ofertas & Especiais
+              </h4>
+              <p className="text-xs text-amber-100 whitespace-pre-wrap leading-relaxed">
+                {(proposal as any).condicao_especial || proposal.condicoes}
+              </p>
+            </div>
+          )}
+
           {/* Condições negociadas na mesa */}
 
           {/* Detalhes longos em Acordeão — economiza scroll */}

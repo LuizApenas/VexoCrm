@@ -13,8 +13,8 @@ import type { PaymentTerm, PaymentTermAplicaA } from "./paymentTerms";
 // — e sem migração de banco (tudo vive no jsonb `condicoes_pagamento`).
 // ---------------------------------------------------------------------------
 
-export type FormaSetupId = "pix_avista" | "cartao_avista" | "cartao_parcelado";
-export type FormaMensalId = "pagamento_unico" | "pix_recorrente" | "cartao_recorrente" | "cartao_total_parcelado";
+export type FormaSetupId = "pix_avista" | "entrada_pix_30d" | "cartao_parcelado";
+export type FormaMensalId = "cartao_recorrente" | "boleto_recorrente" | "pix_recorrente" | "pix_avista_projeto";
 export type FormaId = FormaSetupId | FormaMensalId;
 
 export interface FormaDef {
@@ -26,21 +26,16 @@ export interface FormaDef {
 }
 
 export const FORMAS_SETUP: FormaDef[] = [
-  { id: "pix_avista", label: "Pix à vista", aplica_a: "setup", parcelavel: false },
-  { id: "cartao_avista", label: "Cartão à vista", aplica_a: "setup", parcelavel: false },
-  { id: "cartao_parcelado", label: "Cartão parcelado", aplica_a: "setup", parcelavel: true },
+  { id: "pix_avista", label: "Pix à vista (Com desconto)", aplica_a: "setup", parcelavel: false },
+  { id: "entrada_pix_30d", label: "Entrada no Pix + 30 dias no Pix", aplica_a: "setup", parcelavel: false },
+  { id: "cartao_parcelado", label: "Parcelado no Cartão em até 3x", aplica_a: "setup", parcelavel: true },
 ];
 
 export const FORMAS_MENSALIDADE: FormaDef[] = [
-  { id: "pagamento_unico", label: "Pagamento Único", aplica_a: "mensalidade", parcelavel: false },
-  { id: "pix_recorrente", label: "Pix recorrente", aplica_a: "mensalidade", parcelavel: false },
-  { id: "cartao_recorrente", label: "Cartão recorrente", aplica_a: "mensalidade", parcelavel: false },
-  {
-    id: "cartao_total_parcelado",
-    label: "Parcelar o total do período no cartão",
-    aplica_a: "mensalidade",
-    parcelavel: true,
-  },
+  { id: "cartao_recorrente", label: "Cartão Recorrente (Sem comprometer limite)", aplica_a: "mensalidade", parcelavel: false },
+  { id: "boleto_recorrente", label: "Boleto Bancário Recorrente (Exclusivo PJ)", aplica_a: "mensalidade", parcelavel: false },
+  { id: "pix_recorrente", label: "Pix Recorrente", aplica_a: "mensalidade", parcelavel: false },
+  { id: "pix_avista_projeto", label: "Pix à Vista (Pagamento Único / Projeto Pontual)", aplica_a: "mensalidade", parcelavel: false },
 ];
 
 export const TODAS_FORMAS: FormaDef[] = [...FORMAS_SETUP, ...FORMAS_MENSALIDADE];
@@ -58,7 +53,7 @@ export const formasVazias = (): FormasSelecionadas => ({ marcadas: [], parcelas:
 export function parcelasDe(formas: FormasSelecionadas, id: FormaId): number {
   const n = Number(formas.parcelas?.[id] || 0);
   if (n >= 1) return Math.min(n, MAX_PARCELAS);
-  return id === "cartao_total_parcelado" ? 12 : 3;
+  return id === "cartao_parcelado" ? 3 : 1;
 }
 
 /** Clamp do stepper: nunca 0, nunca acima do teto. */
@@ -98,19 +93,19 @@ export function formasParaTerms(formas: FormasSelecionadas): PaymentTerm[] {
 
     switch (def.id) {
       case "pix_avista":
-        return { ...base, tipo: "avista_desconto", config: { meio: "pix", percentual_desconto: 0 } };
-      case "cartao_avista":
-        return { ...base, tipo: "avista_desconto", config: { meio: "cartao", percentual_desconto: 0 } };
+        return { ...base, tipo: "avista_desconto", config: { meio: "pix", percentual_desconto: 5 } };
+      case "entrada_pix_30d":
+        return { ...base, tipo: "custom", config: { meio: "pix", descricao: "Entrada no Pix + 30 dias no Pix" } };
       case "cartao_parcelado":
         return { ...base, tipo: "parcelado_cartao", config: { meio: "cartao", num_parcelas: n } };
-      case "pagamento_unico":
-        return { ...base, tipo: "custom", config: { meio: "pix_ou_cartao", descricao: "Pagamento Único" } };
-      case "pix_recorrente":
-        return { ...base, tipo: "custom", config: { meio: "pix", descricao: "Pix recorrente todo mês" } };
       case "cartao_recorrente":
-        return { ...base, tipo: "custom", config: { meio: "cartao", descricao: "Cartão de crédito recorrente todo mês" } };
-      case "cartao_total_parcelado":
-        return { ...base, tipo: "parcelado_cartao", config: { meio: "cartao", num_parcelas: n } };
+        return { ...base, tipo: "custom", config: { meio: "cartao", descricao: "Cartão Recorrente (Sem comprometer limite)" } };
+      case "boleto_recorrente":
+        return { ...base, tipo: "custom", config: { meio: "boleto", descricao: "Boleto Bancário Recorrente (Exclusivo PJ)" } };
+      case "pix_recorrente":
+        return { ...base, tipo: "custom", config: { meio: "pix", descricao: "Pix Recorrente" } };
+      case "pix_avista_projeto":
+        return { ...base, tipo: "custom", config: { meio: "pix", descricao: "Pix à Vista (Pagamento Único / Projeto Pontual)" } };
     }
   }) as PaymentTerm[];
 }
