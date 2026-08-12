@@ -261,6 +261,7 @@ export function CommercialIntelligenceContent({ clientId }: { clientId: string }
     };
   }, [clientId, getIdToken]);
 
+  const options = data?.filters?.options;
   const consultants = useMemo(() => {
     if (data?.rankings?.consultants && Array.isArray(data.rankings.consultants)) {
       return data.rankings.consultants;
@@ -270,6 +271,21 @@ export function CommercialIntelligenceContent({ clientId }: { clientId: string }
     }
     return [];
   }, [data]);
+
+  const campaigns = useMemo(() => {
+    if (data?.rankings?.campaigns && Array.isArray(data.rankings.campaigns)) {
+      return data.rankings.campaigns;
+    }
+    if (data?.campaigns?.items && Array.isArray(data.campaigns.items)) {
+      return data.campaigns.items;
+    }
+    return [];
+  }, [data]);
+
+  const insights = useMemo(() => data?.insights?.items ?? [], [data?.insights?.items]);
+  const distributionRules = useMemo(() => data?.distribution?.rules ?? [], [data?.distribution?.rules]);
+  const distributionQueue = useMemo(() => data?.distribution?.queue ?? [], [data?.distribution?.queue]);
+  const distributionHistory = useMemo(() => data?.distribution?.history ?? [], [data?.distribution?.history]);
 
   const attributionByChannel = useMemo(() => {
     const map: Record<string, { total: number; qualified: number; revenue: number }> = {
@@ -422,22 +438,22 @@ export function CommercialIntelligenceContent({ clientId }: { clientId: string }
   }, [insightCampaign, insightCity, insightSeverity, insightType, insights, options?.campaigns]);
 
   const sortedCities = useMemo(() => {
-    const items = [...(data?.rankings.cities || [])];
+    const items = [...(data?.rankings?.cities || [])];
     items.sort((a, b) => compareValues(a[rankingCityCriterion], b[rankingCityCriterion], rankingCityOrder));
     return items;
-  }, [data?.rankings.cities, rankingCityCriterion, rankingCityOrder]);
+  }, [data?.rankings?.cities, rankingCityCriterion, rankingCityOrder]);
 
   const sortedCampaigns = useMemo(() => {
-    const items = [...(data?.rankings.campaigns || [])];
+    const items = [...(data?.rankings?.campaigns || [])];
     items.sort((a, b) => compareValues(a[rankingCampaignCriterion], b[rankingCampaignCriterion], rankingCampaignOrder));
     return items;
-  }, [data?.rankings.campaigns, rankingCampaignCriterion, rankingCampaignOrder]);
+  }, [data?.rankings?.campaigns, rankingCampaignCriterion, rankingCampaignOrder]);
 
   const sortedConsultants = useMemo(() => {
-    const items = [...(data?.rankings.consultants || [])];
+    const items = [...(data?.rankings?.consultants || [])];
     items.sort((a, b) => compareValues(a[rankingConsultantCriterion], b[rankingConsultantCriterion], rankingConsultantOrder));
     return items;
-  }, [data?.rankings.consultants, rankingConsultantCriterion, rankingConsultantOrder]);
+  }, [data?.rankings?.consultants, rankingConsultantCriterion, rankingConsultantOrder]);
 
   const pagedConsultants = paginate(consultantsFiltered, consultantPage, 8);
   const pagedCampaigns = paginate(campaignsFiltered, campaignPage, 8);
