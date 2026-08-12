@@ -335,6 +335,79 @@ export default function GeracaoDigitalImplementationBriefing() {
     },
   });
 
+  // Reset completo do formulário
+  const handleResetForm = () => {
+    setEditingBriefingId(null);
+    setSelectedTenantId("");
+    setClientName("");
+    setNumEmployees(1);
+    setHasCommercialSector(false);
+    setModelType("essencial");
+    setManualOverride(false);
+    setCurrentStep(1);
+    setTeamUsers([{ id: "1", name: "", email: "", role: "sdr" }]);
+    setKnowledgeFiles([]);
+    setPrerequisites({
+      segmento: "",
+      unidades: "1",
+      atendentes: "1",
+      participantes: "",
+      contratoAssinado: false,
+    });
+    setOperacao({
+      kanbanEtapas: "Lead, Em Atendimento, Agendado, Proposta, Fechado, Perdido",
+      kanbanMoverRegra: "",
+      visaoPreferida: "inbox",
+      quemAcessa: "todos",
+      followupGatilho: "Lead sem resposta em 24h",
+      followupIntervalo: "24 horas, 3 tentativas",
+      horarioComercial: "08:00 às 18:00 (Seg a Sex)",
+      campanhasBase: "leads_sistema",
+      sdrWhatsappNumbers: "",
+      campanhasOrigemOptIn: "",
+      campanhasVolumeEstimado: "500 msgs/mês",
+      campanhasRelatorioAuto: false,
+      eventosFeatureGlobal: false,
+    });
+    setInteligencia({
+      slaPrimeiraRespostaMinutos: "15",
+      taxaConversaoMeta: "10%",
+      ticketMedioEstimado: "",
+      origensTrafego: "Google Ads, Instagram, Inbound",
+      jaMedeHoje: "",
+      relatoriosFrequencia: "semanal",
+      relatoriosFormato: "sistema",
+    });
+    setAgenteIa({
+      tomDeVoz: "Casual e Atencioso",
+      exemplosMensagens: "",
+      regraEscalonamento: "Transferir para humano se o lead pedir valores específicos ou orçamento customizado.",
+      precisaSaber: "Horário de funcionamento, endereço, serviços principais, link de agendamento.",
+      naoPodeInformar: "Descontos especiais sem autorização do gerente.",
+      materialAnexoUrls: "",
+      quemValidaCliente: "",
+      kanbanAgenteEtapas: "Triagem e Qualificação",
+      inboundIniciaOuResponde: "responde",
+      qualificacaoObrigatoria: "Nome, Cidade, Necessidade principal",
+    });
+    setCanais({
+      quantosChips: "1",
+      numeroNovoOuHistorico: "numero_novo",
+      prazoVolumeTotal: "14 dias",
+      aquecimentoAlinhado: true,
+    });
+    setModulosCustom({
+      necessidadeEspecifica: false,
+      descricao: "",
+    });
+    setFechamento({
+      recapitulado: true,
+      dataGoLive: "",
+      proximoContatoQuem: "",
+      proximoContatoData: "",
+    });
+  };
+
   // Load saved briefing into form
   const handleLoadBriefing = (b: any) => {
     setEditingBriefingId(b.id || null);
@@ -611,18 +684,14 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
           </Button>
         </div>
 
-        {activeTabMode === "form" && editingBriefingId && (
+        {activeTabMode === "form" && (
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => {
-              setEditingBriefingId(null);
-              setSelectedTenantId("");
-              setClientName("");
-              setManualOverride(false);
-              setCurrentStep(1);
-              toast({ title: "Formulário Reiniciado", description: "Pronto para criar uma nova implantação." });
+              handleResetForm();
+              toast({ title: "Formulário Reiniciado", description: "Todos os campos foram limpos para uma nova implantação." });
             }}
             className="h-8 text-xs font-bold gap-1.5 border-slate-300"
           >
