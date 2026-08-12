@@ -10,7 +10,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -39,7 +38,17 @@ import {
   Printer,
   MessageSquare,
   Search,
-  Plus
+  Plus,
+  Upload,
+  FileText,
+  File,
+  Trash2,
+  UserPlus,
+  ChevronRight,
+  ChevronLeft,
+  FileCode,
+  FileSpreadsheet,
+  Zap,
 } from "lucide-react";
 
 type ModelType = "essencial" | "avancado";
@@ -50,6 +59,21 @@ interface TenantOption {
   slug?: string;
 }
 
+interface TeamUser {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "sdr" | "atendente";
+}
+
+interface KnowledgeFile {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  dataUrl?: string;
+}
+
 export default function GeracaoDigitalImplementationBriefing() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -57,6 +81,9 @@ export default function GeracaoDigitalImplementationBriefing() {
   // Mode View (form vs saved list)
   const [activeTabMode, setActiveTabMode] = useState<"form" | "list">("form");
   const [editingBriefingId, setEditingBriefingId] = useState<string | null>(null);
+
+  // Stepper state (Passos 1 a 5)
+  const [currentStep, setCurrentStep] = useState<number>(1);
 
   // Search & Filter for Saved Briefings
   const [searchSaved, setSearchSaved] = useState<string>("");
@@ -77,8 +104,11 @@ export default function GeracaoDigitalImplementationBriefing() {
   const [modelType, setModelType] = useState<ModelType>("essencial");
   const [manualOverride, setManualOverride] = useState<boolean>(false);
 
-  // Active section tab in UI
-  const [activeSection, setActiveSection] = useState<string>("prerequisitos");
+  // Dynamic lists for Step 2 and Step 3
+  const [teamUsers, setTeamUsers] = useState<TeamUser[]>([
+    { id: "1", name: "", email: "", role: "sdr" },
+  ]);
+  const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
 
   // Briefing Form State
   const [prerequisites, setPrerequisites] = useState({
@@ -97,7 +127,8 @@ export default function GeracaoDigitalImplementationBriefing() {
     followupGatilho: "Lead sem resposta em 24h",
     followupIntervalo: "24 horas, 3 tentativas",
     horarioComercial: "08:00 às 18:00 (Seg a Sex)",
-    campanhasBase: "leads_sistema", // base_propria | leads_sistema | ambas
+    campanhasBase: "leads_sistema",
+    sdrWhatsappNumbers: "",
     campanhasOrigemOptIn: "",
     campanhasVolumeEstimado: "500 msgs/mês",
     campanhasRelatorioAuto: false,
@@ -110,8 +141,8 @@ export default function GeracaoDigitalImplementationBriefing() {
     ticketMedioEstimado: "",
     origensTrafego: "Google Ads, Instagram, Inbound",
     jaMedeHoje: "",
-    relatoriosFrequencia: "semanal", // diario | semanal | mensal
-    relatoriosFormato: "sistema", // sistema | pdf | whatsapp_email
+    relatoriosFrequencia: "semanal",
+    relatoriosFormato: "sistema",
   });
 
   const [agenteIa, setAgenteIa] = useState({
@@ -123,13 +154,13 @@ export default function GeracaoDigitalImplementationBriefing() {
     materialAnexoUrls: "",
     quemValidaCliente: "",
     kanbanAgenteEtapas: "Triagem e Qualificação",
-    inboundIniciaOuResponde: "responde", // inicia | responde
+    inboundIniciaOuResponde: "responde",
     qualificacaoObrigatoria: "Nome, Cidade, Necessidade principal",
   });
 
   const [canais, setCanais] = useState({
     quantosChips: "1",
-    numeroNovoOuHistorico: "numero_novo", // numero_novo | ja_usado
+    numeroNovoOuHistorico: "numero_novo",
     prazoVolumeTotal: "14 dias",
     aquecimentoAlinhado: true,
   });
@@ -159,7 +190,7 @@ export default function GeracaoDigitalImplementationBriefing() {
 
   const { getIdToken } = useAuth();
 
-  // Fetch Closed Contracts & Proposals (Autenticado)
+  // Fetch Closed Contracts & Proposals
   const { data: closedOptions = [], isLoading: isLoadingClosedOptions } = useQuery({
     queryKey: ["gd-closed-contracts-and-proposals"],
     queryFn: async () => {
@@ -192,7 +223,6 @@ export default function GeracaoDigitalImplementationBriefing() {
         const jsonP = await readApiJson<any>(resProposals, "gd-proposals");
         const listP = Array.isArray(jsonP) ? jsonP : jsonP?.data || [];
         for (const p of listP) {
-          // EXCLUI rascunhos e enviadas. SOMENTE PROPOSTAS ACEITAS/FECHADAS COM CONTRATO!
           if (p.status !== "aceita" && p.status !== "fechado" && p.status !== "assinado") {
             continue;
           }
@@ -210,7 +240,7 @@ export default function GeracaoDigitalImplementationBriefing() {
     },
   });
 
-  // Fetch Tenants (Autenticado)
+  // Fetch Tenants
   const { data: tenants = [] } = useQuery<TenantOption[]>({
     queryKey: ["gd-tenants-list"],
     queryFn: async () => {
@@ -223,7 +253,7 @@ export default function GeracaoDigitalImplementationBriefing() {
     },
   });
 
-  // Load Existing Implementation Briefings (Autenticado)
+  // Load Existing Implementation Briefings
   const { data: existingBriefings = [], isLoading: isLoadingBriefings } = useQuery({
     queryKey: ["gd-implementation-briefings", selectedTenantId],
     queryFn: async () => {
@@ -239,7 +269,7 @@ export default function GeracaoDigitalImplementationBriefing() {
     },
   });
 
-  // Mutation to Save Briefing (Autenticado)
+  // Mutation to Save Briefing
   const saveMutation = useMutation({
     mutationFn: async (status: "em_andamento" | "concluido") => {
       if (!clientName.trim()) throw new Error("Informe o nome da empresa / cliente para prosseguir.");
@@ -265,6 +295,8 @@ export default function GeracaoDigitalImplementationBriefing() {
         canais,
         modulos_custom: modulosCustom,
         fechamento,
+        team_users: teamUsers,
+        knowledge_files: knowledgeFiles,
         status,
       };
 
@@ -303,7 +335,7 @@ export default function GeracaoDigitalImplementationBriefing() {
     },
   });
 
-  // Carregar briefing salvo no formulário
+  // Load saved briefing into form
   const handleLoadBriefing = (b: any) => {
     setEditingBriefingId(b.id || null);
     setSelectedTenantId(b.tenant_id || "");
@@ -320,15 +352,82 @@ export default function GeracaoDigitalImplementationBriefing() {
     if (b.canais) setCanais(prev => ({ ...prev, ...b.canais }));
     if (b.modulos_custom) setModulosCustom(prev => ({ ...prev, ...b.modulos_custom }));
     if (b.fechamento) setFechamento(prev => ({ ...prev, ...b.fechamento }));
+    if (Array.isArray(b.team_users)) setTeamUsers(b.team_users);
+    if (Array.isArray(b.knowledge_files)) setKnowledgeFiles(b.knowledge_files);
 
     setActiveTabMode("form");
+    setCurrentStep(1);
     toast({
       title: "Implantação Carregada",
       description: `Editando briefing técnico de ${b.client_name}.`,
     });
   };
 
-  // Exportar para documento PDF de impressão
+  // Team users handlers
+  const addTeamUser = () => {
+    setTeamUsers(prev => [
+      ...prev,
+      { id: Date.now().toString(), name: "", email: "", role: "sdr" }
+    ]);
+  };
+
+  const updateTeamUser = (id: string, field: keyof TeamUser, value: string) => {
+    setTeamUsers(prev =>
+      prev.map(u => (u.id === id ? { ...u, [field]: value } : u))
+    );
+  };
+
+  const removeTeamUser = (id: string) => {
+    setTeamUsers(prev => prev.filter(u => u.id !== id));
+  };
+
+  // Knowledge base file handlers
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const dataUrl = evt.target?.result as string;
+        setKnowledgeFiles(prev => [
+          ...prev,
+          {
+            id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+            name: file.name,
+            size: file.size,
+            type: file.type || file.name.split(".").pop() || "unknown",
+            dataUrl,
+          },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    e.target.value = "";
+  };
+
+  const removeKnowledgeFile = (id: string) => {
+    setKnowledgeFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  function formatFileSize(bytes: number) {
+    if (!bytes) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function getFileIcon(fileName: string) {
+    const ext = fileName.split(".").pop()?.toLowerCase();
+    if (ext === "pdf") return <FileText className="h-5 w-5 text-red-500" />;
+    if (ext === "csv" || ext === "xlsx" || ext === "xls") return <FileSpreadsheet className="h-5 w-5 text-emerald-500" />;
+    if (ext === "txt") return <FileCode className="h-5 w-5 text-blue-500" />;
+    if (ext === "doc" || ext === "docx") return <FileText className="h-5 w-5 text-indigo-500" />;
+    return <File className="h-5 w-5 text-slate-500" />;
+  }
+
+  // Export printable PDF
   const handleExportPdf = (b: any) => {
     const win = window.open("", "_blank");
     if (!win) return;
@@ -412,12 +511,6 @@ export default function GeracaoDigitalImplementationBriefing() {
             </table>
           </div>
 
-          ${b.modulos_custom?.necessidadeEspecifica ? `
-          <div class="section">
-            <div class="section-title">3. Necessidade Customizada / Módulos Específicos</div>
-            <p><strong>Descrição:</strong> ${b.modulos_custom?.descricao || "Não informada."}</p>
-          </div>` : ''}
-
           <div style="margin-top: 30px; border-top: 1px solid #cbd5e1; padding-top: 10px; text-align: center; color: #94a3b8; font-size: 11px;">
             Documento emitido pelo Vexo OS CRM em ${new Date().toLocaleDateString("pt-BR")}.
           </div>
@@ -431,7 +524,7 @@ export default function GeracaoDigitalImplementationBriefing() {
     win.document.close();
   };
 
-  // Abrir Modal de envio via WhatsApp
+  // Open WhatsApp Modal
   const handleOpenWhatsAppModal = (b: any) => {
     setSelectedWaBriefing(b);
     setWaPhone("");
@@ -474,7 +567,7 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
     setWaDialogOpen(false);
   };
 
-  // Filtragem da lista de briefings salvos
+  // Filter saved briefings
   const filteredBriefings = existingBriefings.filter((b: any) => {
     const matchName = !searchSaved.trim() || (b.client_name || "").toLowerCase().includes(searchSaved.toLowerCase());
     const matchStatus = filterSavedStatus === "todos" || b.status === filterSavedStatus;
@@ -489,7 +582,7 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
     >
       <GeracaoDigitalTabs />
 
-      {/* SUB-ABA: NOVO FORMULÁRIO DE IMPLANTAÇÃO vs IMPLANTAÇÕES SALVAS */}
+      {/* SUB-ABA: FORMULÁRIO DE IMPLANTAÇÃO vs IMPLANTAÇÕES SALVAS */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 my-6 pb-4 border-b border-slate-200 dark:border-white/10">
         <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-white/10">
           <Button
@@ -500,7 +593,7 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
             className="h-9 px-4 text-xs font-black gap-2 rounded-xl"
           >
             <Edit3 className="h-4 w-4" />
-            {editingBriefingId ? "Editando Implantação" : "Formulário de Implantação"}
+            {editingBriefingId ? "Editando Implantação" : "Esteira de Implantação (5 Passos)"}
           </Button>
 
           <Button
@@ -528,6 +621,7 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
               setSelectedTenantId("");
               setClientName("");
               setManualOverride(false);
+              setCurrentStep(1);
               toast({ title: "Formulário Reiniciado", description: "Pronto para criar uma nova implantação." });
             }}
             className="h-8 text-xs font-bold gap-1.5 border-slate-300"
@@ -583,7 +677,7 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
         </DialogContent>
       </Dialog>
 
-      {/* VISUALIZAÇÃO: ABA LISTA vs ABA FORMULÁRIO */}
+      {/* VISUALIZAÇÃO: ABA LISTA vs ESTEIRA EM 5 PASSOS */}
       {activeTabMode === "list" ? (
         <div className="space-y-5">
           <Card className="border border-slate-200 dark:border-white/10 shadow-sm">
@@ -635,7 +729,7 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
                     Nenhuma implantação técnica encontrada.
                   </p>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Preencha o formulário na aba "Formulário de Implantação" para salvar o briefing de onboarding de um cliente.
+                    Preencha o formulário para salvar o briefing de onboarding de um cliente.
                   </p>
                   <Button
                     onClick={() => setActiveTabMode("form")}
@@ -737,225 +831,132 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
       ) : (
         <div className="space-y-6">
 
-        {/* PASSO 0: SELEÇÃO DE TENANT E ROTEAMENTO DO MODELO */}
-        <Card className="border-indigo-100 dark:border-indigo-900/40 bg-gradient-to-br from-indigo-50/40 to-slate-50 dark:from-indigo-950/20 dark:to-slate-900 shadow-sm">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                <CardTitle className="text-lg font-black text-slate-800 dark:text-white">
-                  Passo 0: Empresa & Modelo de Implantação
-                </CardTitle>
-              </div>
-              <Badge variant="outline" className="bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 font-bold border-indigo-200">
-                Setup Inicial
+          {/* STEPPER VISUAL SUPERIOR (5 PASSOS) */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-500">
+                Esteira de Implantação Vexo — Passo {currentStep} de 5
+              </span>
+              <Badge variant="outline" className="text-xs font-bold border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                {currentStep === 1 && "Passo 1: Empresa & Contrato"}
+                {currentStep === 2 && "Passo 2: Usuários & Acessos da Equipe"}
+                {currentStep === 3 && "Passo 3: Base de Conhecimento (Uploads)"}
+                {currentStep === 4 && "Passo 4: Regras da IA & Canais"}
+                {currentStep === 5 && "Passo 5: Conclusão & Sincronização"}
               </Badge>
             </div>
-            <CardDescription className="text-xs text-slate-600 dark:text-slate-400">
-              Selecione o cliente contratante e defina o modelo da trilha técnica de implantação.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-3">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Empresa Contratante (Selecione a partir dos Contratos / Propostas Fechadas)
-              </Label>
-              <Select
-                value={selectedTenantId}
-                onValueChange={(val) => {
-                  setSelectedTenantId(val);
-                  const found = closedOptions.find((opt) => opt.id === val);
-                  if (found) {
-                    setClientName(found.name);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full h-10 text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                  <SelectValue placeholder={isLoadingClosedOptions ? "Carregando contratos..." : "Selecione a empresa contratante..."} />
-                </SelectTrigger>
-                <SelectContent>
-                  {closedOptions.length === 0 ? (
-                    <SelectItem value="none" disabled>
-                      Nenhum contrato fechado encontrado no sistema
-                    </SelectItem>
-                  ) : (
-                    closedOptions.map((opt) => (
-                      <SelectItem key={opt.id} value={opt.id} className="text-sm">
-                        {opt.name} <span className="text-xs text-emerald-600 font-bold ml-2">({opt.status})</span>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
 
-              {/* Opção para ajuste fino ou digitação manual se necessário */}
-              <div className="pt-1">
-                <Label className="text-[11px] font-semibold text-slate-500">Nome do Cliente / Razão Social Confirmada</Label>
-                <Input
-                  placeholder="Nome do cliente para o briefing (preenchido automaticamente ao selecionar a empresa)"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  className="mt-1 h-9 text-xs bg-slate-50 dark:bg-slate-900"
-                />
-              </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {[
+                { num: 1, title: "1. Empresa & Contrato", icon: Building2 },
+                { num: 2, title: "2. Equipe & Acessos", icon: Users },
+                { num: 3, title: "3. Base Conhecimento", icon: FileText },
+                { num: 4, title: "4. Regras IA & Canais", icon: Bot },
+                { num: 5, title: "5. Conclusão & Sync", icon: CheckCircle2 },
+              ].map((step) => {
+                const StepIcon = step.icon;
+                const isActive = currentStep === step.num;
+                const isPast = currentStep > step.num;
+                return (
+                  <button
+                    key={step.num}
+                    type="button"
+                    onClick={() => setCurrentStep(step.num)}
+                    className={cn(
+                      "flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all cursor-pointer",
+                      isActive
+                        ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20 font-black"
+                        : isPast
+                        ? "border-emerald-200 bg-emerald-50/40 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 font-bold"
+                        : "border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900 text-slate-500 font-medium hover:border-slate-300"
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <StepIcon className="h-4 w-4 shrink-0" />
+                      <span className="text-xs truncate">{step.title}</span>
+                    </div>
+                    <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
+                      <div
+                        className={cn(
+                          "h-full transition-all duration-300",
+                          isActive ? "bg-indigo-600 w-full" : isPast ? "bg-emerald-500 w-full" : "w-0"
+                        )}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+          </div>
 
-            {/* REGRAS DE ROTEAMENTO */}
-            <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                  <Users className="h-4 w-4 text-purple-600" />
-                  Perfil da Operação do Cliente (Sugestão Automática)
-                </h4>
-                {manualOverride && (
-                  <Badge variant="secondary" className="text-[10px]">
-                    Seleção Manual Ativa
-                  </Badge>
-                )}
-              </div>
+          {/* CONTEÚDO DO PASSO ATUAL */}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Número de Funcionários / Atendentes</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={numEmployees}
-                    onChange={(e) => setNumEmployees(parseInt(e.target.value) || 1)}
-                    className="w-full bg-slate-50 dark:bg-slate-800"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700">
-                  <div className="space-y-0.5">
-                    <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Possui Setor Comercial Dedicado?</Label>
-                    <p className="text-[11px] text-slate-500">Equipe de vendas própria estruturada.</p>
+          {/* PASSO 1: EMPRESA & CONTRATO */}
+          {currentStep === 1 && (
+            <div className="space-y-6">
+              <Card className="border-indigo-100 dark:border-indigo-900/40 bg-gradient-to-br from-indigo-50/40 to-slate-50 dark:from-indigo-950/20 dark:to-slate-900 shadow-sm">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                      <CardTitle className="text-lg font-black text-slate-800 dark:text-white">
+                        Passo 1: Empresa & Contrato Fechado
+                      </CardTitle>
+                    </div>
+                    <Badge variant="outline" className="bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 font-bold border-indigo-200">
+                      Identificação Inicial
+                    </Badge>
                   </div>
-                  <Switch
-                    checked={hasCommercialSector}
-                    onCheckedChange={(checked) => setHasCommercialSector(checked)}
-                  />
-                </div>
-              </div>
-
-              {/* SELETORES DE MODELO */}
-              <div className="pt-2">
-                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 block">
-                  Modelo de Implantação Selecionado:
-                </Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setModelType("essencial");
-                      setManualOverride(true);
-                    }}
-                    className={`p-4 rounded-xl border text-left transition-all relative ${
-                      modelType === "essencial"
-                        ? "border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 ring-2 ring-blue-500/20"
-                        : "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-slate-300"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-black text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
-                        <Badge className="bg-blue-600 hover:bg-blue-700 text-white">Trilha [E]</Badge>
-                        Modelo Essencial
-                      </span>
-                      {suggestedModel === "essencial" && (
-                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-950 px-2 py-0.5 rounded-full">
-                          Sugerido pelo sistema
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
-                      Operação direta e simplificada (menos de 3 func). Foco em Kanban simples, Follow-up e Agente IA básico de atendimento.
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setModelType("avancado");
-                      setManualOverride(true);
-                    }}
-                    className={`p-4 rounded-xl border text-left transition-all relative ${
-                      modelType === "avancado"
-                        ? "border-purple-600 bg-purple-50/60 dark:bg-purple-950/30 ring-2 ring-purple-500/20"
-                        : "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-slate-300"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-black text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
-                        <Badge className="bg-purple-600 hover:bg-purple-700 text-white">Trilha [A]</Badge>
-                        Modelo Avançado
-                      </span>
-                      {suggestedModel === "avancado" && (
-                        <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950 px-2 py-0.5 rounded-full">
-                          Sugerido pelo sistema
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
-                      Operação robusta com setor comercial. Inclui Inteligência Comercial, Inbound IA, Automações de Kanban e Módulos por tenant.
-                    </p>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* NAVEGAÇÃO DE SEÇÕES DO BRIEFING */}
-        <div className="space-y-4">
-          <Tabs value={activeSection} onValueChange={setActiveSection} className="w-full">
-            <TabsList className="flex w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 h-12 p-1 rounded-xl overflow-x-auto whitespace-nowrap">
-              <TabsTrigger value="prerequisitos" className="flex-1 text-xs font-bold gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-slate-500" />
-                0. Pré-requisitos <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">E+A</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="operacao" className="flex-1 text-xs font-bold gap-1.5">
-                <Settings className="h-3.5 w-3.5 text-blue-500" />
-                1. Operação <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">E+A</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="inteligencia" className="flex-1 text-xs font-bold gap-1.5">
-                <LineChart className="h-3.5 w-3.5 text-emerald-500" />
-                2. Inteligência {modelType === "essencial" ? <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">E</Badge> : <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">E+A</Badge>}
-              </TabsTrigger>
-              <TabsTrigger value="agente_ia" className="flex-1 text-xs font-bold gap-1.5">
-                <Bot className="h-3.5 w-3.5 text-purple-500" />
-                3. Agente IA <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">E+A</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="canais" className="flex-1 text-xs font-bold gap-1.5">
-                <Wifi className="h-3.5 w-3.5 text-amber-500" />
-                4. Canais <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">E+A</Badge>
-              </TabsTrigger>
-              {modelType === "avancado" && (
-                <TabsTrigger value="modulos" className="flex-1 text-xs font-bold gap-1.5">
-                  <Layers className="h-3.5 w-3.5 text-pink-500" />
-                  5. Módulos <Badge className="bg-purple-600 text-white text-[9px] px-1 py-0 ml-1">A</Badge>
-                </TabsTrigger>
-              )}
-              <TabsTrigger value="fechamento" className="flex-1 text-xs font-bold gap-1.5">
-                <Calendar className="h-3.5 w-3.5 text-indigo-500" />
-                6. Fechamento <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">E+A</Badge>
-              </TabsTrigger>
-            </TabsList>
-
-            {/* SEÇÃO 0: PRÉ-REQUISITOS */}
-            <TabsContent value="prerequisitos" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    0. Checklist Interno de Pré-requisitos
-                    <Badge variant="outline" className="text-xs">Essencial + Avançado [E+A]</Badge>
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Verificação preventiva da gestora antes de iniciar o alinhamento com o cliente.
+                  <CardDescription className="text-xs text-slate-600 dark:text-slate-400">
+                    Selecione o cliente contratante e defina o modelo da trilha técnica de implantação.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
+                <CardContent className="space-y-6">
+                  <div className="space-y-3">
+                    <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Empresa Contratante (Vincule ao Contrato / Proposta Aceita)
+                    </Label>
+                    <Select
+                      value={selectedTenantId}
+                      onValueChange={(val) => {
+                        setSelectedTenantId(val);
+                        const found = closedOptions.find((opt) => opt.id === val);
+                        if (found) {
+                          setClientName(found.name);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full h-10 text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                        <SelectValue placeholder={isLoadingClosedOptions ? "Carregando contratos..." : "Selecione a empresa contratante..."} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {closedOptions.length === 0 ? (
+                          <SelectItem value="none" disabled>
+                            Nenhum contrato fechado encontrado no sistema
+                          </SelectItem>
+                        ) : (
+                          closedOptions.map((opt) => (
+                            <SelectItem key={opt.id} value={opt.id} className="text-sm">
+                              {opt.name} <span className="text-xs text-emerald-600 font-bold ml-2">({opt.status})</span>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+
+                    <div className="pt-1">
+                      <Label className="text-[11px] font-semibold text-slate-500">Nome do Cliente / Razão Social Confirmada</Label>
+                      <Input
+                        placeholder="Nome da empresa do cliente"
+                        value={clientName}
+                        onChange={(e) => setClientName(e.target.value)}
+                        className="mt-1 h-9 text-xs bg-slate-50 dark:bg-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                    <div className="space-y-1.5">
                       <Label className="text-xs font-bold">Segmento da Empresa</Label>
                       <Input
                         placeholder="Ex: Odontologia, Educação, Imobiliária"
@@ -963,588 +964,526 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
                         onChange={(e) => setPrerequisites(p => ({ ...p, segmento: e.target.value }))}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs font-bold">Nº de Unidades / Filiais</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold">Horário Comercial de Atendimento</Label>
                       <Input
-                        type="number"
-                        min={1}
-                        value={prerequisites.unidades}
-                        onChange={(e) => setPrerequisites(p => ({ ...p, unidades: e.target.value }))}
+                        placeholder="Ex: 08:00 às 18:00 (Seg a Sex)"
+                        value={operacao.horarioComercial}
+                        onChange={(e) => setOperacao(o => ({ ...o, horarioComercial: e.target.value }))}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs font-bold">Nº de Atendentes Operacionais</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold">Responsáveis pelo Lado do Cliente</Label>
                       <Input
-                        type="number"
-                        min={1}
-                        value={prerequisites.atendentes}
-                        onChange={(e) => setPrerequisites(p => ({ ...p, atendentes: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold">Participantes da Reunião (Lado Cliente)</Label>
-                    <Input
-                      placeholder="Ex: João (Sócio-diretor - Decisor), Maria (Supervisora - Operador)"
-                      value={prerequisites.participantes}
-                      onChange={(e) => setPrerequisites(p => ({ ...p, participantes: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-xl">
-                    <Checkbox
-                      id="contratoAssinado"
-                      checked={prerequisites.contratoAssinado}
-                      onCheckedChange={(checked) => setPrerequisites(p => ({ ...p, contratoAssinado: !!checked }))}
-                    />
-                    <Label htmlFor="contratoAssinado" className="text-xs font-bold text-emerald-800 dark:text-emerald-300 cursor-pointer">
-                      Contrato de prestação de serviços devidamente assinado em mãos (Evita prometer módulos não contratados).
-                    </Label>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* SEÇÃO 1: OPERAÇÃO */}
-            <TabsContent value="operacao" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    1. Operação (Kanban, Follow-up & Campanhas)
-                    <Badge variant="outline" className="text-xs">Essencial + Avançado [E+A]</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* 1.1 Dashboard / Kanban */}
-                  <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      1.1 Dashboard / Conversas & Funil de Vendas
-                    </h4>
-                    <div className="space-y-2">
-                      <Label className="text-xs font-bold flex items-center gap-1.5">
-                        Etapas do Funil de Vendas (Colunas do Kanban) <Badge variant="secondary" className="text-[10px]">E+A</Badge>
-                      </Label>
-                      <Input
-                        placeholder="Ex: Novo Lead, Qualificado, Agendado, Proposta Enviada, Fechado, Perdido"
-                        value={operacao.kanbanEtapas}
-                        onChange={(e) => setOperacao(o => ({ ...o, kanbanEtapas: e.target.value }))}
-                      />
-                    </div>
-
-                    {modelType === "avancado" && (
-                      <div className="space-y-2 pt-2">
-                        <Label className="text-xs font-bold flex items-center gap-1.5 text-purple-700 dark:text-purple-300">
-                          Critério de Movimentação de Etapa (Manual ou Automação) <Badge className="bg-purple-600 text-white text-[10px]">Avançado [A]</Badge>
-                        </Label>
-                        <Textarea
-                          placeholder="Ex: Lead muda automaticamente para 'Agendado' quando a reunião é criada no CRM ou pela IA."
-                          value={operacao.kanbanMoverRegra}
-                          onChange={(e) => setOperacao(o => ({ ...o, kanbanMoverRegra: e.target.value }))}
-                          className="h-20"
-                        />
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Visão Preferida da Equipe <Badge variant="secondary" className="text-[10px]">E+A</Badge></Label>
-                        <Select
-                          value={operacao.visaoPreferida}
-                          onValueChange={(val) => setOperacao(o => ({ ...o, visaoPreferida: val }))}
-                        >
-                          <SelectTrigger className="bg-white dark:bg-slate-800">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="inbox">Inbox de Conversas (Recomendado para equipes técnicas/atendentes)</SelectItem>
-                            <SelectItem value="kanban">Visão Kanban (Colunas de Negociação)</SelectItem>
-                            <SelectItem value="lista">Visão em Lista Tabular</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Acesso à Tela de Conversas <Badge variant="secondary" className="text-[10px]">E+A</Badge></Label>
-                        <Select
-                          value={operacao.quemAcessa}
-                          onValueChange={(val) => setOperacao(o => ({ ...o, quemAcessa: val }))}
-                        >
-                          <SelectTrigger className="bg-white dark:bg-slate-800">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="todos">Todos os Atendentes e Vendedores</SelectItem>
-                            <SelectItem value="supervisao">Apenas Supervisão e Gerência</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 1.2 Follow-up */}
-                  <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      1.2 Regras de Follow-up
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Gatilho Principal de Follow-up <Badge variant="secondary" className="text-[10px]">E+A</Badge></Label>
-                        <Input
-                          placeholder="Ex: Lead sem resposta há 24h ou agendamento não confirmado"
-                          value={operacao.followupGatilho}
-                          onChange={(e) => setOperacao(o => ({ ...o, followupGatilho: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Horário Comercial Permitido <Badge variant="secondary" className="text-[10px]">E+A</Badge></Label>
-                        <Input
-                          placeholder="Ex: 08:00 às 18:00 (Nunca disparar de madrugada)"
-                          value={operacao.horarioComercial}
-                          onChange={(e) => setOperacao(o => ({ ...o, horarioComercial: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-
-                    {modelType === "avancado" && (
-                      <div className="space-y-2 pt-2">
-                        <Label className="text-xs font-bold text-purple-700 dark:text-purple-300">
-                          Intervalo & Cadência de Tentativas <Badge className="bg-purple-600 text-white text-[10px]">Avançado [A]</Badge>
-                        </Label>
-                        <Input
-                          placeholder="Ex: 1ª tentativa em 24h, 2ª tentativa em 48h, max 3 tentativas antes de marcar perdido"
-                          value={operacao.followupIntervalo}
-                          onChange={(e) => setOperacao(o => ({ ...o, followupIntervalo: e.target.value }))}
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 1.3 Campanhas */}
-                  <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      1.3 Campanhas & Disparos de Origem
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Origem dos Leads para Campanhas <Badge variant="secondary" className="text-[10px]">E+A</Badge></Label>
-                        <Select
-                          value={operacao.campanhasBase}
-                          onValueChange={(val) => setOperacao(o => ({ ...o, campanhasBase: val }))}
-                        >
-                          <SelectTrigger className="bg-white dark:bg-slate-800">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="leads_sistema">Apenas Leads Gerados no Sistema</SelectItem>
-                            <SelectItem value="base_propria">Importar Planilha / Base Própria</SelectItem>
-                            <SelectItem value="ambas">Ambas as Fontes</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Expectativa de Volume Mensal <Badge variant="secondary" className="text-[10px]">E+A</Badge></Label>
-                        <Input
-                          placeholder="Ex: 500 a 1.000 mensagens/mês"
-                          value={operacao.campanhasVolumeEstimado}
-                          onChange={(e) => setOperacao(o => ({ ...o, campanhasVolumeEstimado: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl space-y-1.5">
-                      <Label className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
-                        <ShieldAlert className="h-4 w-4 text-amber-600" />
-                        Origem da Base Importada & Opt-in (Prevenção de Anti-ban) <Badge variant="secondary" className="text-[10px]">E+A</Badge>
-                      </Label>
-                      <Input
-                        placeholder="Descreva como os contatos foram coletados (ex: formulário do site com consentimento explícito)"
-                        value={operacao.campanhasOrigemOptIn}
-                        onChange={(e) => setOperacao(o => ({ ...o, campanhasOrigemOptIn: e.target.value }))}
-                        className="bg-white dark:bg-slate-900"
+                        placeholder="Ex: João (Sócio-Decisor), Ana (Supervisora)"
+                        value={prerequisites.participantes}
+                        onChange={(e) => setPrerequisites(p => ({ ...p, participantes: e.target.value }))}
                       />
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
 
-            {/* SEÇÃO 2: INTELIGÊNCIA */}
-            <TabsContent value="inteligencia" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    2. Inteligência Comercial & Relatórios
-                    {modelType === "avancado" ? <Badge className="bg-purple-600 text-white text-xs">Avançado [A]</Badge> : <Badge variant="outline" className="text-xs">Essencial [E]</Badge>}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {modelType === "avancado" && (
-                    <div className="space-y-4 p-4 bg-purple-50/40 dark:bg-purple-950/20 rounded-xl border border-purple-200 dark:border-purple-900/50">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-purple-900 dark:text-purple-300">
-                        2.1 Parâmetros da Tela de Inteligência Comercial [A]
+                  {/* REGRAS DE ROTEAMENTO DO MODELO */}
+                  <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <Users className="h-4 w-4 text-purple-600" />
+                        Perfil da Operação & Escolha da Trilha
                       </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold">SLA Alvo de 1ª Resposta (Minutos)</Label>
-                          <Input
-                            placeholder="Ex: 15 min"
-                            value={inteligencia.slaPrimeiraRespostaMinutos}
-                            onChange={(e) => setInteligencia(i => ({ ...i, slaPrimeiraRespostaMinutos: e.target.value }))}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold">Taxa de Conversão Meta (%)</Label>
-                          <Input
-                            placeholder="Ex: 12%"
-                            value={inteligencia.taxaConversaoMeta}
-                            onChange={(e) => setInteligencia(i => ({ ...i, taxaConversaoMeta: e.target.value }))}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold">Ticket Médio Estimado (R$)</Label>
-                          <Input
-                            placeholder="Ex: R$ 1.500,00"
-                            value={inteligencia.ticketMedioEstimado}
-                            onChange={(e) => setInteligencia(i => ({ ...i, ticketMedioEstimado: e.target.value }))}
-                          />
-                        </div>
-                      </div>
+                      {manualOverride && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          Seleção Manual Ativa
+                        </Badge>
+                      )}
+                    </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Origens de Tráfego / Canais de Entrada a Acompanhar</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Número de Funcionários / Atendentes</Label>
                         <Input
-                          placeholder="Ex: Google Ads, Meta Ads, WhatsApp Direto, Indicação"
-                          value={inteligencia.origensTrafego}
-                          onChange={(e) => setInteligencia(i => ({ ...i, origensTrafego: e.target.value }))}
+                          type="number"
+                          min={1}
+                          value={numEmployees}
+                          onChange={(e) => setNumEmployees(parseInt(e.target.value) || 1)}
+                          className="w-full bg-slate-50 dark:bg-slate-800"
                         />
                       </div>
+
+                      <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700">
+                        <div className="space-y-0.5">
+                          <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Possui Setor Comercial Dedicado?</Label>
+                          <p className="text-[11px] text-slate-500">Equipe de vendas própria estruturada.</p>
+                        </div>
+                        <Switch
+                          checked={hasCommercialSector}
+                          onCheckedChange={(checked) => setHasCommercialSector(checked)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* SELETORES DE MODELO */}
+                    <div className="pt-2">
+                      <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 block">
+                        Modelo de Implantação Selecionado:
+                      </Label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModelType("essencial");
+                            setManualOverride(true);
+                          }}
+                          className={`p-4 rounded-xl border text-left transition-all relative cursor-pointer ${
+                            modelType === "essencial"
+                              ? "border-blue-600 bg-blue-50/60 dark:bg-blue-950/30 ring-2 ring-blue-500/20"
+                              : "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-black text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
+                              <Badge className="bg-blue-600 hover:bg-blue-700 text-white">Trilha [E]</Badge>
+                              Modelo Essencial
+                            </span>
+                            {suggestedModel === "essencial" && (
+                              <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-950 px-2 py-0.5 rounded-full">
+                                Sugerido
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-600 dark:text-slate-400">
+                            Operação simplificada (menos de 3 func). Foco em Kanban simples, Follow-up e IA básica.
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModelType("avancado");
+                            setManualOverride(true);
+                          }}
+                          className={`p-4 rounded-xl border text-left transition-all relative cursor-pointer ${
+                            modelType === "avancado"
+                              ? "border-purple-600 bg-purple-50/60 dark:bg-purple-950/30 ring-2 ring-purple-500/20"
+                              : "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-black text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
+                              <Badge className="bg-purple-600 hover:bg-purple-700 text-white">Trilha [A]</Badge>
+                              Modelo Avançado
+                            </span>
+                            {suggestedModel === "avancado" && (
+                              <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950 px-2 py-0.5 rounded-full">
+                                Sugerido
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-600 dark:text-slate-400">
+                            Operação robusta com equipe. Inclui Inteligência Comercial, Inbound IA e Automações avançadas.
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* PASSO 2: USUÁRIOS & ACESSOS DA EQUIPE */}
+          {currentStep === 2 && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base font-bold flex items-center gap-2">
+                        <Users className="h-5 w-5 text-blue-500" />
+                        Passo 2: Cadastro de Usuários & E-mails da Equipe
+                      </CardTitle>
+                      <CardDescription className="text-xs mt-1">
+                        Cadastre os e-mails e cargos dos colaboradores da empresa do cliente para liberação de acessos no CRM.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={addTeamUser}
+                      size="sm"
+                      className="h-9 font-bold text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      + Adicionar Usuário
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {teamUsers.length === 0 ? (
+                    <div className="py-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                      <Users className="h-8 w-8 text-slate-400 mx-auto" />
+                      <p className="text-xs font-bold text-slate-600">Nenhum usuário cadastrado até o momento.</p>
+                      <Button
+                        type="button"
+                        onClick={addTeamUser}
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs font-bold gap-1"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Adicionar Primeiro Usuário
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                            <th className="p-3">Nome Completo</th>
+                            <th className="p-3">E-mail de Login</th>
+                            <th className="p-3">Perfil / Perfil de Acesso</th>
+                            <th className="p-3 text-center w-16">Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                          {teamUsers.map((user) => (
+                            <tr key={user.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/50">
+                              <td className="p-2.5">
+                                <Input
+                                  placeholder="Ex: Ana Souza"
+                                  value={user.name}
+                                  onChange={(e) => updateTeamUser(user.id, "name", e.target.value)}
+                                  className="h-9 text-xs"
+                                />
+                              </td>
+                              <td className="p-2.5">
+                                <Input
+                                  type="email"
+                                  placeholder="ana@empresa.com.br"
+                                  value={user.email}
+                                  onChange={(e) => updateTeamUser(user.id, "email", e.target.value)}
+                                  className="h-9 text-xs"
+                                />
+                              </td>
+                              <td className="p-2.5">
+                                <Select
+                                  value={user.role}
+                                  onValueChange={(val) => updateTeamUser(user.id, "role", val as any)}
+                                >
+                                  <SelectTrigger className="h-9 text-xs bg-white dark:bg-slate-900">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="admin">Administrador (Gestor)</SelectItem>
+                                    <SelectItem value="sdr">Consultor SDR (Vendas)</SelectItem>
+                                    <SelectItem value="atendente">Atendente (Suporte/Operação)</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </td>
+                              <td className="p-2.5 text-center">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => removeTeamUser(user.id)}
+                                  className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
 
-                  {/* 2.2 Relatórios */}
-                  <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      2.2 Frequência & Entrega de Relatórios <Badge variant="secondary" className="text-[10px]">E+A</Badge>
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Frequência de Envio</Label>
-                        <Select
-                          value={inteligencia.relatoriosFrequencia}
-                          onValueChange={(val) => setInteligencia(i => ({ ...i, relatoriosFrequencia: val }))}
-                        >
-                          <SelectTrigger className="bg-white dark:bg-slate-800">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="diario">Diário</SelectItem>
-                            <SelectItem value="semanal">Semanal (Recomendado)</SelectItem>
-                            <SelectItem value="mensal">Mensal</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Formato de Recebimento</Label>
-                        <Select
-                          value={inteligencia.relatoriosFormato}
-                          onValueChange={(val) => setInteligencia(i => ({ ...i, relatoriosFormato: val }))}
-                        >
-                          <SelectTrigger className="bg-white dark:bg-slate-800">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="sistema">Dentro do CRM (Dashboard)</SelectItem>
-                            <SelectItem value="pdf">Exportação em PDF</SelectItem>
-                            <SelectItem value="whatsapp_email">Envio Automático via WhatsApp / E-mail</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
+                  <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                    <Label className="text-xs font-bold">Quem terá acesso à Tela de Conversas / Inbox?</Label>
+                    <Select
+                      value={operacao.quemAcessa}
+                      onValueChange={(val) => setOperacao(o => ({ ...o, quemAcessa: val }))}
+                    >
+                      <SelectTrigger className="h-9 text-xs bg-white dark:bg-slate-800">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todos os Atendentes e Consultores SDRs</SelectItem>
+                        <SelectItem value="supervisao">Apenas Supervisores e Administradores</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
+          )}
 
-            {/* SEÇÃO 3: AGENTE IA (Presente nas DUAS trilhas: E + A) */}
-            <TabsContent value="agente_ia" className="mt-4">
+          {/* PASSO 3: BASE DE CONHECIMENTO (UPLOAD DE ARQUIVOS) */}
+          {currentStep === 3 && (
+            <div className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base font-bold flex items-center gap-2">
-                    3. Treinamento & Configuração do Agente IA
-                    <Badge variant="outline" className="text-xs">Essencial + Avançado [E+A]</Badge>
+                    <FileText className="h-5 w-5 text-indigo-500" />
+                    Passo 3: Base de Conhecimento da Empresa (Documentos & Regras)
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    Mesmo no modelo Essencial, a IA opera nos disparos e no atendimento do WhatsApp.
+                    Anexe cardápios, PDFs de preços, contratos padrão, políticas de troca e FAQs para alimentar o cérebro da Inteligência Artificial.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* 3.1 Comportamento */}
-                  <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      3.1 Comportamento & Tom de Voz <Badge variant="secondary" className="text-[10px]">E+A</Badge>
+
+                  {/* UPLOAD AREA */}
+                  <div className="relative border-2 border-dashed border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/30 dark:bg-indigo-950/20 hover:bg-indigo-50/70 transition-all rounded-2xl p-6 text-center space-y-3">
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.txt,.docx,.doc,.csv,.xlsx"
+                      onChange={handleFileUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center mx-auto text-indigo-600 dark:text-indigo-400">
+                      <Upload className="h-6 w-6" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-black text-slate-800 dark:text-slate-100">
+                        Clique aqui ou arraste os arquivos de conhecimento
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Formatos aceitos: PDF, TXT, DOCX, CSV (Cardápios, Tabelas de Preço, Manuais, PDFs)
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] border-indigo-300 text-indigo-700 bg-white dark:bg-slate-900 font-bold">
+                      Upload automático armazenado no briefing
+                    </Badge>
+                  </div>
+
+                  {/* LISTA DE ARQUIVOS ANEXADOS */}
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                      <span>Documentos Anexados na Base ({knowledgeFiles.length})</span>
+                      {knowledgeFiles.length > 0 && (
+                        <span className="text-[11px] font-normal text-slate-400">
+                          {knowledgeFiles.reduce((acc, f) => acc + (f.size || 0), 0) > 0 &&
+                            formatFileSize(knowledgeFiles.reduce((acc, f) => acc + (f.size || 0), 0))}
+                        </span>
+                      )}
                     </h4>
+
+                    {knowledgeFiles.length === 0 ? (
+                      <div className="p-6 text-center border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-400">
+                        Nenhum arquivo anexado ainda. Faça upload dos materiais da empresa acima.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {knowledgeFiles.map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex items-center justify-between p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              {getFileIcon(file.name)}
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                                  {file.name}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-mono">
+                                  {formatFileSize(file.size)}
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeKnowledgeFile(file.id)}
+                              className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 shrink-0"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* CAMPO DE LINKS ADICIONAIS */}
+                  <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <Label className="text-xs font-bold">Links de Drive, Sites ou Catálogos Externos</Label>
+                    <Textarea
+                      placeholder="Cole aqui links adicionais de materiais de apoio (ex: https://drive.google.com/... ou https://site.com.br/catalogo)"
+                      value={agenteIa.materialAnexoUrls}
+                      onChange={(e) => setAgenteIa(a => ({ ...a, materialAnexoUrls: e.target.value }))}
+                      className="h-20 text-xs"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* PASSO 4: REGRAS DA IA & CANAIS */}
+          {currentStep === 4 && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base font-bold flex items-center gap-2">
+                    <Bot className="h-5 w-5 text-purple-500" />
+                    Passo 4: Regras da Inteligência Artificial & Alerta de SDRs
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Defina o tom de voz do robô, regras de transbordo para humanos, WhatsApps dos SDRs e chips do tenant.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* TOM DE VOZ E DIRETIAS */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold">Tom de Voz Desejado</Label>
+                      <Label className="text-xs font-bold">Tom de Voz do Agente IA</Label>
                       <Input
-                        placeholder="Ex: Formal, Consultivo, Amigável, Direto"
+                        placeholder="Ex: Casual, Consultivo, Formal, Entusiasta"
                         value={agenteIa.tomDeVoz}
                         onChange={(e) => setAgenteIa(a => ({ ...a, tomDeVoz: e.target.value }))}
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold">2-3 Exemplos Reais de Mensagens que a Empresa já envia</Label>
-                      <Textarea
-                        placeholder="Ex: 'Olá! Sou a IA da Clínica X. Como posso te ajudar a agendar sua consulta hoje?'"
-                        value={agenteIa.exemplosMensagens}
-                        onChange={(e) => setAgenteIa(a => ({ ...a, exemplosMensagens: e.target.value }))}
-                        className="h-20"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-xs font-bold">Regra de Transbordo / Escalonamento para Atendente Humano</Label>
+                      <Label className="text-xs font-bold">Regra de Escalonamento (Transferir para Humano)</Label>
                       <Input
-                        placeholder="Ex: Transferir quando o lead solicitar orçamento customizado ou demonstrar insatisfação."
+                        placeholder="Ex: Transferir ao pedir orçamento customizado ou se pedir atendente"
                         value={agenteIa.regraEscalonamento}
                         onChange={(e) => setAgenteIa(a => ({ ...a, regraEscalonamento: e.target.value }))}
                       />
                     </div>
                   </div>
 
-                  {/* 3.2 Conteúdo */}
-                  <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      3.2 Base de Conhecimento & Limites <Badge variant="secondary" className="text-[10px]">E+A</Badge>
-                    </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold">O que o Agente PRECISA saber (Preços, horários, localização, serviços)</Label>
+                      <Label className="text-xs font-bold text-emerald-700 dark:text-emerald-400">O que a IA DEVE informar obrigatoriamente</Label>
                       <Textarea
-                        placeholder="Descreva as informações fundamentais do negócio..."
+                        placeholder="Ex: Endereço completo, horários, preços padrão e link de agendamento."
                         value={agenteIa.precisaSaber}
                         onChange={(e) => setAgenteIa(a => ({ ...a, precisaSaber: e.target.value }))}
-                        className="h-20"
+                        className="h-24 text-xs"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold">O que o Agente NÃO PODE informar (Ex: Descontos sem consulta, termos jurídicos)</Label>
-                      <Input
-                        placeholder="Ex: Nunca informar valores de procedimentos cirúrgicos antes de consulta presencial."
+                      <Label className="text-xs font-bold text-red-700 dark:text-red-400">O que a IA NÃO PODE informar / prometer</Label>
+                      <Textarea
+                        placeholder="Ex: Descontos acima de 10% sem falar com gerente, prazos abaixo de 5 dias."
                         value={agenteIa.naoPodeInformar}
                         onChange={(e) => setAgenteIa(a => ({ ...a, naoPodeInformar: e.target.value }))}
+                        className="h-24 text-xs"
                       />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Link/URL de Anexo de Materiais (FAQ, Scripts, PDFs)</Label>
-                        <Input
-                          placeholder="Link da nuvem ou documento de treino"
-                          value={agenteIa.materialAnexoUrls}
-                          onChange={(e) => setAgenteIa(a => ({ ...a, materialAnexoUrls: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Validador pelo Lado do Cliente</Label>
-                        <Input
-                          placeholder="Nome da pessoa responsável por aprovar os prompts"
-                          value={agenteIa.quemValidaCliente}
-                          onChange={(e) => setAgenteIa(a => ({ ...a, quemValidaCliente: e.target.value }))}
-                        />
-                      </div>
                     </div>
                   </div>
 
-                  {/* 3.3 e 3.4 EXCLUSIVOS DO AVANÇADO */}
-                  {modelType === "avancado" && (
-                    <div className="space-y-4 p-4 bg-purple-50/40 dark:bg-purple-950/20 rounded-xl border border-purple-200 dark:border-purple-900/50">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-purple-900 dark:text-purple-300 flex items-center gap-2">
-                        3.3 & 3.4 Operação de Agente IA & Inbound <Badge className="bg-purple-600 text-white text-[10px]">Avançado [A]</Badge>
-                      </h4>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold">Etapas do Funil onde o Agente Opera</Label>
-                          <Input
-                            placeholder="Ex: Triagem, Pré-qualificação e Agendamento"
-                            value={agenteIa.kanbanAgenteEtapas}
-                            onChange={(e) => setAgenteIa(a => ({ ...a, kanbanAgenteEtapas: e.target.value }))}
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold">Modo Inbound</Label>
-                          <Select
-                            value={agenteIa.inboundIniciaOuResponde}
-                            onValueChange={(val) => setAgenteIa(a => ({ ...a, inboundIniciaOuResponde: val }))}
-                          >
-                            <SelectTrigger className="bg-white dark:bg-slate-800">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="responde">Apenas Responde quando o Lead entra em contato</SelectItem>
-                              <SelectItem value="inicia">Inicia a conversa ativamente (Outbound/Disparo)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Qualificação Obrigatória Antes do Atendimento Humano</Label>
-                        <Input
-                          placeholder="Ex: Coletar Nome, Cidade e Orçamento estimado antes de passar para o corretor."
-                          value={agenteIa.qualificacaoObrigatoria}
-                          onChange={(e) => setAgenteIa(a => ({ ...a, qualificacaoObrigatoria: e.target.value }))}
-                        />
-                      </div>
+                  {/* WHATSAPPS DOS SDRs PARA BROADCAST */}
+                  <div className="p-4 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900 rounded-xl space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                      <Label className="text-xs font-black uppercase text-purple-900 dark:text-purple-200">
+                        Lista de WhatsApps dos SDRs (Alertas Simultâneos / Broadcast)
+                      </Label>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
+                    <p className="text-xs text-purple-700 dark:text-purple-300">
+                      Quando um lead for qualificado como QUENTE ou pedir recontato, todos esses números receberão o alerta de WhatsApp no mesmo instante.
+                    </p>
+                    <Input
+                      placeholder="Ex: 34999998888, 34988887777 (separados por vírgula com DDD)"
+                      value={operacao.sdrWhatsappNumbers}
+                      onChange={(e) => setOperacao(o => ({ ...o, sdrWhatsappNumbers: e.target.value }))}
+                      className="bg-white dark:bg-slate-900 text-xs font-mono"
+                    />
+                  </div>
 
-            {/* SEÇÃO 4: CANAIS */}
-            <TabsContent value="canais" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    4. Conexões de WhatsApp & Aquecimento
-                    <Badge variant="outline" className="text-xs">Essencial + Avançado [E+A]</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* CHIPS E CANAIS */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold">Quantidade de Chips WhatsApp Necessários <Badge variant="secondary" className="text-[10px]">E+A</Badge></Label>
-                      <Input
-                        type="number"
-                        min={1}
+                      <Label className="text-xs font-bold">Quantidade de Chips WhatsApp Contratados</Label>
+                      <Select
                         value={canais.quantosChips}
-                        onChange={(e) => setCanais(c => ({ ...c, quantosChips: e.target.value }))}
-                      />
+                        onValueChange={(val) => setCanais(c => ({ ...c, quantosChips: val }))}
+                      >
+                        <SelectTrigger className="bg-white dark:bg-slate-900">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 Chip de Atendimento</SelectItem>
+                          <SelectItem value="2">2 Chips (Rodízio)</SelectItem>
+                          <SelectItem value="3">3 Chips (Rodízio)</SelectItem>
+                          <SelectItem value="4+">4 ou mais Chips</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold">Histórico do Número <Badge variant="secondary" className="text-[10px]">E+A</Badge></Label>
+                      <Label className="text-xs font-bold">Tipo do Número de WhatsApp</Label>
                       <Select
                         value={canais.numeroNovoOuHistorico}
                         onValueChange={(val) => setCanais(c => ({ ...c, numeroNovoOuHistorico: val }))}
                       >
-                        <SelectTrigger className="bg-white dark:bg-slate-800">
+                        <SelectTrigger className="bg-white dark:bg-slate-900">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="numero_novo">Número Novo (Requer curva de aquecimento gradual)</SelectItem>
-                          <SelectItem value="ja_usado">Número Antigo com Histórico Comercial</SelectItem>
+                          <SelectItem value="numero_novo">Número Novo (Requer Aquecimento)</SelectItem>
+                          <SelectItem value="ja_usado">Número Antigo / Já em Uso</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
-
-                  <div className="p-4 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-xl space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-amber-600" />
-                      <Label className="text-xs font-bold text-amber-900 dark:text-amber-300">
-                        Curva de Aquecimento & Prevenção Anti-ban (Evolution API)
-                      </Label>
-                    </div>
-                    <Input
-                      placeholder="Prazo esperado para operar em volume máximo (ex: 14 a 21 dias)"
-                      value={canais.prazoVolumeTotal}
-                      onChange={(e) => setCanais(c => ({ ...c, prazoVolumeTotal: e.target.value }))}
-                      className="bg-white dark:bg-slate-900"
-                    />
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="aquecimentoAlinhado"
-                        checked={canais.aquecimentoAlinhado}
-                        onCheckedChange={(checked) => setCanais(c => ({ ...c, aquecimentoAlinhado: !!checked }))}
-                      />
-                      <Label htmlFor="aquecimentoAlinhado" className="text-xs font-medium text-amber-800 dark:text-amber-400 cursor-pointer">
-                        Alinhado com o cliente: o chip novo entra com limite restrito e sobe gradualmente pelas ferramentas de aquecimento do CRM.
-                      </Label>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs text-slate-500 font-mono flex items-center justify-between">
-                    <span>Nota Interna: A aba Evolution Admin (/crm/chips-whatsapp?tab=evolution-admin) é restrita a administradores do sistema.</span>
-                    <Badge variant="outline" className="text-[10px]">Admin Only</Badge>
-                  </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
+          )}
 
-            {/* SEÇÃO 5: MÓDULOS (Avançado apenas) */}
-            {modelType === "avancado" && (
-              <TabsContent value="modulos" className="mt-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base font-bold flex items-center gap-2 text-purple-900 dark:text-purple-300">
-                      5. Módulos Específicos do Cliente
-                      <Badge className="bg-purple-600 text-white text-xs">Avançado [A]</Badge>
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      Módulos customizados para necessidades exclusivas do negócio do cliente.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between p-3 bg-purple-50/50 dark:bg-purple-950/20 rounded-xl border border-purple-200 dark:border-purple-900">
-                      <div className="space-y-0.5">
-                        <Label className="text-xs font-bold">O cliente necessita de algum módulo específico do negócio dele?</Label>
-                        <p className="text-[11px] text-slate-500">Recurso exclusivo não contemplado nas automações padrão.</p>
-                      </div>
-                      <Switch
-                        checked={modulosCustom.necessidadeEspecifica}
-                        onCheckedChange={(checked) => setModulosCustom(m => ({ ...m, necessidadeEspecifica: checked }))}
-                      />
+          {/* PASSO 5: CONCLUSÃO & SINCRONIZAÇÃO */}
+          {currentStep === 5 && (
+            <div className="space-y-6">
+              <Card className="border-emerald-200 dark:border-emerald-900/50 bg-gradient-to-br from-emerald-50/40 to-slate-50 dark:from-emerald-950/20 dark:to-slate-900 shadow-sm">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                      <CardTitle className="text-lg font-black text-slate-900 dark:text-white">
+                        Passo 5: Conclusão & Resumo de Implantação
+                      </CardTitle>
+                    </div>
+                    <Badge className="bg-emerald-600 text-white font-bold">
+                      Revisão Final
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs text-slate-600 dark:text-slate-400">
+                    Confira a compilação do onboarding técnico de {clientName || "Cliente"} antes de finalizar.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* CARDS RESUMO */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 border-b pb-2">
+                        <Building2 className="h-4 w-4 text-indigo-500" />
+                        Empresa & Trilha
+                      </h4>
+                      <div><strong>Cliente:</strong> {clientName || "Não informado"}</div>
+                      <div><strong>Modelo:</strong> {modelType === "avancado" ? "Trilha Avançada [A]" : "Trilha Essencial [E]"}</div>
+                      <div><strong>Segmento:</strong> {prerequisites.segmento || "Não informado"}</div>
+                      <div><strong>Horário:</strong> {operacao.horarioComercial}</div>
                     </div>
 
-                    {modulosCustom.necessidadeEspecifica && (
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Descrição da Necessidade (1 Frase)</Label>
-                        <Textarea
-                          placeholder="Ex: Integração com sistema de agendamento próprio via webhook."
-                          value={modulosCustom.descricao}
-                          onChange={(e) => setModulosCustom(m => ({ ...m, descricao: e.target.value }))}
-                          className="h-20"
-                        />
-                        <p className="text-[11px] text-amber-600 font-semibold">
-                          ⚠️ Importante: Não prometer prazo de entrega de módulo customizado sem validação prévia com o time de engenharia.
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            )}
-
-            {/* SEÇÃO 6: FECHAMENTO */}
-            <TabsContent value="fechamento" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    6. Fechamento da Reunião de Implantação
-                    <Badge variant="outline" className="text-xs">Essencial + Avançado [E+A]</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <Checkbox
-                      id="recapitulado"
-                      checked={fechamento.recapitulado}
-                      onCheckedChange={(checked) => setFechamento(f => ({ ...f, recapitulado: !!checked }))}
-                    />
-                    <Label htmlFor="recapitulado" className="text-xs font-bold cursor-pointer">
-                      Cada seção foi recapitulada verbalmente com o cliente, alinhando expectativas operacionais.
-                    </Label>
+                    <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 border-b pb-2">
+                        <Users className="h-4 w-4 text-blue-500" />
+                        Equipe & Base de Conhecimento
+                      </h4>
+                      <div><strong>Usuários Cadastrados:</strong> {teamUsers.length} e-mail(s)</div>
+                      <div><strong>Documentos Anexados:</strong> {knowledgeFiles.length} arquivo(s)</div>
+                      <div><strong>Chips WhatsApp:</strong> {canais.quantosChips} chip(s)</div>
+                    </div>
                   </div>
 
+                  {/* CAMPOS DE GO LIVE */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <Label className="text-xs font-bold">Data Prevista para Go-Live</Label>
                       <Input
                         type="date"
@@ -1553,7 +1492,7 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
                       />
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <Label className="text-xs font-bold">Responsável pelo Próximo Contato</Label>
                       <Input
                         placeholder="Ex: Gestora de Contas (Ana)"
@@ -1562,7 +1501,7 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
                       />
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <Label className="text-xs font-bold">Data do Próximo Contato</Label>
                       <Input
                         type="date"
@@ -1571,34 +1510,84 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
                       />
                     </div>
                   </div>
+
+                  {/* BOTÕES DE AÇÃO DE EXPORTAÇÃO */}
+                  <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                    <Label className="text-xs font-bold block">Ações de Envio e Documentação:</Label>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleExportPdf({ client_name: clientName, tenant_id: selectedTenantId, model_type: modelType, num_employees: numEmployees, has_commercial_sector: hasCommercialSector, prerequisites, operacao, inteligencia, agente_ia: agenteIa, canais, status: "concluido" })}
+                        className="h-10 text-xs font-bold gap-2 border-indigo-200 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100"
+                      >
+                        <Printer className="h-4 w-4" />
+                        Exportar PDF Estilizado
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleOpenWhatsAppModal({ client_name: clientName, model_type: modelType, num_employees: numEmployees, has_commercial_sector: hasCommercialSector, prerequisites, inteligencia, agente_ia: agenteIa, canais, operacao, status: "concluido" })}
+                        className="h-10 text-xs font-bold gap-2 border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        Enviar no WhatsApp
+                      </Button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
+            </div>
+          )}
 
-        {/* BOTÕES DE AÇÃO E SALVAMENTO */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
-          <Button
-            variant="outline"
-            onClick={() => saveMutation.mutate("em_andamento")}
-            disabled={saveMutation.isPending}
-            className="h-11 font-bold text-xs gap-2"
-          >
-            <Save className="h-4 w-4" />
-            Salvar Rascunho
-          </Button>
+          {/* BARRA DE NAVEGAÇÃO DOS PASSOS (INFERIOR) */}
+          <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCurrentStep((prev) => Math.max(1, prev - 1))}
+              disabled={currentStep === 1}
+              className="h-10 text-xs font-bold gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Passo Anterior
+            </Button>
 
-          <Button
-            onClick={() => saveMutation.mutate("concluido")}
-            disabled={saveMutation.isPending}
-            className="h-11 font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-md shadow-emerald-600/20 px-6"
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            {editingBriefingId ? "Atualizar & Salvar Implantação" : "Concluir & Sincronizar Tenant"}
-          </Button>
+            {currentStep < 5 ? (
+              <Button
+                type="button"
+                onClick={() => setCurrentStep((prev) => Math.min(5, prev + 1))}
+                className="h-10 px-6 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white gap-2 cursor-pointer shadow-sm"
+              >
+                Próximo Passo
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => saveMutation.mutate("em_andamento")}
+                  disabled={saveMutation.isPending}
+                  className="h-10 text-xs font-bold gap-2 border-slate-300"
+                >
+                  <Save className="h-4 w-4 text-slate-500" />
+                  Salvar Rascunho
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => saveMutation.mutate("concluido")}
+                  disabled={saveMutation.isPending}
+                  className="h-10 px-6 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-md cursor-pointer"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {editingBriefingId ? "Atualizar Implantação" : "Finalizar & Sincronizar Tenant"}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       )}
     </PageShell>
   );
