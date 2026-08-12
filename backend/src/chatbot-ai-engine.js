@@ -558,10 +558,15 @@ Sem markdown, sem texto fora do JSON. Schema obrigatório:
   "mensagem": "string — texto da resposta enviada ao lead no WhatsApp",
   "status_conversa": "aguardando_usuario" | "finalizado",
   "dados": { ... },   // campos coletados até agora (acumulado)
+  "lead_source": "Instagram" | "Google Ads" | "Facebook Ads" | "TikTok" | "Indicação" | "Formulário" | "WhatsApp" | "Outro" | null,
   "classificacao": "QUENTE" | "MORNO" | "FRIO",
   "spin_fase": "situacao" | "problema" | "implicacao" | "necessidade" | null,
   "finalizado": true | false
 }
+
+RASTREAMENTO DE ORIGEM DO LEAD:
+• Se a origem do lead (lead_source ou origem_marketing nos dados) ainda não estiver definida, faça uma pergunta leve e natural durante a conversa para saber como ele conheceu a empresa (ex.: "Por sinal, como nos conheceu? Instagram, indicação, Google?").
+• Sempre preencha o campo "lead_source" (ou "origem_marketing" dentro de "dados") assim que identificar o canal de origem (ex.: Instagram, Google Ads, Facebook Ads, TikTok, Indicação, Formulário, WhatsApp, etc.).
 
 REGRA CRÍTICA — quando setar "finalizado": true:
 • Sempre que você emitir a mensagem final de encerramento (ex.: "Fechado. Vou passar pro consultor...", "Vou repassar pro nosso time", ou qualquer despedida que sinalize que o consultor humano vai assumir).
@@ -1085,6 +1090,7 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
     telefone: phone,
     status_conversa: aiResponse.status_conversa,
     status: aiResponse.classificacao,
+    lead_source: aiResponse.lead_source || dadosToSave?.origem_marketing || existing?.lead_source || null,
     spin_fase: aiResponse.spin_fase || null,
     dados: dadosToSave,
     historico: serializeHistorico(newHistory),

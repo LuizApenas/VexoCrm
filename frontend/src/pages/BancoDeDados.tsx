@@ -147,6 +147,7 @@ export default function BancoDeDados() {
   const [activeTab, setActiveTab] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState<string>("");
+  const [selectedSource, setSelectedSource] = useState<string>("");
 
   // WhatsApp Extraction Modal State
   const [isWAModalOpen, setIsWAModalOpen] = useState(false);
@@ -854,6 +855,41 @@ export default function BancoDeDados() {
     }
   };
 
+  // Lead Source Helpers
+  const getLeadSource = (lead: LeadIntelligenceItem): string => {
+    return lead.lead_source || lead.dados?.origem_marketing || lead.dados?.origem || lead.origem || "Não informado";
+  };
+
+  const renderSourceBadge = (sourceStr: string) => {
+    const s = (sourceStr || "").toLowerCase();
+    if (s.includes("instagram")) return <Badge className="bg-pink-500/15 text-pink-700 dark:text-pink-300 border-pink-500/30">📸 Instagram</Badge>;
+    if (s.includes("google")) return <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30">🔍 Google Ads</Badge>;
+    if (s.includes("facebook")) return <Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30">📘 Facebook Ads</Badge>;
+    if (s.includes("tiktok")) return <Badge className="bg-zinc-500/15 text-zinc-900 dark:text-zinc-100 border-zinc-500/30">🎵 TikTok</Badge>;
+    if (s.includes("indica") || s.includes("referral")) return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">🤝 Indicação</Badge>;
+    if (s.includes("form") || s.includes("site")) return <Badge className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30">📝 Formulário</Badge>;
+    if (s.includes("whatsapp")) return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">💬 WhatsApp</Badge>;
+    return <Badge variant="outline" className="text-slate-600 dark:text-slate-300 text-[11px]">{sourceStr || "Não informado"}</Badge>;
+  };
+
+  const availableSources = useMemo(() => {
+    const set = new Set<string>();
+    leads.forEach((l) => {
+      const src = getLeadSource(l);
+      if (src && src !== "Não informado") set.add(src);
+    });
+    return Array.from(set);
+  }, [leads]);
+
+  const topSourceRanking = useMemo(() => {
+    const map = new Map<string, number>();
+    leads.forEach((l) => {
+      const src = getLeadSource(l);
+      map.set(src, (map.get(src) || 0) + 1);
+    });
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  }, [leads]);
+
   // Local filtered search list
   const filteredLeads = useMemo(() => {
     return leads.filter((item) => {
@@ -864,10 +900,12 @@ export default function BancoDeDados() {
 
       const stageOk = activeTab === "all" || item.stage === activeTab;
       const tagOk = !selectedTag || (Array.isArray(item.tags) && item.tags.includes(selectedTag));
+      const sourceStr = getLeadSource(item);
+      const sourceOk = !selectedSource || sourceStr === selectedSource;
 
-      return searchOk && stageOk && tagOk;
+      return searchOk && stageOk && tagOk && sourceOk;
     });
-  }, [leads, searchQuery, activeTab, selectedTag]);
+  }, [leads, searchQuery, activeTab, selectedTag, selectedSource]);
 
   // Dynamic calculation for Receita Oculta card
   const computedRevenue = useMemo(() => {
@@ -1019,7 +1057,7 @@ export default function BancoDeDados() {
         </SectionHeader>
 
         {/* Header Métrico (Cards KPIs) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card className="bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -1091,6 +1129,32 @@ export default function BancoDeDados() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Card Resumido de Origem / Ranking de Canais */}
+          <Card className="bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Ranking de Origem 📊
+              </CardTitle>
+              <Sparkles className="h-4 w-4 text-purple-500" />
+            </CardHeader>
+            <CardContent className="pt-0">
+              {topSourceRanking.length === 0 ? (
+                <p className="text-xs text-muted-foreground mt-2">Sem origens registradas</p>
+              ) : (
+                <div className="space-y-1.5 mt-1">
+                  {topSourceRanking.map(([src, cnt]) => (
+                    <div key={src} className="flex items-center justify-between text-xs">
+                      <span className="truncate max-w-[100px] font-medium text-muted-foreground">{src}</span>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20 font-bold">
+                        {cnt}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Barra de Abas e Busca */}
@@ -1149,6 +1213,20 @@ export default function BancoDeDados() {
               />
             </div>
 
+            {/* Filtro Origem de Marketing */}
+            <select
+              value={selectedSource}
+              onChange={(e) => setSelectedSource(e.target.value)}
+              className="h-9 px-3 rounded-md border border-input bg-background text-xs text-foreground focus:ring-1 focus:ring-ring"
+            >
+              <option value="">Todas as Origens</option>
+              {availableSources.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+
             {availableTags.length > 0 && (
               <select
                 value={selectedTag}
@@ -1201,6 +1279,7 @@ export default function BancoDeDados() {
                         />
                       </TableHead>
                       <TableHead className="w-[220px]">Contato / Nome</TableHead>
+                      <TableHead className="w-[140px]">Origem</TableHead>
                       <TableHead className="w-[150px]">Telefone</TableHead>
                       <TableHead className="w-[140px]">Estágio</TableHead>
                       <TableHead className="w-[120px]">Temperatura</TableHead>
@@ -1259,6 +1338,10 @@ export default function BancoDeDados() {
                                 )}
                               </div>
                             </div>
+                          </TableCell>
+
+                          <TableCell>
+                            {renderSourceBadge(getLeadSource(lead))}
                           </TableCell>
 
                           <TableCell className="text-xs font-mono text-muted-foreground">
