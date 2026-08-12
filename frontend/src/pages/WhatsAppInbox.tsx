@@ -6,6 +6,7 @@ import {
   MessageCircle,
   QrCode,
   RefreshCw,
+  RotateCcw,
   Send,
   Smartphone,
   Wifi,
@@ -13,6 +14,8 @@ import {
 } from "lucide-react";
 import { useCampanhas } from "@/hooks/useCampanhas";
 import { useCrmClient } from "@/hooks/useCrmClient";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchApi } from "@/lib/api";
 import { toast } from "sonner";
 import { PageShell } from "@/components/PageShell";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -190,8 +193,48 @@ export default function WhatsAppInbox({
   const sendMessage = useSendWhatsAppMessage(clientId, selectedChatId);
   const clearChats = useClearWhatsAppChats(clientId);
 
-  const chats = chatsQuery.items ?? [];
-  const messages = messagesQuery.data ?? [];
+  const { getIdToken } = useAuth();
+  const [reabrirPending, setReabrirPending] = useState(false);
+
+  const handleReabrirAtendimento = async () => {
+    if (!selectedChat || !clientId) return;
+    const rawId = String(selectedChat.id || "");
+    const phone = rawId.replace(/\D/g, "");
+    if (!phone) {
+      toast.error("Número de telefone não disponível para esta conversa.");
+      return;
+    }
+
+    setReabrirPending(true);
+    try {
+      const token = await getIdToken();
+      const res = await fetchApi("/api/chatbot-leads/reabrir", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          clientId,
+          phone,
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        const msg = data?.error?.message || data?.message || "Falha ao reabrir atendimento.";
+        toast.error(msg);
+        return;
+      }
+
+      toast.success("Atendimento do chatbot reaberto com sucesso");
+      chatsQuery.refetch();
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao reabrir atendimento.");
+    } finally {
+      setReabrirPending(false);
+    }
+  };
 
   useEffect(() => {
     if (!canLoadInbox) {
@@ -437,29 +480,43 @@ export default function WhatsAppInbox({
                 </div>
 
                 <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-background/30">
-                  <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-                    {selectedChat && <ChatAvatar label={selectedChat.name || String(selectedChat.id)} picture={selectedChat.profilePic} size="sm" />}
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-                          {selectedChat?.name || "Selecione uma conversa"}
+                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {selectedChat && <ChatAvatar label={selectedChat.name || String(selectedChat.id)} picture={selectedChat.profilePic} size="sm" />}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                            {selectedChat?.name || "Selecione uma conversa"}
+                          </p>
+                          {selectedChat && (
+                            <OriginBadge
+                              origin={selectedChat.leadOrigin ?? null}
+                              campaignId={selectedChat.sourceCampaignId ?? null}
+                              campaignNames={campaignNames}
+                            />
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          {selectedChat?.id
+                            ? (String(selectedChat.id).includes("@")
+                                ? (String(selectedChat.id).includes("@g.us") ? "Grupo do WhatsApp" : "Número não disponível")
+                                : `+${selectedChat.id}`)
+                            : "Nenhuma conversa selecionada"}
                         </p>
-                        {selectedChat && (
-                          <OriginBadge
-                            origin={selectedChat.leadOrigin ?? null}
-                            campaignId={selectedChat.sourceCampaignId ?? null}
-                            campaignNames={campaignNames}
-                          />
-                        )}
                       </div>
-                      <p className="text-xs text-slate-400">
-                        {selectedChat?.id
-                          ? (String(selectedChat.id).includes("@")
-                              ? (String(selectedChat.id).includes("@g.us") ? "Grupo do WhatsApp" : "Número não disponível")
-                              : `+${selectedChat.id}`)
-                          : "Nenhuma conversa selecionada"}
-                      </p>
                     </div>
+                    {selectedChat && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/50"
+                        disabled={reabrirPending}
+                        onClick={handleReabrirAtendimento}
+                      >
+                        <RotateCcw className={cn("h-3.5 w-3.5", reabrirPending && "animate-spin")} />
+                        Reabrir Atendimento
+                      </Button>
+                    )}
                   </div>
 
                   <div

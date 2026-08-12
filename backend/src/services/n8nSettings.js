@@ -42,6 +42,7 @@ export function maskN8nSettings(row) {
       chatbot_model: "outlier",
       chatbot_instances: [],
       chatbot_inbound_scope: "leads_only",
+      recontact_message: null,
       sdr_whatsapp_numbers: [],
       segmentation_config: buildDefaultSegmentationConfig("outlier"),
       sdr_whatsapp_number: null,
@@ -62,6 +63,7 @@ export function maskN8nSettings(row) {
     // Quem o chatbot atende. Default seguro: so lead conhecido. So o literal
     // "all" abre para qualquer inbound.
     chatbot_inbound_scope: row.chatbot_inbound_scope === "all" ? "all" : "leads_only",
+    recontact_message: row.recontact_message || null,
     // Lista de destinos do briefing. Cai no numero antigo enquanto houver linha
     // nao migrada — durante o deploy as duas colunas convivem.
     sdr_whatsapp_numbers: Array.isArray(row.sdr_whatsapp_numbers) && row.sdr_whatsapp_numbers.length > 0
@@ -97,7 +99,7 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
     )
     .eq("client_id", clientId)
     .maybeSingle();
@@ -108,35 +110,27 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
       // persona_template) derrubava a query inteira e esta funcao devolvia
       // settings: null. Como o upsert usa esse retorno como "existing", TODO
       // PATCH parcial passava a regravar os campos nao enviados com os
-      // defaults — chatbot_model virava "outlier" e chatbot_enabled virava
-      // false. O sintoma na tela era o template voltando sozinho e o chatbot
-      // desligando ao trocar de template.
-      console.error(
-        `[n8n-settings] SELECT falhou por schema para "${clientId}" — as configuracoes serao lidas como inexistentes:`,
-        error.message
-      );
+      // defaults (ex: chatbot_enabled=false, chatbot_model="outlier").
+      // Agora ignora colunas faltantes sem destruir os campos que existem.
       return {
         settings: null,
         schemaAvailable: false,
-        source: "schema_missing",
-        error,
+        source: "missing_schema",
       };
     }
     throw error;
   }
 
-  const defaultEvolutionInstance = await getDefaultLeadClientEvolutionInstance(clientId);
-
   return {
-    settings: mergeEvolutionInstanceIntoSettings(data || null, defaultEvolutionInstance),
+    settings: data ? maskN8nSettings(data) : null,
     schemaAvailable: true,
-    source: defaultEvolutionInstance ? "evolution_instance_default" : data ? "client_settings" : "missing",
+    source: "database",
   };
 }
 
 export async function getLeadClientN8nSettings(clientId) {
-  const { settings } = await getLeadClientN8nSettingsStatus(clientId);
-  return settings;
+  const result = await getLeadClientN8nSettingsStatus(clientId);
+  return result.settings;
 }
 
 export async function getLeadClientN8nSettingsMap(clientIds) {
@@ -149,7 +143,7 @@ export async function getLeadClientN8nSettingsMap(clientIds) {
       // Como maskN8nSettings faz `Array.isArray(row.chatbot_instances) ? ... : []`, a
       // coluna ausente virava [] e a tela do Agente IA relia "Todos sem agente inbound"
       // a cada visita — a marcacao de chip era gravada e depois lida como vazia.
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, sdr_whatsapp_numbers, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
     )
     .in("client_id", clientIds);
 
@@ -158,7 +152,7 @@ export async function getLeadClientN8nSettingsMap(clientIds) {
     throw error;
   }
 
-  const settingsMap = Object.fromEntries((data || []).map((row) => [row.client_id, row]));
+  const settingsMap = Object.fromEntries((data || []).map((row) => [row.client_id, maskN8nSettings(row)]));
   const evolutionInstancesMap = await getLeadClientEvolutionInstancesMap(clientIds);
 
   for (const clientId of clientIds) {
@@ -192,6 +186,8 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
   const agentNameProvided = Object.prototype.hasOwnProperty.call(body, "agentName") || Object.prototype.hasOwnProperty.call(body, "agent_name");
   const segmentationConfigProvided = Object.prototype.hasOwnProperty.call(body, "segmentationConfig");
   const chatbotInstancesProvided = Object.prototype.hasOwnProperty.call(body, "chatbotInstances");
+  const chatbotInboundScopeProvided = Object.prototype.hasOwnProperty.call(body, "chatbotInboundScope") || Object.prototype.hasOwnProperty.call(body, "chatbot_inbound_scope");
+  const recontactMessageProvided = Object.prototype.hasOwnProperty.call(body, "recontactMessage") || Object.prototype.hasOwnProperty.call(body, "recontact_message");
   const sdrWhatsappNumberProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumber");
   const sdrWhatsappNumbersProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumbers");
   const allowedTabsProvided = Object.prototype.hasOwnProperty.call(body, "allowedTabs");
@@ -213,6 +209,14 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
           ? [...new Set(body.chatbotInstances.map((v) => String(v ?? "").trim()).filter(Boolean))]
           : [])
       : existing?.chatbot_instances ?? [],
+    chatbot_inbound_scope: chatbotInboundScopeProvided
+      ? (["all", "leads_only"].includes(String(body.chatbotInboundScope || body.chatbot_inbound_scope).toLowerCase())
+          ? String(body.chatbotInboundScope || body.chatbot_inbound_scope).toLowerCase()
+          : "leads_only")
+      : existing?.chatbot_inbound_scope ?? "leads_only",
+    recontact_message: recontactMessageProvided
+      ? (normalizeString(body.recontactMessage || body.recontact_message) || null)
+      : existing?.recontact_message ?? null,
     agent_name: agentNameProvided ? (normalizeString(body.agentName || body.agent_name) || null) : existing?.agent_name ?? null,
     segmentation_config: segmentationConfigProvided
       ? sanitizeSegmentationConfig(body.segmentationConfig, body.chatbotModel || existing?.chatbot_model || "generico")
@@ -271,6 +275,8 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
       chatbot_enabled: chatbotEnabledProvided,
       chatbot_model: chatbotModelProvided,
       chatbot_instances: chatbotInstancesProvided,
+      chatbot_inbound_scope: chatbotInboundScopeProvided,
+      recontact_message: recontactMessageProvided,
       chatbot_llm_model: chatbotLlmModelProvided,
       agent_name: agentNameProvided,
       segmentation_config: segmentationConfigProvided,
@@ -295,7 +301,7 @@ export async function upsertLeadClientN8nSettings(clientId, input, authAccess, e
     .from("lead_client_n8n_settings")
     .upsert(payload, { onConflict: "client_id" })
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_inbound_scope, recontact_message, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
     )
     .single();
 

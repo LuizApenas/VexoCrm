@@ -846,13 +846,16 @@ function hoursSince(isoDate) {
  * ATENCAO: o texto abaixo esta CHUMBADO no codigo. Nao e configuravel por
  * tenant nem por prompt, ao contrario do resto do atendimento. Ver relatorio.
  */
-async function responderPrimeiroRecontato({ supabase, leadsTable, clientId, phone, existing, dadosAntigos }) {
+async function responderPrimeiroRecontato({ supabase, leadsTable, clientId, phone, existing, dadosAntigos, tenantSettings = null }) {
   const horario = dadosAntigos.melhor_horario || null;
   const interesse = dadosAntigos.interesse || null;
 
-  const msgRecontato = interesse
+  const customMessage = tenantSettings?.recontact_message?.trim();
+  const fallbackMessage = interesse
     ? `Oi! Vi que já conversamos sobre ${interesse}. Nosso consultor vai entrar em contato com você${horario ? ` de ${horario}` : " em breve"}. Posso ajudar com mais alguma coisa?`
     : "Oi! Vi que já passamos por uma conversa antes. Nosso consultor vai entrar em contato. Posso ajudar com mais alguma coisa?";
+
+  const msgRecontato = customMessage || fallbackMessage;
 
   const classificacao = classifyRecontactTemperature(dadosAntigos, { clientId, phone });
 
@@ -905,11 +908,8 @@ export async function processBatch({ clientId, phone, messages, supabase, model,
     return null;
   }
 
-  let activeLlmModel = llmModel;
-  if (!activeLlmModel) {
-    const settings = await getLeadClientN8nSettings(clientId).catch(() => null);
-    activeLlmModel = resolveLlmModel(settings?.chatbot_llm_model);
-  }
+  const tenantSettings = await getLeadClientN8nSettings(clientId).catch(() => null);
+  let activeLlmModel = llmModel || resolveLlmModel(tenantSettings?.chatbot_llm_model);
 
   const modelConfig = getChatbotModel(model);
   const leadsTable = chatbotLeadsTable(clientId);
@@ -986,6 +986,7 @@ export async function processBatch({ clientId, phone, messages, supabase, model,
         phone,
         existing,
         dadosAntigos,
+        tenantSettings,
       });
     }
   }

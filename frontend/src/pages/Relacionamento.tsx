@@ -9,7 +9,8 @@ import {
   Sliders,
   Building2,
   Bot,
-  History
+  History,
+  RotateCcw,
 } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,66 @@ import { AITrainingTab } from "@/components/livpub/AITrainingTab";
 import { LivpubHistoryList } from "@/components/livpub/LivpubHistoryList";
 import { useFupCompanies } from "@/hooks/useFollowupAdmin";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchApi } from "@/lib/api";
+import { toast } from "sonner";
+
+export function ReabrirAtendimentoButton({
+  clientId,
+  phone,
+  onSuccess,
+  variant = "outline",
+  className,
+}: {
+  clientId: string;
+  phone: string;
+  onSuccess?: () => void;
+  variant?: "outline" | "default" | "ghost" | "secondary";
+  className?: string;
+}) {
+  const { getIdToken } = useAuth();
+  const [loading, setLoading] = useState(false);
+
+  const handleReabrir = async () => {
+    if (!phone || !clientId) return;
+    setLoading(true);
+    try {
+      const token = await getIdToken();
+      const res = await fetchApi("/api/chatbot-leads/reabrir", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ clientId, phone }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        toast.error(data?.error?.message || data?.message || "Falha ao reabrir atendimento.");
+        return;
+      }
+      toast.success("Atendimento do chatbot reaberto com sucesso");
+      onSuccess?.();
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao reabrir atendimento.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Button
+      variant={variant}
+      size="sm"
+      className={className}
+      disabled={loading || !phone}
+      onClick={handleReabrir}
+    >
+      <RotateCcw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+      Reabrir Atendimento
+    </Button>
+  );
+}
 
 export default function Relacionamento() {
   const { data: companies = [], isLoading: loadingCompanies } = useFupCompanies();

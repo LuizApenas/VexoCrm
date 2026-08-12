@@ -87,6 +87,7 @@ async function isAlreadyApplied(pool, filename) {
     "20260618000000_create_crm_consultant_schedules.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='crm_consultant_schedules') AS ok`,
     "20260730000000_create_vexo_lead_intelligence.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leads' AND column_name='extracted_from_wa') AS ok`,
     "20260730150000_add_chatbot_llm_model_to_n8n_settings.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='chatbot_llm_model') AS ok`,
+    "20260812160000_add_recontact_message_to_n8n_settings.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='recontact_message') AS ok`,
   };
 
   const query = checks[filename];

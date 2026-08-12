@@ -76,6 +76,11 @@ export default function InboundAgentConfig() {
   const [companyId, setCompanyId] = useState<string>("all");
   const updateCompany = useUpdateFupCompany();
   const createCompany = useCreateFupCompany();
+  const updateN8nSettings = useUpdateLeadClientN8nSettings();
+
+  const tenantN8nSettings = useMemo(() => {
+    return leadClients.find((c) => c.id === selectedClientId)?.n8n_settings;
+  }, [leadClients, selectedClientId]);
 
   // Modelos vem do backend (LLM_MODELS), nao mais de uma lista fixa nesta tela:
   // ela oferecia ids que o motor nao conhece (llama3-70b-8192, llama3-8b-8192,
@@ -106,6 +111,17 @@ export default function InboundAgentConfig() {
   // Funcao do agente. Qualificador atende quem foi disparado; atendimento
   // atende quem procurou a empresa. Muda o rotulo e o agrupamento na tela.
   const [inboundRole, setInboundRole] = useState<"atendimento" | "qualificador">("atendimento");
+
+  // Escopo de inbound e Frase de Recontato configurados no tenant (lead_client_n8n_settings)
+  const [chatbotInboundScope, setChatbotInboundScope] = useState<"leads_only" | "all">("leads_only");
+  const [recontactMessage, setRecontactMessage] = useState("");
+
+  useEffect(() => {
+    if (tenantN8nSettings) {
+      setChatbotInboundScope(tenantN8nSettings.chatbot_inbound_scope === "all" ? "all" : "leads_only");
+      setRecontactMessage(tenantN8nSettings.recontact_message ?? "");
+    }
+  }, [tenantN8nSettings]);
 
   const [simMessages, setSimMessages] = useState<{ role: "user" | "bot"; text: string }[]>([
     { role: "bot", text: "Olá! Como posso ajudar?" }
@@ -205,6 +221,13 @@ export default function InboundAgentConfig() {
         sdr_whatsapp_number: sdrPhone,
         sdr_transfer_enabled: sdrTransferEnabled,
       });
+      if (selectedClientId) {
+        await updateN8nSettings.mutateAsync({
+          tenantId: selectedClientId,
+          chatbotInboundScope,
+          recontactMessage,
+        });
+      }
       toast({ title: "Sucesso", description: "Configurações salvas." });
     } catch (e: any) {
       toast({ title: "Erro", description: e.message, variant: "destructive" });
@@ -476,6 +499,42 @@ export default function InboundAgentConfig() {
                       O modelo salvo ("{inboundModel}") não está mais disponível. Escolha outro e salve.
                     </p>
                   )}
+                </div>
+
+                <div className="space-y-2 max-w-md">
+                  <Label>Quem o chatbot atende (Escopo Inbound)</Label>
+                  <Select value={chatbotInboundScope} onValueChange={(val) => setChatbotInboundScope(val as "leads_only" | "all")}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="leads_only">
+                        Apenas Contatos de Campanhas / Leads cadastrados (Recomendado)
+                      </SelectItem>
+                      <SelectItem value="all">
+                        Qualquer Mensagem Recebida (Atendimento Aberto)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500">
+                    {chatbotInboundScope === "all"
+                      ? "⚠️ Qualquer mensagem recebida neste WhatsApp ativará o atendimento por IA."
+                      : "🔒 Apenas contatos já cadastrados ou originados de campanhas serão atendidos pela IA."}
+                  </p>
+                </div>
+
+                <div className="space-y-2 max-w-xl">
+                  <Label>Mensagem de Recontato (Lead Finalizado)</Label>
+                  <Textarea
+                    value={recontactMessage}
+                    onChange={(e) => setRecontactMessage(e.target.value)}
+                    placeholder="Ex: Oi! Vi que já conversamos sobre isso. Nosso consultor vai entrar em contato em breve. Posso ajudar com mais alguma coisa?"
+                    rows={3}
+                    className="text-sm font-sans"
+                  />
+                  <p className="text-xs text-slate-500">
+                    Mensagem enviada quando um lead que já foi qualificado/finalizado envia uma nova mensagem. Em branco, utiliza o texto padrão.
+                  </p>
                 </div>
               </CardContent>
             </Card>
