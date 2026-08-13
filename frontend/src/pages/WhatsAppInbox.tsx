@@ -193,6 +193,9 @@ export default function WhatsAppInbox({
   const sendMessage = useSendWhatsAppMessage(clientId, selectedChatId);
   const clearChats = useClearWhatsAppChats(clientId);
 
+  const chats = chatsQuery.items ?? [];
+  const messages = messagesQuery.data ?? [];
+
   const { getIdToken } = useAuth();
   const [reabrirPending, setReabrirPending] = useState(false);
 
