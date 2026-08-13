@@ -544,6 +544,22 @@ export async function resolveMessageContent(evolutionBody) {
   return { type: "unknown", text: "" };
 }
 
+// ─── Normalização de Origem de Marketing ──────────────────────────────────────
+
+export function normalizeLeadSource(source) {
+  if (!source || typeof source !== "string") return null;
+  const s = source.trim().toLowerCase();
+  if (s.includes("insta")) return "Instagram";
+  if (s.includes("goog") || s.includes("gads") || s.includes("pesquisa")) return "Google Ads";
+  if (s.includes("face") || s.includes("fb")) return "Facebook Ads";
+  if (s.includes("tik") || s.includes("tt")) return "TikTok";
+  if (s.includes("indic") || s.includes("amig") || s.includes("recomenda") || s.includes("referral")) return "Indicação";
+  if (s.includes("form") || s.includes("site") || s.includes("landing")) return "Formulário";
+  if (s.includes("whats") || s.includes("zap") || s.includes("direto") || s.includes("organico") || s.includes("orgânico")) return "WhatsApp";
+  if (s.includes("campanh")) return "Campanha";
+  return source.trim().charAt(0).toUpperCase() + source.trim().slice(1);
+}
+
 // ─── IA conversacional (Groq) ────────────────────────────────────────────────
 
 function buildJsonInstruction() {
@@ -1090,7 +1106,7 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
     telefone: phone,
     status_conversa: aiResponse.status_conversa,
     status: aiResponse.classificacao,
-    lead_source: aiResponse.lead_source || dadosToSave?.origem_marketing || existing?.lead_source || null,
+    lead_source: normalizeLeadSource(aiResponse.lead_source || dadosToSave?.origem_marketing) || existing?.lead_source || null,
     spin_fase: aiResponse.spin_fase || null,
     dados: dadosToSave,
     historico: serializeHistorico(newHistory),

@@ -43,7 +43,7 @@ export const OPERACAO_ITEMS: SidebarItem[] = [
 
 // ━━ INTELIGÊNCIA ━━
 export const INTELIGENCIA_ITEMS: SidebarItem[] = [
-  { key: "inteligencia", label: "Int. Comercial", url: "/crm/inteligencia-comercial", icon: LineChart, page: "inteligencia-comercial" },
+  // { key: "inteligencia", label: "Int. Comercial", url: "/crm/inteligencia-comercial", icon: LineChart, page: "inteligencia-comercial" },
   { key: "relatorios", label: "Relatórios", url: "/crm/relatorios", icon: BarChart2, page: "relatorios" },
 ];
 

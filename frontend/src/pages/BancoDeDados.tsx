@@ -148,6 +148,7 @@ export default function BancoDeDados() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState<string>("");
   const [selectedSource, setSelectedSource] = useState<string>("");
+  const [selectedChannel, setSelectedChannel] = useState<string>("all");
 
   // WhatsApp Extraction Modal State
   const [isWAModalOpen, setIsWAModalOpen] = useState(false);
@@ -855,6 +856,106 @@ export default function BancoDeDados() {
     }
   };
 
+  // Definições de Canais de Marketing para Atribuição e Disparos
+  const MARKETING_CHANNELS = [
+    {
+      id: "instagram",
+      name: "Instagram",
+      icon: "📸",
+      activeBorder: "border-pink-500 ring-2 ring-pink-500/30 bg-pink-500/10 shadow-sm",
+      badgeClass: "bg-pink-500/15 text-pink-700 dark:text-pink-300 border-pink-500/30",
+    },
+    {
+      id: "google",
+      name: "Google Ads",
+      icon: "🔍",
+      activeBorder: "border-blue-500 ring-2 ring-blue-500/30 bg-blue-500/10 shadow-sm",
+      badgeClass: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30",
+    },
+    {
+      id: "facebook",
+      name: "Facebook Ads",
+      icon: "📘",
+      activeBorder: "border-indigo-500 ring-2 ring-indigo-500/30 bg-indigo-500/10 shadow-sm",
+      badgeClass: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30",
+    },
+    {
+      id: "tiktok",
+      name: "TikTok",
+      icon: "🎵",
+      activeBorder: "border-zinc-500 ring-2 ring-zinc-500/30 bg-zinc-500/10 shadow-sm",
+      badgeClass: "bg-zinc-500/15 text-zinc-800 dark:text-zinc-200 border-zinc-500/30",
+    },
+    {
+      id: "indicacao",
+      name: "Indicação",
+      icon: "🤝",
+      activeBorder: "border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-500/10 shadow-sm",
+      badgeClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+    },
+    {
+      id: "whatsapp_outros",
+      name: "WhatsApp Direto / Outros",
+      icon: "💬",
+      activeBorder: "border-purple-500 ring-2 ring-purple-500/30 bg-purple-500/10 shadow-sm",
+      badgeClass: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30",
+    },
+  ];
+
+  const getLeadMarketingChannelId = (lead: LeadIntelligenceItem): string => {
+    const s = (getLeadSource(lead) || "").toLowerCase().trim();
+    if (s.includes("insta")) return "instagram";
+    if (s.includes("goog") || s.includes("gads") || s.includes("pesquisa")) return "google";
+    if (s.includes("face") || s.includes("fb")) return "facebook";
+    if (s.includes("tik") || s.includes("tt")) return "tiktok";
+    if (s.includes("indic") || s.includes("amig") || s.includes("recomenda") || s.includes("referral")) return "indicacao";
+    return "whatsapp_outros";
+  };
+
+  const marketingMetrics = useMemo(() => {
+    const total = leads.length;
+    const counts: Record<string, number> = {
+      instagram: 0,
+      google: 0,
+      facebook: 0,
+      tiktok: 0,
+      indicacao: 0,
+      whatsapp_outros: 0,
+    };
+
+    leads.forEach((lead) => {
+      const chId = getLeadMarketingChannelId(lead);
+      counts[chId] = (counts[chId] || 0) + 1;
+    });
+
+    return {
+      total,
+      counts,
+      percentages: {
+        instagram: total > 0 ? Math.round((counts.instagram / total) * 100) : 0,
+        google: total > 0 ? Math.round((counts.google / total) * 100) : 0,
+        facebook: total > 0 ? Math.round((counts.facebook / total) * 100) : 0,
+        tiktok: total > 0 ? Math.round((counts.tiktok / total) * 100) : 0,
+        indicacao: total > 0 ? Math.round((counts.indicacao / total) * 100) : 0,
+        whatsapp_outros: total > 0 ? Math.round((counts.whatsapp_outros / total) * 100) : 0,
+      },
+    };
+  }, [leads]);
+
+  const handleOpenCampaignForChannel = (chDef: { id: string; name: string; icon: string }) => {
+    const leadsForChannel = leads.filter((l) => getLeadMarketingChannelId(l) === chDef.id);
+    if (leadsForChannel.length === 0) {
+      toast.error(`Nenhum lead encontrado para a origem ${chDef.name}.`);
+      return;
+    }
+    setCampaignSourceType("funnel");
+    setCampaignSelectedLeadIds(leadsForChannel.map((l) => l.id));
+    setIsCampaignWizardOpen(true);
+    toast.success(`Disparo Segmentado: ${chDef.icon} ${chDef.name}`, {
+      description: `${leadsForChannel.length} contatos selecionados para a campanha.`,
+    });
+  };
+
   // Lead Source Helpers
   const getLeadSource = (lead: LeadIntelligenceItem): string => {
     return lead.lead_source || lead.dados?.origem_marketing || lead.dados?.origem || lead.origem || "Não informado";
@@ -902,10 +1003,11 @@ export default function BancoDeDados() {
       const tagOk = !selectedTag || (Array.isArray(item.tags) && item.tags.includes(selectedTag));
       const sourceStr = getLeadSource(item);
       const sourceOk = !selectedSource || sourceStr === selectedSource;
+      const channelOk = selectedChannel === "all" || getLeadMarketingChannelId(item) === selectedChannel;
 
-      return searchOk && stageOk && tagOk && sourceOk;
+      return searchOk && stageOk && tagOk && sourceOk && channelOk;
     });
-  }, [leads, searchQuery, activeTab, selectedTag, selectedSource]);
+  }, [leads, searchQuery, activeTab, selectedTag, selectedSource, selectedChannel]);
 
   // Dynamic calculation for Receita Oculta card
   const computedRevenue = useMemo(() => {
@@ -1055,6 +1157,125 @@ export default function BancoDeDados() {
             </Button>
           </div>
         </SectionHeader>
+
+        {/* Painel de Atribuição & Origem de Marketing */}
+        <div className="space-y-3 p-4 rounded-2xl bg-gradient-to-b from-card/80 via-card/50 to-card/30 border border-border dark:border-zinc-800 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                Atribuição & Origem de Marketing
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+                (Clique no canal para filtrar contatos em tempo real e disparar campanhas)
+              </span>
+            </div>
+            {selectedChannel !== "all" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedChannel("all")}
+                className="h-6 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 px-2"
+              >
+                <X className="w-3 h-3" />
+                Limpar Filtro
+              </Button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            {MARKETING_CHANNELS.map((ch) => {
+              const count = marketingMetrics.counts[ch.id] || 0;
+              const pct = marketingMetrics.percentages[ch.id as keyof typeof marketingMetrics.percentages] || 0;
+              const isSelected = selectedChannel === ch.id;
+
+              return (
+                <button
+                  key={ch.id}
+                  type="button"
+                  onClick={() => setSelectedChannel((prev) => (prev === ch.id ? "all" : ch.id))}
+                  className={cn(
+                    "p-3 rounded-xl border text-left transition-all relative space-y-1.5 cursor-pointer group bg-card",
+                    isSelected
+                      ? ch.activeBorder
+                      : "border-border dark:border-zinc-800/80 hover:border-primary/50 dark:hover:border-zinc-700 hover:shadow-sm"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <span className="text-base leading-none">{ch.icon}</span>
+                      <span className="truncate">{ch.name}</span>
+                    </span>
+                    {isSelected && (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                    )}
+                  </div>
+                  
+                  <div className="flex items-baseline justify-between pt-1">
+                    <span className="text-lg font-black text-foreground">
+                      {count.toLocaleString("pt-BR")}
+                    </span>
+                    <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 font-bold", ch.badgeClass)}>
+                      {pct}%
+                    </Badge>
+                  </div>
+
+                  <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
+                    <div
+                      className="bg-primary h-full rounded-full transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Barra de Ação Rápida do Filtro de Canal Selecionado */}
+          {selectedChannel !== "all" && (() => {
+            const activeCh = MARKETING_CHANNELS.find((c) => c.id === selectedChannel);
+            if (!activeCh) return null;
+            const count = marketingMetrics.counts[activeCh.id] || 0;
+
+            return (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-gradient-to-r from-primary/10 via-purple-500/5 to-transparent border border-primary/30 animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{activeCh.icon}</span>
+                  <div>
+                    <span className="text-xs font-bold text-foreground block">
+                      Filtro Ativo: {activeCh.name}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {count} {count === 1 ? "lead encontrado" : "leads encontrados"} ({marketingMetrics.percentages[activeCh.id as keyof typeof marketingMetrics.percentages]}% da base total)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => handleOpenCampaignForChannel(activeCh)}
+                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs gap-1.5 h-8 font-bold shadow-sm"
+                  >
+                    <Rocket className="w-3.5 h-3.5" />
+                    Disparar Campanha para {activeCh.name} ({count})
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedChannel("all")}
+                    className="text-xs h-8 gap-1"
+                  >
+                    <X className="w-3 h-3" />
+                    Remover Filtro
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
 
         {/* Header Métrico (Cards KPIs) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
