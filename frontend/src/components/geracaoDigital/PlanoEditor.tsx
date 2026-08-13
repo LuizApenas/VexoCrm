@@ -97,24 +97,12 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
             <button
               type="button"
               onClick={() => {
-                const currentPlan = (plano as any).vexoPlan === "essencial" ? null : "essencial";
-                const prevPlan = (plano as any).vexoPlan;
-                const prevVexoMonthly = prevPlan === "essencial" ? 397 : prevPlan === "avancado" ? 897 : 0;
-                const newVexoMonthly = currentPlan === "essencial" ? 397 : 0;
-
-                const newPrecos = { ...plano.precos };
-                PERIODOS.forEach((p) => {
-                  const val = Number(newPrecos[p.key] || 0);
-                  if (val > 0 || currentPlan !== null) {
-                    newPrecos[p.key] = Math.max(0, val - prevVexoMonthly + newVexoMonthly);
-                  }
-                });
-
+                const isSelected = (plano as any).vexoPlan === "essencial";
+                const newPlan = isSelected ? null : "essencial";
                 onChange({
                   ...plano,
-                  vexoPlan: currentPlan,
-                  valorSetupVexo: currentPlan === "essencial" ? 690 : 0,
-                  precos: newPrecos,
+                  vexoPlan: newPlan,
+                  repasse_vexo_pct: newPlan ? 35 : null,
                 } as any);
               }}
               className={cn(
@@ -133,7 +121,7 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
                 )}
               </div>
               <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
-                R$ 397/mês <span className="text-[10px] font-normal text-slate-500">| Setup R$ 690</span>
+                Repasse 35% mensalidade <span className="text-[10px] font-normal text-slate-500">| 50% setup</span>
               </p>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
                 1 Conexão de Chip, IA de Atendimento & Vendas, Disparos por Planilha, Inbox e Follow-up simples.
@@ -144,24 +132,12 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
             <button
               type="button"
               onClick={() => {
-                const currentPlan = (plano as any).vexoPlan === "avancado" ? null : "avancado";
-                const prevPlan = (plano as any).vexoPlan;
-                const prevVexoMonthly = prevPlan === "essencial" ? 397 : prevPlan === "avancado" ? 897 : 0;
-                const newVexoMonthly = currentPlan === "avancado" ? 897 : 0;
-
-                const newPrecos = { ...plano.precos };
-                PERIODOS.forEach((p) => {
-                  const val = Number(newPrecos[p.key] || 0);
-                  if (val > 0 || currentPlan !== null) {
-                    newPrecos[p.key] = Math.max(0, val - prevVexoMonthly + newVexoMonthly);
-                  }
-                });
-
+                const isSelected = (plano as any).vexoPlan === "avancado";
+                const newPlan = isSelected ? null : "avancado";
                 onChange({
                   ...plano,
-                  vexoPlan: currentPlan,
-                  valorSetupVexo: currentPlan === "avancado" ? 1490 : 0,
-                  precos: newPrecos,
+                  vexoPlan: newPlan,
+                  repasse_vexo_pct: newPlan ? 45 : null,
                 } as any);
               }}
               className={cn(
@@ -180,12 +156,40 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
                 )}
               </div>
               <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
-                R$ 897/mês <span className="text-[10px] font-normal text-slate-500">| Setup R$ 1.490</span>
+                Repasse 45% mensalidade <span className="text-[10px] font-normal text-slate-500">| 50% setup</span>
               </p>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
                 Múltiplos Chips, Variações Antiban (Groq AI), Agente por Campanha, Base de Conhecimento RAG, Broadcast SDR, Origem de Leads e Follow-up Avançado.
               </p>
             </button>
+          </div>
+        </div>
+
+        {/* CAMPO DE SETUP 100% PERSONALIZÁVEL */}
+        <div className="space-y-1.5 pt-3 border-t border-dashed border-slate-200 dark:border-white/10">
+          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+            Valor da Taxa de Setup / Implantação (R$)
+          </Label>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-bold">R$</span>
+            <Input
+              type="number"
+              min={0}
+              value={(plano as any).valorSetupVexo ?? (plano as any).valor_setup_vexo ?? ""}
+              onChange={(e) => {
+                const val = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value));
+                onChange({
+                  ...plano,
+                  valorSetupVexo: val,
+                  valor_setup_vexo: val,
+                } as any);
+              }}
+              placeholder="Ex: 1000"
+              className="h-8 text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10 w-36"
+            />
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+              Setup 100% personalizável (repasse Vexo: 50%)
+            </span>
           </div>
         </div>
 
@@ -309,9 +313,7 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
           const descSetupPct = Math.max(0, Math.min(100, Number((plano as any).descontoSetupPorcentagem ?? (plano as any).desconto_setup_pct ?? 0)));
           const descMensalPct = Math.max(0, Math.min(100, Number((plano as any).descontoMensalPorcentagem ?? (plano as any).desconto_mensal_pct ?? 0)));
 
-          const planType = (plano as any).vexoPlan;
-          const setupVexoBase = planType === "essencial" ? 690 : planType === "avancado" ? 1490 : Number((plano as any).valorSetupVexo || 0);
-          const setupOriginal = setupVexoBase;
+          const setupOriginal = Number((plano as any).valorSetupVexo ?? (plano as any).valor_setup_vexo ?? 0);
           const setupFinal = Math.max(0, setupOriginal * (1 - descSetupPct / 100));
 
           const primeiroPrazo = PERIODOS.find((p) => Number(plano.precos[p.key] || 0) > 0);
@@ -320,11 +322,23 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
           const mesesCount = primeiroPrazo ? mesesDoPeriodo(primeiroPrazo.key) : 1;
           const compromissoFinal = mensalFinal * mesesCount;
 
+          const vexoPlanType = (plano as any).vexoPlan || (plano as any).vexo_plan;
+          const repasseMensalPct = (plano as any).repasse_vexo_pct ?? (vexoPlanType === "avancado" ? 45 : vexoPlanType === "essencial" ? 35 : 0);
+          const repasseMensalVal = Math.round((mensalOriginal * (repasseMensalPct / 100)) * 100) / 100;
+          const repasseSetupVal = Math.round((setupOriginal * 0.50) * 100) / 100;
+
           return (
             <div className="mt-4 p-3 rounded-xl bg-purple-900/10 dark:bg-purple-950/30 border border-purple-300 dark:border-purple-800 space-y-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 block">
-                Resumo de Faturamento
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 block">
+                  Resumo de Faturamento
+                </span>
+                {repasseMensalPct > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                    Repasse Vexo: {repasseMensalPct}% mensalidade ({brl(repasseMensalVal)}) + 50% setup ({brl(repasseSetupVal)})
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                 <div className="bg-white/60 dark:bg-slate-800/60 p-2 rounded-lg border border-purple-200/50 dark:border-purple-800/40">
                   <span className="text-[10px] font-bold text-slate-500 block uppercase">Taxa de Setup</span>

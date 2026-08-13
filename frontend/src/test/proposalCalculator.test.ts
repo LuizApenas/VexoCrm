@@ -299,3 +299,58 @@ describe("totais derivados (nunca ler valor_total do banco)", () => {
     expect(calc.mensalidadeOriginal).toBe(2400);
   });
 });
+
+describe("precificação de propostas e repasse Vexo OS em combos GD", () => {
+  it("Plano Essencial: setup personalizável R$ 1.000, mensalidade R$ 2.000 => repasse 35% mensal e 50% setup", () => {
+    const items = itensDoPacote("Anual", 2000, 12, ["p1"]);
+    items[0].valor_override = true;
+    const calc = calculateProposalValues({
+      package_id: "pkg-anual",
+      itens: items,
+      cobrar_setup: true,
+      valor_setup_vexo: 1000,
+      vexoPlan: "essencial",
+    }, [pkgAnual]);
+
+    expect(calc.setupOriginal).toBe(1000);
+    expect(calc.mensalidadeOriginal).toBe(2000);
+    expect(calc.repasseVexoPercentual).toBe(35);
+    expect(calc.repasseVexoMensal).toBe(700); // 35% de 2000
+    expect(calc.repasseVexoSetup).toBe(500); // 50% de 1000
+  });
+
+  it("Plano Avançado: setup personalizável R$ 2.500, mensalidade R$ 3.000 => repasse 45% mensal e 50% setup", () => {
+    const items = itensDoPacote("Anual", 3000, 12, ["p1"]);
+    items[0].valor_override = true;
+    const calc = calculateProposalValues({
+      package_id: "pkg-anual",
+      itens: items,
+      cobrar_setup: true,
+      valor_setup_vexo: 2500,
+      vexoPlan: "avancado",
+    }, [pkgAnual]);
+
+    expect(calc.setupOriginal).toBe(2500);
+    expect(calc.mensalidadeOriginal).toBe(3000);
+    expect(calc.repasseVexoPercentual).toBe(45);
+    expect(calc.repasseVexoMensal).toBe(1350); // 45% de 3000
+    expect(calc.repasseVexoSetup).toBe(1250); // 50% de 2500
+  });
+
+  it("Setup R$ 0 (isento): calcula repasse de setup como R$ 0 mantendo repasse da mensalidade", () => {
+    const items = itensDoPacote("Anual", 1500, 12, ["p1"]);
+    items[0].valor_override = true;
+    const calc = calculateProposalValues({
+      package_id: "pkg-anual",
+      itens: items,
+      cobrar_setup: true,
+      valor_setup_vexo: 0,
+      vexoPlan: "essencial",
+    }, [pkgAnual]);
+
+    expect(calc.setupOriginal).toBe(0);
+    expect(calc.mensalidadeOriginal).toBe(1500);
+    expect(calc.repasseVexoMensal).toBe(525); // 35% de 1500
+    expect(calc.repasseVexoSetup).toBe(0); // 50% de 0
+  });
+});

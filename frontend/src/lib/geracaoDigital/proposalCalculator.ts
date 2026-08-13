@@ -207,14 +207,6 @@ export function calculateProposalValues(
 
   const explicitVexoPlan = (proposal as any).vexo_plan || proposal.vexoPlan || (items.some(i => i.descricao?.toLowerCase().includes("avançado")) ? "avancado" : items.some(i => i.descricao?.toLowerCase().includes("essencial") || i.categoria === "vexo" || Boolean(proposal.package_vexo_id)) ? "essencial" : null);
 
-  if (explicitVexoPlan === "essencial") {
-    if (vexoMonthly === 0) vexoMonthly = 397;
-    if (cobrarSetup && setupOriginal === 0) setupOriginal = 690;
-  } else if (explicitVexoPlan === "avancado") {
-    if (vexoMonthly === 0) vexoMonthly = 897;
-    if (cobrarSetup && setupOriginal === 0) setupOriginal = 1490;
-  }
-
   // Vexo avulsos
   const vexoAvulsos = items.filter(item => {
     return item.categoria === "vexo" && item.product_id !== null && !item.descricao?.startsWith("Pacote Vexo") && isCobrancaMensal(item) && naoInclusoNoPacote(item);
@@ -248,23 +240,22 @@ export function calculateProposalValues(
 
   // Lógica de Repasse Percentual Vexo OS x Geração Digital (Combos)
   const hasGdServices = gdMonthly > 0 || items.some(i => i.categoria === "gd");
-  const hasVexoServices = vexoMonthly > 0 || items.some(i => i.categoria === "vexo") || !!proposal.vexoPlan;
-  const isCombo = hasGdServices && hasVexoServices;
+  const hasVexoServices = vexoMonthly > 0 || items.some(i => i.categoria === "vexo") || !!proposal.vexoPlan || !!explicitVexoPlan;
+  const isCombo = hasGdServices || hasVexoServices;
 
-  const repasseVexoPercentual = Number(proposal.repasse_vexo_pct ?? 15);
+  const repasseVexoPercentual = Number(
+    proposal.repasse_vexo_pct ?? (explicitVexoPlan === "avancado" ? 45 : explicitVexoPlan === "essencial" ? 35 : 35)
+  );
 
   let repasseVexoMensal = 0;
   let repasseVexoSetup = 0;
 
-  if (isCombo) {
-    // Em combo conjunto GD + Vexo: o repasse devido à Vexo incide como porcentagem sobre valor bruto
+  if (isCombo || hasVexoServices) {
+    // Em combo conjunto GD + Vexo: o repasse devido à Vexo incide como porcentagem sobre a mensalidade GD
     repasseVexoMensal = Math.round((mensalidadeOriginal * (repasseVexoPercentual / 100)) * 100) / 100;
-    repasseVexoSetup = Math.round((setupOriginal * (repasseVexoPercentual / 100)) * 100) / 100;
-  } else if (hasVexoServices) {
-    // Venda Direta Standalone Vexo: Preço de tabela fixa
-    const planType = proposal.vexoPlan || (items.some(i => i.descricao?.toLowerCase().includes("avançado")) ? "avancado" : "essencial");
-    repasseVexoMensal = planType === "avancado" ? 897 : 397;
-    repasseVexoSetup = planType === "avancado" ? 1490 : 690;
+    // O repasse sobre a taxa de setup é 50% do valor do setup negociado
+    const repasseSetupPct = Number((proposal as any).repasse_setup_pct ?? 50);
+    repasseVexoSetup = Math.round((setupOriginal * (repasseSetupPct / 100)) * 100) / 100;
   }
 
   // VP pela MESMA regra de dedupe
