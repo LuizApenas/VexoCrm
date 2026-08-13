@@ -65,6 +65,16 @@ async function isAlreadyApplied(pool, filename) {
     // menos do que a migration faz pode marca-la como aplicada sem ter rodado —
     // foi o que aconteceu com 20260730000000, cujas constraints nunca existiram
     // porque a coluna que ela checava era criada por outro caminho.
+    // Sentinela checa AS COLUNAS QUE ESTA MIGRATION CRIA — as oito, nas tres
+    // tabelas. Sentinela que testa uma coluna ja existente deixa o baseline de
+    // migrate.js:143-149 marcar a migration como aplicada SEM executar: foi o que
+    // aconteceu com 20260730000000, cuja sentinela olhava extracted_from_wa (criada
+    // por outro caminho) e as constraints dela nunca existiram.
+    "20260813100000_gd_commercial_columns.sql": `SELECT (
+      (SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='gd_proposals' AND column_name IN ('owner_company','condicoes_especiais','desconto_setup_pct','desconto_mensal_pct','vexi_plan','vexi_price','vexo_plan','vexo_price')) = 8
+      AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='gd_contracts' AND column_name='owner_company')
+      AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='gd_implementation_briefings' AND column_name='owner_company')
+    ) AS ok`,
     "20260811090000_campaign_dispatches_prompt_copy.sql": `SELECT (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='campaign_dispatches' AND column_name='campaign_prompt_id') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_campaign_dispatches_prompt')) AS ok`,
     "20260805040000_followup_companies_inbound_role.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='followup_companies' AND column_name='inbound_role') AS ok`,
     "20260804180000_followup_companies_evolution_instances.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='followup_companies' AND column_name='evolution_instances') AS ok`,

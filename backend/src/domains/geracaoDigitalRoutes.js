@@ -35,6 +35,18 @@ const somaRecorrente = (items) =>
 export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, requireInternalPageAccess) {
   // Inicialização defensiva de todas as tabelas e seeds de Geração Digital no PostgreSQL
   async function ensureGdTablesAndSeeds(dbPool) {
+  // Falha de DDL no boot NAO pode morrer calada. Cada ALTER tinha `.catch(() => {})`,
+  // entao coluna que nao foi criada nao deixava rastro nenhum — foi assim que as oito
+  // colunas do modulo comercial ficaram faltando em producao com o boot "limpo", e ja
+  // e o terceiro caso identico no projeto. O contador sai no fim, para o boot dizer se
+  // alguma coisa falhou em vez de so nao dizer nada.
+  const _ddlFalhas = [];
+  const alterLogado = (sql) => (err) => {
+    const alvo = String(sql).replace(/\s+/g, " ").slice(0, 120);
+    _ddlFalhas.push({ sql: alvo, erro: err?.message || String(err) });
+    console.warn("[gd-setup] DDL falhou:", alvo, "->", err?.message || err);
+  };
+
     try {
       // 0. Core CRM Tables (leads_clients, lead_client_n8n_settings, leads, lead_conversations, lead_messages)
       await dbPool.query(`
@@ -110,7 +122,11 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         INSERT INTO public.tenants (id, name)
         VALUES ('00000000-0000-0000-0000-000000000000', 'Geração Digital')
         ON CONFLICT (id) DO NOTHING;
-      `).catch(() => {});
+      `).catch(alterLogado(`
+        INSERT INTO public.tenants (id, name)
+        VALUES ('00000000-0000-0000-0000-000000000000', 'Geração Digital')
+        ON CONFLICT (id) DO NOTHING;
+      `));
 
       // 2. geracao_digital_briefings (Briefings de captação)
       await dbPool.query(`
@@ -147,8 +163,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           ativo BOOLEAN NOT NULL DEFAULT true
         );
       `);
-      await dbPool.query(`ALTER TABLE public.gd_segments DROP CONSTRAINT IF EXISTS gd_segments_tenant_id_fkey`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_segments ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_segments DROP CONSTRAINT IF EXISTS gd_segments_tenant_id_fkey`).catch(alterLogado(`ALTER TABLE public.gd_segments DROP CONSTRAINT IF EXISTS gd_segments_tenant_id_fkey`));
+      await dbPool.query(`ALTER TABLE public.gd_segments ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(alterLogado(`ALTER TABLE public.gd_segments ALTER COLUMN tenant_id TYPE text USING tenant_id::text`));
 
       // 4. gd_products (Catálogo)
       await dbPool.query(`
@@ -164,8 +180,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           ativo BOOLEAN NOT NULL DEFAULT true
         );
       `);
-      await dbPool.query(`ALTER TABLE public.gd_products DROP CONSTRAINT IF EXISTS gd_products_tenant_id_fkey`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_products ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_products DROP CONSTRAINT IF EXISTS gd_products_tenant_id_fkey`).catch(alterLogado(`ALTER TABLE public.gd_products DROP CONSTRAINT IF EXISTS gd_products_tenant_id_fkey`));
+      await dbPool.query(`ALTER TABLE public.gd_products ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(alterLogado(`ALTER TABLE public.gd_products ALTER COLUMN tenant_id TYPE text USING tenant_id::text`));
 
       // Seed catálogo se estiver vazio
       const prodCheck = await dbPool.query("SELECT count(*)::int AS count FROM public.gd_products");
@@ -210,8 +226,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
-      await dbPool.query(`ALTER TABLE public.gd_presentations DROP CONSTRAINT IF EXISTS gd_presentations_tenant_id_fkey`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_presentations ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_presentations DROP CONSTRAINT IF EXISTS gd_presentations_tenant_id_fkey`).catch(alterLogado(`ALTER TABLE public.gd_presentations DROP CONSTRAINT IF EXISTS gd_presentations_tenant_id_fkey`));
+      await dbPool.query(`ALTER TABLE public.gd_presentations ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(alterLogado(`ALTER TABLE public.gd_presentations ALTER COLUMN tenant_id TYPE text USING tenant_id::text`));
 
       // 6. gd_proposals (Propostas Comerciais)
       await dbPool.query(`
@@ -234,31 +250,31 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
-      await dbPool.query(`ALTER TABLE public.gd_proposals DROP CONSTRAINT IF EXISTS gd_proposals_tenant_id_fkey`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS package_id UUID`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS package_vexo_id UUID`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS prospect_logo TEXT`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS segment_id UUID`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS cobrar_setup BOOLEAN DEFAULT false`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_setup_vexo NUMERIC`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS condicoes_pagamento JSONB`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS periodo_plano TEXT`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS validade_ate TIMESTAMPTZ`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_apos_validade NUMERIC`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS observacao_validade TEXT`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS pacotes_ofertados JSONB`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS condicoes_especiais TEXT`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS desconto_setup_pct NUMERIC DEFAULT 0`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS desconto_mensal_pct NUMERIC DEFAULT 0`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_plan VARCHAR(50)`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_price NUMERIC DEFAULT 0`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_plan VARCHAR(50)`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_price NUMERIC DEFAULT 0`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_contracts ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals DROP CONSTRAINT IF EXISTS gd_proposals_tenant_id_fkey`).catch(alterLogado(`ALTER TABLE public.gd_proposals DROP CONSTRAINT IF EXISTS gd_proposals_tenant_id_fkey`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(alterLogado(`ALTER TABLE public.gd_proposals ALTER COLUMN tenant_id TYPE text USING tenant_id::text`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS package_id UUID`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS package_id UUID`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS package_vexo_id UUID`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS package_vexo_id UUID`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS prospect_logo TEXT`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS prospect_logo TEXT`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS segment_id UUID`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS segment_id UUID`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS cobrar_setup BOOLEAN DEFAULT false`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS cobrar_setup BOOLEAN DEFAULT false`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_setup_vexo NUMERIC`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_setup_vexo NUMERIC`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS condicoes_pagamento JSONB`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS condicoes_pagamento JSONB`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS periodo_plano TEXT`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS periodo_plano TEXT`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS validade_ate TIMESTAMPTZ`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS validade_ate TIMESTAMPTZ`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_apos_validade NUMERIC`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_apos_validade NUMERIC`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS observacao_validade TEXT`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS observacao_validade TEXT`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS pacotes_ofertados JSONB`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS pacotes_ofertados JSONB`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS condicoes_especiais TEXT`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS condicoes_especiais TEXT`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS desconto_setup_pct NUMERIC DEFAULT 0`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS desconto_setup_pct NUMERIC DEFAULT 0`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS desconto_mensal_pct NUMERIC DEFAULT 0`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS desconto_mensal_pct NUMERIC DEFAULT 0`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_plan VARCHAR(50)`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_plan VARCHAR(50)`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_price NUMERIC DEFAULT 0`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_price NUMERIC DEFAULT 0`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_plan VARCHAR(50)`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_plan VARCHAR(50)`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_price NUMERIC DEFAULT 0`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_price NUMERIC DEFAULT 0`));
+      await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(alterLogado(`ALTER TABLE public.gd_implementation_briefings ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`));
+      await dbPool.query(`ALTER TABLE public.gd_contracts ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(alterLogado(`ALTER TABLE public.gd_contracts ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`));
 
       // Seed de propostas históricas se a tabela estiver vazia
       const propCount = await dbPool.query("SELECT count(*)::int AS count FROM public.gd_proposals");
@@ -294,15 +310,15 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
-      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'gd'`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS periodo TEXT DEFAULT 'mensal'`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS produtos_incluidos JSONB DEFAULT '[]'::jsonb`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor NUMERIC DEFAULT 0`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor_tabela NUMERIC`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS destaque BOOLEAN DEFAULT false`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS ad_hoc BOOLEAN DEFAULT false`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS segmento TEXT`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'gd'`).catch(alterLogado(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'gd'`));
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS periodo TEXT DEFAULT 'mensal'`).catch(alterLogado(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS periodo TEXT DEFAULT 'mensal'`));
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS produtos_incluidos JSONB DEFAULT '[]'::jsonb`).catch(alterLogado(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS produtos_incluidos JSONB DEFAULT '[]'::jsonb`));
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor NUMERIC DEFAULT 0`).catch(alterLogado(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor NUMERIC DEFAULT 0`));
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor_tabela NUMERIC`).catch(alterLogado(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor_tabela NUMERIC`));
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`).catch(alterLogado(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`));
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS destaque BOOLEAN DEFAULT false`).catch(alterLogado(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS destaque BOOLEAN DEFAULT false`));
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS ad_hoc BOOLEAN DEFAULT false`).catch(alterLogado(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS ad_hoc BOOLEAN DEFAULT false`));
+      await dbPool.query(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS segmento TEXT`).catch(alterLogado(`ALTER TABLE public.gd_packages ADD COLUMN IF NOT EXISTS segmento TEXT`));
 
       // 8. gd_payment_terms
       await dbPool.query(`
@@ -317,9 +333,9 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
-      await dbPool.query(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'custom'`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS config JSONB DEFAULT '{}'::jsonb`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS aplica_a TEXT DEFAULT 'setup'`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'custom'`).catch(alterLogado(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'custom'`));
+      await dbPool.query(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS config JSONB DEFAULT '{}'::jsonb`).catch(alterLogado(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS config JSONB DEFAULT '{}'::jsonb`));
+      await dbPool.query(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS aplica_a TEXT DEFAULT 'setup'`).catch(alterLogado(`ALTER TABLE public.gd_payment_terms ADD COLUMN IF NOT EXISTS aplica_a TEXT DEFAULT 'setup'`));
 
       // 9. gd_contracts
       await dbPool.query(`
@@ -357,14 +373,19 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
       `);
-      await dbPool.query(`ALTER TABLE public.gd_implementation_briefings DROP CONSTRAINT IF EXISTS gd_implementation_briefings_tenant_id_fkey`).catch(() => {});
-      await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_implementation_briefings DROP CONSTRAINT IF EXISTS gd_implementation_briefings_tenant_id_fkey`).catch(alterLogado(`ALTER TABLE public.gd_implementation_briefings DROP CONSTRAINT IF EXISTS gd_implementation_briefings_tenant_id_fkey`));
+      await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ALTER COLUMN tenant_id TYPE text USING tenant_id::text`).catch(alterLogado(`ALTER TABLE public.gd_implementation_briefings ALTER COLUMN tenant_id TYPE text USING tenant_id::text`));
       // Bloco de auto-migração de background REMOVIDO: a migração já foi feita
       // manualmente e o código anterior embutia a senha do banco em texto puro
       // (3 connection strings hardcoded). Migração é operação pontual, não deve
       // rodar a cada boot nem carregar segredo no fonte.
+      if (_ddlFalhas.length > 0) {
+        console.error("[gd-setup] schema GD incompleto:", _ddlFalhas.length, "DDL falharam", _ddlFalhas);
+      } else {
+        console.log("[gd-setup] schema GD verificado, nenhuma DDL falhou");
+      }
     } catch (err) {
-      console.warn("[ensureGdTablesAndSeeds] Aviso ao verificar tabelas GD:", err.message);
+      console.error("[ensureGdTablesAndSeeds] falhou ao verificar tabelas GD:", err.message);
     }
   }
 
