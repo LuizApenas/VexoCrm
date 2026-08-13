@@ -85,11 +85,23 @@ export async function createContract(req, res) {
       }
     }
 
+    const ownerCompany = req.body.owner_company || req.body.ownerCompany || (req.body.isVexo ? "vexo" : null);
+    let finalOwnerCompany = ownerCompany;
+    if (!finalOwnerCompany && proposal_id) {
+      const propRes = await db.query("SELECT owner_company FROM gd_proposals WHERE id = $1", [proposal_id]);
+      if (propRes.rows.length > 0 && propRes.rows[0].owner_company) {
+        finalOwnerCompany = propRes.rows[0].owner_company;
+      }
+    }
+    if (!finalOwnerCompany) {
+      finalOwnerCompany = "geracao-digital";
+    }
+
     const { rows: contractRows } = await db.query(
-      `INSERT INTO gd_contracts (tenant_id, proposal_id, dados, status)
-       VALUES ($1, $2, $3, 'rascunho')
+      `INSERT INTO gd_contracts (tenant_id, proposal_id, dados, status, owner_company)
+       VALUES ($1, $2, $3, 'rascunho', $4)
        RETURNING *`,
-      [tenantId, proposal_id, dados]
+      [tenantId, proposal_id, dados, finalOwnerCompany]
     );
 
     res.status(201).json(contractRows[0]);
@@ -105,12 +117,20 @@ export async function listContracts(req, res) {
     if (!tenantId) return;
 
     const { proposal_id, arquivado } = req.query;
+    const ownerCompany = req.query.owner_company || req.query.ownerCompany || (req.query.isVexo === "1" || req.query.isVexo === "true" ? "vexo" : null);
 
     // Por padrão lista só os ativos; ?arquivado=true traz os arquivados.
     const querArquivados = String(arquivado) === "true";
 
     let query = "SELECT * FROM gd_contracts WHERE tenant_id = $1 AND COALESCE(arquivado, false) = $2";
     const params = [tenantId, querArquivados];
+
+    if (ownerCompany) {
+      params.push(ownerCompany);
+      query += ` AND owner_company = $${params.length}`;
+    } else {
+      query += ` AND (owner_company = 'geracao-digital' OR owner_company IS NULL)`;
+    }
 
     if (proposal_id) {
       params.push(proposal_id);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { PageShell } from "@/components/PageShell";
+import { PageShell, PageShellContext } from "@/components/PageShell";
 import { GeracaoDigitalTabs } from "@/components/GeracaoDigitalTabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
