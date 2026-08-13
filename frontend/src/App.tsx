@@ -304,6 +304,14 @@ const App = () => (
                 }
               />
               <Route
+                path="comercial-vexo"
+                element={
+                  <ProtectedRoute allowedRoles={["internal"]}>
+                    <VexoPitch />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="geracao-digital"
                 element={
                   <ProtectedRoute allowedRoles={["internal"]}>

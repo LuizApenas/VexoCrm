@@ -1413,14 +1413,29 @@ const GROUP_KEYWORDS: Record<string, string[]> = {
 // nome; senão cai no grupo padrão.
 export function resolveSegmentGroup(segmentIdOrName?: string | null): SegmentGroup {
   const raw = String(segmentIdOrName || "").trim().toLowerCase();
-  if (SEGMENT_ID_TO_GROUP[raw]) return SEGMENT_GROUPS[SEGMENT_ID_TO_GROUP[raw]];
-  for (const [groupId, words] of Object.entries(GROUP_KEYWORDS)) {
-    if (words.some((w) => raw.includes(w))) return SEGMENT_GROUPS[groupId];
+  if (SEGMENT_ID_TO_GROUP[raw] && SEGMENT_GROUPS[SEGMENT_ID_TO_GROUP[raw]]) {
+    return SEGMENT_GROUPS[SEGMENT_ID_TO_GROUP[raw]];
   }
-  return SEGMENT_GROUPS[DEFAULT_GROUP_ID];
+  for (const [groupId, words] of Object.entries(GROUP_KEYWORDS)) {
+    if (words.some((w) => raw.includes(w)) && SEGMENT_GROUPS[groupId]) {
+      return SEGMENT_GROUPS[groupId];
+    }
+  }
+  return SEGMENT_GROUPS[DEFAULT_GROUP_ID] || SEGMENT_GROUPS.entretenimento_local;
 }
 
 export function buildPitch(ctx: PitchContext): { group: SegmentGroup; slides: PitchSlide[] } {
-  const group = resolveSegmentGroup(ctx.segmentId);
-  return { group, slides: group.buildSlides(ctx) };
+  const fallbackGroup = SEGMENT_GROUPS[DEFAULT_GROUP_ID] || SEGMENT_GROUPS.entretenimento_local;
+  const group = resolveSegmentGroup(ctx.segmentId) || fallbackGroup;
+
+  const builder = typeof group?.buildSlides === "function" ? group.buildSlides : fallbackGroup?.buildSlides;
+  let slides: PitchSlide[] = [];
+  try {
+    slides = typeof builder === "function" ? builder(ctx) : [];
+  } catch (err) {
+    console.error("[buildPitch] Erro ao gerar slides do segmento:", err);
+    slides = typeof fallbackGroup?.buildSlides === "function" ? fallbackGroup.buildSlides(ctx) : [];
+  }
+
+  return { group: group || fallbackGroup, slides: Array.isArray(slides) ? slides : [] };
 }

@@ -86,6 +86,19 @@ export default function SuperAdmin() {
     }
   };
 
+  const [selectedTenantFilter, setSelectedTenantFilter] = useState<string>("all");
+  const [loading, setLoading] = useState(false);
+  const [tenants, setTenants] = useState<SuperAdminTenant[]>([
+    {
+      id: "geracao-digital",
+      name: "Geração Digital",
+      created_at: new Date().toISOString(),
+      status: "active",
+      modules: ["dashboard", "conversas", "followup", "campanhas", "geracao-digital", "inteligencia-comercial"],
+      userCount: 1,
+    },
+  ]);
+
   const [rawMetrics, setRawMetrics] = useState({
     totalTenants: 1,
     totalLeads: 0,
