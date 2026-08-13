@@ -149,7 +149,7 @@ export const MARKETING_CHANNELS = [
   },
   {
     id: "whatsapp_outros",
-    name: "WhatsApp Direto / Outros",
+    name: "WhatsApp / Outros",
     icon: "💬",
     activeBorder: "border-purple-500 ring-2 ring-purple-500/30 bg-purple-500/10 shadow-sm",
     badgeClass: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30",
@@ -222,6 +222,10 @@ export default function BancoDeDados() {
   const [selectedTag, setSelectedTag] = useState<string>("");
   const [selectedSource, setSelectedSource] = useState<string>("");
   const [selectedChannel, setSelectedChannel] = useState<string>("all");
+
+  // Pagination State
+  const [pageSize, setPageSize] = useState<number>(50);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // WhatsApp Extraction Modal State
   const [isWAModalOpen, setIsWAModalOpen] = useState(false);
@@ -829,10 +833,12 @@ export default function BancoDeDados() {
 
   // Bulk Selection Actions
   const handleToggleSelectAll = () => {
-    if (selectedLeadIds.length === filteredLeads.length) {
-      setSelectedLeadIds([]);
+    const pageIds = paginatedLeads.map((l) => l.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedLeadIds.includes(id));
+    if (allPageSelected) {
+      setSelectedLeadIds((prev) => prev.filter((id) => !pageIds.includes(id)));
     } else {
-      setSelectedLeadIds(filteredLeads.map((l) => l.id));
+      setSelectedLeadIds((prev) => Array.from(new Set([...prev, ...pageIds])));
     }
   };
 
@@ -1008,6 +1014,19 @@ export default function BancoDeDados() {
       return searchOk && stageOk && tagOk && sourceOk && channelOk;
     });
   }, [leads, searchQuery, activeTab, selectedTag, selectedSource, selectedChannel]);
+
+  // Reset pagination when filters or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, activeTab, selectedTag, selectedSource, selectedChannel, pageSize]);
+
+  const totalFilteredLeads = filteredLeads.length;
+  const totalPages = Math.max(1, Math.ceil(totalFilteredLeads / pageSize));
+
+  const paginatedLeads = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredLeads.slice(start, start + pageSize);
+  }, [filteredLeads, currentPage, pageSize]);
 
   // Dynamic calculation for Receita Oculta card
   const computedRevenue = useMemo(() => {
@@ -1194,16 +1213,17 @@ export default function BancoDeDados() {
                   key={ch.id}
                   type="button"
                   onClick={() => setSelectedChannel((prev) => (prev === ch.id ? "all" : ch.id))}
+                  title={`${ch.name}: ${count} leads (${pct}%)`}
                   className={cn(
-                    "p-3 rounded-xl border text-left transition-all relative space-y-1.5 cursor-pointer group bg-card",
+                    "p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer group bg-card min-w-0 h-[88px]",
                     isSelected
                       ? ch.activeBorder
                       : "border-border dark:border-zinc-800/80 hover:border-primary/50 dark:hover:border-zinc-700 hover:shadow-sm"
                   )}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                      <span className="text-base leading-none">{ch.icon}</span>
+                  <div className="flex items-center justify-between gap-1 w-full min-w-0">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 min-w-0 truncate">
+                      <span className="text-base leading-none shrink-0">{ch.icon}</span>
                       <span className="truncate">{ch.name}</span>
                     </span>
                     {isSelected && (
@@ -1215,7 +1235,7 @@ export default function BancoDeDados() {
                     <span className="text-lg font-black text-foreground">
                       {count.toLocaleString("pt-BR")}
                     </span>
-                    <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 font-bold", ch.badgeClass)}>
+                    <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 font-bold shrink-0", ch.badgeClass)}>
                       {pct}%
                     </Badge>
                   </div>
@@ -1494,7 +1514,7 @@ export default function BancoDeDados() {
                       <TableHead className="w-[40px] px-3">
                         <input
                           type="checkbox"
-                          checked={selectedLeadIds.length > 0 && selectedLeadIds.length === filteredLeads.length}
+                          checked={paginatedLeads.length > 0 && paginatedLeads.every((l) => selectedLeadIds.includes(l.id))}
                           onChange={handleToggleSelectAll}
                           className="rounded border-input text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                         />
@@ -1510,7 +1530,7 @@ export default function BancoDeDados() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredLeads.map((lead) => {
+                    {paginatedLeads.map((lead) => {
                       const displayPhone = lead.phone || lead.telefone || "";
                       const displayName = lead.nome || "Sem Nome";
                       const isSelected = selectedLeadIds.includes(lead.id);
@@ -1614,6 +1634,79 @@ export default function BancoDeDados() {
                     })}
                   </TableBody>
                 </Table>
+              </div>
+            )}
+
+            {/* Rodapé de Paginação */}
+            {filteredLeads.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-border dark:border-zinc-800 bg-muted/20 text-xs">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-muted-foreground">
+                    Exibindo <span className="font-semibold text-foreground">{Math.min(filteredLeads.length, (currentPage - 1) * pageSize + 1)}</span>–<span className="font-semibold text-foreground">{Math.min(currentPage * pageSize, filteredLeads.length)}</span> de <span className="font-semibold text-foreground">{filteredLeads.length.toLocaleString("pt-BR")}</span> leads
+                  </span>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground text-[11px]">Por página:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="h-7 px-2 rounded-md border border-input bg-background text-xs font-semibold text-foreground focus:ring-1 focus:ring-ring cursor-pointer"
+                    >
+                      <option value={50}>50 leads</option>
+                      <option value={100}>100 leads</option>
+                      <option value={25}>25 leads</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="h-7 px-2 text-xs"
+                  >
+                    Primeira
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="h-7 px-2.5 text-xs"
+                  >
+                    Anterior
+                  </Button>
+
+                  <div className="px-2 text-xs font-medium text-foreground">
+                    Página <span className="font-bold">{currentPage}</span> de <span className="font-bold">{totalPages}</span>
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="h-7 px-2.5 text-xs"
+                  >
+                    Próxima
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage >= totalPages}
+                    className="h-7 px-2 text-xs"
+                  >
+                    Última
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
