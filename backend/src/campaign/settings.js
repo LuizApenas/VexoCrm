@@ -234,6 +234,66 @@ export async function resolveDispatchWebhookSettings(clientId) {
   };
 }
 
+/**
+ * URL da Evolution para a resposta do INBOUND.
+ *
+ * Defeito que isto corrige: o inbound usava resolveDispatchWebhookSettings(clientId),
+ * que resolve o chip DEFAULT do tenant e ignora por qual numero a mensagem chegou.
+ * O disparo de campanha nunca teve esse problema porque resolve pela instancia
+ * escolhida na campanha (resolveCampaignDispatchSettings) — dois resolvedores, e o
+ * inbound usava o que nao sabe de qual chip veio a conversa. Em producao a IA gerava
+ * a resposta e o envio abortava com "No Evolution URL", com lead real em silencio.
+ *
+ * Ordem: o chip que RECEBEU a mensagem; sem identificar, o default do tenant.
+ * Devolve `tentativas` para o log dizer o que foi consultado e o que veio vazio —
+ * este caminho nao pode mais falhar sem explicar.
+ */
+export async function resolveInboundDispatchSettings({ clientId, instanceName = null }) {
+  const tentativas = [];
+  const alvo = normalizeString(instanceName);
+
+  if (alvo) {
+    const instancias = await getLeadClientEvolutionInstances(clientId).catch(() => []);
+    // O mesmo chip tem tres nomes: o amigavel, o id, e o ultimo segmento da URL de
+    // disparo. O webhook manda um deles — comparar so por `name` erra.
+    const casada = instancias.find((inst) => {
+      const daUrl = inst.dispatch_webhook_url
+        ? inst.dispatch_webhook_url.split("/").filter(Boolean).pop()
+        : null;
+      return inst.name === alvo || inst.id === alvo || daUrl === alvo;
+    });
+
+    if (!casada) {
+      tentativas.push({ fonte: "chip_do_webhook", instanceName: alvo, resultado: "instancia_nao_encontrada" });
+    } else if (casada.active === false) {
+      tentativas.push({ fonte: "chip_do_webhook", instanceName: alvo, resultado: "instancia_inativa" });
+    } else if (!normalizeString(casada.dispatch_webhook_url)) {
+      tentativas.push({ fonte: "chip_do_webhook", instanceName: alvo, resultado: "sem_url_de_disparo" });
+    } else {
+      return {
+        webhookUrl: normalizeString(casada.dispatch_webhook_url),
+        webhookToken: normalizeString(casada.dispatch_webhook_token) || null,
+        source: "inbound_chip",
+        instanceName: casada.name || alvo,
+        tentativas,
+      };
+    }
+  } else {
+    tentativas.push({ fonte: "chip_do_webhook", resultado: "webhook_sem_instance" });
+  }
+
+  const doTenant = await resolveDispatchWebhookSettings(clientId);
+  tentativas.push({ fonte: "default_do_tenant", resultado: doTenant.source, temUrl: Boolean(doTenant.webhookUrl) });
+
+  return {
+    webhookUrl: doTenant.webhookUrl,
+    webhookToken: doTenant.webhookToken,
+    source: doTenant.webhookUrl ? `tenant:${doTenant.source}` : doTenant.source,
+    instanceName: alvo || null,
+    tentativas,
+  };
+}
+
 export async function resolveCampaignDispatchSettings(clientId, campaign = {}) {
   const analyticsMeta = normalizeCampaignAnalyticsMeta(campaign.analytics_meta || {});
   const selectedEvolutionInstanceId = normalizeString(analyticsMeta.dispatchOptions?.evolutionInstanceId);

@@ -262,6 +262,7 @@ import {
   logCampaignReplyFlow,
   resolveEnvCampaignQualificationWebhookSettings,
   resolveDispatchWebhookSettings,
+  resolveInboundDispatchSettings,
   resolveCampaignDispatchSettings,
 } from "./campaign/settings.js";
 import {
@@ -700,6 +701,7 @@ Object.assign(routeDeps, {
   resolveCampaignDispatchSettings,
   resolveCampaignPhonesForRow,
   resolveDispatchWebhookSettings,
+  resolveInboundDispatchSettings,
   resolveEnvCampaignQualificationWebhookSettings,
   resolveEnvDispatchWebhookSettings,
   resolveMatchedImportItemForCampaign,

@@ -62,6 +62,7 @@ export function registerChatbotRoutes(app, deps) {
     requireFirebaseAuth,
     resolveAuthorizedClientId,
     resolveDispatchWebhookSettings,
+    resolveInboundDispatchSettings,
     sanitizePhone,
     sendError,
     supabase,
@@ -1377,13 +1378,31 @@ export function registerChatbotRoutes(app, deps) {
           if (!aiResponse?.mensagem) return;
 
           // Enviar resposta via Evolution
-          const dispatchSettings = await resolveDispatchWebhookSettings(clientId);
+          // Resolve pelo chip que RECEBEU a mensagem; sem identificar, cai no default
+          // do tenant. Antes usava so o default (resolveDispatchWebhookSettings), que
+          // ignora de qual numero veio a conversa — a IA gerava a resposta e o envio
+          // abortava, com lead real em silencio.
+          const dispatchSettings = await resolveInboundDispatchSettings({ clientId, instanceName });
           const { webhookUrl: evolutionUrl, webhookToken: evolutionToken } = dispatchSettings;
 
           if (!evolutionUrl) {
-            console.warn("[chatbot-webhook] No Evolution URL for clientId:", clientId);
+            // Nunca falhar em silencio: o log diz QUAIS fontes foram consultadas e o
+            // que veio vazio em cada uma.
+            console.error("[chatbot-webhook] resposta NAO enviada: sem URL da Evolution", {
+              clientId,
+              instanceName: instanceName || null,
+              phone: maskPhoneForLog(phone),
+              source: dispatchSettings.source,
+              tentativas: dispatchSettings.tentativas,
+            });
             return;
           }
+
+          console.log("[chatbot-webhook] enviando resposta", {
+            clientId,
+            source: dispatchSettings.source,
+            instanceName: dispatchSettings.instanceName || null,
+          });
 
           const evolutionHeaders = { "Content-Type": "application/json" };
           if (evolutionToken) {

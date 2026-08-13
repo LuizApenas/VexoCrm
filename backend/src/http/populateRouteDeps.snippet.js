@@ -182,6 +182,7 @@ Object.assign(routeDeps, {
   resolveCampaignDispatchSettings,
   resolveCampaignPhonesForRow,
   resolveDispatchWebhookSettings,
+  resolveInboundDispatchSettings,
   resolveEnvCampaignQualificationWebhookSettings,
   resolveEnvDispatchWebhookSettings,
   resolveMatchedImportItemForCampaign,
