@@ -16,12 +16,12 @@ import { termAplicaA, computePaymentBreakdown } from "@/lib/geracaoDigital/payme
 
 describe("formas de pagamento fixas", () => {
   it("três por item, como combinado", () => {
-    expect(FORMAS_SETUP.map((f) => f.id)).toEqual(["pix_avista", "cartao_avista", "cartao_parcelado"]);
+    expect(FORMAS_SETUP.map((f) => f.id)).toEqual(["pix_avista", "entrada_pix_30d", "cartao_parcelado"]);
     expect(FORMAS_MENSALIDADE.map((f) => f.id)).toEqual([
-      "pagamento_unico",
-      "pix_recorrente",
       "cartao_recorrente",
-      "cartao_total_parcelado",
+      "boleto_recorrente",
+      "pix_recorrente",
+      "pix_avista_projeto",
     ]);
   });
 
@@ -38,7 +38,6 @@ describe("stepper de parcelas", () => {
   it("tem padrão sensato por forma", () => {
     const f = formasVazias();
     expect(parcelasDe(f, "cartao_parcelado")).toBe(3);
-    expect(parcelasDe(f, "cartao_total_parcelado")).toBe(12);
   });
 
   it("sobe e desce de um em um", () => {
@@ -64,15 +63,15 @@ describe("stepper de parcelas", () => {
   it("o nome exibido carrega as parcelas", () => {
     let f = formasVazias();
     f = ajustarParcelas(f, "cartao_parcelado", 3); // 3 -> 6
-    expect(nomeDaForma(f, FORMAS_SETUP[2])).toBe("Cartão parcelado em 6x");
-    expect(nomeDaForma(f, FORMAS_SETUP[0])).toBe("Pix à vista");
+    expect(nomeDaForma(f, FORMAS_SETUP[2])).toBe("Parcelado no Cartão em até 3x em 6x");
+    expect(nomeDaForma(f, FORMAS_SETUP[0])).toBe("Pix à vista (Com desconto)");
   });
 });
 
 describe("conversão para PaymentTerm (formato já gravado em condicoes_pagamento)", () => {
   const marcarTudo = () => {
     let f = formasVazias();
-    ["pix_avista", "cartao_parcelado", "pix_recorrente", "cartao_total_parcelado"].forEach((id) => {
+    ["pix_avista", "cartao_parcelado", "pix_recorrente", "pix_avista_projeto"].forEach((id) => {
       f = alternarForma(f, id as any);
     });
     return f;
@@ -103,11 +102,11 @@ describe("conversão para PaymentTerm (formato já gravado em condicoes_pagament
 
   it("parcelar o total do período usa o total, não a mensalidade", () => {
     let f = formasVazias();
-    f = alternarForma(f, "cartao_total_parcelado"); // 12x
+    f = alternarForma(f, "cartao_parcelado"); // 3x
     const term = formasParaTerms(f)[0];
     const b = computePaymentBreakdown(term, 2400 * 12);
-    expect(b.linhas[0]).toContain("12x");
-    expect(b.linhas[0]).toContain("2.400,00");
+    expect(b.linhas[0]).toContain("3x");
+    expect(b.linhas[0]).toContain("9.600,00");
   });
 });
 

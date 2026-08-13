@@ -1211,7 +1211,7 @@ export function registerChatbotRoutes(app, deps) {
         const { isFirst } = await isFirstCampaignReply({ itemId, campaignId: activeWaitCampaign.id, supabase });
 
         if (isFirst) {
-          console.log("[campaign-routing] wait_for_reply_step", {
+          console.log("[campaign-routing] wait_for_reply_step_first", {
             clientId, phone: maskPhoneForLog(phone),
             campaignId: activeWaitCampaign.id, campaignName: activeWaitCampaign.name,
           });
@@ -1220,17 +1220,6 @@ export function registerChatbotRoutes(app, deps) {
             .update({ lead_origin: "campaign", source_campaign_id: activeWaitCampaign.id, source_campaign_name: activeWaitCampaign.name || null, lead_source: "campanha" })
             .eq("client_id", clientId).eq("telefone", phone)
             .then(({ error }) => { if (error) console.warn("[chatbot-webhook] campaign lead_origin update failed:", error.message); });
-
-          continueCampaignLeadFromReply({
-            clientId, phone, repliedAt: new Date().toISOString(),
-            campaignMatch: activeWaitCampaign, replyPayload: {},
-          }).then((progression) => {
-            console.log("[campaign-routing] campaign_progression", {
-              clientId, campaignId: activeWaitCampaign.id, phone: maskPhoneForLog(phone),
-              continued: progression.continued, finalized: progression.finalized,
-              campaignFinalized: progression.campaignFinalized,
-            });
-          }).catch((err) => { console.warn("[campaign-routing] campaign_progression_failed:", err.message); });
         } else {
           console.log("[campaign-routing] wait_for_reply_step subsequent", {
             clientId, phone: maskPhoneForLog(phone),
@@ -1238,8 +1227,30 @@ export function registerChatbotRoutes(app, deps) {
           });
         }
 
-        // waitForReply: se a campanha for modo "agente" E tiver período ativo, usa prompt campanha
-        // caso contrário silencia o chatbot (comportamento legado / modo "disparo")
+        // Tenta avançar a sequência de disparos da campanha (enviando a próxima mensagem configurada)
+        let progression = { continued: false };
+        try {
+          progression = await continueCampaignLeadFromReply({
+            clientId, phone, repliedAt: new Date().toISOString(),
+            campaignMatch: activeWaitCampaign, replyPayload: {},
+          });
+          console.log("[campaign-routing] campaign_progression", {
+            clientId, campaignId: activeWaitCampaign.id, phone: maskPhoneForLog(phone),
+            continued: progression.continued, finalized: progression.finalized,
+            campaignFinalized: progression.campaignFinalized,
+            reason: progression.reason,
+          });
+        } catch (err) {
+          console.warn("[campaign-routing] campaign_progression_failed:", err.message);
+        }
+
+        // Se o próximo passo da campanha foi disparado com sucesso, interrompe aqui (NÃO chama a IA)
+        if (progression.continued) {
+          res.json({ success: true, status: "campaign_step_dispatched" });
+          return;
+        }
+
+        // Se a sequência de disparos acabou e a campanha possui modo "agente", aciona o prompt da campanha
         const waitCampaignIsAgente = activeWaitCampaign.mode === "agente";
         if (waitCampaignIsAgente && activeCampaignForLead) {
           campaignPromptIdOverride = activeCampaignForLead.campaignPromptId || null;
