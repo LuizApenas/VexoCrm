@@ -192,6 +192,19 @@ export function calculateProposalValues(
     gdMonthly = Number(savedGdPkgItem.valor || 0);
   }
 
+  const savedVexoPkgItem = items.find(i => i.categoria === "vexo" && i.recorrencia === "mensal" && i.descricao?.startsWith("Pacote Vexo:"));
+  const vexoOverride = savedVexoPkgItem?.valor_override === true;
+
+  let vexoMonthly = 0;
+  if (vexoOverride) {
+    vexoMonthly = Number(savedVexoPkgItem?.valor || 0);
+  } else if (vexoPkg && vexoPkg.periodo !== "unico") {
+    const months = monthsForPeriod(vexoPkg.periodo) || 1;
+    vexoMonthly = Number(vexoPkg.valor || 0) / months;
+  } else if (savedVexoPkgItem) {
+    vexoMonthly = Number(savedVexoPkgItem.valor || 0);
+  }
+
   const explicitVexoPlan = (proposal as any).vexo_plan || proposal.vexoPlan || (items.some(i => i.descricao?.toLowerCase().includes("avançado")) ? "avancado" : items.some(i => i.descricao?.toLowerCase().includes("essencial") || i.categoria === "vexo" || Boolean(proposal.package_vexo_id)) ? "essencial" : null);
 
   if (explicitVexoPlan === "essencial") {
