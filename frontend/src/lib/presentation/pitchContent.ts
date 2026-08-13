@@ -1354,6 +1354,17 @@ const SEGMENT_ID_TO_GROUP: Record<string, string> = {
   corretor_de_imoveis: "imobiliario",
   corretores: "imobiliario",
   imoveis: "imobiliario",
+  // Turismo & Viagens
+  turismo: "turismo",
+  agencia_de_turismo: "turismo",
+  "agencia de turismo": "turismo",
+  "agência de turismo": "turismo",
+  "agencias de turismo": "turismo",
+  "agências de turismo": "turismo",
+  "turismo & viagens": "turismo",
+  "turismo e viagens": "turismo",
+  "agências de turismo & viagens": "turismo",
+  "agências de turismo e viagens": "turismo",
 };
 
 export const DEFAULT_GROUP_ID = "entretenimento_local";

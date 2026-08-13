@@ -10,6 +10,7 @@ import {
   INTELIGENCIA_ITEMS, 
   AGENTE_IA_ITEMS, 
   CANAIS_ITEMS, 
+  MODULE_ITEMS,
   GERACAO_DIGITAL_ITEMS, 
   LIVPUB_ITEMS, 
   AJUDA_ITEMS, 
@@ -125,13 +126,10 @@ export function AppSidebar() {
   const visibleInteligencia = filterItems(INTELIGENCIA_ITEMS);
   const visibleAgenteIa = filterItems(AGENTE_IA_ITEMS);
   const visibleCanais = filterItems(CANAIS_ITEMS);
+  const visibleModulos = filterItems(MODULE_ITEMS);
   const visibleGeracaoDigital = selectedClientId === "geracao-digital" ? filterItems(GERACAO_DIGITAL_ITEMS) : [];
   const visibleLivpub = (isAdminUser || selectedClientId === "livpub") ? filterItems(LIVPUB_ITEMS) : [];
-  // Itens de AJUDA (Treinamento Vexo, Apresentação) são ajuda/onboarding e NÃO dependem de
-  // uma página interna gerenciável — o conteúdo do treino já é filtrado por permissão dentro
-  // da própria tela. Sempre visíveis para usuário interno (e p/ cliente conforme allowed_tabs).
-  // Corrige regressão em que salvar pela matriz de permissões apagava a página onboarding-wizard
-  // e sumia a aba de Treinamento.
+
   const visibleAjuda = AJUDA_ITEMS.filter(
     (f) => isInternalUser || isPathAllowedForClient(f.url, allowedTabs)
   );
@@ -225,7 +223,7 @@ export function AppSidebar() {
         )}
 
         {/* ── MÓDULOS ── */}
-        {(visibleGeracaoDigital.length > 0 || visibleLivpub.length > 0) && (
+        {(visibleModulos.length > 0 || visibleGeracaoDigital.length > 0 || visibleLivpub.length > 0) && (
           <>
             {!collapsed && (
               <p className="mt-4 px-2.5 pb-2 font-mono text-[9px] font-bold uppercase tracking-[0.24em] text-muted-foreground/70">
@@ -233,6 +231,9 @@ export function AppSidebar() {
               </p>
             )}
             <div className="space-y-1">
+              {visibleModulos.map((item) => (
+                <NavItem key={item.key} item={item} collapsed={collapsed} />
+              ))}
               {visibleGeracaoDigital.map((item) => (
                 <NavItem key={item.key} item={item} collapsed={collapsed} />
               ))}

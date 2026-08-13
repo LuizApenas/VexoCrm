@@ -45,6 +45,7 @@ import GeracaoDigitalPackages from "./pages/GeracaoDigitalPackages";
 import GeracaoDigitalContracts from "./pages/GeracaoDigitalContracts/GeracaoDigitalContracts";
 import GeracaoDigitalProposalPresentation from "./pages/GeracaoDigitalProposalPresentation";
 import GeracaoDigitalImplementationBriefing from "./pages/GeracaoDigitalImplementationBriefing";
+import ComercialVexo from "./pages/ComercialVexo";
 
 const queryClient = new QueryClient();
 
@@ -307,7 +308,7 @@ const App = () => (
                 path="comercial-vexo"
                 element={
                   <ProtectedRoute allowedRoles={["internal"]}>
-                    <VexoPitch />
+                    <ComercialVexo />
                   </ProtectedRoute>
                 }
               />

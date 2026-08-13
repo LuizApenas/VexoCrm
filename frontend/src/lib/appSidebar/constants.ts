@@ -57,6 +57,11 @@ export const CANAIS_ITEMS: SidebarItem[] = [
   { key: "chips-whatsapp", label: "Chips WhatsApp", url: "/crm/chips-whatsapp", icon: Wifi, page: "conexoes" },
 ];
 
+// ━━ MÓDULOS ━━
+export const MODULE_ITEMS: SidebarItem[] = [
+  { key: "comercial-vexo", label: "Comercial Vexo", url: "/crm/comercial-vexo", icon: Sparkles, page: "apresentacao" },
+];
+
 // ━━ MÓDULOS DE TERCEIROS (Restritos por Tenant/Admin) ━━
 export const GERACAO_DIGITAL_ITEMS: SidebarItem[] = [
   { key: "geracao-digital", label: "Geração Digital", url: "/crm/apresentacao-gd", icon: Briefcase, page: "apresentacao-gd" }
@@ -75,7 +80,6 @@ export const AJUDA_ITEMS: SidebarItem[] = [
 export const ADMIN_ITEMS: SidebarItem[] = [
   { key: "superadmin", label: "Master Control", url: "/crm/superadmin", icon: Crown, page: "empresas" },
   { key: "admin", label: "Administração", url: "/crm/admin", icon: ShieldCheck, page: "empresas" },
-  { key: "comercial-vexo", label: "Comercial Vexo", url: "/crm/comercial-vexo", icon: Sparkles, page: "apresentacao" },
 ];
 
 export const COLOR_PRESETS = {

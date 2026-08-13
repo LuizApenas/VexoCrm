@@ -593,8 +593,9 @@ export default function GeracaoDigitalPublicProposal() {
                     .toLowerCase();
                   return `nome:${nome}`;
                 };
-                const hasAvancado = items.some(i => i.descricao?.toLowerCase().includes("avançado") || i.descricao?.toLowerCase().includes("avancado"));
-                const hasEssencial = items.some(i => i.descricao?.toLowerCase().includes("essencial") || i.categoria === "vexo");
+                const vexoPlanType = (proposal as any)?.vexo_plan || (proposal as any)?.vexoPlan || (proposal?.package_vexo_id ? "essencial" : null);
+                const hasAvancado = vexoPlanType === "avancado" || items.some(i => i.descricao?.toLowerCase().includes("avançado") || i.descricao?.toLowerCase().includes("avancado"));
+                const hasEssencial = vexoPlanType === "essencial" || items.some(i => i.categoria === "vexo") || Boolean(proposal.package_vexo_id) || Boolean((proposal as any)?.cobrar_setup && Number((proposal as any)?.valor_setup_vexo || 0) > 0);
 
                 const vexoScopeItems: ProposalItem[] = hasAvancado
                   ? [
