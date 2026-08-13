@@ -59,7 +59,7 @@ export default function ComercialVexo() {
 
           <TabsContent value="briefings" className="mt-0 focus-visible:outline-none">
             <ErrorBoundary>
-              <GeracaoDigitalImplementationBriefing />
+              <GeracaoDigitalImplementationBriefing isVexoCommercial={true} />
             </ErrorBoundary>
           </TabsContent>
 
@@ -71,13 +71,13 @@ export default function ComercialVexo() {
 
           <TabsContent value="propostas" className="mt-0 focus-visible:outline-none">
             <ErrorBoundary>
-              <GeracaoDigitalProposals />
+              <GeracaoDigitalProposals isVexoCommercial={true} />
             </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="contratos" className="mt-0 focus-visible:outline-none">
             <ErrorBoundary>
-              <GeracaoDigitalContracts />
+              <GeracaoDigitalContracts isVexoCommercial={true} />
             </ErrorBoundary>
           </TabsContent>
         </Tabs>

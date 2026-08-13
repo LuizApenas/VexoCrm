@@ -49,14 +49,14 @@ function getStatusConfig(status: string) {
   }
 }
 
-export function ContractsList() {
+export function ContractsList({ isVexoCommercial = false }: { isVexoCommercial?: boolean }) {
   const [showArquivados, setShowArquivados] = useState(false);
   const [busca, setBusca] = useState("");
   // Preferência de visualização persiste entre visitas à aba.
   const [view, setView] = useLocalStorage<"grid" | "list">("gd_contratos_view", "grid");
   const [page, setPage] = useState(1);
 
-  const { data: contracts, isLoading, error } = useGdContracts(undefined, showArquivados);
+  const { data: contracts, isLoading, error } = useGdContracts(undefined, showArquivados, isVexoCommercial);
   const updateContract = useUpdateGdContract();
   const enviarJuridico = useSendContractToJuridico();
   const { getIdToken, clientId } = useAuth();

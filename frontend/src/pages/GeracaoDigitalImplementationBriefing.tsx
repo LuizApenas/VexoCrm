@@ -74,7 +74,11 @@ interface KnowledgeFile {
   dataUrl?: string;
 }
 
-export default function GeracaoDigitalImplementationBriefing() {
+interface ImplementationBriefingProps {
+  isVexoCommercial?: boolean;
+}
+
+export default function GeracaoDigitalImplementationBriefing({ isVexoCommercial = false }: ImplementationBriefingProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -255,13 +259,14 @@ export default function GeracaoDigitalImplementationBriefing() {
 
   // Load Existing Implementation Briefings
   const { data: existingBriefings = [], isLoading: isLoadingBriefings } = useQuery({
-    queryKey: ["gd-implementation-briefings", selectedTenantId],
+    queryKey: ["gd-implementation-briefings", selectedTenantId, isVexoCommercial],
     queryFn: async () => {
       const token = await getIdToken();
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const ownerParam = isVexoCommercial ? "owner_company=vexo" : "owner_company=geracao-digital";
       const url = selectedTenantId
-        ? `/api/gd/implementation-briefings?tenant_id=${selectedTenantId}`
-        : `/api/gd/implementation-briefings`;
+        ? `/api/gd/implementation-briefings?tenant_id=${selectedTenantId}&${ownerParam}`
+        : `/api/gd/implementation-briefings?${ownerParam}`;
       const res = await fetchApi(url, { headers });
       if (!res.ok) throw new Error("Erro ao buscar briefings de implantação");
       const json = await res.json();
@@ -298,6 +303,7 @@ export default function GeracaoDigitalImplementationBriefing() {
         team_users: teamUsers,
         knowledge_files: knowledgeFiles,
         status,
+        owner_company: isVexoCommercial ? "vexo" : "geracao-digital",
       };
 
       const url = editingBriefingId
@@ -648,12 +654,13 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
   });
 
   return (
-    <PageShell
-      title="Briefing de Implantação (Onboarding Técnico)"
-      subtitle="Ferramenta de parametrização pós-contrato para go-live e configuração do tenant no Vexo OS."
-      icon={Layers}
-    >
-      <GeracaoDigitalTabs />
+    <PageShellContext.Provider value={isVexoCommercial}>
+      <PageShell
+        title={isVexoCommercial ? "Briefings de Implantação Vexo OS" : "Briefing de Implantação (Onboarding Técnico)"}
+        subtitle={isVexoCommercial ? "Ferramenta de parametrização de clientes do Vexo OS." : "Ferramenta de parametrização pós-contrato para go-live e configuração do tenant no Vexo OS."}
+        icon={Layers}
+      >
+        {!isVexoCommercial && <GeracaoDigitalTabs />}
 
       {/* SUB-ABA: FORMULÁRIO DE IMPLANTAÇÃO vs IMPLANTAÇÕES SALVAS */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 my-6 pb-4 border-b border-slate-200 dark:border-white/10">
@@ -1659,5 +1666,6 @@ _Registrado via Vexo CRM em ${new Date(selectedWaBriefing.updated_at || selected
         </div>
       )}
     </PageShell>
+    </PageShellContext.Provider>
   );
 }

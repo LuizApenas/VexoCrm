@@ -1,9 +1,23 @@
 import React from "react";
-import { PageShell } from "@/components/PageShell";
+import { PageShell, PageShellContext } from "@/components/PageShell";
 import { GeracaoDigitalTabs } from "@/components/GeracaoDigitalTabs";
 import { ContractsList } from "./ContractsList";
 
-export default function GeracaoDigitalContracts() {
+interface GeracaoDigitalContractsProps {
+  isVexoCommercial?: boolean;
+}
+
+export default function GeracaoDigitalContracts({ isVexoCommercial = false }: GeracaoDigitalContractsProps) {
+  if (isVexoCommercial) {
+    return (
+      <PageShellContext.Provider value={true}>
+        <div className="space-y-4">
+          <ContractsList isVexoCommercial={true} />
+        </div>
+      </PageShellContext.Provider>
+    );
+  }
+
   return (
     <PageShell
       title="Contratos GD"

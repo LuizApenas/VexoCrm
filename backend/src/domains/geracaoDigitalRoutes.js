@@ -249,6 +249,9 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS observacao_validade TEXT`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS pacotes_ofertados JSONB`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_contracts ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(() => {});
 
       // Seed de propostas históricas se a tabela estiver vazia
       const propCount = await dbPool.query("SELECT count(*)::int AS count FROM public.gd_proposals");
@@ -1934,6 +1937,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       const { periodo_plano = null, validade_ate = null, valor_apos_validade = null, observacao_validade = null, valor_vp = null } = req.body;
       const PERIODOS_VALIDOS_POST = ["mensal", "trimestral", "semestral", "anual"];
       const postPeriodoPlano = PERIODOS_VALIDOS_POST.includes(periodo_plano) ? periodo_plano : null;
+      const owner_company = req.body.owner_company || req.body.ownerCompany || (req.body.isVexo ? "vexo" : "geracao-digital");
       const setupVexo = cobrar_setup ? Number(valor_setup_vexo || 0) : 0;
 
       // Recalculate totals
@@ -1947,7 +1951,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           const baseCols = [
             "tenant_id", "presentation_id", "package_id", "package_vexo_id", "prospect_name", "itens", "valor_total", "condicoes", "status",
             "cobrar_setup", "valor_setup_vexo", "condicoes_pagamento", "periodo_plano", "validade_ate", "valor_apos_validade", "observacao_validade", "valor_vp",
-            "pacotes_ofertados"
+            "pacotes_ofertados", "owner_company"
           ];
           const cols = hasSegmentLogo ? [...baseCols, "segment_id", "prospect_logo"] : baseCols;
           const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
@@ -1974,38 +1978,40 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
             valor_vp !== null && valor_vp !== undefined ? Number(valor_vp) : null,
             Array.isArray(pacotes_ofertados) && pacotes_ofertados.length > 0
               ? JSON.stringify(pacotes_ofertados)
-              : null
+              : null,
+            owner_company
           ];
-          return hasSegmentLogo ? [...base, segment_id || null, prospect_logo || null] : base;
+          if (!hasSegmentLogo) return base;
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const validSegmentId = (segment_id && uuidRegex.test(segment_id)) ? segment_id : null;
+          return [...base, validSegmentId, prospect_logo || null];
         })()
       );
 
       res.status(201).json({ success: true, data: result.rows[0] });
     } catch (error) {
       console.error("[GeracaoDigital] Erro ao criar proposta:", error);
-      res.status(500).json({ error: "Erro ao gerar proposta comercial." });
+      res.status(500).json({ error: "Erro ao criar proposta." });
     }
   });
 
   // GET /api/gd/proposals
   app.get("/api/gd/proposals", requireFirebaseAuth, async (req, res) => {
     try {
-      let result = await pool.query(
-        `SELECT * FROM public.gd_proposals ORDER BY created_at DESC`
-      );
+      const ownerCompany = req.query.owner_company || req.query.ownerCompany || (req.query.isVexo === "1" || req.query.isVexo === "true" ? "vexo" : null);
 
-      if (result.rows.length === 0) {
-        await pool.query(`
-          INSERT INTO public.gd_proposals (id, tenant_id, prospect_name, valor_total, condicoes, status, cobrar_setup, valor_setup_vexo, periodo_plano, itens)
-          VALUES
-            ('f886eb5f-2071-4e5a-9dfa-f0478673330a', '00000000-0000-0000-0000-000000000000', 'Clinica Vitallis', 41000.00, 'Contrato Semestral. Recorrência R$ 6.000/mês + Setup Vexo R$ 5.000', 'rascunho', true, 5000, 'semestral', '[{"product_id": null, "descricao": "Pacote: Pacote Semestral (Recorrência)", "categoria": "gd", "valor": 6000, "recorrencia": "mensal", "meses": 6, "valor_vp": 3000}, {"product_id": "p-landing", "descricao": "GD: Landing Page/site", "categoria": "gd", "valor": 2500, "recorrencia": "pontual"}]'::jsonb),
-            ('a1111111-2222-3333-4444-555555555555', '00000000-0000-0000-0000-000000000000', 'Dr. Diogo Teodoro', 6000.00, 'Contrato Mensal Recorrente', 'rascunho', false, 0, 'mensal', '[{"product_id": null, "descricao": "Pacote: Gestão de Tráfego e Presença Digital", "categoria": "gd", "valor": 6000, "recorrencia": "mensal", "meses": 1}]'::jsonb),
-            ('b2222222-3333-4444-5555-666666666666', '00000000-0000-0000-0000-000000000000', 'Ótica R Deluxe', 18800.00, 'Contrato Semestral. Recorrência R$ 3.000/mês + Branding R$ 800', 'enviada', false, 0, 'semestral', '[{"product_id": null, "descricao": "Pacote: Posicionamento R Deluxe", "categoria": "gd", "valor": 3000, "recorrencia": "mensal", "meses": 6}]'::jsonb),
-            ('c3333333-4444-5555-6666-777777777777', '00000000-0000-0000-0000-000000000000', 'Mestre dos Jogos', 73500.00, 'Contrato Anual. Recorrência R$ 6.000/mês + Setup E-commerce', 'enviada', false, 0, 'anual', '[{"product_id": null, "descricao": "Pacote: Escala Mestre dos Jogos", "categoria": "gd", "valor": 6000, "recorrencia": "mensal", "meses": 12}]'::jsonb)
-          ON CONFLICT (id) DO NOTHING;
-        `).catch(() => {});
-        result = await pool.query(`SELECT * FROM public.gd_proposals ORDER BY created_at DESC`);
+      let queryStr = `SELECT * FROM public.gd_proposals`;
+      let queryParams = [];
+
+      if (ownerCompany) {
+        queryStr += ` WHERE owner_company = $1`;
+        queryParams.push(ownerCompany);
+      } else {
+        queryStr += ` WHERE (owner_company = 'geracao-digital' OR owner_company IS NULL)`;
       }
+      queryStr += ` ORDER BY created_at DESC`;
+
+      let result = await pool.query(queryStr, queryParams);
 
       const formatted = result.rows.map(row => {
         const items = Array.isArray(row.itens) ? row.itens : [];
@@ -2692,13 +2698,25 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   app.get("/api/gd/implementation-briefings", requireFirebaseAuth, async (req, res) => {
     try {
       const { tenant_id } = req.query;
-      let queryStr = `SELECT * FROM public.gd_implementation_briefings ORDER BY created_at DESC`;
+      const ownerCompany = req.query.owner_company || req.query.ownerCompany || (req.query.isVexo === "1" || req.query.isVexo === "true" ? "vexo" : null);
+
+      let conditions = [];
       let queryParams = [];
 
       if (tenant_id) {
-        queryStr = `SELECT * FROM public.gd_implementation_briefings WHERE tenant_id = $1 ORDER BY created_at DESC`;
-        queryParams = [tenant_id];
+        queryParams.push(tenant_id);
+        conditions.push(`tenant_id = $${queryParams.length}`);
       }
+
+      if (ownerCompany) {
+        queryParams.push(ownerCompany);
+        conditions.push(`owner_company = $${queryParams.length}`);
+      } else {
+        conditions.push(`(owner_company = 'geracao-digital' OR owner_company IS NULL)`);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const queryStr = `SELECT * FROM public.gd_implementation_briefings ${whereClause} ORDER BY created_at DESC`;
 
       const { rows } = await pool.query(queryStr, queryParams);
       res.json({ success: true, data: rows });
@@ -2743,13 +2761,15 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         canais = {},
         modulos_custom = {},
         fechamento = {},
-        status = 'em_andamento'
+        status = 'em_andamento',
+        owner_company: ownerCompanyInput
       } = req.body;
 
       if (!client_name) {
         return res.status(400).json({ error: "O nome do cliente é obrigatório." });
       }
 
+      const owner_company = ownerCompanyInput || req.body.ownerCompany || (req.body.isVexo ? "vexo" : "geracao-digital");
       const effectiveTenantId = String(tenant_id || client_name || "default-tenant").trim();
       const effectiveModelType = model_type || suggested_model || "essencial";
 
@@ -2757,8 +2777,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         `INSERT INTO public.gd_implementation_briefings (
           tenant_id, client_name, model_type, suggested_model, num_employees,
           has_commercial_sector, prerequisites, operacao, inteligencia, agente_ia,
-          canais, modulos_custom, fechamento, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          canais, modulos_custom, fechamento, status, owner_company
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING *`,
         [
           effectiveTenantId, client_name, effectiveModelType, suggested_model || effectiveModelType,
@@ -2766,7 +2786,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           JSON.stringify(prerequisites), JSON.stringify(operacao),
           JSON.stringify(inteligencia), JSON.stringify(agente_ia),
           JSON.stringify(canais), JSON.stringify(modulos_custom),
-          JSON.stringify(fechamento), status
+          JSON.stringify(fechamento), status, owner_company
         ]
       );
 

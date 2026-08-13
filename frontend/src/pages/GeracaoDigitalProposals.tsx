@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { PageShell } from "@/components/PageShell";
+import { PageShell, PageShellContext } from "@/components/PageShell";
 import { GeracaoDigitalTabs } from "@/components/GeracaoDigitalTabs";
 import { toast } from "@/components/ui/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -112,7 +112,11 @@ const PERIODO_OPTIONS = [
   { value: "anual", label: "Anual" },
 ];
 
-export default function GeracaoDigitalProposals() {
+interface GeracaoDigitalProposalsProps {
+  isVexoCommercial?: boolean;
+}
+
+export default function GeracaoDigitalProposals({ isVexoCommercial = false }: GeracaoDigitalProposalsProps) {
   const { isAuthenticated, getIdToken, clientId } = useAuth();
   const navigate = useNavigate();
 
@@ -191,7 +195,8 @@ export default function GeracaoDigitalProposals() {
     gdProducts,
     availableTerms,
     loadProposals,
-    toast
+    toast,
+    isVexoCommercial
   });
 
   const {
@@ -462,7 +467,8 @@ export default function GeracaoDigitalProposals() {
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
-      const res = await fetchApi(`/api/gd/proposals?client_id=${clientId || ""}`, { headers });
+      const ownerParam = isVexoCommercial ? "owner_company=vexo" : "owner_company=geracao-digital";
+      const res = await fetchApi(`/api/gd/proposals?client_id=${clientId || ""}&${ownerParam}`, { headers });
       if (!res.ok) {
         throw new Error(`Falha ao buscar propostas comerciais (Status ${res.status}).`);
       }
@@ -1104,12 +1110,13 @@ export default function GeracaoDigitalProposals() {
     }
   };
   return (
-    <PageShell
-      title="Propostas Comerciais GD"
-      subtitle="Editor de itens, termos de aceite comercial e assinatura eletrônica para fechamento de contratos."
-      icon={FileText}
-    >
-      <GeracaoDigitalTabs />
+    <PageShellContext.Provider value={isVexoCommercial}>
+      <PageShell
+        title={isVexoCommercial ? "Propostas Comerciais Vexo OS" : "Propostas Comerciais GD"}
+        subtitle={isVexoCommercial ? "Editor de propostas e termos de aceite comercial do Vexo OS." : "Editor de itens, termos de aceite comercial e assinatura eletrônica para fechamento de contratos."}
+        icon={FileText}
+      >
+        {!isVexoCommercial && <GeracaoDigitalTabs />}
       <div className="w-full min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-3xl p-6 border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden">
 
         {/* Glow Effects */}
@@ -1831,5 +1838,6 @@ export default function GeracaoDigitalProposals() {
         />
       )}
     </PageShell>
+    </PageShellContext.Provider>
   );
 }

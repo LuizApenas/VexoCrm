@@ -11,6 +11,7 @@ interface UseProposalWizardProps {
   availableTerms: PaymentTerm[];
   loadProposals: () => void;
   toast: (options: { title: string; description: string; variant?: "default" | "destructive" }) => void;
+  isVexoCommercial?: boolean;
 }
 
 export function useProposalWizard({
@@ -21,7 +22,8 @@ export function useProposalWizard({
   gdProducts,
   availableTerms,
   loadProposals,
-  toast
+  toast,
+  isVexoCommercial = false
 }: UseProposalWizardProps) {
   const [showNewForm, setShowNewForm] = useState<boolean>(false);
   const [wizardStep, setWizardStep] = useState<number>(1);
@@ -199,7 +201,8 @@ export function useProposalWizard({
             ...availableTerms.filter((t) => newOfferedTermIds.includes(t.id)),
           ],
           escolhida: null
-        }
+        },
+        owner_company: isVexoCommercial ? "vexo" : "geracao-digital"
       };
 
       const url = editingProposalId ? `/api/gd/proposals/${editingProposalId}` : `/api/gd/proposals`;

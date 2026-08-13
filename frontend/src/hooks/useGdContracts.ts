@@ -57,10 +57,10 @@ export function useGdContractTemplates() {
   });
 }
 
-export function useGdContracts(proposalId?: string, arquivado = false) {
+export function useGdContracts(proposalId?: string, arquivado = false, isVexoCommercial = false) {
   const { isAuthenticated, getIdToken } = useAuth();
   return useQuery({
-    queryKey: ["gdContracts", proposalId, arquivado],
+    queryKey: ["gdContracts", proposalId, arquivado, isVexoCommercial],
     enabled: isAuthenticated,
     queryFn: async (): Promise<GdContract[]> => {
       const token = await getIdToken();
@@ -68,7 +68,8 @@ export function useGdContracts(proposalId?: string, arquivado = false) {
       const params = new URLSearchParams();
       if (proposalId) params.set("proposal_id", proposalId);
       if (arquivado) params.set("arquivado", "true");
-      const url = `/api/gd/contracts${params.toString() ? `?${params}` : ""}`;
+      params.set("owner_company", isVexoCommercial ? "vexo" : "geracao-digital");
+      const url = `/api/gd/contracts?${params}`;
       const res = await fetchApi(url, {
         headers: {
           Authorization: `Bearer ${token}`,
