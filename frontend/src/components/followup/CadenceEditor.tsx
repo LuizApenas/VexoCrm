@@ -25,6 +25,8 @@ import {
   useReorderFupTemplates,
   type FupTemplate,
 } from "@/hooks/useFollowupAdmin";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 
 // Editor de cadências de follow-up (objetivo: dar onde criar as cadências reutilizáveis
 // que o Banco de Dados aplica). Uma cadência = passos (templates), cada passo = mensagem +
@@ -57,6 +59,11 @@ export default function CadenceEditor({ companyId }: { companyId: string }) {
   const { data: cadences = [], isLoading } = useFupCampaigns(validCompany || undefined);
   const [selectedId, setSelectedId] = useState<string>("");
   const [newCadenceName, setNewCadenceName] = useState("");
+
+  const crmClient = useOptionalCrmClient();
+  const selectedCrmClient = crmClient?.selectedClient;
+  const isUnlimitedCadences = hasFeatureUnlocked(selectedCrmClient, "unlimited_cadences");
+  const isEssencialLimitReached = !isUnlimitedCadences && cadences.length >= 2;
 
   const createCadence = useCreateFupCampaign();
   const updateCadence = useUpdateFupCampaign();
@@ -92,6 +99,14 @@ export default function CadenceEditor({ companyId }: { companyId: string }) {
   async function handleCreateCadence() {
     const name = newCadenceName.trim();
     if (!name) return;
+
+    if (isEssencialLimitReached) {
+      toast.error("Limite do Plano Essencial atingido (máx. 2 cadências).", {
+        description: "Faça o upgrade para o Plano Avançado para criar cadências ilimitadas!",
+      });
+      return;
+    }
+
     try {
       const created = await createCadence.mutateAsync({ company_id: validCompany, name });
       setNewCadenceName("");
@@ -174,14 +189,24 @@ export default function CadenceEditor({ companyId }: { companyId: string }) {
       {/* Lista de cadências */}
       <Card className="h-fit">
         <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-foreground">Suas Cadências</span>
+            {!isUnlimitedCadences && (
+              <Badge variant="outline" className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 border-amber-500/30">
+                Plano Essencial: {cadences.length}/2
+              </Badge>
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             <Input
-              placeholder="Nome da nova cadência"
+              placeholder={isEssencialLimitReached ? "Limite de 2 cadências atingido" : "Nome da nova cadência"}
               value={newCadenceName}
               onChange={(e) => setNewCadenceName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreateCadence()}
+              disabled={isEssencialLimitReached}
             />
-            <Button size="icon" onClick={handleCreateCadence} disabled={createCadence.isPending || !newCadenceName.trim()}>
+            <Button size="icon" onClick={handleCreateCadence} disabled={createCadence.isPending || !newCadenceName.trim() || isEssencialLimitReached}>
               <ListPlus className="h-4 w-4" />
             </Button>
           </div>

@@ -13,6 +13,8 @@ import { FollowUpJourneys } from "@/components/followup/FollowUpJourneys";
 import CadenceEditor from "@/components/followup/CadenceEditor";
 import { AnalyticsTab } from "@/pages/FollowupQueue/AnalyticsTab";
 import { ConfigTab } from "@/pages/FollowupQueue/ConfigTab";
+import { UpsellCard } from "@/components/UpsellCard";
+import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MÓDULO DE FOLLOW-UP — fluxo LINEAR (redesenho). Em vez de abas soltas, uma sequência
@@ -123,6 +125,8 @@ export default function FollowupDashboard() {
   const activeCompany = companies.find((c) => c.id === companyId) || null;
   const hasCompany = companies.length > 0;
 
+  const isAutomationsUnlocked = hasFeatureUnlocked(selectedCrmClient, "followup_automations");
+
   return (
     <PageShell
       title="Módulo de Follow-up"
@@ -190,8 +194,26 @@ export default function FollowupDashboard() {
           title="Automações por evento (opcional)"
           subtitle="Mensagens disparadas automaticamente por gatilhos: novo lead, agendamento, proposta enviada, no-show."
           collapsible
+          defaultOpen={isAutomationsUnlocked}
         >
-          <FollowUpJourneys companyId={companyId} />
+          {isAutomationsUnlocked ? (
+            <FollowUpJourneys companyId={companyId} />
+          ) : (
+            <UpsellCard
+              title="Automações por Evento"
+              subtitle="Exclusivo do Plano Avançado"
+              description="Gatilhos automáticos de Novo Lead, Agendamento e No-Show são exclusivos do Plano Avançado. Automatize 100% do seu pós-venda!"
+              moduleName="Automações por Evento (Follow-up)"
+              benefits={[
+                "Disparo imediato de boas-vindas para novos leads cadastrados",
+                "Lembretes automáticos antes e depois de reuniões (Agendamento & No-Show)",
+                "Reengajamento automático de propostas comerciais sem resposta",
+                "Reciclagem e reativação contínua de leads inativos ou perdidos",
+              ]}
+            >
+              <FollowUpJourneys companyId={companyId} />
+            </UpsellCard>
+          )}
         </StepSection>
       )}
 
