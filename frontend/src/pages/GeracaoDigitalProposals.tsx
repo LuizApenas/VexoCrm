@@ -860,7 +860,12 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
         // Coluna valor_vp = VP MENSAL do prazo selecionado (a página pública
         // divide a mensalidade por ele). Vem do % do plano, com fallback no
         // VP manual antigo.
-        valor_vp: vpMensalPlano > 0 ? vpMensalPlano : null
+        valor_vp: vpMensalPlano > 0 ? vpMensalPlano : null,
+        condicoes_especiais: (editPlano as any).condicoesEspeciais || (editPlano as any).condicoes_especiais || condicoes || null,
+        desconto_setup_pct: (editPlano as any).descontoSetupPorcentagem ?? (editPlano as any).desconto_setup_pct ?? 0,
+        desconto_mensal_pct: (editPlano as any).descontoMensalPorcentagem ?? (editPlano as any).desconto_mensal_pct ?? 0,
+        vexo_plan: (editPlano as any).vexoPlan || null,
+        vexo_price: (editPlano as any).vexoPlan === "essencial" ? 397 : (editPlano as any).vexoPlan === "avancado" ? 897 : 0
       };
 
       const res = await fetchApi(`/api/gd/proposals/${selectedProposal.id}`, {

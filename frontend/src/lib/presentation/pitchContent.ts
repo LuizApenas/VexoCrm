@@ -1299,6 +1299,95 @@ export const SEGMENT_GROUPS: Record<string, SegmentGroup> = {
       ];
     },
   },
+  turismo: {
+    id: "turismo",
+    label: "Agências de Turismo & Viagens",
+    tagline: "Vendas de Pacotes, Cruzeiros e Cotações no WhatsApp sem Perder Clientes",
+    buildSlides: (ctx: PitchContext): PitchSlide[] => {
+      const nome = ctx.prospectName || "sua agência";
+      return [
+        {
+          id: 1,
+          kind: "cover",
+          eyebrow: "APRESENTAÇÃO COMERCIAL",
+          title: `Transforme Cotações de Viagens em Vendas com Resposta Imediata na ${nome}.`,
+          subtitle: "Como agências de turismo líderes multiplicam fecho de pacotes, cruzeiros e passagens aéreas com inteligência de atendimento.",
+        },
+        {
+          id: 2,
+          kind: "problem",
+          eyebrow: "O DESAFIO DO TURISMO",
+          title: "Cotações no WhatsApp esfriam em poucas horas.",
+          bullets: [
+            "Clientes pesquisam pacotes e resorts em várias agências ao mesmo tempo.",
+            "Demorar mais de 10 minutos para enviar a cotação faz o viajante fechar com o concorrente.",
+            "Base de clientes que viajaram no ano passado fica abandonada sem acompanhamento para as próximas férias.",
+            "Atendentes perdem horas digitando as mesmas opções de voos, hotéis e passeios manualmente.",
+          ],
+        },
+        {
+          id: 3,
+          kind: "math",
+          eyebrow: "O CUSTO DAS COTAÇÕES PERDIDAS",
+          title: "Vendas perdidas no WhatsApp custam caro.",
+          body: `Agências de viagem perdem de 30% a 50% dos orçamentos por falta de agilidade na cotação inicial e acompanhamento de follow-up. Uma única venda de viagem internacional ou cruzeiro familiar recuperada já paga todo o investimento do sistema.`,
+          metric: {
+            value: "R$ 15.000+/mês",
+            caption: "em receita estimada de pacotes que deixam de ser fechados por demora na resposta",
+          },
+        },
+        {
+          id: 4,
+          kind: "solution",
+          eyebrow: "A SOLUÇÃO VEXO + GD",
+          title: "Cotação Instantânea e Nutrição Automática de Viajantes.",
+          steps: [
+            "Campanhas da Geração Digital direcionam passageiros qualificados pesquisando destinos, cruzeiros e pacotes para o seu WhatsApp.",
+            "IA de Atendimento Vexo responde em segundos, coleta destino desejado, datas, número de passageiros e orçamento estimado.",
+            "Qualificação automática e direcionamento imediato para os consultores de viagem com briefing pronto.",
+            "Régua de Follow-up pós-orçamento: lembretes automáticos sobre câmbio, bloqueio de vagas de voo e facilidades de pagamento.",
+            "Reengajamento de carteira: disparo automático 6 meses antes das férias para viagens em família ou feriados prolongados.",
+          ],
+        },
+        {
+          id: 5,
+          kind: "partnership",
+          eyebrow: "PARCERIA ESTRATÉGICA",
+          title: "Geração Digital + Vexo OS para Turismo",
+          subtitle: `A Geração Digital traz os passageiros buscando viagem, e o Vexo OS garante cotação ultra-rápida e conversão no WhatsApp da ${nome}.`,
+          fronts: [
+            {
+              label: "Geração Digital",
+              tag: "Captação de Viajantes",
+              items: [
+                "Anúncios focados em Destinos Nacionais, Internacionais e Cruzeiros",
+                "Tráfego pago no Instagram/Facebook e buscas no Google Ads",
+                "Campanhas de Alta Temporada, Feriados e Férias de Julho/Dezembro",
+              ],
+            },
+            {
+              label: "Vexo OS",
+              tag: "IA & Cotação no WhatsApp",
+              items: [
+                "Atendimento instantâneo 24/7 de cotações no WhatsApp",
+                "Ficha do viajante com destino, datas e orçamento",
+                "Follow-up de orçamentos pendentes",
+                "Reativação de clientes antigos nas vésperas das férias",
+              ],
+            },
+          ],
+        },
+        {
+          id: 6,
+          kind: "close",
+          eyebrow: "PRÓXIMO PASSO",
+          title: "Eleve o faturamento da sua agência.",
+          body: `Não perca mais passagens e pacotes para quem respondeu minutos mais rápido. Vamos estruturar a operação da ${nome} hoje.`,
+          punch: "Agilidade é o maior diferencial competitivo no turismo moderno.",
+        },
+      ];
+    },
+  },
 };
 
 // Mapeamento de segment_id específico -> grupo. Adicione novos ids aqui conforme

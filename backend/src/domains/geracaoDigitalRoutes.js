@@ -250,6 +250,13 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS valor_vp NUMERIC`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS pacotes_ofertados JSONB`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS condicoes_especiais TEXT`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS desconto_setup_pct NUMERIC DEFAULT 0`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS desconto_mensal_pct NUMERIC DEFAULT 0`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_plan VARCHAR(50)`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_price NUMERIC DEFAULT 0`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_plan VARCHAR(50)`).catch(() => {});
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_price NUMERIC DEFAULT 0`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(() => {});
       await dbPool.query(`ALTER TABLE public.gd_contracts ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(() => {});
 
@@ -1935,6 +1942,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       // Setup Vexo opcional e condições de pagamento (campos opcionais)
       const { cobrar_setup = false, valor_setup_vexo = null, condicoes_pagamento = null } = req.body;
       const { periodo_plano = null, validade_ate = null, valor_apos_validade = null, observacao_validade = null, valor_vp = null } = req.body;
+      const { condicoes_especiais = null, desconto_setup_pct = 0, desconto_mensal_pct = 0, vexi_plan = null, vexi_price = 0, vexo_plan = null, vexo_price = 0 } = req.body;
       const PERIODOS_VALIDOS_POST = ["mensal", "trimestral", "semestral", "anual"];
       const postPeriodoPlano = PERIODOS_VALIDOS_POST.includes(periodo_plano) ? periodo_plano : null;
       const owner_company = req.body.owner_company || req.body.ownerCompany || (req.body.isVexo ? "vexo" : "geracao-digital");
@@ -1951,7 +1959,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           const baseCols = [
             "tenant_id", "presentation_id", "package_id", "package_vexo_id", "prospect_name", "itens", "valor_total", "condicoes", "status",
             "cobrar_setup", "valor_setup_vexo", "condicoes_pagamento", "periodo_plano", "validade_ate", "valor_apos_validade", "observacao_validade", "valor_vp",
-            "pacotes_ofertados", "owner_company"
+            "pacotes_ofertados", "owner_company", "condicoes_especiais", "desconto_setup_pct", "desconto_mensal_pct", "vexi_plan", "vexi_price", "vexo_plan", "vexo_price"
           ];
           const cols = hasSegmentLogo ? [...baseCols, "segment_id", "prospect_logo"] : baseCols;
           const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
@@ -1979,7 +1987,14 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
             Array.isArray(pacotes_ofertados) && pacotes_ofertados.length > 0
               ? JSON.stringify(pacotes_ofertados)
               : null,
-            owner_company
+            owner_company,
+            condicoes_especiais || null,
+            Number(desconto_setup_pct || 0),
+            Number(desconto_mensal_pct || 0),
+            vexi_plan || vexo_plan || null,
+            Number(vexi_price || vexo_price || 0),
+            vexo_plan || vexi_plan || null,
+            Number(vexo_price || vexi_price || 0)
           ];
           if (!hasSegmentLogo) return base;
           const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -2122,7 +2137,10 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   app.put("/api/gd/proposals/:id", requireFirebaseAuth, async (req, res) => {
     try {
       const { id } = req.params;
-      const { client_id, prospect_name, itens, condicoes, status, payment_link, cobrar_setup, valor_setup_vexo, condicoes_pagamento, periodo_plano, validade_ate, valor_apos_validade, observacao_validade, descontos_concedidos, arquivada, meio_pagamento, package_id, package_vexo_id, valor_vp, pacotes_ofertados, segment_id, prospect_logo } = req.body;
+      const {
+        client_id, prospect_name, itens, condicoes, status, payment_link, cobrar_setup, valor_setup_vexo, condicoes_pagamento, periodo_plano, validade_ate, valor_apos_validade, observacao_validade, descontos_concedidos, arquivada, meio_pagamento, package_id, package_vexo_id, valor_vp, pacotes_ofertados, segment_id, prospect_logo,
+        condicoes_especiais, desconto_setup_pct, desconto_mensal_pct, vexi_plan, vexi_price, vexo_plan, vexo_price
+      } = req.body;
       const tenantId = await resolveTenantUuid(client_id);
 
       // Validate payment_link format (http/https)
@@ -2177,10 +2195,12 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         ? (valor_vp !== null ? Number(valor_vp) : null)
         : (current.valor_vp !== null ? Number(current.valor_vp) : null);
 
-      // segment_id/prospect_logo faltavam no PUT: o wizard os enviava e o
-      // backend descartava calado, então editar uma proposta apagava o
-      // segmento da apresentação e a logo do cliente. Colunas condicionais —
-      // mesma checagem usada no POST.
+      const finalCondicoesEspeciais = condicoes_especiais !== undefined ? (condicoes_especiais || null) : current.condicoes_especiais;
+      const finalDescontoSetupPct = desconto_setup_pct !== undefined ? Number(desconto_setup_pct || 0) : current.desconto_setup_pct;
+      const finalDescontoMensalPct = desconto_mensal_pct !== undefined ? Number(desconto_mensal_pct || 0) : current.desconto_mensal_pct;
+      const finalVexoPlan = vexo_plan || vexi_plan || current.vexo_plan || current.vexi_plan;
+      const finalVexoPrice = vexo_price !== undefined ? Number(vexo_price || 0) : (vexi_price !== undefined ? Number(vexi_price || 0) : current.vexo_price);
+
       const podeSegLogo = await proposalHasSegmentLogo();
       const segLogoSet = podeSegLogo
         ? ",\n             segment_id = COALESCE($23, segment_id),\n             prospect_logo = COALESCE($24, prospect_logo)"
@@ -2207,7 +2227,14 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
              package_id = $17,
              package_vexo_id = $18,
              valor_vp = $21,
-             pacotes_ofertados = $22${segLogoSet}
+             pacotes_ofertados = $22,
+             condicoes_especiais = $25,
+             desconto_setup_pct = $26,
+             desconto_mensal_pct = $27,
+             vexi_plan = $28,
+             vexi_price = $29,
+             vexo_plan = $28,
+             vexo_price = $29${segLogoSet}
          WHERE id = $19 AND tenant_id = $20 RETURNING *`,
         [
           prospect_name,
@@ -2231,9 +2258,14 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           id,
           tenantId,
           finalValorVp,
-          finalPacotesOfertados ? JSON.stringify(finalPacotesOfertados) : null,
-          // Só entram quando as colunas existem: pg rejeita parâmetro a mais.
-          ...(podeSegLogo ? [segment_id ?? null, prospect_logo ?? null] : [])
+          Array.isArray(finalPacotesOfertados) && finalPacotesOfertados.length > 0 ? JSON.stringify(finalPacotesOfertados) : null,
+          segment_id || null,
+          prospect_logo || null,
+          finalCondicoesEspeciais,
+          finalDescontoSetupPct,
+          finalDescontoMensalPct,
+          finalVexoPlan,
+          finalVexoPrice
         ]
       );
 

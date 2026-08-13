@@ -98,12 +98,23 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
               type="button"
               onClick={() => {
                 const currentPlan = (plano as any).vexoPlan === "essencial" ? null : "essencial";
+                const prevPlan = (plano as any).vexoPlan;
+                const prevVexoMonthly = prevPlan === "essencial" ? 397 : prevPlan === "avancado" ? 897 : 0;
+                const newVexoMonthly = currentPlan === "essencial" ? 397 : 0;
+
+                const newPrecos = { ...plano.precos };
+                PERIODOS.forEach((p) => {
+                  const val = Number(newPrecos[p.key] || 0);
+                  if (val > 0 || currentPlan !== null) {
+                    newPrecos[p.key] = Math.max(0, val - prevVexoMonthly + newVexoMonthly);
+                  }
+                });
+
                 onChange({
                   ...plano,
                   vexoPlan: currentPlan,
-                  precos: currentPlan === "essencial"
-                    ? { ...plano.precos, mensal: 397 }
-                    : plano.precos,
+                  valorSetupVexo: currentPlan === "essencial" ? 690 : 0,
+                  precos: newPrecos,
                 } as any);
               }}
               className={cn(
@@ -134,12 +145,23 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
               type="button"
               onClick={() => {
                 const currentPlan = (plano as any).vexoPlan === "avancado" ? null : "avancado";
+                const prevPlan = (plano as any).vexoPlan;
+                const prevVexoMonthly = prevPlan === "essencial" ? 397 : prevPlan === "avancado" ? 897 : 0;
+                const newVexoMonthly = currentPlan === "avancado" ? 897 : 0;
+
+                const newPrecos = { ...plano.precos };
+                PERIODOS.forEach((p) => {
+                  const val = Number(newPrecos[p.key] || 0);
+                  if (val > 0 || currentPlan !== null) {
+                    newPrecos[p.key] = Math.max(0, val - prevVexoMonthly + newVexoMonthly);
+                  }
+                });
+
                 onChange({
                   ...plano,
                   vexoPlan: currentPlan,
-                  precos: currentPlan === "avancado"
-                    ? { ...plano.precos, mensal: 897 }
-                    : plano.precos,
+                  valorSetupVexo: currentPlan === "avancado" ? 1490 : 0,
+                  precos: newPrecos,
                 } as any);
               }}
               className={cn(
@@ -241,10 +263,15 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
                 type="number"
                 min={0}
                 max={100}
-                value={(plano as any).descontoSetupPorcentagem || ""}
-                onChange={(e) =>
-                  onChange({ ...plano, descontoSetupPorcentagem: Math.max(0, Math.min(100, Number(e.target.value))) } as any)
-                }
+                value={(plano as any).descontoSetupPorcentagem ?? (plano as any).desconto_setup_pct ?? ""}
+                onChange={(e) => {
+                  const val = Math.max(0, Math.min(100, Number(e.target.value)));
+                  onChange({
+                    ...plano,
+                    descontoSetupPorcentagem: val,
+                    desconto_setup_pct: val
+                  } as any);
+                }}
                 placeholder="0"
                 className="h-8 text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10"
               />
@@ -260,10 +287,15 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
                 type="number"
                 min={0}
                 max={100}
-                value={(plano as any).descontoMensalPorcentagem || ""}
-                onChange={(e) =>
-                  onChange({ ...plano, descontoMensalPorcentagem: Math.max(0, Math.min(100, Number(e.target.value))) } as any)
-                }
+                value={(plano as any).descontoMensalPorcentagem ?? (plano as any).desconto_mensal_pct ?? ""}
+                onChange={(e) => {
+                  const val = Math.max(0, Math.min(100, Number(e.target.value)));
+                  onChange({
+                    ...plano,
+                    descontoMensalPorcentagem: val,
+                    desconto_mensal_pct: val
+                  } as any);
+                }}
                 placeholder="0"
                 className="h-8 text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10"
               />
@@ -271,6 +303,60 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
             </div>
           </div>
         </div>
+
+        {/* RESUMO DE FATURAMENTO COM DESCONTOS REATIVOS */}
+        {(() => {
+          const descSetupPct = Math.max(0, Math.min(100, Number((plano as any).descontoSetupPorcentagem ?? (plano as any).desconto_setup_pct ?? 0)));
+          const descMensalPct = Math.max(0, Math.min(100, Number((plano as any).descontoMensalPorcentagem ?? (plano as any).desconto_mensal_pct ?? 0)));
+
+          const planType = (plano as any).vexoPlan;
+          const setupVexoBase = planType === "essencial" ? 690 : planType === "avancado" ? 1490 : Number((plano as any).valorSetupVexo || 0);
+          const setupOriginal = setupVexoBase;
+          const setupFinal = Math.max(0, setupOriginal * (1 - descSetupPct / 100));
+
+          const primeiroPrazo = PERIODOS.find((p) => Number(plano.precos[p.key] || 0) > 0);
+          const mensalOriginal = primeiroPrazo ? Number(plano.precos[primeiroPrazo.key] || 0) : 0;
+          const mensalFinal = Math.max(0, mensalOriginal * (1 - descMensalPct / 100));
+          const mesesCount = primeiroPrazo ? mesesDoPeriodo(primeiroPrazo.key) : 1;
+          const compromissoFinal = mensalFinal * mesesCount;
+
+          return (
+            <div className="mt-4 p-3 rounded-xl bg-purple-900/10 dark:bg-purple-950/30 border border-purple-300 dark:border-purple-800 space-y-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 block">
+                Resumo de Faturamento
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="bg-white/60 dark:bg-slate-800/60 p-2 rounded-lg border border-purple-200/50 dark:border-purple-800/40">
+                  <span className="text-[10px] font-bold text-slate-500 block uppercase">Taxa de Setup</span>
+                  <div className="flex items-center gap-1">
+                    {descSetupPct > 0 && (
+                      <span className="line-through text-slate-400 text-[10px]">{brl(setupOriginal)}</span>
+                    )}
+                    <span className="font-black text-slate-800 dark:text-white">{brl(setupFinal)}</span>
+                  </div>
+                  {descSetupPct > 0 && <span className="text-[9px] text-emerald-600 font-bold">(-{descSetupPct}%)</span>}
+                </div>
+
+                <div className="bg-white/60 dark:bg-slate-800/60 p-2 rounded-lg border border-purple-200/50 dark:border-purple-800/40">
+                  <span className="text-[10px] font-bold text-slate-500 block uppercase">Mensalidade</span>
+                  <div className="flex items-center gap-1">
+                    {descMensalPct > 0 && (
+                      <span className="line-through text-slate-400 text-[10px]">{brl(mensalOriginal)}</span>
+                    )}
+                    <span className="font-black text-slate-800 dark:text-white">{brl(mensalFinal)}/mês</span>
+                  </div>
+                  {descMensalPct > 0 && <span className="text-[9px] text-emerald-600 font-bold">(-{descMensalPct}%)</span>}
+                </div>
+
+                <div className="bg-white/60 dark:bg-slate-800/60 p-2 rounded-lg border border-purple-200/50 dark:border-purple-800/40">
+                  <span className="text-[10px] font-bold text-slate-500 block uppercase">Compromisso do Período</span>
+                  <span className="font-black text-purple-600 dark:text-purple-400">{brl(setupFinal + compromissoFinal)}</span>
+                  {primeiroPrazo && <span className="text-[9px] text-slate-400 block font-normal">({primeiroPrazo.label} · {mesesCount} meses)</span>}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="grid gap-3 sm:grid-cols-2 pt-1">
           <div className="space-y-1">
