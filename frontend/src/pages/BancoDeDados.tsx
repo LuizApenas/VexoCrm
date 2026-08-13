@@ -110,6 +110,79 @@ export interface DynamicFilterRule {
   value: string;
 }
 
+// Definições de Canais de Marketing para Atribuição e Disparos
+export const MARKETING_CHANNELS = [
+  {
+    id: "instagram",
+    name: "Instagram",
+    icon: "📸",
+    activeBorder: "border-pink-500 ring-2 ring-pink-500/30 bg-pink-500/10 shadow-sm",
+    badgeClass: "bg-pink-500/15 text-pink-700 dark:text-pink-300 border-pink-500/30",
+  },
+  {
+    id: "google",
+    name: "Google Ads",
+    icon: "🔍",
+    activeBorder: "border-blue-500 ring-2 ring-blue-500/30 bg-blue-500/10 shadow-sm",
+    badgeClass: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30",
+  },
+  {
+    id: "facebook",
+    name: "Facebook Ads",
+    icon: "📘",
+    activeBorder: "border-indigo-500 ring-2 ring-indigo-500/30 bg-indigo-500/10 shadow-sm",
+    badgeClass: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30",
+  },
+  {
+    id: "tiktok",
+    name: "TikTok",
+    icon: "🎵",
+    activeBorder: "border-zinc-500 ring-2 ring-zinc-500/30 bg-zinc-500/10 shadow-sm",
+    badgeClass: "bg-zinc-500/15 text-zinc-800 dark:text-zinc-200 border-zinc-500/30",
+  },
+  {
+    id: "indicacao",
+    name: "Indicação",
+    icon: "🤝",
+    activeBorder: "border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-500/10 shadow-sm",
+    badgeClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+  },
+  {
+    id: "whatsapp_outros",
+    name: "WhatsApp Direto / Outros",
+    icon: "💬",
+    activeBorder: "border-purple-500 ring-2 ring-purple-500/30 bg-purple-500/10 shadow-sm",
+    badgeClass: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30",
+  },
+];
+
+export function getLeadSource(lead?: LeadIntelligenceItem | null): string {
+  if (!lead) return "Não informado";
+  return lead.lead_source || lead.dados?.origem_marketing || lead.dados?.origem || lead.origem || "Não informado";
+}
+
+export function getLeadMarketingChannelId(lead?: LeadIntelligenceItem | null): string {
+  const s = (getLeadSource(lead) || "").toLowerCase().trim();
+  if (s.includes("insta")) return "instagram";
+  if (s.includes("goog") || s.includes("gads") || s.includes("pesquisa")) return "google";
+  if (s.includes("face") || s.includes("fb")) return "facebook";
+  if (s.includes("tik") || s.includes("tt")) return "tiktok";
+  if (s.includes("indic") || s.includes("amig") || s.includes("recomenda") || s.includes("referral")) return "indicacao";
+  return "whatsapp_outros";
+}
+
+export function renderSourceBadge(sourceStr?: string | null) {
+  const s = (sourceStr || "").toLowerCase();
+  if (s.includes("instagram")) return <Badge className="bg-pink-500/15 text-pink-700 dark:text-pink-300 border-pink-500/30">📸 Instagram</Badge>;
+  if (s.includes("google")) return <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30">🔍 Google Ads</Badge>;
+  if (s.includes("facebook")) return <Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30">📘 Facebook Ads</Badge>;
+  if (s.includes("tiktok")) return <Badge className="bg-zinc-500/15 text-zinc-900 dark:text-zinc-100 border-zinc-500/30">🎵 TikTok</Badge>;
+  if (s.includes("indica") || s.includes("referral")) return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">🤝 Indicação</Badge>;
+  if (s.includes("form") || s.includes("site")) return <Badge className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30">📝 Formulário</Badge>;
+  if (s.includes("whatsapp")) return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">💬 WhatsApp</Badge>;
+  return <Badge variant="outline" className="text-slate-600 dark:text-slate-300 text-[11px]">{sourceStr || "Não informado"}</Badge>;
+}
+
 export default function BancoDeDados() {
   const navigate = useNavigate();
   const { isAuthenticated, getIdToken } = useAuth();
@@ -856,62 +929,6 @@ export default function BancoDeDados() {
     }
   };
 
-  // Definições de Canais de Marketing para Atribuição e Disparos
-  const MARKETING_CHANNELS = [
-    {
-      id: "instagram",
-      name: "Instagram",
-      icon: "📸",
-      activeBorder: "border-pink-500 ring-2 ring-pink-500/30 bg-pink-500/10 shadow-sm",
-      badgeClass: "bg-pink-500/15 text-pink-700 dark:text-pink-300 border-pink-500/30",
-    },
-    {
-      id: "google",
-      name: "Google Ads",
-      icon: "🔍",
-      activeBorder: "border-blue-500 ring-2 ring-blue-500/30 bg-blue-500/10 shadow-sm",
-      badgeClass: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30",
-    },
-    {
-      id: "facebook",
-      name: "Facebook Ads",
-      icon: "📘",
-      activeBorder: "border-indigo-500 ring-2 ring-indigo-500/30 bg-indigo-500/10 shadow-sm",
-      badgeClass: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30",
-    },
-    {
-      id: "tiktok",
-      name: "TikTok",
-      icon: "🎵",
-      activeBorder: "border-zinc-500 ring-2 ring-zinc-500/30 bg-zinc-500/10 shadow-sm",
-      badgeClass: "bg-zinc-500/15 text-zinc-800 dark:text-zinc-200 border-zinc-500/30",
-    },
-    {
-      id: "indicacao",
-      name: "Indicação",
-      icon: "🤝",
-      activeBorder: "border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-500/10 shadow-sm",
-      badgeClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
-    },
-    {
-      id: "whatsapp_outros",
-      name: "WhatsApp Direto / Outros",
-      icon: "💬",
-      activeBorder: "border-purple-500 ring-2 ring-purple-500/30 bg-purple-500/10 shadow-sm",
-      badgeClass: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30",
-    },
-  ];
-
-  const getLeadMarketingChannelId = (lead: LeadIntelligenceItem): string => {
-    const s = (getLeadSource(lead) || "").toLowerCase().trim();
-    if (s.includes("insta")) return "instagram";
-    if (s.includes("goog") || s.includes("gads") || s.includes("pesquisa")) return "google";
-    if (s.includes("face") || s.includes("fb")) return "facebook";
-    if (s.includes("tik") || s.includes("tt")) return "tiktok";
-    if (s.includes("indic") || s.includes("amig") || s.includes("recomenda") || s.includes("referral")) return "indicacao";
-    return "whatsapp_outros";
-  };
-
   const marketingMetrics = useMemo(() => {
     const total = leads.length;
     const counts: Record<string, number> = {
@@ -954,23 +971,6 @@ export default function BancoDeDados() {
     toast.success(`Disparo Segmentado: ${chDef.icon} ${chDef.name}`, {
       description: `${leadsForChannel.length} contatos selecionados para a campanha.`,
     });
-  };
-
-  // Lead Source Helpers
-  const getLeadSource = (lead: LeadIntelligenceItem): string => {
-    return lead.lead_source || lead.dados?.origem_marketing || lead.dados?.origem || lead.origem || "Não informado";
-  };
-
-  const renderSourceBadge = (sourceStr: string) => {
-    const s = (sourceStr || "").toLowerCase();
-    if (s.includes("instagram")) return <Badge className="bg-pink-500/15 text-pink-700 dark:text-pink-300 border-pink-500/30">📸 Instagram</Badge>;
-    if (s.includes("google")) return <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30">🔍 Google Ads</Badge>;
-    if (s.includes("facebook")) return <Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30">📘 Facebook Ads</Badge>;
-    if (s.includes("tiktok")) return <Badge className="bg-zinc-500/15 text-zinc-900 dark:text-zinc-100 border-zinc-500/30">🎵 TikTok</Badge>;
-    if (s.includes("indica") || s.includes("referral")) return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">🤝 Indicação</Badge>;
-    if (s.includes("form") || s.includes("site")) return <Badge className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30">📝 Formulário</Badge>;
-    if (s.includes("whatsapp")) return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">💬 WhatsApp</Badge>;
-    return <Badge variant="outline" className="text-slate-600 dark:text-slate-300 text-[11px]">{sourceStr || "Não informado"}</Badge>;
   };
 
   const availableSources = useMemo(() => {
