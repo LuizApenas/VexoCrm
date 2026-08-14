@@ -35,7 +35,8 @@ import {
   ExternalLink,
   Search,
   LayoutGrid,
-  List as ListIcon
+  List as ListIcon,
+  Layers,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PERIOD_LABELS as PKG_PERIOD_LABELS } from "@/lib/geracaoDigital/packagePricing";
@@ -55,6 +56,7 @@ import {
 } from "@/lib/geracaoDigital/paymentTerms";
 import { GenerateContractDialog } from "./GeracaoDigitalContracts/GenerateContractDialog";
 import { ShareProposalDialog } from "./GeracaoDigitalProposals/ShareProposalDialog";
+import { SlideEditorModal } from "@/components/presentation/SlideEditorModal";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useProposalWizard } from "@/hooks/useProposalWizard";
 import { ProposalWizard } from "@/components/geracaoDigital/ProposalWizard";
@@ -102,6 +104,8 @@ interface Proposal {
   package_id?: string | null;
   package_vexo_id?: string | null;
   pacotes_ofertados?: string[] | null;
+  segment_id?: string | null;
+  presentation_slides?: any[] | null;
 }
 
 const PERIODO_OPTIONS = [
@@ -185,6 +189,55 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
   const [segmentsList, setSegmentsList] = useState<any[]>([]);
   const [vexoProducts, setVexoProducts] = useState<any[]>([]);
   const [gdProducts, setGdProducts] = useState<any[]>([]);
+
+  // Slide Editor & Pitch Generator State
+  const [showSlideEditorModal, setShowSlideEditorModal] = useState<boolean>(false);
+  const [isGeneratingPitchId, setIsGeneratingPitchId] = useState<string | null>(null);
+
+  const handleGeneratePitchWithAI = async (proposal: Proposal) => {
+    try {
+      setIsGeneratingPitchId(proposal.id);
+      const token = await getIdToken();
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetchApi(
+        `/api/gd/proposals/${proposal.id}/generate-pitch?client_id=${clientId || ""}`,
+        {
+          method: "POST",
+          headers,
+        }
+      );
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "Falha ao gerar pitch com a IA da Groq.");
+      }
+
+      const json = await res.json();
+      const generatedSlides = json?.data || json?.slides;
+      
+      setSelectedProposal((prev) => (prev ? { ...prev, presentation_slides: generatedSlides } : prev));
+      setProposals((prev) =>
+        prev.map((p) => (p.id === proposal.id ? { ...p, presentation_slides: generatedSlides } : p))
+      );
+
+      toast({
+        title: "Pitch Gerado com Sucesso! ✨",
+        description: "Os 6 slides foram personalizados com IA Groq para a proposta.",
+      });
+      setShowSlideEditorModal(true);
+    } catch (err: any) {
+      console.error("[GeracaoDigitalProposals] Erro:", err);
+      toast({
+        title: "Erro ao gerar pitch",
+        description: err?.message || "Verifique sua chave da Groq ou conexão.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingPitchId(null);
+    }
+  };
 
   // Hook customizado para gerenciar estado/ações do wizard de criação de proposta
   const wizardState = useProposalWizard({
@@ -1412,26 +1465,61 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                   </CardHeader>
                   <CardContent className="pt-6 space-y-6">
                     {/* Ações contextuais internas da Proposta */}
-                    <div className="flex gap-2 pb-4 border-b border-slate-150 dark:border-white/5">
+                    <div className="flex flex-wrap items-center gap-2 pb-4 border-b border-slate-150 dark:border-white/5">
+                      <Button
+                        size="sm"
+                        onClick={() => navigate(`/crm/propostas-gd/${selectedProposal.id}/apresentacao`)}
+                        className="bg-gradient-to-r from-purple-700 to-indigo-600 hover:opacity-90 text-white font-bold"
+                      >
+                        <Play className="h-4 w-4 mr-1.5" />
+                        Iniciar Apresentação
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleGeneratePitchWithAI(selectedProposal)}
+                        disabled={isGeneratingPitchId === selectedProposal.id}
+                        className="border-purple-500/40 text-purple-700 hover:bg-purple-50 dark:border-purple-500/30 dark:text-purple-300 dark:hover:bg-purple-950/40 font-semibold"
+                      >
+                        <Sparkles className={`h-4 w-4 mr-1.5 text-purple-600 ${isGeneratingPitchId === selectedProposal.id ? "animate-spin" : ""}`} />
+                        {isGeneratingPitchId === selectedProposal.id ? "Gerando Pitch..." : "Gerar Pitch com IA"}
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowSlideEditorModal(true)}
+                        className="border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 font-semibold"
+                      >
+                        <Layers className="h-4 w-4 mr-1.5 text-purple-500" />
+                        Editar Slides Visualmente
+                      </Button>
+
                       {selectedProposal.status !== "aceita" && (
                         <Button
                           size="sm"
+                          variant="outline"
+                          onClick={() => setShowConfig((v) => !v)}
+                          className="border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 font-semibold"
+                        >
+                          <Edit className="h-4 w-4 mr-1.5" />
+                          {showConfig ? "Fechar Edição" : "Editar Proposta"}
+                        </Button>
+                      )}
+
+                      {selectedProposal.status !== "aceita" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
                           onClick={() => navigate(`/proposta/${selectedProposal.id}`)}
-                          className="bg-gradient-to-r from-purple-700 to-indigo-600 hover:opacity-90 text-white font-bold"
+                          className="border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 font-semibold"
                         >
                           <ExternalLink className="h-4 w-4 mr-1.5" />
                           Abrir Proposta
                         </Button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => navigate(`/crm/propostas-gd/${selectedProposal.id}/apresentacao`)}
-                        className="border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 font-semibold"
-                      >
-                        <Play className="h-4 w-4 mr-1.5 text-purple-650" />
-                        Iniciar Apresentação
-                      </Button>
+
                       <Button
                         size="sm"
                         variant="outline"
@@ -1685,6 +1773,28 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
           onOpenChange={setShowGenerateContract}
           proposalId={selectedProposal.id}
           initialData={buildContractInitialData(selectedProposal, availablePackages)}
+        />
+      )}
+
+      {/* Modal de Edição Visual de Slides do Pitch */}
+      {selectedProposal && (
+        <SlideEditorModal
+          open={showSlideEditorModal}
+          onOpenChange={setShowSlideEditorModal}
+          proposalId={selectedProposal.id}
+          proposalName={selectedProposal.prospect_name}
+          segmentName={
+            segmentsList.find((s) => s.id === selectedProposal.segment_id)?.nome ||
+            selectedProposal.segment_id ||
+            null
+          }
+          initialSlides={selectedProposal.presentation_slides}
+          onSlidesSaved={(newSlides) => {
+            setSelectedProposal((prev) => (prev ? { ...prev, presentation_slides: newSlides } : prev));
+            setProposals((prev) =>
+              prev.map((p) => (p.id === selectedProposal.id ? { ...p, presentation_slides: newSlides } : p))
+            );
+          }}
         />
       )}
     </PageShell>

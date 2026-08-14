@@ -15,6 +15,7 @@ interface PresentationViewerProps {
   companyName: string;
   segmentId?: string | null;
   logoUrl?: string | null;
+  customSlides?: PitchSlide[] | null;
   onClose?: () => void;
   // CTA final "Ir para a proposta" — passe um link OU um handler.
   proposalHref?: string | null;
@@ -29,11 +30,18 @@ const slideVariants = {
   exit: (dir: number) => ({ opacity: 0, x: dir > 0 ? -60 : 60, filter: "blur(6px)" }),
 };
 
-export function PresentationViewer({ companyName, segmentId, logoUrl, onClose, proposalHref, onGoToProposal }: PresentationViewerProps) {
-  const { group, slides } = useMemo(
+export function PresentationViewer({ companyName, segmentId, logoUrl, customSlides, onClose, proposalHref, onGoToProposal }: PresentationViewerProps) {
+  const { group, slides: fallbackSlides } = useMemo(
     () => buildPitch({ companyName, segmentId }),
     [companyName, segmentId]
   );
+
+  const slides = useMemo(() => {
+    if (Array.isArray(customSlides) && customSlides.length > 0) {
+      return customSlides;
+    }
+    return fallbackSlides;
+  }, [customSlides, fallbackSlides]);
 
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(1);

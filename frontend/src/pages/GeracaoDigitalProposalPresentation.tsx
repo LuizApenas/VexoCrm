@@ -22,6 +22,7 @@ export default function GeracaoDigitalProposalPresentation() {
   const [companyName, setCompanyName] = useState<string>("");
   const [segmentName, setSegmentName] = useState<string | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [customSlides, setCustomSlides] = useState<any[] | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +50,7 @@ export default function GeracaoDigitalProposalPresentation() {
 
         setCompanyName(prop?.prospect_name || "Sua Empresa");
         setLogoUrl(prop?.prospect_logo || null);
+        setCustomSlides(Array.isArray(prop?.presentation_slides) && prop.presentation_slides.length > 0 ? prop.presentation_slides : null);
 
         // segment_id -> nome do segmento (o roteiro é resolvido por nome).
         let nome: string | null = null;
@@ -99,8 +101,9 @@ export default function GeracaoDigitalProposalPresentation() {
       companyName={companyName}
       segmentId={segmentName}
       logoUrl={logoUrl}
+      customSlides={customSlides}
       proposalHref={id ? `/proposta/${id}` : null}
-      onClose={() => navigate("/crm/propostas-gd")}
+      onClose={() => navigate(-1)}
     />
   );
 }

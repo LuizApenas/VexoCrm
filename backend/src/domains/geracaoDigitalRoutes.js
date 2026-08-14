@@ -276,6 +276,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_price NUMERIC DEFAULT 0`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexi_price NUMERIC DEFAULT 0`));
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_plan VARCHAR(50)`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_plan VARCHAR(50)`));
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_price NUMERIC DEFAULT 0`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_price NUMERIC DEFAULT 0`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS presentation_slides JSONB`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS presentation_slides JSONB`));
       await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(alterLogado(`ALTER TABLE public.gd_implementation_briefings ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`));
       await dbPool.query(`ALTER TABLE public.gd_contracts ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(alterLogado(`ALTER TABLE public.gd_contracts ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`));
 
@@ -2469,6 +2470,314 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
     }
   });
 
+  // ─── PITCH GENERATOR COM IA GROQ + PERSISTÊNCIA DE SLIDES ──────────────────────
+
+  async function generatePitchSlidesWithGroq(proposal, segmentName) {
+    const apiKey = process.env.GROQ_API_KEY;
+    const prospectName = proposal.prospect_name || "Cliente";
+    const items = Array.isArray(proposal.itens) ? proposal.itens : [];
+    const itemsText = items
+      .map((i) => `- ${i.descricao || "Item"}: R$ ${i.valor || 0} (${i.recorrencia || "mensal"})`)
+      .join("\n");
+    const total = Number(proposal.valor_total || 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
+    const condicoes = proposal.condicoes || "Sem observações adicionais";
+
+    const systemPrompt = `Você é um especialista em vendas consultivas B2B, pitch comercial e metodologia SPIN Selling.
+Sua missão é gerar exatamente 6 slides de apresentação comercial de alto impacto para a proposta de um cliente.
+Regra de ouro: Linguagem executiva e ANTI-JARGÃO. Nunca use termos técnicos como "n8n, webhook, bot, lead frio, typebot". Use termos comerciais elegantes como "Recepcionista Digital 24h, Sistema de Atração de Clientes, Atendimento Imediato, Recuperação Ativa de Vendas".
+
+Formato esperado: Retorne EXCLUSIVAMENTE um JSON array com os 6 slides seguindo exatamente esta estrutura:
+[
+  {
+    "id": 1,
+    "kind": "impact",
+    "eyebrow": "APRESENTAÇÃO EXCLUSIVA",
+    "title": "Título forte e provocativo para ${prospectName}",
+    "subtitle": "Subtítulo personalizado para o posicionamento de mercado",
+    "body": "Breve parágrafo de boas-vindas e propósito da reunião estratégica."
+  },
+  {
+    "id": 2,
+    "kind": "pain",
+    "eyebrow": "DIAGNÓSTICO & CENÁRIO ATUAL",
+    "title": "O gargalo oculto no crescimento da empresa",
+    "subtitle": "Onde o faturamento está escapando todos os dias",
+    "body": "Diagnóstico claro dos 3 maiores desafios operacionais e comerciais.",
+    "steps": [
+      "1. Clientes interessados que chegam e não recebem resposta imediata",
+      "2. Orçamentos enviados que esfriam sem acompanhamento ativo",
+      "3. Base de clientes inativa sem régua de recompra automática"
+    ]
+  },
+  {
+    "id": 3,
+    "kind": "implication",
+    "eyebrow": "O CUSTO DA INAÇÃO",
+    "title": "O impacto financeiro do vazamento de oportunidades",
+    "subtitle": "Quanto custa manter a operação no modelo manual",
+    "body": "A perda cumulativa de clientes que deixam de comprar mês a mês.",
+    "metric": {
+      "value": "R$ 45.000+",
+      "caption": "estimativa anual em oportunidades perdidas por falta de agilidade"
+    }
+  },
+  {
+    "id": 4,
+    "kind": "solution",
+    "eyebrow": "A ESTRATÉGIA DE CRESCIMENTO",
+    "title": "A Máquina de Vendas & Atendimento Impecável",
+    "subtitle": "Como vamos blindar o atendimento e acelerar as conversões",
+    "steps": [
+      "Atendimento instantâneo 24/7 sem deixar nenhum cliente esperando",
+      "Qualificação inteligente e direcionamento direto para consultores",
+      "Recuperação ativa de orçamentos e follow-up humanizado",
+      "Métricas em tempo real de conversão e velocidade de resposta"
+    ]
+  },
+  {
+    "id": 5,
+    "kind": "partnership",
+    "eyebrow": "ESCOPO & ENTREGÁVEIS",
+    "title": "O Plano de Ação Personalizado",
+    "subtitle": "Tudo o que está incluído na parceria",
+    "fronts": [
+      {
+        "label": "Geração Digital",
+        "tag": "Atração & Posicionamento",
+        "items": ["Campanhas de Alta Conversão", "Criativos Estratégicos", "Otimização de Público"]
+      },
+      {
+        "label": "Vexo Atendimento",
+        "tag": "Operação 24h & Fechamento",
+        "items": ["IA de Atendimento e Triagem", "Follow-up Ativo Inteligente", "Painel de Métricas"]
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "kind": "close",
+    "eyebrow": "PROJEÇÃO & DECISÃO",
+    "title": "O Próximo Nível de Escala",
+    "subtitle": "Investimento estruturado com retorno rápido",
+    "metric": {
+      "value": "${total}",
+      "caption": "investimento para transformação completa do processo comercial"
+    },
+    "punch": "Vamos iniciar a implementação hoje e colher os primeiros resultados nos próximos 7 dias?"
+  }
+]`;
+
+    const userPrompt = `Cliente: ${prospectName}
+Segmento: ${segmentName || "Geral / B2B"}
+Itens/Entregáveis da Proposta:
+${itemsText || "Implementação de Solução Comercial Integrada"}
+Valor Total: ${total}
+Condições: ${condicoes}`;
+
+    if (apiKey) {
+      try {
+        const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            temperature: 0.3,
+            max_tokens: 2500,
+            response_format: { type: "json_object" },
+          }),
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          const content = json.choices?.[0]?.message?.content || "";
+          const parsed = JSON.parse(content);
+          const slides = Array.isArray(parsed)
+            ? parsed
+            : parsed.slides || parsed.presentation_slides || Object.values(parsed)[0];
+          if (Array.isArray(slides) && slides.length > 0) {
+            return slides;
+          }
+        } else {
+          console.warn("[Groq-Pitch] Erro HTTP da Groq:", res.status, await res.text());
+        }
+      } catch (err) {
+        console.warn("[Groq-Pitch] Falha na chamada da Groq, usando gerador determinístico:", err.message);
+      }
+    }
+
+    // Fallback determinístico contextual de alta fidelidade
+    return [
+      {
+        id: 1,
+        kind: "impact",
+        eyebrow: "APRESENTAÇÃO EXCLUSIVA",
+        title: `Acelerando as Vendas da ${prospectName}`,
+        subtitle: `Proposta comercial estratégica & plano de atendimento para ${segmentName || "alta performance"}`,
+        body: `Apresentação preparada exclusivamente para a liderança da ${prospectName}, integrando atração qualificada e atendimento em tempo real.`,
+      },
+      {
+        id: 2,
+        kind: "pain",
+        eyebrow: "DIAGNÓSTICO & CENÁRIO ATUAL",
+        title: `Oportunidades de Otimização na ${prospectName}`,
+        subtitle: "Os principais gargalos que impedem a escala máxima de faturamento",
+        body: "Identificamos 3 áreas críticas onde clientes interessados acabam escapando da jornada de compra:",
+        steps: [
+          "Demora no primeiro contato: leads que esperam perdem o interesse em minutos.",
+          "Orçamentos sem acompanhamento: até 60% das vendas são perdidas por falta de follow-up ativo.",
+          "Atendimento limitado ao horário comercial, perdendo contatos à noite e aos finais de semana.",
+        ],
+      },
+      {
+        id: 3,
+        kind: "implication",
+        eyebrow: "O IMPACTO DO VAZAMENTO",
+        title: "O Custo Financeiro de Oportunidades Perdidas",
+        subtitle: "Quanto a falta de velocidade e constância custa no final do ano",
+        body: "Em mercados competitivos, cada contato não respondido imediatamente representa receita transferida para a concorrência.",
+        metric: {
+          value: "R$ 40.000 a R$ 80.000",
+          caption: "em receita estimada recuperável com processos estruturados e automação inteligente",
+        },
+      },
+      {
+        id: 4,
+        kind: "solution",
+        eyebrow: "A ESTRATÉGIA DE CRESCIMENTO",
+        title: "A Máquina Comercial Integrada",
+        subtitle: "Como vamos transformar seu WhatsApp e canais em um motor de vendas previsível",
+        steps: [
+          "Atendimento Imediato 24 horas por dia com IA especializada no seu catálogo.",
+          "Qualificação dinâmica de interesse, orçamento e prioridade dos contatos.",
+          "Régua de Follow-up inteligente que retoma o lead no timing perfeito.",
+          "Passagem de bastão mastigada para o consultor humano fechar o negócio.",
+        ],
+      },
+      {
+        id: 5,
+        kind: "partnership",
+        eyebrow: "ESCOPO & ENTREGÁVEIS",
+        title: "O Que Está Incluso no Seu Projeto",
+        subtitle: "Estrutura completa para atração, atendimento e retenção",
+        fronts: [
+          {
+            label: "Geração Digital",
+            tag: "Atração & Posicionamento",
+            items: items
+              .filter((i) => i.categoria === "gd")
+              .map((i) => i.descricao)
+              .slice(0, 4)
+              .concat(["Gestão de Tráfego de Alta Conversão", "Alinhamento de Marca"])
+              .slice(0, 3),
+          },
+          {
+            label: "Vexo Atendimento",
+            tag: "IA & Automação Comercial",
+            items: items
+              .filter((i) => i.categoria === "vexo")
+              .map((i) => i.descricao)
+              .slice(0, 4)
+              .concat(["Chatbot IA de Qualificação", "Jornadas de Follow-up", "Métricas em Tempo Real"])
+              .slice(0, 3),
+          },
+        ],
+      },
+      {
+        id: 6,
+        kind: "close",
+        eyebrow: "PROJEÇÃO DE RESULTADO",
+        title: "Próximos Passos & Início da Operação",
+        subtitle: "Investimento claro e cronograma de implementação imediata",
+        metric: {
+          value: total,
+          caption: "investimento planejado para a transformação completa da operação",
+        },
+        punch: `Vamos iniciar a configuração da ${prospectName} e colocar a máquina para rodar?`,
+      },
+    ];
+  }
+
+  // POST /api/gd/proposals/:id/generate-pitch (alias /api/proposals/:id/generate-pitch)
+  const handleGeneratePitch = async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const propRes = await pool.query(
+        `SELECT * FROM public.gd_proposals WHERE id = $1`,
+        [id]
+      );
+      if (propRes.rows.length === 0) {
+        return res.status(404).json({ error: "Proposta não encontrada." });
+      }
+      const prop = propRes.rows[0];
+
+      let segmentName = null;
+      if (prop.segment_id) {
+        const segRes = await pool.query(`SELECT nome FROM public.gd_segments WHERE id = $1`, [prop.segment_id]);
+        if (segRes.rows.length > 0) {
+          segmentName = segRes.rows[0].nome;
+        }
+      }
+
+      const slides = await generatePitchSlidesWithGroq(prop, segmentName);
+
+      // Persiste no banco de dados
+      await pool.query(
+        `UPDATE public.gd_proposals SET presentation_slides = $1 WHERE id = $2`,
+        [JSON.stringify(slides), id]
+      );
+
+      res.json({
+        success: true,
+        data: slides,
+      });
+    } catch (error) {
+      console.error("[GeracaoDigital] Erro ao gerar pitch com Groq:", error);
+      res.status(500).json({ error: "Falha ao gerar pitch de apresentação." });
+    }
+  };
+
+  app.post("/api/gd/proposals/:id/generate-pitch", requireFirebaseAuth, handleGeneratePitch);
+  app.post("/api/proposals/:id/generate-pitch", requireFirebaseAuth, handleGeneratePitch);
+
+  // PUT /api/gd/proposals/:id/slides (alias /api/proposals/:id/slides)
+  const handleUpdateSlides = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { slides } = req.body;
+      if (!Array.isArray(slides)) {
+        return res.status(400).json({ error: "Array de slides é obrigatório." });
+      }
+
+      await pool.query(
+        `UPDATE public.gd_proposals SET presentation_slides = $1 WHERE id = $2`,
+        [JSON.stringify(slides), id]
+      );
+
+      res.json({
+        success: true,
+        data: slides,
+      });
+    } catch (error) {
+      console.error("[GeracaoDigital] Erro ao salvar slides da proposta:", error);
+      res.status(500).json({ error: "Falha ao salvar slides." });
+    }
+  };
+
+  app.put("/api/gd/proposals/:id/slides", requireFirebaseAuth, handleUpdateSlides);
+  app.put("/api/proposals/:id/slides", requireFirebaseAuth, handleUpdateSlides);
+
   // ─── PUBLIC ENDPOINTS (WITHOUT FIREBASE AUTH) ──────────────────────────────────
 
   // GET /api/gd/public/proposals/:id
@@ -2477,7 +2786,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       const { id } = req.params;
 
       const result = await pool.query(
-        `SELECT id, tenant_id, presentation_id, package_id, package_vexo_id, prospect_name, itens, valor_total, condicoes, status, payment_link, assinatura, signer_name, signed_at, created_at, sent_at, cobrar_setup, valor_setup_vexo, condicoes_pagamento, periodo_plano, validade_ate, valor_apos_validade, observacao_validade, descontos_concedidos, assinatura_metodo, valor_vp, meio_pagamento, carencia_dias, pacotes_ofertados
+        `SELECT id, tenant_id, presentation_id, package_id, package_vexo_id, prospect_name, itens, valor_total, condicoes, status, payment_link, assinatura, signer_name, signed_at, created_at, sent_at, cobrar_setup, valor_setup_vexo, condicoes_pagamento, periodo_plano, validade_ate, valor_apos_validade, observacao_validade, descontos_concedidos, assinatura_metodo, valor_vp, meio_pagamento, carencia_dias, pacotes_ofertados, presentation_slides
          FROM public.gd_proposals WHERE id = $1`,
         [id]
       );
