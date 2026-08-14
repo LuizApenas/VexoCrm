@@ -27,7 +27,8 @@ import {
   FileText,
   Filter,
   CheckCircle2,
-  ChevronDown
+  ChevronDown,
+  Lock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
@@ -197,6 +198,9 @@ export default function BancoDeDados() {
   const isAdvancedOriginsUnlocked =
     hasFeatureUnlocked(crmClient?.selectedClient, "origem_leads") ||
     resolveTenantPlan(crmClient?.selectedClient) === "avancado";
+  const isAdvancedPlan =
+    resolveTenantPlan(crmClient?.selectedClient) === "avancado" ||
+    hasFeatureUnlocked(crmClient?.selectedClient, "extracao_ilimitada");
 
   // Main Data States
   const [leads, setLeads] = useState<LeadIntelligenceItem[]>([]);
@@ -234,7 +238,7 @@ export default function BancoDeDados() {
 
   // WhatsApp Extraction Modal State
   const [isWAModalOpen, setIsWAModalOpen] = useState(false);
-  const [waChatLimit, setWaChatLimit] = useState<number>(100);
+  const [waChatLimit, setWaChatLimit] = useState<number | "all">(100);
   const [isExtractingWA, setIsExtractingWA] = useState(false);
   const [waExtractStep, setWaExtractStep] = useState<string>("");
 
@@ -357,6 +361,12 @@ export default function BancoDeDados() {
 
   // Handle WhatsApp Extraction Execution
   const handleExtractWA = async () => {
+    if (waChatLimit === "all" && !isAdvancedPlan) {
+      toast.info("A extração ilimitada de contatos é exclusiva do Plano Avançado. No Plano Essencial o limite é de até 500 contatos.");
+      setWaChatLimit(500);
+      return;
+    }
+
     setIsExtractingWA(true);
     setWaExtractStep("Conectando à Evolution API...");
 
@@ -1772,6 +1782,16 @@ export default function BancoDeDados() {
             <Button
               size="sm"
               variant="ghost"
+              onClick={() => setIsFollowupModalOpen(true)}
+              className="text-xs h-8 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-indigo-400 hover:text-indigo-300 font-semibold gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Aplicar Follow-up
+            </Button>
+
+            <Button
+              size="sm"
+              variant="ghost"
               onClick={() => setIsBulkStageModalOpen(true)}
               className="text-xs h-8 hover:bg-zinc-800 dark:hover:bg-zinc-200"
             >
@@ -1860,18 +1880,31 @@ export default function BancoDeDados() {
                   { value: 100, label: "100" },
                   { value: 500, label: "500" },
                   { value: "all", label: "Ilimitado" },
-                ].map((opt) => (
-                  <Button
-                    key={String(opt.value)}
-                    type="button"
-                    variant={waChatLimit === (opt.value as any) ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setWaChatLimit(opt.value as any)}
-                    className="text-xs"
-                  >
-                    {opt.label} {opt.value !== "all" ? "chats" : ""}
-                  </Button>
-                ))}
+                ].map((opt) => {
+                  const isLocked = opt.value === "all" && !isAdvancedPlan;
+                  return (
+                    <Button
+                      key={String(opt.value)}
+                      type="button"
+                      variant={waChatLimit === (opt.value as any) ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        if (isLocked) {
+                          toast.info("A extração ilimitada de contatos é exclusiva do Plano Avançado. No Plano Essencial o limite é de até 500 contatos.");
+                          return;
+                        }
+                        setWaChatLimit(opt.value as any);
+                      }}
+                      className={cn(
+                        "text-xs gap-1",
+                        isLocked && "opacity-75 border-dashed"
+                      )}
+                    >
+                      {opt.label} {opt.value !== "all" ? "chats" : ""}
+                      {isLocked && <Lock className="w-3 h-3 text-amber-500 shrink-0" />}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
 
