@@ -194,6 +194,9 @@ export default function BancoDeDados() {
   // resolveu na lista, caindo no fallback "infinie" (cliente removido) — o que
   // fazia instâncias e leads virem vazios nesta página.
   const clientId = crmClient?.selectedClientId || crmClient?.selectedClient?.id || "geracao-digital";
+  const isAdvancedOriginsUnlocked =
+    hasFeatureUnlocked(crmClient?.selectedClient, "origem_leads") ||
+    resolveTenantPlan(crmClient?.selectedClient) === "avancado";
 
   // Main Data States
   const [leads, setLeads] = useState<LeadIntelligenceItem[]>([]);
