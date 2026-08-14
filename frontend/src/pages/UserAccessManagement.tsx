@@ -1720,6 +1720,7 @@ function UserPlanAndSecurityControls({
 }
 
 function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, editable, onChange }: AccessGovernanceProps) {
+  const { isAdminUser } = useAuth();
   const registry = useAccessRegistry();
   const normalized = applySimpleAccessModel(draft);
   const matrixDisabled = !editable || normalized.role === "pending";
@@ -1749,6 +1750,7 @@ function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, ed
     );
   };
   const resolvedBinding = resolveDraftClientBinding(normalized, clients, selectedClientId);
+  const isLockedToTenant = !isAdminUser && Boolean(selectedClientId);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
@@ -1835,9 +1837,10 @@ function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, ed
             <div className="space-y-3">
               <label className="text-sm font-bold text-foreground">Empresa / Tenant Vinculado</label>
               <Select
-                value={normalized.clientIds[0] || resolvedBinding.clientIds[0] || "__none"}
-                disabled={!editable}
+                value={isLockedToTenant ? selectedClientId : (normalized.clientIds[0] || resolvedBinding.clientIds[0] || "__none")}
+                disabled={!editable || isLockedToTenant}
                 onValueChange={(value) => {
+                  if (isLockedToTenant) return;
                   const selectedClient = clients.find((client) => client.id === value);
                   applyPatch({
                     clientIds: value === "__none" ? [] : [value],
@@ -1852,7 +1855,7 @@ function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, ed
                   <SelectItem value="__none" className="py-3 font-medium text-muted-foreground">
                     {normalized.role === "client" ? "Selecionar empresa (Obrigatório)" : "Sem vínculo específico (Global)"}
                   </SelectItem>
-                  {clients.map((client) => (
+                  {(isLockedToTenant ? clients.filter((c) => c.id === selectedClientId) : clients).map((client) => (
                     <SelectItem key={client.id} value={client.id} className="py-3">
                       <span className="font-medium">{client.name}</span>
                     </SelectItem>
@@ -2007,11 +2010,19 @@ function UserListItem({
 }
 
 export default function UserAccessManagement() {
-  const { accessPreset, getIdToken, isAdminUser } = useAuth();
+  const { accessPreset, getIdToken, isAdminUser, accessProfile } = useAuth();
   const accessRegistry = useAccessRegistry();
   const crmClient = useOptionalCrmClient();
   const selectedClientId = crmClient?.selectedClientId || "";
-  const canEditUsers = isAdminUser || USER_MANAGEMENT_PRESETS.includes(accessPreset);
+  const canEditUsers =
+    isAdminUser ||
+    USER_MANAGEMENT_PRESETS.includes(accessPreset) ||
+    accessProfile?.allow_user_management === true ||
+    accessProfile?.allowUserManagement === true ||
+    accessProfile?.permissions?.includes("users.manage" as any) ||
+    accessProfile?.granularPermissions?.includes("users.manage") ||
+    accessProfile?.role === "manager" ||
+    accessProfile?.role === "admin";
   const { data: users = [], isLoading, error, refetch } = useAdminUsers();
   const { data: accessProfiles = [], refetch: refetchAccessProfiles } = useAccessProfiles();
   const { data: clients = [] } = useLeadClients();
@@ -2650,8 +2661,10 @@ export default function UserAccessManagement() {
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Empresa / Tenant</label>
                     <Select
-                      value={createDraft.clientIds[0] || "__none"}
+                      disabled={!isAdminUser && Boolean(selectedClientId)}
+                      value={!isAdminUser && selectedClientId ? selectedClientId : (createDraft.clientIds[0] || "__none")}
                       onValueChange={(value) => {
+                        if (!isAdminUser && selectedClientId) return;
                         const selectedClient = clients.find((client) => client.id === value);
                         updateCreateDraft({
                           clientIds: value === "__none" ? [] : [value],
@@ -2666,7 +2679,10 @@ export default function UserAccessManagement() {
                         <SelectItem value="__none" className="py-2.5">
                           {createDraft.role === "client" ? "Selecionar empresa" : "Sem empresa vinculada"}
                         </SelectItem>
-                        {clients.map((client) => (
+                        {(!isAdminUser && selectedClientId
+                          ? clients.filter((c) => c.id === selectedClientId)
+                          : clients
+                        ).map((client) => (
                           <SelectItem key={client.id} value={client.id} className="py-2.5">
                             {client.name}
                           </SelectItem>
@@ -2792,7 +2808,19 @@ export default function UserAccessManagement() {
                       </Button>
                       <Button
                         type="button"
-                        onClick={() => setCreateDialogOpen(true)}
+                        onClick={() => {
+                          if (!isAdminUser && selectedClientId) {
+                            const selectedClient = clients.find((client) => client.id === selectedClientId);
+                            setCreateDraft((current) => ({
+                              ...normalizeCreateDraftForSimpleForm({
+                                ...current,
+                                clientIds: [selectedClientId],
+                                companyName: selectedClient?.name || "",
+                              }),
+                            }));
+                          }
+                          setCreateDialogOpen(true);
+                        }}
                         className="h-10 rounded-lg text-xs font-bold"
                       >
                         <Plus className="h-4 w-4 mr-1.5" />
@@ -3069,9 +3097,14 @@ export default function UserAccessManagement() {
                                       <div className="space-y-2">
                                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Empresa / Tenant Vinculado</label>
                                         <Select
-                                          value={selectedDraft.clientIds[0] || "__none"}
-                                          disabled={!canEditUsers}
+                                          value={
+                                            !isAdminUser && selectedClientId
+                                              ? selectedClientId
+                                              : (selectedDraft.clientIds[0] || "__none")
+                                          }
+                                          disabled={!canEditUsers || (!isAdminUser && Boolean(selectedClientId))}
                                           onValueChange={(value) => {
+                                            if (!isAdminUser && selectedClientId) return;
                                             const selectedClient = clients.find((client) => client.id === value);
                                             updateDraft(selectedUser.uid, {
                                               clientIds: value === "__none" ? [] : [value],
@@ -3086,7 +3119,10 @@ export default function UserAccessManagement() {
                                             <SelectItem value="__none" className="py-2.5 font-medium text-muted-foreground">
                                               {selectedDraft.role === "client" ? "Selecionar empresa (Obrigatório)" : "Sem vínculo específico (Global)"}
                                             </SelectItem>
-                                            {clients.map((client) => (
+                                            {(!isAdminUser && selectedClientId
+                                              ? clients.filter((c) => c.id === selectedClientId)
+                                              : clients
+                                            ).map((client) => (
                                               <SelectItem key={client.id} value={client.id} className="py-2.5">
                                                 <span className="font-medium">{client.name}</span>
                                               </SelectItem>

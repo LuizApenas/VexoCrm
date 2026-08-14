@@ -58,6 +58,9 @@ export interface AuthAccessProfile {
   internalPages: InternalPage[];
   permissions: AccessPermission[];
   companyName: string | null;
+  allow_user_management?: boolean;
+  allowUserManagement?: boolean;
+  granularPermissions?: string[];
 }
 
 interface AuthContextType {
@@ -181,6 +184,19 @@ function buildAccessProfile(user: User, claims: Record<string, unknown> = {}): A
     internalPages,
     permissions: isAdmin ? [...buildPresetDefaults("admin_vexo").permissions] : permissions,
     companyName,
+    allow_user_management: Boolean(
+      claims.allow_user_management ??
+        claims.allowUserManagement ??
+        claims.permitir_gerenciamento_usuarios ??
+        false
+    ),
+    allowUserManagement: Boolean(
+      claims.allow_user_management ??
+        claims.allowUserManagement ??
+        claims.permitir_gerenciamento_usuarios ??
+        false
+    ),
+    granularPermissions: normalizeStringArray(claims.granularPermissions || claims.permissions),
   };
 }
 
