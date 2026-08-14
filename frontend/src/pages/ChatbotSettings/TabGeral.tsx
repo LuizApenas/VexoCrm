@@ -32,10 +32,16 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { hasFeatureUnlocked } from "@/lib/planTier";
+
 // ─── Tab: Geral ───────────────────────────────────────────────────────────────
 
 export function TabGeral({ clientId, clientName, client }: { clientId: string; clientName: string; client: ReturnType<typeof useLeadClients>["data"][0] }) {
   const { getIdToken } = useAuth();
+  const crmClient = useOptionalCrmClient();
+  const currentClient = client || crmClient?.selectedClient;
+  const isSdrBroadcastUnlocked = hasFeatureUnlocked(currentClient, "sdr_broadcast");
   const canEdit = true;
   const updateSettings = useUpdateLeadClientN8nSettings();
   const { data: builtinModels = [] } = useBuiltinTemplates(clientId);
@@ -539,32 +545,34 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
               <p className="text-[10px] text-red-500">Número inválido: só dígitos, de 10 a 15.</p>
             )}
 
-            {/* Banner de Upsell para Múltiplos Números / SDR Broadcast */}
-            <div className="rounded-xl border border-purple-500/30 bg-gradient-to-r from-purple-500/10 via-card to-purple-500/5 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm mt-2">
-              <div className="flex items-start gap-2 text-foreground">
-                <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
-                <div className="space-y-0.5">
-                  <span className="font-bold text-slate-800 dark:text-slate-100 block">
-                    Deseja adicionar múltiplos números de atendimento e distribuir por equipe?
-                  </span>
-                  <span className="text-[11px] text-muted-foreground block">
-                    O <strong>SDR Broadcast Multiatendentes</strong> encaminha os briefings e distribui leads qualificados entre seus closers em tempo real.
-                  </span>
+            {/* Banner de Upsell para Múltiplos Números / SDR Broadcast (Apenas Plano Essencial) */}
+            {!isSdrBroadcastUnlocked && (
+              <div className="rounded-xl border border-purple-500/30 bg-gradient-to-r from-purple-500/10 via-card to-purple-500/5 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm mt-2">
+                <div className="flex items-start gap-2 text-foreground">
+                  <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-slate-800 dark:text-slate-100 block">
+                      Deseja adicionar múltiplos números de atendimento e distribuir por equipe?
+                    </span>
+                    <span className="text-[11px] text-muted-foreground block">
+                      O <strong>SDR Broadcast Multiatendentes</strong> encaminha os briefings e distribui leads qualificados entre seus closers em tempo real.
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              <Button
-                size="sm"
-                className="h-8 text-xs font-bold bg-gradient-to-r from-amber-600 to-purple-600 hover:from-amber-700 hover:to-purple-700 text-white shrink-0 gap-1.5 shadow-sm"
-                onClick={() => {
-                  const msg = "Olá! Gostaria de adicionar múltiplos números de atendimento e habilitar o SDR Broadcast no meu plano.";
-                  window.open(`https://wa.me/5511999999999?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
-                }}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Fazer Upgrade 🚀
-              </Button>
-            </div>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs font-bold bg-gradient-to-r from-amber-600 to-purple-600 hover:from-amber-700 hover:to-purple-700 text-white shrink-0 gap-1.5 shadow-sm"
+                  onClick={() => {
+                    const msg = "Olá! Gostaria de adicionar múltiplos números de atendimento e habilitar o SDR Broadcast no meu plano.";
+                    window.open(`https://wa.me/5511999999999?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+                  }}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Fazer Upgrade 🚀
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

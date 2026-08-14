@@ -24,7 +24,8 @@ export default function AgenteIA() {
 
   const hasAgente = isInternalUser;
   const hasSettings = isInternalUser;
-  const hasDocs = isAdminUser;
+  const isVexoAdmTenant = selectedClient?.id === "vexo_adm" || selectedClient?.id === "vexo";
+  const hasDocs = isAdminUser && isVexoAdmTenant;
 
   const rawTab = searchParams.get("tab");
   const validTabs = ["operacao", "settings", "inbound", "rag", ...(hasDocs ? ["docs"] : [])];

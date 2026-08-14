@@ -34,11 +34,18 @@ export function resolveTenantPlan(client?: any): PlanTier {
   if (!client) return "essencial";
   const rawTier = String(
     client.plan_tier ||
-    client.plan_type ||
-    client.model_type ||
+    client.planTier ||
     client.n8n_settings?.plan_tier ||
+    client.n8n_settings?.planTier ||
+    client.plan_type ||
+    client.planType ||
     client.n8n_settings?.plan_type ||
+    client.n8n_settings?.planType ||
+    (client.model_type === "avancado" || client.modelType === "avancado" ? "avancado" : "") ||
+    client.model_type ||
+    client.modelType ||
     client.n8n_settings?.model_type ||
+    client.n8n_settings?.modelType ||
     ""
   ).toLowerCase().trim();
 
