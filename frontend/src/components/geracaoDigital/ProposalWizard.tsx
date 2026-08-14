@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { ArrowRight, X, FileText, CheckCircle } from "lucide-react";
+import { ArrowRight, X, FileText, CheckCircle, Sparkles } from "lucide-react";
 import { calculateProposalValues } from "@/lib/geracaoDigital/proposalCalculator";
 import { type PaymentTerm, termAplicaA, APLICA_A_LABELS } from "@/lib/geracaoDigital/paymentTerms";
 import PlanoEditor from "@/components/geracaoDigital/PlanoEditor";
@@ -29,6 +29,8 @@ interface ProposalWizardProps {
     setNewProspect: (val: string) => void;
     newSegmentId: string;
     setNewSegmentId: (val: string) => void;
+    customSegmentName?: string;
+    setCustomSegmentName?: (val: string) => void;
     newProspectLogo: string | null;
     setNewProspectLogo: (val: string | null) => void;
     newPackageId: string;
@@ -89,6 +91,8 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
     setNewProspect,
     newSegmentId,
     setNewSegmentId,
+    customSegmentName,
+    setCustomSegmentName,
     newProspectLogo,
     setNewProspectLogo,
     newPackageId,
@@ -241,14 +245,22 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
               <p className="text-[10px] text-slate-400 italic">Identifique o cliente final que irá assinar a proposta.</p>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-350">Segmento</Label>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-350">Segmento / Nicho de Atuação</Label>
               <select
                 value={newSegmentId}
-                onChange={(e) => setNewSegmentId(e.target.value)}
+                onChange={(e) => {
+                  setNewSegmentId(e.target.value);
+                  if (e.target.value !== "custom" && setCustomSegmentName) {
+                    setCustomSegmentName("");
+                  }
+                }}
                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 h-10 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
               >
                 <option value="">Selecione o segmento…</option>
+                <option value="custom" className="font-bold text-purple-600 dark:text-purple-400">
+                  ✨ Outro Segmento (Personalizado com IA)...
+                </option>
                 {(() => {
                   const segs = [...segmentsList];
                   if (!segs.some(s => String(s.nome).toLowerCase().includes("turismo"))) {
@@ -260,6 +272,24 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
                 })()}
               </select>
               <p className="text-[10px] text-slate-400 italic">Define o roteiro da apresentação comercial ao iniciar a partir desta proposta.</p>
+
+              {newSegmentId === "custom" && (
+                <div className="space-y-1.5 pt-1 animate-in fade-in duration-200">
+                  <Label className="text-xs font-bold text-purple-700 dark:text-purple-400 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Digite o Segmento / Nicho Livre
+                  </Label>
+                  <Input
+                    placeholder="Ex: Clínica Odontológica, Energia Solar, Indústria, etc."
+                    value={customSegmentName || ""}
+                    onChange={(e) => setCustomSegmentName?.(e.target.value)}
+                    className="h-10 text-xs bg-white dark:bg-slate-800 border-purple-300 dark:border-purple-800 focus:border-purple-500 rounded-lg shadow-sm"
+                  />
+                  <p className="text-[10px] text-muted-foreground italic">
+                    A IA da Groq criará os 6 slides do pitch SPIN Selling adaptados exclusivamente a este nicho.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">

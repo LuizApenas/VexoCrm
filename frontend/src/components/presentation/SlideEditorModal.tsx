@@ -147,7 +147,7 @@ export function SlideEditorModal({
         {
           method: "POST",
           headers,
-          body: JSON.stringify({ meetingNotes }),
+          body: JSON.stringify({ meetingNotes, segmentName }),
         }
       );
 

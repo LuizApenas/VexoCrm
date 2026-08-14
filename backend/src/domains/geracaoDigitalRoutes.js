@@ -1823,6 +1823,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         pacotes_ofertados,
         prospect_name,
         segment_id,
+        custom_segment_name,
+        customSegmentName,
         prospect_logo,
         itens,
         condicoes,
@@ -2023,8 +2025,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
             Number(vexo_price || vexi_price || 0)
           ];
           if (!hasSegmentLogo) return base;
-          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          const validSegmentId = (segment_id && uuidRegex.test(segment_id)) ? segment_id : null;
+          const rawSegment = custom_segment_name || customSegmentName || segment_id || null;
+          const validSegmentId = rawSegment ? String(rawSegment).trim() : null;
           return [...base, validSegmentId, prospect_logo || null];
         })()
       );
@@ -2164,7 +2166,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
     try {
       const { id } = req.params;
       const {
-        client_id, prospect_name, itens, condicoes, status, payment_link, cobrar_setup, valor_setup_vexo, condicoes_pagamento, periodo_plano, validade_ate, valor_apos_validade, observacao_validade, descontos_concedidos, arquivada, meio_pagamento, package_id, package_vexo_id, valor_vp, pacotes_ofertados, segment_id, prospect_logo,
+        client_id, prospect_name, itens, condicoes, status, payment_link, cobrar_setup, valor_setup_vexo, condicoes_pagamento, periodo_plano, validade_ate, valor_apos_validade, observacao_validade, descontos_concedidos, arquivada, meio_pagamento, package_id, package_vexo_id, valor_vp, pacotes_ofertados, segment_id, custom_segment_name, customSegmentName, prospect_logo,
         condicoes_especiais, desconto_setup_pct, desconto_mensal_pct, vexi_plan, vexi_price, vexo_plan, vexo_price
       } = req.body;
       const tenantId = await resolveTenantUuid(client_id);
@@ -2285,7 +2287,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           tenantId,
           finalValorVp,
           Array.isArray(finalPacotesOfertados) && finalPacotesOfertados.length > 0 ? JSON.stringify(finalPacotesOfertados) : null,
-          segment_id || null,
+          (custom_segment_name !== undefined ? (custom_segment_name ? String(custom_segment_name).trim() : null) : (customSegmentName !== undefined ? (customSegmentName ? String(customSegmentName).trim() : null) : (segment_id ? String(segment_id).trim() : null))),
           prospect_logo || null,
           finalCondicoesEspeciais,
           finalDescontoSetupPct,
@@ -2719,6 +2721,7 @@ Condições: ${condicoes}`;
     try {
       const { id } = req.params;
       const meetingNotes = req.body?.meetingNotes || req.body?.meeting_notes || null;
+      const customSegmentName = req.body?.segmentName || req.body?.segment_name || req.body?.customSegmentName || req.body?.custom_segment_name || null;
 
       const propRes = await pool.query(
         `SELECT * FROM public.gd_proposals WHERE id = $1`,
@@ -2729,28 +2732,44 @@ Condições: ${condicoes}`;
       }
       const prop = propRes.rows[0];
 
-      let segmentName = null;
-      if (prop.segment_id) {
-        const segRes = await pool.query(`SELECT nome FROM public.gd_segments WHERE id = $1`, [prop.segment_id]);
-        if (segRes.rows.length > 0) {
-          segmentName = segRes.rows[0].nome;
+      let segmentName = customSegmentName ? String(customSegmentName).trim() : null;
+      if (!segmentName && prop.segment_id) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(prop.segment_id)) {
+          const segRes = await pool.query(`SELECT nome FROM public.gd_segments WHERE id = $1`, [prop.segment_id]);
+          if (segRes.rows.length > 0) {
+            segmentName = segRes.rows[0].nome;
+          }
+        } else {
+          segmentName = prop.segment_id;
         }
       }
 
       const slides = await generatePitchSlidesWithGroq(prop, segmentName, meetingNotes);
 
-      // Persiste os slides e as anotações no banco de dados
-      if (meetingNotes) {
-        await pool.query(
-          `UPDATE public.gd_proposals SET presentation_slides = $1, meeting_notes = $2 WHERE id = $3`,
-          [JSON.stringify(slides), meetingNotes, id]
-        );
-      } else {
-        await pool.query(
-          `UPDATE public.gd_proposals SET presentation_slides = $1 WHERE id = $2`,
-          [JSON.stringify(slides), id]
-        );
+      // Persiste os slides, anotações e segmento atualizado no banco de dados
+      const podeSegLogo = await proposalHasSegmentLogo();
+      const updateFields = [`presentation_slides = $1`];
+      const updateValues = [JSON.stringify(slides)];
+      let valIdx = 2;
+
+      if (meetingNotes !== null && meetingNotes !== undefined) {
+        updateFields.push(`meeting_notes = $${valIdx}`);
+        updateValues.push(meetingNotes);
+        valIdx++;
       }
+
+      if (customSegmentName && podeSegLogo) {
+        updateFields.push(`segment_id = $${valIdx}`);
+        updateValues.push(String(customSegmentName).trim());
+        valIdx++;
+      }
+
+      updateValues.push(id);
+      await pool.query(
+        `UPDATE public.gd_proposals SET ${updateFields.join(", ")} WHERE id = $${valIdx}`,
+        updateValues
+      );
 
       res.json({
         success: true,

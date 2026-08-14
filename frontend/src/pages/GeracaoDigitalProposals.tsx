@@ -172,6 +172,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
   // Corpo do card: preview por padrão, formulário só quando pedido.
   const [showConfig, setShowConfig] = useState<boolean>(false);
   const [editSegmentId, setEditSegmentId] = useState<string>("");
+  const [customEditSegment, setCustomEditSegment] = useState<string>("");
   const [editProspectLogo, setEditProspectLogo] = useState<string | null>(null);
   // Muda para forçar o iframe do preview a recarregar depois de salvar.
   const [previewNonce, setPreviewNonce] = useState<number>(0);
@@ -200,15 +201,19 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
     setShowBriefingModal(true);
   };
 
-  const handlePitchGenerated = (generatedSlides: any[], meetingNotes: string) => {
+  const handlePitchGenerated = (generatedSlides: any[], meetingNotes: string, customSegment?: string) => {
     if (!selectedProposal) return;
+    const patch: any = { presentation_slides: generatedSlides, meeting_notes: meetingNotes };
+    if (customSegment) {
+      patch.segment_id = customSegment;
+    }
     setSelectedProposal((prev) =>
-      prev ? { ...prev, presentation_slides: generatedSlides, meeting_notes: meetingNotes } : prev
+      prev ? { ...prev, ...patch } : prev
     );
     setProposals((prev) =>
       prev.map((p) =>
         p.id === selectedProposal.id
-          ? { ...p, presentation_slides: generatedSlides, meeting_notes: meetingNotes }
+          ? { ...p, ...patch }
           : p
       )
     );
@@ -557,7 +562,15 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
     );
     setFormasPgto(termsParaFormas(prop.condicoes_pagamento?.ofertadas || []));
     setLegadosPgto(termsLegados(prop.condicoes_pagamento?.ofertadas || []));
-    setEditSegmentId((prop as any).segment_id || "");
+    const currentSeg = (prop as any).segment_id || "";
+    const isKnownSeg = segmentsList.some((s) => s.id === currentSeg);
+    if (currentSeg && !isKnownSeg) {
+      setEditSegmentId("custom");
+      setCustomEditSegment(currentSeg);
+    } else {
+      setEditSegmentId(currentSeg);
+      setCustomEditSegment("");
+    }
     setEditProspectLogo((prop as any).prospect_logo || null);
     setAdhocTerms(
       Array.isArray(prop.condicoes_pagamento?.ofertadas)
@@ -869,7 +882,8 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
         cobrar_setup: cobrarSetup,
         // Mantém o valor gravado mesmo isentando, para exibir o riscado.
         valor_setup_vexo: Number(valorSetupVexo || 0) || null,
-        segment_id: editSegmentId || null,
+        segment_id: editSegmentId === "custom" ? (customEditSegment.trim() || "custom") : (editSegmentId || null),
+        custom_segment_name: editSegmentId === "custom" ? (customEditSegment.trim() || null) : null,
         prospect_logo: editProspectLogo || null,
         condicoes_pagamento: {
           // Formas fixas primeiro; condições legadas da biblioteca seguem
@@ -1538,10 +1552,16 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                             <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">Segmento (roteiro da apresentação)</Label>
                             <select
                               value={editSegmentId}
-                              onChange={(e) => setEditSegmentId(e.target.value)}
+                              onChange={(e) => {
+                                setEditSegmentId(e.target.value);
+                                if (e.target.value !== "custom") setCustomEditSegment("");
+                              }}
                               className="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg px-2 h-8 text-xs text-slate-800 dark:text-white focus:outline-none"
                             >
                               <option value="">Selecione o segmento…</option>
+                              <option value="custom" className="font-bold text-purple-600 dark:text-purple-400">
+                                ✨ Outro Segmento (Personalizado com IA)...
+                              </option>
                               {(() => {
                                 const allSegs = [...segmentsList];
                                 if (!allSegs.some(s => String(s.nome).toLowerCase().includes("turismo"))) {
@@ -1552,6 +1572,15 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                                 ));
                               })()}
                             </select>
+                            {editSegmentId === "custom" && (
+                              <input
+                                type="text"
+                                value={customEditSegment}
+                                onChange={(e) => setCustomEditSegment(e.target.value)}
+                                placeholder="Digite o nicho livre..."
+                                className="block w-64 bg-white dark:bg-slate-900 border border-purple-300 dark:border-purple-800 rounded-lg px-2 h-8 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-purple-500 mt-1"
+                              />
+                            )}
                           </div>
                           <div className="space-y-1">
                             <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">Logo do cliente</Label>

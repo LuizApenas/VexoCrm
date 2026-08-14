@@ -29,6 +29,7 @@ export function useProposalWizard({
   const [wizardStep, setWizardStep] = useState<number>(1);
   const [newProspect, setNewProspect] = useState<string>("");
   const [newSegmentId, setNewSegmentId] = useState<string>("");
+  const [customSegmentName, setCustomSegmentName] = useState<string>("");
   const [newProspectLogo, setNewProspectLogo] = useState<string | null>(null);
   const [newPackageId, setNewPackageId] = useState<string>("");
   const [newPackageVexoId, setNewPackageVexoId] = useState<string>("");
@@ -49,6 +50,7 @@ export function useProposalWizard({
     setWizardStep(1);
     setNewProspect("");
     setNewSegmentId("");
+    setCustomSegmentName("");
     setNewProspectLogo(null);
     setNewPackageId("");
     setNewPackageVexoId("");
@@ -160,10 +162,14 @@ export function useProposalWizard({
       // Não existe avulso com valor: o escopo do plano é a única fonte
       // de serviços da proposta. Ver lib/geracaoDigital/plano.ts.
 
+      const isCustomSegment = newSegmentId === "custom" || Boolean(customSegmentName.trim());
+      const resolvedSegmentId = isCustomSegment ? (customSegmentName.trim() || "custom") : (newSegmentId || null);
+
       const body: any = {
         client_id: clientId,
         prospect_name: newProspect.trim(),
-        segment_id: newSegmentId || null,
+        segment_id: resolvedSegmentId,
+        custom_segment_name: isCustomSegment ? customSegmentName.trim() : null,
         prospect_logo: newProspectLogo || null,
         package_id: newPackageId || null,
         package_vexo_id: newPackageVexoId || null,
@@ -246,6 +252,8 @@ export function useProposalWizard({
     setNewProspect,
     newSegmentId,
     setNewSegmentId,
+    customSegmentName,
+    setCustomSegmentName,
     newProspectLogo,
     setNewProspectLogo,
     newPackageId,

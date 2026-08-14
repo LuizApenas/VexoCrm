@@ -8,6 +8,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +25,7 @@ interface PitchBriefingModalProps {
   prospectName: string;
   segmentName?: string | null;
   initialNotes?: string | null;
-  onPitchGenerated: (slides: PitchSlide[], meetingNotes: string) => void;
+  onPitchGenerated: (slides: PitchSlide[], meetingNotes: string, customSegment?: string) => void;
 }
 
 export function PitchBriefingModal({
@@ -38,13 +39,15 @@ export function PitchBriefingModal({
 }: PitchBriefingModalProps) {
   const { getIdToken, clientId } = useAuth();
   const [meetingNotes, setMeetingNotes] = useState<string>("");
+  const [customSegment, setCustomSegment] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
 
   useEffect(() => {
     if (open) {
       setMeetingNotes(initialNotes || "");
+      setCustomSegment(segmentName || "");
     }
-  }, [open, initialNotes]);
+  }, [open, initialNotes, segmentName]);
 
   const handleGeneratePitch = async () => {
     try {
@@ -58,7 +61,10 @@ export function PitchBriefingModal({
         {
           method: "POST",
           headers,
-          body: JSON.stringify({ meetingNotes: meetingNotes.trim() }),
+          body: JSON.stringify({
+            meetingNotes: meetingNotes.trim(),
+            segmentName: customSegment.trim() || undefined,
+          }),
         }
       );
 
@@ -74,7 +80,7 @@ export function PitchBriefingModal({
           title: "Pitch Gerado com Sucesso! ✨",
           description: "Os 6 slides foram criados sob medida com base na reunião.",
         });
-        onPitchGenerated(generatedSlides, meetingNotes.trim());
+        onPitchGenerated(generatedSlides, meetingNotes.trim(), customSegment.trim());
         onOpenChange(false);
       } else {
         throw new Error("Formato de slides retornado inválido.");
@@ -112,20 +118,28 @@ export function PitchBriefingModal({
         </DialogHeader>
 
         <div className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-3 p-3.5 rounded-xl bg-muted/40 border border-border/80">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-muted/40 border border-border/80">
             <div className="space-y-1">
               <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-purple-500" />
                 Empresa
               </span>
-              <p className="text-xs font-bold text-foreground truncate">{prospectName || "Cliente"}</p>
+              <p className="text-xs font-bold text-foreground truncate py-1.5 px-0.5">{prospectName || "Cliente"}</p>
             </div>
             <div className="space-y-1">
-              <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5">
-                <Target className="w-3.5 h-3.5 text-indigo-500" />
-                Segmento / Nicho
-              </span>
-              <p className="text-xs font-bold text-foreground truncate">{segmentName || "Geral / B2B"}</p>
+              <Label className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5 text-indigo-500" />
+                  Segmento / Nicho
+                </span>
+                <span className="text-[9px] text-purple-600 dark:text-purple-400 font-semibold">Editável</span>
+              </Label>
+              <Input
+                value={customSegment}
+                onChange={(e) => setCustomSegment(e.target.value)}
+                placeholder="Ex: Clínica Odontológica, Energia Solar, etc."
+                className="h-8 text-xs bg-background border-border text-foreground font-medium rounded-lg"
+              />
             </div>
           </div>
 

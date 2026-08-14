@@ -59,9 +59,12 @@ export default function GeracaoDigitalProposalPresentation() {
           const list = Array.isArray(segJson?.data) ? segJson.data : [];
           nome = list.find((s: any) => s.id === prop?.segment_id)?.nome ?? null;
         }
-        // Fallback: se o segment_id já for texto (base antiga), usa direto.
+        // Fallback: se o segment_id já for texto (base antiga ou customizada), usa direto.
         if (!nome && typeof prop?.segment_id === "string" && !/^[0-9a-f-]{36}$/i.test(prop.segment_id)) {
           nome = prop.segment_id;
+        }
+        if (!nome && prop?.custom_segment_name) {
+          nome = prop.custom_segment_name;
         }
         if (!cancelled) setSegmentName(nome);
       } catch (err: any) {
