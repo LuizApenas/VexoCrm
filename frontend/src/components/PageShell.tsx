@@ -1,10 +1,11 @@
 import React, { useEffect, useState, type ReactNode } from "react";
-import { Building2, ChevronDown, Moon, Sun } from "lucide-react";
+import { Building2, ChevronDown, Moon, Sun, Zap } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/contexts/AuthContext";
 import { HelpDeskWidget } from "@/components/HelpDeskWidget";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { resolveTenantPlan } from "@/lib/planTier";
 import { cn } from "@/lib/utils";
 
 import { createContext, useContext } from "react";
@@ -141,6 +142,39 @@ export function PageShell({
     </div>
   ) : null;
 
+  const currentPlanTier = resolveTenantPlan(crmClient?.selectedClient);
+  const activeCompanyName = crmClient?.selectedClient?.name || (crmClient?.selectedClientId ? crmClient.selectedClientId : "minha empresa");
+  const upgradeWhatsappMsg = `Olá! Gostaria de solicitar um upgrade para o Plano Avançado para a empresa ${activeCompanyName}.`;
+  const upgradeWhatsappUrl = `https://wa.me/5511999999999?text=${encodeURIComponent(upgradeWhatsappMsg)}`;
+
+  const planBadgeAndUpsell = crmClient?.selectedClient ? (
+    <div className="flex items-center gap-1.5">
+      {currentPlanTier === "avancado" ? (
+        <div className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-500/10 text-purple-600 dark:text-purple-300 border border-purple-500/30">
+          <span>🟣</span>
+          <span>Plano Avançado</span>
+        </div>
+      ) : (
+        <>
+          <div className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">
+            <span>🟢</span>
+            <span>Plano Essencial</span>
+          </div>
+          <a
+            href={upgradeWhatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-sm transition-all"
+            title="Solicitar upgrade para o Plano Avançado"
+          >
+            <Zap className="h-3 w-3 fill-amber-300 text-amber-300" />
+            <span>Fazer Upgrade</span>
+          </a>
+        </>
+      )}
+    </div>
+  ) : null;
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -177,6 +211,7 @@ export function PageShell({
 
           <div className="flex items-center gap-2">
             {globalClientSelector}
+            {planBadgeAndUpsell}
             <HelpDeskWidget pageTitle={title} />
             <button
               type="button"

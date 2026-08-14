@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { PanelLeftClose, PanelLeft } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Users } from "lucide-react";
 import { useFollowupSuggestionCount } from "@/hooks/useFollowupSuggestions";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -260,8 +260,8 @@ export function AppSidebar() {
           </>
         )}
 
-        {/* ── ADMIN (visível apenas para admins) ── */}
-        {isAdminUser && visibleAdmin.length > 0 && (
+        {/* ── ADMIN (Master) ou EQUIPE (Gestores) ── */}
+        {isAdminUser && visibleAdmin.length > 0 ? (
           <>
             {!collapsed && (
               <p className="mt-4 px-2.5 pb-2 font-mono text-[9px] font-bold uppercase tracking-[0.24em] text-muted-foreground/70">
@@ -274,7 +274,27 @@ export function AppSidebar() {
               ))}
             </div>
           </>
-        )}
+        ) : (isAdminUser || accessProfile?.allow_user_management === true || accessProfile?.allowUserManagement === true || accessProfile?.permissions?.includes("users.manage" as any) || accessProfile?.granularPermissions?.includes("users.manage") || accessProfile?.role === "manager" || accessProfile?.role === "admin") ? (
+          <>
+            {!collapsed && (
+              <p className="mt-4 px-2.5 pb-2 font-mono text-[9px] font-bold uppercase tracking-[0.24em] text-muted-foreground/70">
+                Equipe
+              </p>
+            )}
+            <div className="space-y-1">
+              <NavItem
+                item={{
+                  key: "equipe-usuarios",
+                  label: "Equipe & Usuários",
+                  url: "/crm/admin?tab=usuarios",
+                  icon: Users,
+                  page: "empresas",
+                }}
+                collapsed={collapsed}
+              />
+            </div>
+          </>
+        ) : null}
 
         {/* ── Recolher sidebar ── */}
         <div className="mt-3 space-y-1">

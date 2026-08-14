@@ -240,7 +240,7 @@ const App = () => (
               <Route
                 path="admin"
                 element={
-                  <ProtectedRoute allowedRoles={["internal"]}>
+                  <ProtectedRoute allowedRoles={["internal", "client"]}>
                     <AdminPanel />
                   </ProtectedRoute>
                 }

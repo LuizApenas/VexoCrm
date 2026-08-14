@@ -10,11 +10,19 @@ import { useAuth } from "@/contexts/AuthContext";
 import { PageShell, PageShellContext } from "@/components/PageShell";
 
 export default function AdminPanel() {
-  const { canAccessInternalPage } = useAuth();
+  const { canAccessInternalPage, isAdminUser, accessProfile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   
   const hasEmpresas = canAccessInternalPage("empresas");
-  const hasUsuarios = canAccessInternalPage("usuarios");
+  const hasUsuarios =
+    isAdminUser ||
+    canAccessInternalPage("usuarios") ||
+    accessProfile?.allow_user_management === true ||
+    accessProfile?.allowUserManagement === true ||
+    accessProfile?.permissions?.includes("users.manage" as any) ||
+    accessProfile?.granularPermissions?.includes("users.manage") ||
+    accessProfile?.role === "manager" ||
+    accessProfile?.role === "admin";
   const hasIntegracoes = canAccessInternalPage("empresas");
 
   // Determine default tab based on first allowed page

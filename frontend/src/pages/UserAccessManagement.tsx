@@ -80,6 +80,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useToast } from "@/hooks/use-toast";
 import { InternalPagesHierarchyPanel } from "@/components/InternalPagesHierarchyPanel";
+import { resolveTenantPlan } from "@/lib/planTier";
 
 type ManagedRole = AccessRole;
 
@@ -1492,10 +1493,12 @@ function applyGranularToDraft(
 function UserPlanAndSecurityControls({
   draft,
   disabled,
+  isAdminUser,
   onChange,
 }: {
   draft: AccessDraft;
   disabled: boolean;
+  isAdminUser?: boolean;
   onChange: (patch: Partial<AccessDraft>) => void;
 }) {
   const isAdvanced =
@@ -1511,7 +1514,10 @@ function UserPlanAndSecurityControls({
   const showAnalyticsReports = pagesSet.has("relatorios") || pagesSet.has("inteligencia-comercial");
   const allowUsersManage = permissionsSet.has("users.manage") || pagesSet.has("usuarios");
 
+  const canChangePlan = Boolean(isAdminUser);
+
   const setPlan = (tier: "essencial" | "avancado") => {
+    if (!canChangePlan) return;
     if (tier === "avancado") {
       const advancedPages = [...INTERNAL_PAGE_ORDER].filter((page) =>
         showAnalyticsReports ? true : page !== "relatorios" && page !== "inteligencia-comercial"
@@ -1596,6 +1602,7 @@ function UserPlanAndSecurityControls({
   };
 
   const toggleUsersManage = (checked: boolean) => {
+    if (!isAdminUser) return;
     const nextPerms = checked
       ? Array.from(
           new Set([
@@ -1619,17 +1626,20 @@ function UserPlanAndSecurityControls({
             Plano de Funcionalidades
           </label>
           <Badge variant="outline" className="font-semibold text-[10px]">
-            {isAdvanced ? "🟣 Plano Avançado" : "🟢 Plano Essencial"}
+            {isAdvanced
+              ? (!canChangePlan ? "🟣 Plano Avançado (Herdado)" : "🟣 Plano Avançado")
+              : (!canChangePlan ? "🟢 Plano Essencial (Herdado)" : "🟢 Plano Essencial")}
           </Badge>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             type="button"
-            disabled={disabled}
+            disabled={disabled || !canChangePlan}
             onClick={() => setPlan("essencial")}
             className={cn(
-              "rounded-xl border p-4 text-left transition-all relative cursor-pointer",
+              "rounded-xl border p-4 text-left transition-all relative",
+              canChangePlan ? "cursor-pointer" : "cursor-not-allowed opacity-80",
               !isAdvanced
                 ? "border-emerald-500 bg-emerald-500/10 shadow-sm ring-1 ring-emerald-500/30"
                 : "border-border/60 bg-muted/5 hover:bg-muted/10"
@@ -1646,10 +1656,11 @@ function UserPlanAndSecurityControls({
 
           <button
             type="button"
-            disabled={disabled}
+            disabled={disabled || !canChangePlan}
             onClick={() => setPlan("avancado")}
             className={cn(
-              "rounded-xl border p-4 text-left transition-all relative cursor-pointer",
+              "rounded-xl border p-4 text-left transition-all relative",
+              canChangePlan ? "cursor-pointer" : "cursor-not-allowed opacity-80",
               isAdvanced
                 ? "border-purple-500 bg-purple-500/10 shadow-sm ring-1 ring-purple-500/30"
                 : "border-border/60 bg-muted/5 hover:bg-muted/10"
@@ -1664,6 +1675,11 @@ function UserPlanAndSecurityControls({
             </p>
           </button>
         </div>
+        {!canChangePlan && (
+          <p className="text-[11px] text-muted-foreground italic">
+            O plano de recursos é herdado da empresa contratante. Apenas o Master Admin pode alterar o plano.
+          </p>
+        )}
       </div>
 
       {/* Restrições Opcionais de Segurança */}
@@ -1702,17 +1718,19 @@ function UserPlanAndSecurityControls({
             />
           </label>
 
-          <label className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/5 p-3.5 hover:bg-muted/10 transition-colors cursor-pointer sm:col-span-2">
-            <div className="space-y-0.5">
-              <span className="text-xs font-bold text-foreground block">Permitir Gerenciamento de Usuários</span>
-              <span className="text-[11px] text-muted-foreground block">Criar, aprovar e editar outros operadores do CRM</span>
-            </div>
-            <Switch
-              checked={allowUsersManage}
-              disabled={disabled}
-              onCheckedChange={toggleUsersManage}
-            />
-          </label>
+          {isAdminUser && (
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/5 p-3.5 hover:bg-muted/10 transition-colors cursor-pointer sm:col-span-2">
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold text-foreground block">Permitir Gerenciamento de Usuários</span>
+                <span className="text-[11px] text-muted-foreground block">Criar, aprovar e editar outros operadores do CRM</span>
+              </div>
+              <Switch
+                checked={allowUsersManage}
+                disabled={disabled}
+                onCheckedChange={toggleUsersManage}
+              />
+            </label>
+          )}
         </div>
       </div>
     </div>
@@ -2014,6 +2032,7 @@ export default function UserAccessManagement() {
   const accessRegistry = useAccessRegistry();
   const crmClient = useOptionalCrmClient();
   const selectedClientId = crmClient?.selectedClientId || "";
+  const activeTenantPlan = resolveTenantPlan(crmClient?.selectedClient);
   const canEditUsers =
     isAdminUser ||
     USER_MANAGEMENT_PRESETS.includes(accessPreset) ||
@@ -2620,11 +2639,20 @@ export default function UserAccessManagement() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Plano de Funcionalidades</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Plano de Funcionalidades</label>
+                      {!isAdminUser && (
+                        <Badge variant="outline" className="text-[10px] font-semibold">
+                          {activeTenantPlan === "avancado" ? "🟣 Plano Avançado (Herdado)" : "🟢 Plano Essencial (Herdado)"}
+                        </Badge>
+                      )}
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
+                        disabled={!isAdminUser}
                         onClick={() => {
+                          if (!isAdminUser) return;
                           updateCreateDraft({
                             accessPreset: "commercial",
                           });
@@ -2633,7 +2661,8 @@ export default function UserAccessManagement() {
                           "rounded-xl border p-3 text-left transition-colors",
                           createDraft.accessPreset !== "admin"
                             ? "border-emerald-500 bg-emerald-500/10 shadow-sm"
-                            : "border-border/60 bg-muted/5 hover:bg-muted/10"
+                            : "border-border/60 bg-muted/5 hover:bg-muted/10",
+                          !isAdminUser && "opacity-80 cursor-not-allowed"
                         )}
                       >
                         <p className="font-bold text-xs text-foreground">🟢 Plano Essencial — Base</p>
@@ -2641,7 +2670,9 @@ export default function UserAccessManagement() {
                       </button>
                       <button
                         type="button"
+                        disabled={!isAdminUser}
                         onClick={() => {
+                          if (!isAdminUser) return;
                           updateCreateDraft({
                             accessPreset: "admin",
                           });
@@ -2650,13 +2681,19 @@ export default function UserAccessManagement() {
                           "rounded-xl border p-3 text-left transition-colors",
                           createDraft.accessPreset === "admin"
                             ? "border-purple-500 bg-purple-500/10 shadow-sm"
-                            : "border-border/60 bg-muted/5 hover:bg-muted/10"
+                            : "border-border/60 bg-muted/5 hover:bg-muted/10",
+                          !isAdminUser && "opacity-80 cursor-not-allowed"
                         )}
                       >
                         <p className="font-bold text-xs text-foreground">🟣 Plano Avançado — Completo</p>
                         <p className="text-[10px] text-muted-foreground leading-3 mt-1">Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips</p>
                       </button>
                     </div>
+                    {!isAdminUser && (
+                      <p className="text-[11px] text-muted-foreground italic">
+                        O plano de recursos é herdado da empresa contratante. Apenas o Master Admin pode alterar o plano.
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Empresa / Tenant</label>
@@ -3168,6 +3205,7 @@ export default function UserAccessManagement() {
                                     <UserPlanAndSecurityControls
                                       draft={selectedDraft}
                                       disabled={!selectedEditable}
+                                      isAdminUser={isAdminUser}
                                       onChange={(patch) => updateDraft(selectedUser.uid, patch)}
                                     />
                                   </TabsContent>
