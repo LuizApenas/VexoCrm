@@ -277,6 +277,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_plan VARCHAR(50)`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_plan VARCHAR(50)`));
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_price NUMERIC DEFAULT 0`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS vexo_price NUMERIC DEFAULT 0`));
       await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS presentation_slides JSONB`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS presentation_slides JSONB`));
+      await dbPool.query(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS meeting_notes TEXT`).catch(alterLogado(`ALTER TABLE public.gd_proposals ADD COLUMN IF NOT EXISTS meeting_notes TEXT`));
       await dbPool.query(`ALTER TABLE public.gd_implementation_briefings ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(alterLogado(`ALTER TABLE public.gd_implementation_briefings ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`));
       await dbPool.query(`ALTER TABLE public.gd_contracts ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`).catch(alterLogado(`ALTER TABLE public.gd_contracts ADD COLUMN IF NOT EXISTS owner_company TEXT NOT NULL DEFAULT 'geracao-digital'`));
 
@@ -2472,7 +2473,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
 
   // ─── PITCH GENERATOR COM IA GROQ + PERSISTÊNCIA DE SLIDES ──────────────────────
 
-  async function generatePitchSlidesWithGroq(proposal, segmentName) {
+  async function generatePitchSlidesWithGroq(proposal, segmentName, meetingNotes) {
     const apiKey = process.env.GROQ_API_KEY;
     const prospectName = proposal.prospect_name || "Cliente";
     const items = Array.isArray(proposal.itens) ? proposal.itens : [];
@@ -2484,10 +2485,12 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       currency: "BRL",
     });
     const condicoes = proposal.condicoes || "Sem observações adicionais";
+    const notes = (meetingNotes || proposal.meeting_notes || "").trim();
 
     const systemPrompt = `Você é um especialista em vendas consultivas B2B, pitch comercial e metodologia SPIN Selling.
 Sua missão é gerar exatamente 6 slides de apresentação comercial de alto impacto para a proposta de um cliente.
 Regra de ouro: Linguagem executiva e ANTI-JARGÃO. Nunca use termos técnicos como "n8n, webhook, bot, lead frio, typebot". Use termos comerciais elegantes como "Recepcionista Digital 24h, Sistema de Atração de Clientes, Atendimento Imediato, Recuperação Ativa de Vendas".
+Se houver anotações e dores reais da reunião com o cliente, use-as como fonte principal para personalizar os slides de diagnóstico, agitação e solução.
 
 Formato esperado: Retorne EXCLUSIVAMENTE um JSON array com os 6 slides seguindo exatamente esta estrutura:
 [
@@ -2572,6 +2575,7 @@ Formato esperado: Retorne EXCLUSIVAMENTE um JSON array com os 6 slides seguindo 
 
     const userPrompt = `Cliente: ${prospectName}
 Segmento: ${segmentName || "Geral / B2B"}
+${notes ? `Anotações da Reunião / Dores do Cliente:\n${notes}\n` : ""}
 Itens/Entregáveis da Proposta:
 ${itemsText || "Implementação de Solução Comercial Integrada"}
 Valor Total: ${total}
@@ -2632,7 +2636,9 @@ Condições: ${condicoes}`;
         eyebrow: "DIAGNÓSTICO & CENÁRIO ATUAL",
         title: `Oportunidades de Otimização na ${prospectName}`,
         subtitle: "Os principais gargalos que impedem a escala máxima de faturamento",
-        body: "Identificamos 3 áreas críticas onde clientes interessados acabam escapando da jornada de compra:",
+        body: notes
+          ? `Com base na nossa reunião: ${notes}`
+          : "Identificamos 3 áreas críticas onde clientes interessados acabam escapando da jornada de compra:",
         steps: [
           "Demora no primeiro contato: leads que esperam perdem o interesse em minutos.",
           "Orçamentos sem acompanhamento: até 60% das vendas são perdidas por falta de follow-up ativo.",
@@ -2712,6 +2718,7 @@ Condições: ${condicoes}`;
   const handleGeneratePitch = async (req, res) => {
     try {
       const { id } = req.params;
+      const meetingNotes = req.body?.meetingNotes || req.body?.meeting_notes || null;
 
       const propRes = await pool.query(
         `SELECT * FROM public.gd_proposals WHERE id = $1`,
@@ -2730,13 +2737,20 @@ Condições: ${condicoes}`;
         }
       }
 
-      const slides = await generatePitchSlidesWithGroq(prop, segmentName);
+      const slides = await generatePitchSlidesWithGroq(prop, segmentName, meetingNotes);
 
-      // Persiste no banco de dados
-      await pool.query(
-        `UPDATE public.gd_proposals SET presentation_slides = $1 WHERE id = $2`,
-        [JSON.stringify(slides), id]
-      );
+      // Persiste os slides e as anotações no banco de dados
+      if (meetingNotes) {
+        await pool.query(
+          `UPDATE public.gd_proposals SET presentation_slides = $1, meeting_notes = $2 WHERE id = $3`,
+          [JSON.stringify(slides), meetingNotes, id]
+        );
+      } else {
+        await pool.query(
+          `UPDATE public.gd_proposals SET presentation_slides = $1 WHERE id = $2`,
+          [JSON.stringify(slides), id]
+        );
+      }
 
       res.json({
         success: true,

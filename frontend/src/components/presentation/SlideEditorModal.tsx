@@ -24,11 +24,8 @@ import {
   Plus,
   Trash2,
   Layers,
-  ArrowRight,
   TrendingUp,
   Target,
-  FileCheck,
-  CheckCircle2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -38,9 +35,19 @@ interface SlideEditorModalProps {
   proposalId: string;
   proposalName: string;
   segmentName?: string | null;
+  meetingNotes?: string | null;
   initialSlides?: PitchSlide[] | null;
   onSlidesSaved?: (newSlides: PitchSlide[]) => void;
 }
+
+const SLIDE_PILLS = [
+  "1. Capa",
+  "2. Dores",
+  "3. Impacto",
+  "4. Solução",
+  "5. Entregáveis",
+  "6. ROI",
+];
 
 export function SlideEditorModal({
   open,
@@ -48,6 +55,7 @@ export function SlideEditorModal({
   proposalId,
   proposalName,
   segmentName,
+  meetingNotes,
   initialSlides,
   onSlidesSaved,
 }: SlideEditorModalProps) {
@@ -126,7 +134,7 @@ export function SlideEditorModal({
     updateCurrentSlide("steps", newSteps);
   };
 
-  // Chamada à Groq para gerar/regenerar os 6 slides
+  // Chamada à Groq para regenerar os 6 slides
   const handleGenerateWithGroq = async () => {
     try {
       setIsGenerating(true);
@@ -139,6 +147,7 @@ export function SlideEditorModal({
         {
           method: "POST",
           headers,
+          body: JSON.stringify({ meetingNotes }),
         }
       );
 
@@ -153,8 +162,8 @@ export function SlideEditorModal({
         setSlides(generatedSlides);
         if (onSlidesSaved) onSlidesSaved(generatedSlides);
         toast({
-          title: "Pitch Gerado com Sucesso! ✨",
-          description: "Os 6 slides foram personalizados com IA Groq para a proposta.",
+          title: "Pitch Regenerado com Sucesso! ✨",
+          description: "Os 6 slides foram atualizados pela IA da Groq.",
         });
       }
     } catch (err: any) {
@@ -209,30 +218,21 @@ export function SlideEditorModal({
     }
   };
 
-  const slideTitles = [
-    "1. Capa & Posicionamento",
-    "2. Diagnóstico & Dores",
-    "3. Agitação & Vazamento",
-    "4. Solução Técnica",
-    "5. Entregáveis & Escopo",
-    "6. Projeção de ROI",
-  ];
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden bg-slate-950 text-slate-100 border-slate-800 shadow-2xl">
-        <DialogHeader className="p-6 pb-4 border-b border-slate-800 bg-slate-900/50">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden bg-background text-foreground border-border shadow-2xl rounded-2xl">
+        <DialogHeader className="p-6 pb-4 border-b border-border bg-muted/20">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <DialogTitle className="text-lg font-bold flex items-center gap-2 text-white">
-                <Layers className="w-5 h-5 text-purple-400" />
+              <DialogTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                <Layers className="w-5 h-5 text-purple-500" />
                 Editor Visual de Slides do Pitch
-                <Badge variant="outline" className="border-purple-500/40 text-purple-300 text-[10px] ml-2">
+                <Badge variant="outline" className="border-purple-500/40 text-purple-600 dark:text-purple-300 text-[10px] ml-2">
                   SPIN Selling
                 </Badge>
               </DialogTitle>
-              <DialogDescription className="text-xs text-slate-400 mt-1">
-                Personalize os textos da apresentação para <strong>{proposalName}</strong> ou use a IA da Groq para reescrever sob medida.
+              <DialogDescription className="text-xs text-muted-foreground mt-1">
+                Personalize os textos da apresentação para <strong>{proposalName}</strong> ou use a IA da Groq para reescrever.
               </DialogDescription>
             </div>
 
@@ -242,32 +242,32 @@ export function SlideEditorModal({
                 variant="outline"
                 onClick={handleGenerateWithGroq}
                 disabled={isGenerating || isSaving}
-                className="bg-purple-950/40 border-purple-500/50 text-purple-200 hover:bg-purple-900/60 hover:text-white text-xs font-bold gap-1.5 shadow-sm"
+                className="border-purple-500/40 text-purple-600 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 text-xs font-bold gap-1.5 shadow-sm rounded-xl"
               >
                 {isGenerating ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-500" />
                 ) : (
-                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <Sparkles className="w-3.5 h-3.5 text-purple-500" />
                 )}
-                {isGenerating ? "Gerando com Groq..." : "Gerar Pitch com IA"}
+                {isGenerating ? "Regenerando..." : "Regenerar com IA"}
               </Button>
             </div>
           </div>
 
-          {/* Navegação entre os 6 slides */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pt-4 pb-1 scrollbar-none">
-            {slides.map((s, idx) => (
+          {/* Navegação Compacta em Grid de 6 Pílulas Sem Barra de Rolagem */}
+          <div className="grid grid-cols-6 gap-2 w-full pt-4 pb-1">
+            {SLIDE_PILLS.map((label, idx) => (
               <button
-                key={s.id || idx}
+                key={idx}
                 type="button"
                 onClick={() => setActiveSlideIndex(idx)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
+                className={`py-2 px-1 text-center rounded-xl text-xs font-bold transition-all border ${
                   activeSlideIndex === idx
                     ? "bg-purple-600 border-purple-500 text-white shadow-md"
-                    : "bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                    : "bg-muted/40 border-border/80 text-muted-foreground hover:text-foreground hover:bg-muted/70"
                 }`}
               >
-                {slideTitles[idx] || `Slide ${idx + 1}`}
+                {label}
               </button>
             ))}
           </div>
@@ -277,65 +277,65 @@ export function SlideEditorModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {currentSlide && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Coluna Esquerda: Textos Principais */}
+              {/* Coluna Esquerda: Textos Principais com Rótulos Amigáveis */}
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-300">
-                    Rótulo Superior (Eyebrow)
+                  <Label className="text-xs font-semibold text-foreground">
+                    Subtítulo do Topo
                   </Label>
                   <Input
                     value={currentSlide.eyebrow || ""}
                     onChange={(e) => updateCurrentSlide("eyebrow", e.target.value)}
                     placeholder="Ex: O DIAGNÓSTICO ATUAL"
-                    className="bg-slate-900 border-slate-800 text-xs font-mono text-purple-300 focus:border-purple-500"
+                    className="bg-background border-border text-foreground placeholder:text-muted-foreground/60 focus:border-primary text-xs font-mono"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-300">
+                  <Label className="text-xs font-semibold text-foreground">
                     Título Principal do Slide
                   </Label>
                   <Input
                     value={currentSlide.title || ""}
                     onChange={(e) => updateCurrentSlide("title", e.target.value)}
                     placeholder="Título de impacto"
-                    className="bg-slate-900 border-slate-800 text-xs font-bold text-slate-100 focus:border-purple-500"
+                    className="bg-background border-border text-foreground placeholder:text-muted-foreground/60 focus:border-primary text-xs font-bold"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-300">
+                  <Label className="text-xs font-semibold text-foreground">
                     Subtítulo / Chamada Secundária
                   </Label>
                   <Input
                     value={currentSlide.subtitle || ""}
                     onChange={(e) => updateCurrentSlide("subtitle", e.target.value)}
                     placeholder="Subtítulo complementar"
-                    className="bg-slate-900 border-slate-800 text-xs text-slate-300 focus:border-purple-500"
+                    className="bg-background border-border text-foreground placeholder:text-muted-foreground/60 focus:border-primary text-xs"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-300">
-                    Corpo do Texto / Narrativa
+                  <Label className="text-xs font-semibold text-foreground">
+                    Texto Explicativo do Slide
                   </Label>
                   <Textarea
                     value={currentSlide.body || ""}
                     onChange={(e) => updateCurrentSlide("body", e.target.value)}
                     rows={3}
-                    placeholder="Parágrafo descritivo do slide..."
-                    className="bg-slate-900 border-slate-800 text-xs text-slate-300 focus:border-purple-500 resize-none"
+                    placeholder="Parágrafo explicativo do slide..."
+                    className="bg-background border-border text-foreground placeholder:text-muted-foreground/60 focus:border-primary text-xs leading-relaxed resize-none rounded-xl"
                   />
                 </div>
               </div>
 
-              {/* Coluna Direita: Elementos Especiais (Steps, Métricas, Punchline) */}
+              {/* Coluna Direita: Elementos Especiais (Steps, Métricas, Frase Final) */}
               <div className="space-y-4">
                 {/* Steps / Tópicos */}
-                <div className="space-y-2 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
+                <div className="space-y-2 p-3.5 rounded-xl bg-muted/30 border border-border/80">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                      <Target className="w-3.5 h-3.5 text-purple-400" />
+                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <Target className="w-3.5 h-3.5 text-purple-500" />
                       Tópicos & Pontos-Chave ({currentSlide.steps?.length || 0})
                     </Label>
                     <Button
@@ -343,7 +343,7 @@ export function SlideEditorModal({
                       size="sm"
                       variant="ghost"
                       onClick={handleAddStep}
-                      className="h-6 px-2 text-[11px] text-purple-400 hover:text-purple-300 hover:bg-purple-950/40"
+                      className="h-6 px-2 text-[11px] text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40"
                     >
                       <Plus className="w-3 h-3 mr-1" />
                       Adicionar Ponto
@@ -357,14 +357,14 @@ export function SlideEditorModal({
                           <Input
                             value={st}
                             onChange={(e) => handleStepChange(i, e.target.value)}
-                            className="h-8 bg-slate-950 border-slate-800 text-xs text-slate-200"
+                            className="h-8 bg-background border-border text-foreground placeholder:text-muted-foreground/60 focus:border-primary text-xs"
                           />
                           <Button
                             type="button"
                             size="icon"
                             variant="ghost"
                             onClick={() => handleRemoveStep(i)}
-                            className="h-7 w-7 text-slate-500 hover:text-red-400 hover:bg-red-950/30 shrink-0"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
@@ -372,52 +372,52 @@ export function SlideEditorModal({
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[11px] text-slate-500 italic">
+                    <p className="text-[11px] text-muted-foreground italic">
                       Nenhum ponto de lista configurado para este slide.
                     </p>
                   )}
                 </div>
 
                 {/* Destaque Numérico / ROI */}
-                <div className="space-y-2 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
-                  <Label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                <div className="space-y-2 p-3.5 rounded-xl bg-muted/30 border border-border/80">
+                  <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
                     Métrica de Impacto / ROI
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label className="text-[10px] text-slate-400">Valor em Destaque</Label>
+                      <Label className="text-[10px] text-muted-foreground">Valor em Destaque</Label>
                       <Input
                         value={currentSlide.metric?.value || ""}
                         onChange={(e) => updateMetric("value", e.target.value)}
                         placeholder="Ex: R$ 45.000+"
-                        className="h-8 bg-slate-950 border-slate-800 text-xs font-mono font-bold text-emerald-400"
+                        className="h-8 bg-background border-border font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs focus:border-primary"
                       />
                     </div>
                     <div>
-                      <Label className="text-[10px] text-slate-400">Legenda da Métrica</Label>
+                      <Label className="text-[10px] text-muted-foreground">Legenda da Métrica</Label>
                       <Input
                         value={currentSlide.metric?.caption || ""}
                         onChange={(e) => updateMetric("caption", e.target.value)}
                         placeholder="Ex: estimativa anual"
-                        className="h-8 bg-slate-950 border-slate-800 text-xs text-slate-300"
+                        className="h-8 bg-background border-border text-foreground placeholder:text-muted-foreground/60 text-xs focus:border-primary"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Frase de Efeito (Punchline de Fechamento) */}
+                {/* Frase de Impacto Final (Fechamento) */}
                 {activeSlideIndex === 5 && (
-                  <div className="space-y-1.5 p-3.5 rounded-xl bg-purple-950/20 border border-purple-800/40">
-                    <Label className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                      Frase de Efeito (Chamada para Ação)
+                  <div className="space-y-1.5 p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/30">
+                    <Label className="text-xs font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                      Frase de Impacto Final
                     </Label>
                     <Input
                       value={currentSlide.punch || ""}
                       onChange={(e) => updateCurrentSlide("punch", e.target.value)}
-                      placeholder="Vamos iniciar a implementação hoje?"
-                      className="bg-slate-950 border-purple-900/50 text-xs text-purple-200 font-medium"
+                      placeholder="Vamos iniciar a implementação hoje e colher os primeiros resultados?"
+                      className="bg-background border-purple-500/40 text-foreground placeholder:text-muted-foreground/60 text-xs font-medium focus:border-primary"
                     />
                   </div>
                 )}
@@ -426,7 +426,7 @@ export function SlideEditorModal({
           )}
         </div>
 
-        <DialogFooter className="p-4 px-6 border-t border-slate-800 bg-slate-900/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <DialogFooter className="p-4 px-6 border-t border-border bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <Button
             type="button"
             variant="outline"
@@ -434,9 +434,9 @@ export function SlideEditorModal({
               onOpenChange(false);
               navigate(`/crm/propostas-gd/${proposalId}/apresentacao`);
             }}
-            className="border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white text-xs font-semibold gap-1.5"
+            className="border-border bg-background text-foreground hover:bg-muted text-xs font-semibold gap-1.5 rounded-xl"
           >
-            <Play className="w-3.5 h-3.5 text-purple-400" />
+            <Play className="w-3.5 h-3.5 text-purple-500" />
             Visualizar em Tela Cheia
           </Button>
 
@@ -446,7 +446,7 @@ export function SlideEditorModal({
               variant="ghost"
               onClick={() => onOpenChange(false)}
               disabled={isSaving}
-              className="text-slate-400 hover:text-slate-200 text-xs"
+              className="text-muted-foreground hover:text-foreground text-xs"
             >
               Cancelar
             </Button>
@@ -454,7 +454,7 @@ export function SlideEditorModal({
               type="button"
               onClick={handleSaveSlides}
               disabled={isSaving || isGenerating}
-              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold gap-1.5 shadow-md"
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold gap-1.5 shadow-md rounded-xl"
             >
               {isSaving ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />

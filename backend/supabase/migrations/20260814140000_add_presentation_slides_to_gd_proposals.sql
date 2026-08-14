@@ -1,0 +1,3 @@
+ALTER TABLE public.gd_proposals
+  ADD COLUMN IF NOT EXISTS presentation_slides JSONB DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS meeting_notes TEXT DEFAULT NULL;

@@ -57,6 +57,7 @@ import {
 import { GenerateContractDialog } from "./GeracaoDigitalContracts/GenerateContractDialog";
 import { ShareProposalDialog } from "./GeracaoDigitalProposals/ShareProposalDialog";
 import { SlideEditorModal } from "@/components/presentation/SlideEditorModal";
+import { PitchBriefingModal } from "@/components/presentation/PitchBriefingModal";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useProposalWizard } from "@/hooks/useProposalWizard";
 import { ProposalWizard } from "@/components/geracaoDigital/ProposalWizard";
@@ -106,6 +107,7 @@ interface Proposal {
   pacotes_ofertados?: string[] | null;
   segment_id?: string | null;
   presentation_slides?: any[] | null;
+  meeting_notes?: string | null;
 }
 
 const PERIODO_OPTIONS = [
@@ -192,51 +194,25 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
 
   // Slide Editor & Pitch Generator State
   const [showSlideEditorModal, setShowSlideEditorModal] = useState<boolean>(false);
-  const [isGeneratingPitchId, setIsGeneratingPitchId] = useState<string | null>(null);
+  const [showBriefingModal, setShowBriefingModal] = useState<boolean>(false);
 
-  const handleGeneratePitchWithAI = async (proposal: Proposal) => {
-    try {
-      setIsGeneratingPitchId(proposal.id);
-      const token = await getIdToken();
-      const headers: HeadersInit = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
+  const handleOpenPitchGenerator = () => {
+    setShowBriefingModal(true);
+  };
 
-      const res = await fetchApi(
-        `/api/gd/proposals/${proposal.id}/generate-pitch?client_id=${clientId || ""}`,
-        {
-          method: "POST",
-          headers,
-        }
-      );
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Falha ao gerar pitch com a IA da Groq.");
-      }
-
-      const json = await res.json();
-      const generatedSlides = json?.data || json?.slides;
-      
-      setSelectedProposal((prev) => (prev ? { ...prev, presentation_slides: generatedSlides } : prev));
-      setProposals((prev) =>
-        prev.map((p) => (p.id === proposal.id ? { ...p, presentation_slides: generatedSlides } : p))
-      );
-
-      toast({
-        title: "Pitch Gerado com Sucesso! ✨",
-        description: "Os 6 slides foram personalizados com IA Groq para a proposta.",
-      });
-      setShowSlideEditorModal(true);
-    } catch (err: any) {
-      console.error("[GeracaoDigitalProposals] Erro:", err);
-      toast({
-        title: "Erro ao gerar pitch",
-        description: err?.message || "Verifique sua chave da Groq ou conexão.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGeneratingPitchId(null);
-    }
+  const handlePitchGenerated = (generatedSlides: any[], meetingNotes: string) => {
+    if (!selectedProposal) return;
+    setSelectedProposal((prev) =>
+      prev ? { ...prev, presentation_slides: generatedSlides, meeting_notes: meetingNotes } : prev
+    );
+    setProposals((prev) =>
+      prev.map((p) =>
+        p.id === selectedProposal.id
+          ? { ...p, presentation_slides: generatedSlides, meeting_notes: meetingNotes }
+          : p
+      )
+    );
+    setShowSlideEditorModal(true);
   };
 
   // Hook customizado para gerenciar estado/ações do wizard de criação de proposta
@@ -1478,12 +1454,11 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleGeneratePitchWithAI(selectedProposal)}
-                        disabled={isGeneratingPitchId === selectedProposal.id}
+                        onClick={handleOpenPitchGenerator}
                         className="border-purple-500/40 text-purple-700 hover:bg-purple-50 dark:border-purple-500/30 dark:text-purple-300 dark:hover:bg-purple-950/40 font-semibold"
                       >
-                        <Sparkles className={`h-4 w-4 mr-1.5 text-purple-600 ${isGeneratingPitchId === selectedProposal.id ? "animate-spin" : ""}`} />
-                        {isGeneratingPitchId === selectedProposal.id ? "Gerando Pitch..." : "Gerar Pitch com IA"}
+                        <Sparkles className="h-4 w-4 mr-1.5 text-purple-600 dark:text-purple-400" />
+                        Gerar Pitch com IA
                       </Button>
 
                       <Button
@@ -1495,18 +1470,6 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                         <Layers className="h-4 w-4 mr-1.5 text-purple-500" />
                         Editar Slides Visualmente
                       </Button>
-
-                      {selectedProposal.status !== "aceita" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setShowConfig((v) => !v)}
-                          className="border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 font-semibold"
-                        >
-                          <Edit className="h-4 w-4 mr-1.5" />
-                          {showConfig ? "Fechar Edição" : "Editar Proposta"}
-                        </Button>
-                      )}
 
                       {selectedProposal.status !== "aceita" && (
                         <Button
@@ -1613,36 +1576,6 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                               )}
                             </div>
                           </div>
-                        </div>
-
-                        {/* 2/3. Venda Casada / Setup de implantação */}
-                        <div className="flex flex-wrap items-end gap-3 pt-2 border-t border-slate-100 dark:border-white/5">
-                          {/* "Isentar" em vez de "Cobrar": a ação que o vendedor
-                              precisa na mesa é conceder a cortesia, e o rótulo
-                              invertido escondia isso. Valor > 0 + isento é o que
-                              faz a proposta mostrar o riscado. */}
-                          <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
-                            <Switch checked={!cobrarSetup} onCheckedChange={(v) => setCobrarSetup(!v)} />
-                            Isentar setup
-                          </label>
-                          {/* O campo fica visível mesmo com a cobrança desligada:
-                              é assim que se isenta o setup mantendo o valor de
-                              tabela, que a proposta exibe riscado com "Isento". */}
-                          <div className="space-y-1">
-                            <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">Valor do Setup (R$)</Label>
-                            <Input
-                              type="number"
-                              placeholder="0"
-                              value={valorSetupVexo === 0 ? "" : valorSetupVexo}
-                              onChange={(e) => setValorSetupVexo(e.target.value === "" ? 0 : Number(e.target.value))}
-                              className="bg-white dark:bg-slate-900 border-slate-200 dark:border-white/10 text-xs h-8 w-40 font-mono"
-                            />
-                          </div>
-                          {!cobrarSetup && Number(valorSetupVexo || 0) > 0 && (
-                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 pb-1.5">
-                              Isento — o cliente vê R$ {Number(valorSetupVexo).toLocaleString("pt-BR")} riscado
-                            </span>
-                          )}
                         </div>
 
                         {/* Alavancas de negociação — antes só existiam na Mesa (fase 5a). */}
@@ -1776,6 +1709,23 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
         />
       )}
 
+      {/* Modal de Briefing Rápido da Reunião para Gerar Pitch com IA */}
+      {selectedProposal && (
+        <PitchBriefingModal
+          open={showBriefingModal}
+          onOpenChange={setShowBriefingModal}
+          proposalId={selectedProposal.id}
+          prospectName={selectedProposal.prospect_name}
+          segmentName={
+            segmentsList.find((s) => s.id === selectedProposal.segment_id)?.nome ||
+            selectedProposal.segment_id ||
+            null
+          }
+          initialNotes={selectedProposal.meeting_notes}
+          onPitchGenerated={handlePitchGenerated}
+        />
+      )}
+
       {/* Modal de Edição Visual de Slides do Pitch */}
       {selectedProposal && (
         <SlideEditorModal
@@ -1788,6 +1738,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
             selectedProposal.segment_id ||
             null
           }
+          meetingNotes={selectedProposal.meeting_notes}
           initialSlides={selectedProposal.presentation_slides}
           onSlidesSaved={(newSlides) => {
             setSelectedProposal((prev) => (prev ? { ...prev, presentation_slides: newSlides } : prev));
