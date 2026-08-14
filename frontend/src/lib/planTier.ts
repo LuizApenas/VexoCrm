@@ -1,5 +1,35 @@
 export type PlanTier = "essencial" | "avancado";
 
+export const FEATURE_TIERS = {
+  essencial: {
+    name: "Plano Essencial",
+    badge: "🟢 Base",
+    description: "Operação comercial completa com 1 conexão de chip, IA de atendimento e disparos.",
+    features: [
+      "Dashboard comercial e KPIs em tempo real",
+      "Leads & Banco de Dados Inteligente",
+      "Conversas (Inbox WhatsApp centralizado)",
+      "Disparos por Planilha com cadência segura",
+      "IA de Atendimento Inbound (1 Conexão de Chip)",
+      "Follow-up (2 cadências manuais por oportunidade)",
+      "Treinamento Vexo (Academy com trilha prática)",
+    ],
+  },
+  avancado: {
+    name: "Plano Avançado",
+    badge: "🟣 Completo",
+    description: "Automação avançada com múltiplos chips, Base RAG, SDR Broadcast e Follow-up por evento.",
+    features: [
+      "Todos os recursos do Plano Essencial",
+      "Base de Conhecimento RAG com upload de PDFs e catálogos (agente_rag)",
+      "Automações por Evento no Follow-up (followup_automations)",
+      "Alertas SDR Broadcast para múltiplos atendentes (sdr_broadcast)",
+      "Conexão de Chips WhatsApp adicionais / ilimitados (multiplos_chips)",
+      "Atribuição e Análise de Origem de Leads (origem_leads)",
+    ],
+  },
+} as const;
+
 export function resolveTenantPlan(client?: any): PlanTier {
   if (!client) return "essencial";
   const rawTier = String(

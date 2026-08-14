@@ -218,8 +218,8 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
                 <SelectValue placeholder="Selecione o plano" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="essencial">🟢 Plano Essencial — Base (Dashboard, Inbox, Disparos, IA Atendimento)</SelectItem>
-                <SelectItem value="avancado">🟣 Plano Avançado — Completo (Antiban, Agente Campanha, SDR Broadcast, RAG)</SelectItem>
+                <SelectItem value="essencial">🟢 Plano Essencial — Base (Dashboard, Leads, Conversas, Disparos, IA Inbound, Follow-up)</SelectItem>
+                <SelectItem value="avancado">🟣 Plano Avançado — Completo (Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips)</SelectItem>
               </SelectContent>
             </Select>
           </div>

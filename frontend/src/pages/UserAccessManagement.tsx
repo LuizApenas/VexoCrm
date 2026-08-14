@@ -1640,7 +1640,7 @@ function UserPlanAndSecurityControls({
               {!isAdvanced && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
             </div>
             <p className="text-xs text-muted-foreground leading-4 mt-1.5">
-              Dashboard, Leads, Banco de Dados, Inbox/Conversas, Disparos, IA Atendimento, Follow-up e Campanhas.
+              Dashboard, Leads, Banco de Dados, Conversas, Disparos por Planilha, IA Inbound e Follow-up.
             </p>
           </button>
 
@@ -1660,7 +1660,7 @@ function UserPlanAndSecurityControls({
               {isAdvanced && <CheckCircle2 className="w-4 h-4 text-purple-600" />}
             </div>
             <p className="text-xs text-muted-foreground leading-4 mt-1.5">
-              Variações Antiban (Groq AI), Agente Campanha, Base RAG, SDR Broadcast, Origem de Leads e Relatórios Avançados.
+              Base RAG (Upload de Arquivos), Automações de Follow-up, SDR Broadcast, Múltiplos Chips e Origens.
             </p>
           </button>
         </div>
@@ -2626,7 +2626,7 @@ export default function UserAccessManagement() {
                         )}
                       >
                         <p className="font-bold text-xs text-foreground">🟢 Plano Essencial — Base</p>
-                        <p className="text-[10px] text-muted-foreground leading-3 mt-1">Dashboard, Inbox, Disparos, IA Atendimento</p>
+                        <p className="text-[10px] text-muted-foreground leading-3 mt-1">Dashboard, Leads, Conversas, Disparos, IA Inbound, Follow-up</p>
                       </button>
                       <button
                         type="button"
@@ -2643,7 +2643,7 @@ export default function UserAccessManagement() {
                         )}
                       >
                         <p className="font-bold text-xs text-foreground">🟣 Plano Avançado — Completo</p>
-                        <p className="text-[10px] text-muted-foreground leading-3 mt-1">Antiban, Agente Campanha, Base, SDR, Origem</p>
+                        <p className="text-[10px] text-muted-foreground leading-3 mt-1">Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips</p>
                       </button>
                     </div>
                   </div>

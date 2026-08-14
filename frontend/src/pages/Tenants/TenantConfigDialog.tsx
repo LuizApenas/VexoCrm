@@ -12,6 +12,8 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle2,
+  PhoneCall,
+  Smartphone,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -339,10 +341,10 @@ export function TenantConfigDialog({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="essencial">
-                            🟢 Plano Essencial — Base (Dashboard, Leads, Conversas, Follow-up, Campanhas)
+                            🟢 Plano Essencial — Base (Dashboard, Leads, Banco de Dados, Conversas, Disparos, IA Inbound, Follow-up)
                           </SelectItem>
                           <SelectItem value="avancado">
-                            🟣 Plano Avançado — Completo (Antiban Groq, Agente Campanha, RAG, Follow-up Avançado)
+                            🟣 Plano Avançado — Completo (Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips, Origens)
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -366,10 +368,10 @@ export function TenantConfigDialog({
 
                       <div className="space-y-2 text-xs">
                         {[
-                          { id: "antiban_groq", label: "Variações Antiban (Groq AI)", icon: ShieldCheck, color: "text-purple-500" },
-                          { id: "agente_campanha", label: "Agente IA por Campanha", icon: Megaphone, color: "text-indigo-500" },
-                          { id: "agente_rag", label: "Base de Conhecimento RAG", icon: Sparkles, color: "text-cyan-500" },
+                          { id: "agente_rag", label: "Base de Conhecimento RAG (Upload de Arquivos)", icon: Sparkles, color: "text-cyan-500" },
                           { id: "followup_automations", label: "Automações por Evento (Follow-up)", icon: Zap, color: "text-amber-500" },
+                          { id: "sdr_broadcast", label: "Alertas SDR Broadcast (Multiatendentes)", icon: PhoneCall, color: "text-purple-500" },
+                          { id: "multiplos_chips", label: "Chips WhatsApp Adicionais / Ilimitados", icon: Smartphone, color: "text-emerald-500" },
                         ].map((mod) => {
                           const currentAvulsos = draft.modulosAvulsos;
                           const isChecked =

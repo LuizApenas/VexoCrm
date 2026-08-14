@@ -289,16 +289,31 @@ export function SchedulingStep({
           </div>
 
           {replyAgent === "campanha" && (
-            <div className="space-y-1.5 animate-fadeIn">
-              <label className="text-[10px] uppercase font-bold text-slate-500">Roteiro desta campanha</label>
-              <Textarea
-                value={campaignAgentPrompt}
-                onChange={(e) => setCampaignAgentPrompt(e.target.value)}
-                placeholder="Como o agente deve conduzir a conversa de quem responder a este disparo."
-                className="min-h-[110px] text-xs rounded-xl"
-              />
-              <p className="text-[10px] text-muted-foreground">
-                Salvo junto com a campanha. Sem roteiro preenchido, o atendimento assume.
+            <div className="space-y-3 p-3.5 rounded-xl border border-indigo-200 bg-indigo-50/50 dark:border-indigo-900/50 dark:bg-indigo-950/30 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                  <Bot className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  Roteiro & Instruções do Agente da Campanha
+                </label>
+                <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/50 px-2 py-0.5 rounded-full">
+                  Exclusivo deste lote
+                </span>
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Roteiro de Atendimento & Regras da Oferta:
+                </label>
+                <Textarea
+                  value={campaignAgentPrompt}
+                  onChange={(e) => setCampaignAgentPrompt(e.target.value)}
+                  placeholder="Ex: Persona: Consultor especialista e atencioso.&#10;Objetivo: Responder dúvidas sobre a oferta do lote, qualificar interesse e direcionar para {{scheduling_link}}.&#10;Regras: Se o cliente perguntar preço, informe a condição especial de lançamento e pergunte qual o melhor horário para agendar."
+                  className="min-h-[120px] text-xs bg-white dark:bg-slate-900 rounded-xl"
+                />
+              </div>
+
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                💡 <em>Este roteiro fica congelado para este disparo. Quando o lead responder, a IA assumirá com base nessas instruções sem afetar o atendimento geral do Inbox.</em>
               </p>
             </div>
           )}

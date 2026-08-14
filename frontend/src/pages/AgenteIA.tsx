@@ -1,13 +1,11 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bot, KanbanSquare, Settings2, BookOpen, ShieldCheck, Megaphone, Database } from "lucide-react";
+import { Bot, KanbanSquare, Settings2, BookOpen, Database } from "lucide-react";
 import ChatbotKanban from "./ChatbotKanban";
 import ChatbotSettings from "./ChatbotSettings";
 import InboundAgentConfig from "./InboundAgentConfig";
 import ChatbotDocs from "./ChatbotDocs";
-import { AntibanGroqTab } from "@/components/agente/AntibanGroqTab";
-import { CampaignAgentTab } from "@/components/agente/CampaignAgentTab";
 import { KnowledgeBaseRagTab } from "@/components/agente/KnowledgeBaseRagTab";
 import { UpsellCard } from "@/components/UpsellCard";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,8 +20,6 @@ export default function AgenteIA() {
   const selectedClient = crmClient?.selectedClient;
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const isAntibanUnlocked = hasFeatureUnlocked(selectedClient, "antiban_groq");
-  const isCampaignAgentUnlocked = hasFeatureUnlocked(selectedClient, "agente_campanha");
   const isRagUnlocked = hasFeatureUnlocked(selectedClient, "agente_rag");
 
   const hasAgente = isInternalUser;
@@ -31,7 +27,7 @@ export default function AgenteIA() {
   const hasDocs = isAdminUser;
 
   const rawTab = searchParams.get("tab");
-  const validTabs = ["operacao", "settings", "inbound", "antiban", "campanhas", "rag", ...(hasDocs ? ["docs"] : [])];
+  const validTabs = ["operacao", "settings", "inbound", "rag", ...(hasDocs ? ["docs"] : [])];
   const activeTab = validTabs.includes(rawTab || "") ? (rawTab as string) : "operacao";
 
   const handleTabChange = (val: string) => {
@@ -77,18 +73,6 @@ export default function AgenteIA() {
                   </TabsTrigger>
                 )}
                 {hasAgente && (
-                  <TabsTrigger value="antiban" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
-                    <ShieldCheck className="h-3.5 w-3.5 mr-1.5 text-purple-500" />
-                    Variações Antiban (Groq)
-                  </TabsTrigger>
-                )}
-                {hasAgente && (
-                  <TabsTrigger value="campanhas" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
-                    <Megaphone className="h-3.5 w-3.5 mr-1.5 text-indigo-500" />
-                    Agente por Campanha
-                  </TabsTrigger>
-                )}
-                {hasAgente && (
                   <TabsTrigger value="rag" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
                     <Database className="h-3.5 w-3.5 mr-1.5 text-cyan-500" />
                     Base RAG (Arquivos)
@@ -123,56 +107,6 @@ export default function AgenteIA() {
               <TabsContent value="inbound" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
                 <ErrorBoundary>
                   <InboundAgentConfig />
-                </ErrorBoundary>
-              </TabsContent>
-            )}
-
-            {hasAgente && (
-              <TabsContent value="antiban" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
-                <ErrorBoundary>
-                  {isAntibanUnlocked ? (
-                    <AntibanGroqTab />
-                  ) : (
-                    <UpsellCard
-                      title="Variações Antiban com Groq AI"
-                      subtitle="Exclusivo do Plano Avançado"
-                      description="Gere dezenas de variações semânticas instantâneas das suas mensagens de prospecção para proteger seus números de WhatsApp contra banimentos em disparos de alto volume."
-                      moduleName="Variações Antiban (Groq AI)"
-                      benefits={[
-                        "Inferência em tempo real com Groq AI (Llama 3 70B)",
-                        "Variações semânticas inteligentes de alta conversão",
-                        "Proteção contra filtros de spam do WhatsApp",
-                        "Suporte a variáveis dinâmicas ({nome}, {empresa}, etc.)",
-                      ]}
-                    >
-                      <AntibanGroqTab />
-                    </UpsellCard>
-                  )}
-                </ErrorBoundary>
-              </TabsContent>
-            )}
-
-            {hasAgente && (
-              <TabsContent value="campanhas" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
-                <ErrorBoundary>
-                  {isCampaignAgentUnlocked ? (
-                    <CampaignAgentTab />
-                  ) : (
-                    <UpsellCard
-                      title="Agente de Qualificação por Campanha"
-                      subtitle="Exclusivo do Plano Avançado"
-                      description="Personalize o tom de voz, persona e perguntas SPIN de qualificação para cada campanha de marketing (Instagram Ads, Google Ads, Reativação) separadamente."
-                      moduleName="Agente por Campanha"
-                      benefits={[
-                        "Personas e regras de qualificação distintas por canal",
-                        "Roteamento de atendimento inteligente por campanha",
-                        "Perguntas de SPIN Selling customizadas",
-                        "Passagem de bastão automatizada para o Closer ideal",
-                      ]}
-                    >
-                      <CampaignAgentTab />
-                    </UpsellCard>
-                  )}
                 </ErrorBoundary>
               </TabsContent>
             )}
