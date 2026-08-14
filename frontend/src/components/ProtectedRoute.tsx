@@ -1,5 +1,6 @@
 import { type AccessRole, type AccessView, useAuth } from "@/contexts/AuthContext";
-import { type InternalPage, INTERNAL_PAGE_ORDER, isPathAllowedForClient, isInternalPageAllowedForClient } from "@/lib/access";
+import { type InternalPage, INTERNAL_PAGE_ORDER, isPathAllowedForClient, isInternalPageAllowedForClient, getInheritedPlanPages } from "@/lib/access";
+import { resolveTenantPlan } from "@/lib/planTier";
 import { Navigate, useLocation } from "react-router-dom";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 
@@ -33,6 +34,8 @@ export default function ProtectedRoute({
 
   const crmClient = useOptionalCrmClient();
   const allowedTabs = crmClient?.selectedClient?.n8n_settings?.allowed_tabs;
+  const planTier = resolveTenantPlan(crmClient?.selectedClient);
+  const inheritedPages = getInheritedPlanPages(planTier);
 
   if (loading) {
     return (
@@ -64,7 +67,11 @@ export default function ProtectedRoute({
 
   const isInternalUser = accessRole === "internal";
 
-  if (requiredInternalPage && (!canAccessInternalPage(requiredInternalPage) || (!isInternalUser && !isInternalPageAllowedForClient(requiredInternalPage, allowedTabs)))) {
+  const hasPageAccess = requiredInternalPage
+    ? isAdminUser || canAccessInternalPage(requiredInternalPage) || inheritedPages.includes(requiredInternalPage)
+    : true;
+
+  if (requiredInternalPage && (!hasPageAccess || (!isInternalUser && !isInternalPageAllowedForClient(requiredInternalPage, allowedTabs)))) {
     return <Navigate to="/crm" replace />;
   }
 

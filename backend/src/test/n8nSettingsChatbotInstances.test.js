@@ -34,7 +34,7 @@ describe("chatbot_instances sobrevive da gravacao ate a tela", () => {
     const map = selectColumnsOf("getLeadClientN8nSettingsMap");
 
     // Campos que a mascara le direto da row (evolution_instances vem de outra query).
-    const exposed = ["chatbot_enabled", "chatbot_model", "chatbot_instances", "sdr_whatsapp_number", "allowed_tabs", "segmentation_config", "plan_tier", "modulos_avulsos"];
+    const exposed = ["chatbot_enabled", "chatbot_model", "chatbot_instances", "sdr_whatsapp_number", "allowed_tabs", "segmentation_config", "plan_tier", "modulos_avulsos", "degustacao_expira_em"];
     for (const column of exposed) {
       expect(single, `${column} ausente em getLeadClientN8nSettings`).toContain(column);
       expect(map, `${column} ausente em getLeadClientN8nSettingsMap`).toContain(column);

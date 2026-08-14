@@ -50,4 +50,26 @@ describe("planTier resolver", () => {
     expect(hasFeatureUnlocked(degustacaoTenant, "antiban_groq")).toBe(false);
     expect(hasFeatureUnlocked(degustacaoTenant, "agente_campanha")).toBe(false);
   });
+
+  it("locks features when degustacao is expired (even if module is in modulos_avulsos)", () => {
+    const pastDate = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(); // 1 day ago
+    const expiredTenant = {
+      plan_tier: "essencial",
+      modulos_avulsos: ["followup_automations", "agente_rag"],
+      degustacao_expira_em: pastDate,
+    };
+    expect(hasFeatureUnlocked(expiredTenant, "followup_automations")).toBe(false);
+    expect(hasFeatureUnlocked(expiredTenant, "agente_rag")).toBe(false);
+  });
+
+  it("keeps features unlocked when degustacao is still active in future", () => {
+    const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(); // 7 days ahead
+    const activeTenant = {
+      plan_tier: "essencial",
+      modulos_avulsos: ["followup_automations", "agente_rag"],
+      degustacao_expira_em: futureDate,
+    };
+    expect(hasFeatureUnlocked(activeTenant, "followup_automations")).toBe(true);
+    expect(hasFeatureUnlocked(activeTenant, "agente_rag")).toBe(true);
+  });
 });

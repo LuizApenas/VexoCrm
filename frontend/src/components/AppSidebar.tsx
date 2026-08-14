@@ -4,7 +4,8 @@ import { useFollowupSuggestionCount } from "@/hooks/useFollowupSuggestions";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
-import { isPathAllowedForClient } from "@/lib/access";
+import { isPathAllowedForClient, getInheritedPlanPages } from "@/lib/access";
+import { resolveTenantPlan } from "@/lib/planTier";
 import { 
   OPERACAO_ITEMS, 
   INTELIGENCIA_ITEMS, 
@@ -110,6 +111,8 @@ export function AppSidebar() {
   };
 
   const allowedTabs = crmClient?.selectedClient?.n8n_settings?.allowed_tabs;
+  const planTier = resolveTenantPlan(crmClient?.selectedClient);
+  const inheritedPages = getInheritedPlanPages(planTier);
 
   const filterItems = (items: typeof OPERACAO_ITEMS) => {
     return items
@@ -119,7 +122,10 @@ export function AppSidebar() {
         }
         return f;
       })
-      .filter((f) => canAccessInternalPage(f.page) && (isInternalUser || isPathAllowedForClient(f.url, allowedTabs)));
+      .filter((f) => {
+        const hasAccess = isAdminUser || canAccessInternalPage(f.page) || inheritedPages.includes(f.page);
+        return hasAccess && (isInternalUser || isPathAllowedForClient(f.url, allowedTabs));
+      });
   };
 
   const visibleOperacao = filterItems(OPERACAO_ITEMS);

@@ -56,6 +56,8 @@ export interface LeadClientN8nSettingsPayload {
   planTier?: "essencial" | "avancado" | string;
   modulos_avulsos?: string[];
   modulosAvulsos?: string[];
+  degustacao_expira_em?: string | null;
+  degustacaoExpiraEm?: string | null;
 }
 
 export interface LeadClientEvolutionInstancePayload {
@@ -127,6 +129,7 @@ export interface LeadClientN8nSettingsSummary {
   allowed_tabs?: string[] | null;
   plan_tier?: string;
   modulos_avulsos?: string[];
+  degustacao_expira_em?: string | null;
 }
 
 export function useLeadClients() {

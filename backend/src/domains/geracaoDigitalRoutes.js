@@ -80,6 +80,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
         ALTER TABLE public.lead_client_n8n_settings ADD COLUMN IF NOT EXISTS agent_name TEXT;
         ALTER TABLE public.lead_client_n8n_settings ADD COLUMN IF NOT EXISTS plan_tier TEXT DEFAULT 'essencial';
         ALTER TABLE public.lead_client_n8n_settings ADD COLUMN IF NOT EXISTS modulos_avulsos JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE public.lead_client_n8n_settings ADD COLUMN IF NOT EXISTS degustacao_expira_em TIMESTAMPTZ;
 
         INSERT INTO public.lead_client_n8n_settings (client_id, active, chatbot_enabled)
         VALUES ('geracao-digital', true, false)

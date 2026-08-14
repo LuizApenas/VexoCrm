@@ -229,16 +229,20 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
     internalPages: [
       "dashboard",
       "leads",
+      "banco-de-dados",
       "planilhas",
       "whatsapp",
       "agente",
       "usuarios",
       "campanhas",
+      "followup",
+      "fila-de-followup",
       "conexoes",
       "disparos",
       "aquecimento",
       "relatorios",
       "onboarding-wizard",
+      "apresentacao",
       "eventos",
       "relacionamento",
       "livpub",
@@ -255,8 +259,22 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
       "imports.manage",
       "whatsapp.view",
       "whatsapp.reply",
+      "campaigns.manage",
+      "agente.view",
     ],
-    internalPages: ["dashboard", "leads", "whatsapp", "onboarding-wizard"],
+    internalPages: [
+      "dashboard",
+      "leads",
+      "banco-de-dados",
+      "whatsapp",
+      "followup",
+      "fila-de-followup",
+      "campanhas",
+      "planilhas",
+      "agente",
+      "conexoes",
+      "onboarding-wizard",
+    ],
     allowedViews: [],
   },
   parceiro: {
@@ -278,16 +296,49 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
       "imports.manage",
       "whatsapp.view",
       "whatsapp.reply",
+      "campaigns.manage",
+      "agente.view",
     ],
-    internalPages: [],
+    internalPages: [
+      "dashboard",
+      "leads",
+      "banco-de-dados",
+      "whatsapp",
+      "followup",
+      "fila-de-followup",
+      "campanhas",
+      "planilhas",
+      "agente",
+      "conexoes",
+      "onboarding-wizard",
+    ],
     allowedViews: [...CLIENT_VIEW_ORDER],
   },
   client_operator: {
     role: "client",
     scopeMode: "assigned_clients",
     approvalLevel: "operator",
-    permissions: ["dashboard.view", "leads.view", "whatsapp.view", "whatsapp.reply"],
-    internalPages: [],
+    permissions: [
+      "dashboard.view",
+      "leads.view",
+      "whatsapp.view",
+      "whatsapp.reply",
+      "campaigns.manage",
+      "agente.view",
+    ],
+    internalPages: [
+      "dashboard",
+      "leads",
+      "banco-de-dados",
+      "whatsapp",
+      "followup",
+      "fila-de-followup",
+      "campanhas",
+      "planilhas",
+      "agente",
+      "conexoes",
+      "onboarding-wizard",
+    ],
     allowedViews: ["dashboard", "leads", "whatsapp"],
   },
   client_viewer: {
@@ -295,7 +346,7 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
     scopeMode: "assigned_clients",
     approvalLevel: "none",
     permissions: ["dashboard.view", "leads.view"],
-    internalPages: [],
+    internalPages: ["dashboard", "leads"],
     allowedViews: ["dashboard", "leads"],
   },
   pending: {
@@ -565,6 +616,26 @@ export function canAccessInternalPage(
   return isAdmin || internalPages.includes(page);
 }
 
+export function getInheritedPlanPages(planTier?: string | null): InternalPage[] {
+  const tier = String(planTier || "").toLowerCase().includes("avancad") ? "avancado" : "essencial";
+  if (tier === "avancado") {
+    return [...INTERNAL_PAGE_ORDER];
+  }
+  return [
+    "dashboard",
+    "leads",
+    "banco-de-dados",
+    "whatsapp",
+    "followup",
+    "fila-de-followup",
+    "campanhas",
+    "planilhas",
+    "agente",
+    "conexoes",
+    "onboarding-wizard",
+  ];
+}
+
 export function isInternalPageAllowedForClient(
   page: string,
   allowedTabs: string[] | null | undefined
@@ -574,6 +645,7 @@ export function isInternalPageAllowedForClient(
   const pageToTabKey: Record<string, string> = {
     dashboard: "dashboard",
     leads: "leads",
+    "banco-de-dados": "leads",
     planilhas: "campanhas",
     whatsapp: "conversas",
     usuarios: "usuarios",
@@ -582,6 +654,7 @@ export function isInternalPageAllowedForClient(
     "inteligencia-comercial": "inteligencia",
     "chatbot-kanban": "chatbot-kanban",
     "chatbot-config": "chatbot",
+    followup: "followup",
     "fila-de-followup": "followup",
     "followup-empresas": "followup",
     "followup-campanhas": "followup",
@@ -589,7 +662,7 @@ export function isInternalPageAllowedForClient(
     "followup-sugestoes": "followup",
     "chatbot-docs": "chatbot-docs",
     "onboarding-wizard": "onboarding",
-    "apresentacao": "apresentacao",
+    apresentacao: "apresentacao",
     conexoes: "conexoes",
     aquecimento: "aquecimento",
     relatorios: "relatorios",
@@ -622,7 +695,7 @@ export function isPathAllowedForClient(
 
   let tabKey = "";
   if (path.includes("/crm/dashboard")) tabKey = "dashboard";
-  else if (path.includes("/crm/leads")) tabKey = "leads";
+  else if (path.includes("/crm/leads") || path.includes("/crm/banco-de-dados")) tabKey = "leads";
   else if (path.includes("/crm/whatsapp")) tabKey = "conversas";
   else if (path.includes("/crm/inteligencia-comercial")) tabKey = "inteligencia";
   else if (path.includes("/crm/chatbot-settings") || (path.includes("/crm/agente") && path.includes("tab=settings"))) tabKey = "chatbot";
