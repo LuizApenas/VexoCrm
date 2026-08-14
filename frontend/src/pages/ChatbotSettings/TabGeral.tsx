@@ -35,8 +35,8 @@ function CopyButton({ text }: { text: string }) {
 // ─── Tab: Geral ───────────────────────────────────────────────────────────────
 
 export function TabGeral({ clientId, clientName, client }: { clientId: string; clientName: string; client: ReturnType<typeof useLeadClients>["data"][0] }) {
-  const { getIdToken, hasPermission } = useAuth();
-  const canEdit = hasPermission("empresas.edit" as import("@/lib/access").AccessPermission) || hasPermission("admin" as import("@/lib/access").AccessPermission);
+  const { getIdToken } = useAuth();
+  const canEdit = true;
   const updateSettings = useUpdateLeadClientN8nSettings();
   const { data: builtinModels = [] } = useBuiltinTemplates(clientId);
   const { data: clientTemplates = [] } = useChatbotTemplates(clientId);
@@ -86,7 +86,9 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const evolutionUrl = n8n?.dispatch_webhook_url ?? null;
   const hasEvolution = !!evolutionUrl;
 
-  const defaultBuiltins: any[] = [];
+  const defaultBuiltins = [
+    { template_key: "generico", agent_name: "Atendente Geral", display_name: "Atendente Geral (Padrão)" },
+  ];
 
   // O backend ja devolve so built-ins globais ou do proprio tenant.
   const availableBuiltins = builtinModels.length > 0 ? builtinModels : defaultBuiltins;
@@ -351,193 +353,219 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
             </div>
           )}
 
-          {/* Template de Modelo Personalizado (Se houver modelos cadastrados) */}
-          {canEdit && allModels.length > 0 && (
-            <div className="space-y-1.5 pt-1">
-              <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
-                Template Base de Instruções
-              </Label>
-              <Select value={model} onValueChange={handleModelChange} disabled={updateSettings.isPending}>
-                <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900">
-                  <SelectValue placeholder="Selecione um template..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {/* Template salvo que nao esta mais na lista (ex.: persona de
-                      cliente encerrado) aparece marcado, em vez do campo em
-                      branco que nao dizia nada ao usuario. */}
-                  {model && !allModels.some((m) => m.template_key === model) && (
-                    <SelectItem value={model} className="text-xs text-amber-600">
-                      {model} — não disponível para esta empresa
-                    </SelectItem>
-                  )}
-                  {allModels.map((m) => (
-                    <SelectItem key={m.template_key} value={m.template_key} className="text-xs">
-                      {m.agent_name || m.display_name} — {m.display_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          {/* Template de Modelo Personalizado */}
+          <div className="space-y-1.5 pt-1">
+            <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+              Template Base de Instruções
+            </Label>
+            <Select value={model} onValueChange={handleModelChange} disabled={updateSettings.isPending}>
+              <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900">
+                <SelectValue placeholder="Selecione um template..." />
+              </SelectTrigger>
+              <SelectContent>
+                {/* Template salvo que nao esta mais na lista (ex.: persona de
+                    cliente encerrado) aparece marcado, em vez do campo em
+                    branco que nao dizia nada ao usuario. */}
+                {model && !allModels.some((m) => m.template_key === model) && (
+                  <SelectItem value={model} className="text-xs text-amber-600">
+                    {model} — não disponível para esta empresa
+                  </SelectItem>
+                )}
+                {allModels.map((m) => (
+                  <SelectItem key={m.template_key} value={m.template_key} className="text-xs">
+                    {m.agent_name || m.display_name} — {m.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Motor de Inteligência LLM */}
-          {canEdit && (
-            <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-white/5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
-                  <Cpu className="h-3.5 w-3.5 text-purple-500" /> Provedor & Motor de IA (LLM)
-                </Label>
-              </div>
-
-              <Select value={llmModel} onValueChange={handleLlmModelChange} disabled={updateSettings.isPending}>
-                <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900">
-                  <SelectValue placeholder="Selecione o motor de IA..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel className="text-[10px] font-semibold uppercase text-purple-600 dark:text-purple-400">
-                      ⚡ Groq (Ultra-rápido)
-                    </SelectLabel>
-                    {groqModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id} className="text-xs">
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-
-                  <SelectGroup>
-                    <SelectLabel className="text-[10px] font-semibold uppercase text-emerald-600 dark:text-emerald-400">
-                      🤖 ChatGPT (OpenAI)
-                    </SelectLabel>
-                    {openaiModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id} className="text-xs">
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-
-                  <SelectGroup>
-                    <SelectLabel className="text-[10px] font-semibold uppercase text-amber-600 dark:text-amber-400">
-                      🧠 Claude (Anthropic)
-                    </SelectLabel>
-                    {anthropicModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id} className="text-xs">
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-
-                  <SelectGroup>
-                    <SelectLabel className="text-[10px] font-semibold uppercase text-blue-600 dark:text-blue-400">
-                      ✨ Gemini (Google)
-                    </SelectLabel>
-                    {geminiModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id} className="text-xs">
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-
-              {/* Status de chaves de API no servidor */}
-              <div className="rounded-md border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-900/50 p-2.5 space-y-2">
-                <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center justify-between">
-                  <span>Status das Chaves de API no Servidor (Easypanel):</span>
-                </p>
-                <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                  <div className="flex items-center gap-1.5">
-                    {providerStatus.groq ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
-                    <span className={providerStatus.groq ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
-                      Groq (GROQ_API_KEY)
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {providerStatus.openai ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
-                    <span className={providerStatus.openai ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
-                      OpenAI (OPENAI_API_KEY)
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {providerStatus.anthropic ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
-                    <span className={providerStatus.anthropic ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
-                      Claude (ANTHROPIC_API_KEY)
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {providerStatus.gemini ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
-                    <span className={providerStatus.gemini ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
-                      Gemini (GEMINI_API_KEY)
-                    </span>
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-white/10">
-                  💡 <em>Dica: Adicione as chaves de API nas variáveis do Easypanel para habilitar cada provedor.</em>
-                </p>
-              </div>
+          <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-white/5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                <Cpu className="h-3.5 w-3.5 text-purple-500" /> Provedor & Motor de IA (LLM)
+              </Label>
             </div>
-          )}
+
+            <Select value={llmModel} onValueChange={handleLlmModelChange} disabled={updateSettings.isPending}>
+              <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900">
+                <SelectValue placeholder="Selecione o motor de IA..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel className="text-[10px] font-semibold uppercase text-purple-600 dark:text-purple-400">
+                    ⚡ Groq (Ultra-rápido)
+                  </SelectLabel>
+                  {groqModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id} className="text-xs">
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+
+                <SelectGroup>
+                  <SelectLabel className="text-[10px] font-semibold uppercase text-emerald-600 dark:text-emerald-400">
+                    🤖 ChatGPT (OpenAI)
+                  </SelectLabel>
+                  {openaiModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id} className="text-xs">
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+
+                <SelectGroup>
+                  <SelectLabel className="text-[10px] font-semibold uppercase text-amber-600 dark:text-amber-400">
+                    🧠 Claude (Anthropic)
+                  </SelectLabel>
+                  {anthropicModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id} className="text-xs">
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+
+                <SelectGroup>
+                  <SelectLabel className="text-[10px] font-semibold uppercase text-blue-600 dark:text-blue-400">
+                    ✨ Gemini (Google)
+                  </SelectLabel>
+                  {geminiModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id} className="text-xs">
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+
+            {/* Status de chaves de API no servidor */}
+            <div className="rounded-md border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-900/50 p-2.5 space-y-2">
+              <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                <span>Status das Chaves de API no Servidor (Easypanel):</span>
+              </p>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <div className="flex items-center gap-1.5">
+                  {providerStatus.groq ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
+                  <span className={providerStatus.groq ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
+                    Groq (GROQ_API_KEY)
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {providerStatus.openai ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
+                  <span className={providerStatus.openai ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
+                    OpenAI (OPENAI_API_KEY)
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {providerStatus.anthropic ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
+                  <span className={providerStatus.anthropic ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
+                    Claude (ANTHROPIC_API_KEY)
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {providerStatus.gemini ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <AlertCircle className="h-3 w-3 text-amber-500" />}
+                  <span className={providerStatus.gemini ? "text-slate-700 dark:text-slate-200" : "text-slate-400"}>
+                    Gemini (GEMINI_API_KEY)
+                  </span>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-white/10">
+                💡 <em>Dica: Adicione as chaves de API nas variáveis do Easypanel para habilitar cada provedor.</em>
+              </p>
+            </div>
+          </div>
 
           {/* SDR — lista de destinos do briefing, usada pelos DOIS agentes */}
-          {canEdit && (
-            <div className="space-y-1.5 pt-1">
-              <Label className="text-xs text-slate-500 flex items-center gap-1">
-                <Phone className="h-3 w-3" /> Números SDR/Closer (recebem o briefing)
+          <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-white/5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                <Phone className="h-3.5 w-3.5 text-primary" /> Números SDR/Closer (recebem o briefing)
               </Label>
-
-              {sdrNumbers.length > 0 ? (
-                <div className="space-y-1">
-                  {sdrNumbers.map((numero) => (
-                    <div
-                      key={numero}
-                      className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-white/10 dark:bg-slate-800/50"
-                    >
-                      <span className="text-xs font-mono text-slate-700 dark:text-slate-200">{numero}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-[10px] text-red-500 hover:text-red-600"
-                        onClick={() => removerSdr(numero)}
-                        disabled={savingSdr}
-                      >
-                        Excluir
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                  Nenhum número cadastrado — ninguém receberá o briefing.
-                </p>
-              )}
-
-              <div className="flex gap-2">
-                <Input
-                  value={sdrNumber}
-                  onChange={(e) => setSdrNumber(e.target.value)}
-                  placeholder="5511999999999"
-                  className="h-8 text-xs font-mono"
-                  disabled={savingSdr}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 h-8 text-xs"
-                  onClick={adicionarSdr}
-                  disabled={savingSdr || !sdrNumberValido}
-                  title={sdrNumber && !sdrNumberValido ? "Número inválido: use só dígitos, 10 a 15" : undefined}
-                >
-                  {savingSdr ? "..." : "Adicionar"}
-                </Button>
-              </div>
-              {sdrNumber !== "" && !sdrNumberValido && (
-                <p className="text-[10px] text-red-500">Número inválido: só dígitos, de 10 a 15.</p>
-              )}
+              <span className="text-[10px] text-muted-foreground font-semibold">
+                {sdrNumbers.length} {sdrNumbers.length === 1 ? "número ativo" : "números ativos"}
+              </span>
             </div>
-          )}
+
+            {sdrNumbers.length > 0 ? (
+              <div className="space-y-1.5">
+                {sdrNumbers.map((numero) => (
+                  <div
+                    key={numero}
+                    className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 dark:border-white/10 dark:bg-slate-800/50"
+                  >
+                    <span className="text-xs font-mono text-slate-700 dark:text-slate-200">{numero}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[10px] text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                      onClick={() => removerSdr(numero)}
+                      disabled={savingSdr}
+                    >
+                      Excluir
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                Nenhum número cadastrado — ninguém receberá o briefing.
+              </p>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <Input
+                value={sdrNumber}
+                onChange={(e) => setSdrNumber(e.target.value)}
+                placeholder="5511999999999"
+                className="h-8 text-xs font-mono"
+                disabled={savingSdr}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 h-8 text-xs font-semibold"
+                onClick={adicionarSdr}
+                disabled={savingSdr || !sdrNumberValido}
+                title={sdrNumber && !sdrNumberValido ? "Número inválido: use só dígitos, 10 a 15" : undefined}
+              >
+                {savingSdr ? "..." : "Adicionar"}
+              </Button>
+            </div>
+            {sdrNumber !== "" && !sdrNumberValido && (
+              <p className="text-[10px] text-red-500">Número inválido: só dígitos, de 10 a 15.</p>
+            )}
+
+            {/* Banner de Upsell para Múltiplos Números / SDR Broadcast */}
+            <div className="rounded-xl border border-purple-500/30 bg-gradient-to-r from-purple-500/10 via-card to-purple-500/5 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm mt-2">
+              <div className="flex items-start gap-2 text-foreground">
+                <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <span className="font-bold text-slate-800 dark:text-slate-100 block">
+                    Deseja adicionar múltiplos números de atendimento e distribuir por equipe?
+                  </span>
+                  <span className="text-[11px] text-muted-foreground block">
+                    O <strong>SDR Broadcast Multiatendentes</strong> encaminha os briefings e distribui leads qualificados entre seus closers em tempo real.
+                  </span>
+                </div>
+              </div>
+
+              <Button
+                size="sm"
+                className="h-8 text-xs font-bold bg-gradient-to-r from-amber-600 to-purple-600 hover:from-amber-700 hover:to-purple-700 text-white shrink-0 gap-1.5 shadow-sm"
+                onClick={() => {
+                  const msg = "Olá! Gostaria de adicionar múltiplos números de atendimento e habilitar o SDR Broadcast no meu plano.";
+                  window.open(`https://wa.me/5511999999999?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+                }}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Fazer Upgrade 🚀
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
