@@ -1184,29 +1184,38 @@ export default function BancoDeDados() {
 
         {/* Painel de Atribuição & Origem de Marketing */}
         {!isAdvancedOriginsUnlocked ? (
-          <div className="relative rounded-2xl border border-purple-500/30 overflow-hidden shadow-sm bg-gradient-to-b from-card/80 via-card/50 to-card/30">
-            <div className="p-4 filter blur-[4px] opacity-35 pointer-events-none select-none">
-              <div className="flex items-center gap-2 mb-3">
+          <UpsellCard
+            title="Rastreamento e Atribuição de Origens de Marketing"
+            subtitle="Exclusivo do Plano Avançado"
+            moduleName="Atribuição de Origens de Marketing"
+            description="O Rastreamento e Atribuição de Origens de Marketing (Instagram, Google, TikTok, Indicação) é exclusivo do Plano Avançado. Saiba de onde vem cada lead para otimizar suas campanhas!"
+            benefits={[
+              "Identificação automática da origem de cada contato e lead",
+              "Filtros rápidos e segmentação de campanhas em 1 clique por canal",
+              "Métricas comparativas de conversão por fonte de tráfego",
+            ]}
+            whatsappMessageUpgrade="Olá! Gostaria de fazer o upgrade para o Plano Avançado para desbloquear a Atribuição de Origens de Marketing no Banco de Dados."
+            whatsappMessageAvulso="Olá! Gostaria de adquirir o módulo avulso de Origem de Leads no Banco de Dados."
+          >
+            <div className="p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-1">
                 <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-purple-500" />
                   Atribuição & Origem de Marketing
-                </span>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  (Rastreamento de canais em tempo real)
                 </span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
                 {MARKETING_CHANNELS.map((ch) => (
                   <div
                     key={ch.id}
-                    className="p-3 rounded-xl border border-border bg-card h-[88px] flex flex-col justify-between"
+                    className="p-3 rounded-xl border border-border bg-card h-[80px] flex flex-col justify-between"
                   >
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 truncate">
                       <span>{ch.icon}</span>
-                      <span>{ch.name}</span>
+                      <span className="truncate">{ch.name}</span>
                     </span>
                     <div className="flex items-baseline justify-between pt-1">
-                      <span className="text-lg font-black">124</span>
+                      <span className="text-base font-black">124</span>
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-bold">18%</Badge>
                     </div>
                     <div className="w-full bg-slate-100 dark:bg-zinc-800 h-1 rounded-full" />
@@ -1214,25 +1223,7 @@ export default function BancoDeDados() {
                 ))}
               </div>
             </div>
-
-            <div className="absolute inset-0 z-10 flex items-center justify-center p-4 bg-background/60 backdrop-blur-sm">
-              <div className="max-w-2xl w-full">
-                <UpsellCard
-                  title="Rastreamento e Atribuição de Origens de Marketing"
-                  subtitle="Exclusivo do Plano Avançado"
-                  moduleName="Atribuição de Origens de Marketing"
-                  description="O Rastreamento e Atribuição de Origens de Marketing (Instagram, Google, TikTok, Indicação) é exclusivo do Plano Avançado. Saiba de onde vem cada lead para otimizar suas campanhas!"
-                  benefits={[
-                    "Identificação automática da origem de cada contato e lead",
-                    "Filtros rápidos e segmentação de campanhas em 1 clique por canal",
-                    "Métricas comparativas de conversão por fonte de tráfego",
-                  ]}
-                  whatsappMessageUpgrade="Olá! Gostaria de fazer o upgrade para o Plano Avançado para desbloquear a Atribuição de Origens de Marketing no Banco de Dados."
-                  whatsappMessageAvulso="Olá! Gostaria de adquirir o módulo avulso de Origem de Leads no Banco de Dados."
-                />
-              </div>
-            </div>
-          </div>
+          </UpsellCard>
         ) : (
           <div className="space-y-3 p-4 rounded-2xl bg-gradient-to-b from-card/80 via-card/50 to-card/30 border border-border dark:border-zinc-800 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1355,53 +1346,53 @@ export default function BancoDeDados() {
         )}
 
         {/* Header Métrico (Cards KPIs) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
           <Card className="bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
+              <CardTitle className="text-xs font-semibold text-muted-foreground">
                 Total de Leads na Base
               </CardTitle>
               <Database className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{summary.totalLeads.toLocaleString("pt-BR")}</div>
-              <p className="text-xs text-muted-foreground mt-1">Leads cadastrados e minerados</p>
+              <div className="text-xl sm:text-2xl font-bold text-foreground">{summary.totalLeads.toLocaleString("pt-BR")}</div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Leads cadastrados e minerados</p>
             </CardContent>
           </Card>
 
           <Card className="bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
+              <CardTitle className="text-xs font-semibold text-muted-foreground">
                 Compradores (Clientes 🟢)
               </CardTitle>
               <UserCheck className="h-4 w-4 text-emerald-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+              <div className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400">
                 {summary.buyersCount.toLocaleString("pt-BR")}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Clientes ativos e confirmados</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Clientes ativos e confirmados</p>
             </CardContent>
           </Card>
 
           <Card className="bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
+              <CardTitle className="text-xs font-semibold text-muted-foreground">
                 Orçamentos Abertos 🟡
               </CardTitle>
               <TrendingUp className="h-4 w-4 text-amber-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+              <div className="text-xl sm:text-2xl font-bold text-amber-600 dark:text-amber-400">
                 {summary.openBudgetsCount.toLocaleString("pt-BR")}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Propostas em negociação</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Propostas em negociação</p>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent border-emerald-500/30 dark:border-emerald-500/40 shadow-sm relative overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
+              <CardTitle className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
                 Receita Oculta na Base 💰
               </CardTitle>
               <Button
@@ -1415,14 +1406,14 @@ export default function BancoDeDados() {
               </Button>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-black text-emerald-700 dark:text-emerald-300">
+              <div className="text-xl sm:text-2xl font-black text-emerald-700 dark:text-emerald-300 truncate">
                 {computedRevenue.toLocaleString("pt-BR", {
                   style: "currency",
                   currency: "BRL",
                 })}
               </div>
-              <p className="text-xs text-emerald-600/80 dark:text-emerald-400/80 mt-1 font-medium flex items-center justify-between">
-                <span>Orçamentos Abertos x Ticket</span>
+              <p className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-0.5 font-medium flex items-center justify-between">
+                <span>Orçamentos x Ticket</span>
                 <span className="font-semibold">{ticketMedio.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
               </p>
             </CardContent>
