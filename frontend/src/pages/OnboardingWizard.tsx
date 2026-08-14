@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { fetchApi, readApiJson } from "@/lib/api";
 
 // Vexo Academy dinâmico (objetivo 5). Conteúdo 100% data-driven: cada ferramenta do
@@ -643,7 +644,9 @@ interface AccessContext {
 }
 
 export default function OnboardingWizard() {
-  const { getIdToken } = useAuth();
+  const { getIdToken, isAdminUser } = useAuth();
+  const crmClient = useOptionalCrmClient();
+  const selectedClientId = crmClient?.selectedClientId || "";
   const [context, setContext] = useState<AccessContext | null>(null);
 
   useEffect(() => {
@@ -706,8 +709,25 @@ export default function OnboardingWizard() {
     };
   }, [context]);
 
-  const visibleModules = ACADEMY_MODULES;
-  const [activeTab, setActiveTab] = useState<string>(ACADEMY_MODULES[0].value);
+  const visibleModules = useMemo(() => {
+    return ACADEMY_MODULES.filter((module) => {
+      if (module.value === "geracao-digital" && selectedClientId !== "geracao-digital") {
+        return false;
+      }
+      if (module.value === "livpub" && !isAdminUser && selectedClientId !== "livpub") {
+        return false;
+      }
+      return true;
+    });
+  }, [selectedClientId, isAdminUser]);
+
+  const [activeTab, setActiveTab] = useState<string>(visibleModules[0]?.value || "dashboard");
+
+  useEffect(() => {
+    if (visibleModules.length > 0 && !visibleModules.some((m) => m.value === activeTab)) {
+      setActiveTab(visibleModules[0].value);
+    }
+  }, [visibleModules, activeTab]);
 
   return (
     <PageShell
@@ -757,8 +777,7 @@ export default function OnboardingWizard() {
               const isUnlocked = canSee(module);
 
               if (!isUnlocked) {
-                const priceText = module.priceBadge || "Incluso no Plano Avançado (R$ 897/mês)";
-                const whatsappMsg = `Olá! Gostaria de solicitar o upgrade do módulo ${module.title} no Vexo OS.`;
+                const whatsappMsg = `Olá! Gostaria de fazer a cotação e solicitar o upgrade do módulo ${module.title} no Vexo OS.`;
                 const whatsappUrl = `https://wa.me/${upsellWhatsappNumber.replace(/\D/g, "")}?text=${encodeURIComponent(whatsappMsg)}`;
 
                 return (
@@ -773,7 +792,7 @@ export default function OnboardingWizard() {
                             🔒 Recurso do Plano Avançado
                           </Badge>
                           <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-xs px-3 py-1 font-bold">
-                            {priceText}
+                            🟣 Plano Avançado
                           </Badge>
                         </div>
                         <h3 className="text-2xl font-black text-amber-400">{module.title}</h3>
@@ -792,7 +811,7 @@ export default function OnboardingWizard() {
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg hover:shadow-emerald-500/25 transition-all"
                         >
-                          🔒 Solicitar Upgrade no WhatsApp
+                          💬 Fazer Cotação pelo WhatsApp
                         </a>
                       </div>
                     </Card>

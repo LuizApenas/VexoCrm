@@ -74,6 +74,8 @@ export function maskN8nSettings(row) {
     updated_at: row.updated_at || null,
     updated_by_email: row.updated_by_email || null,
     allowed_tabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : null,
+    plan_tier: row.plan_tier || "essencial",
+    modulos_avulsos: Array.isArray(row.modulos_avulsos) ? row.modulos_avulsos : [],
     // Preserva a lista de instâncias já mascarada por maskEvolutionInstance (server.js:1717).
     // Sem isso a whitelist cortava o campo e a UI mostrava "0 instâncias".
     evolution_instances: Array.isArray(row.evolution_instances) ? row.evolution_instances : [],
@@ -99,7 +101,7 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_uid, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, updated_at, updated_by_uid, updated_by_email"
     )
     .eq("client_id", clientId)
     .maybeSingle();
@@ -143,7 +145,7 @@ export async function getLeadClientN8nSettingsMap(clientIds) {
       // Como maskN8nSettings faz `Array.isArray(row.chatbot_instances) ? ... : []`, a
       // coluna ausente virava [] e a tela do Agente IA relia "Todos sem agente inbound"
       // a cada visita — a marcacao de chip era gravada e depois lida como vazia.
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, updated_at, updated_by_email"
     )
     .in("client_id", clientIds);
 
@@ -191,12 +193,18 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
   const sdrWhatsappNumberProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumber");
   const sdrWhatsappNumbersProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumbers");
   const allowedTabsProvided = Object.prototype.hasOwnProperty.call(body, "allowedTabs");
+  const planTierProvided = Object.prototype.hasOwnProperty.call(body, "planTier") || Object.prototype.hasOwnProperty.call(body, "plan_tier");
+  const modulosAvulsosProvided = Object.prototype.hasOwnProperty.call(body, "modulosAvulsos") || Object.prototype.hasOwnProperty.call(body, "modulos_avulsos");
 
   const payload = {
     active: activeProvided ? body.active !== false : existing?.active ?? true,
     chatbot_enabled: chatbotEnabledProvided ? body.chatbotEnabled === true : existing?.chatbot_enabled ?? false,
     chatbot_model: chatbotModelProvided ? (body.chatbotModel || "outlier") : existing?.chatbot_model ?? "outlier",
     chatbot_llm_model: chatbotLlmModelProvided ? (body.chatbotLlmModel || body.chatbot_llm_model || "llama-3.3-70b-versatile") : existing?.chatbot_llm_model ?? "llama-3.3-70b-versatile",
+    plan_tier: planTierProvided ? (String(body.planTier ?? body.plan_tier).toLowerCase() === "avancado" ? "avancado" : "essencial") : existing?.plan_tier ?? "essencial",
+    modulos_avulsos: modulosAvulsosProvided
+      ? (Array.isArray(body.modulosAvulsos ?? body.modulos_avulsos) ? (body.modulosAvulsos ?? body.modulos_avulsos) : [])
+      : existing?.modulos_avulsos ?? [],
     // Numero invalido nao entra na lista: o mesmo criterio do frontend, aqui
     // tambem, porque o backend nao pode confiar na tela.
     sdr_whatsapp_numbers: sdrWhatsappNumbersProvided

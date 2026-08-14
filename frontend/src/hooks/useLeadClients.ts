@@ -52,6 +52,10 @@ export interface LeadClientN8nSettingsPayload {
   sdrWhatsappNumber?: string | null;
   sdrWhatsappNumbers?: string[];
   allowedTabs?: string[] | null;
+  plan_tier?: "essencial" | "avancado" | string;
+  planTier?: "essencial" | "avancado" | string;
+  modulos_avulsos?: string[];
+  modulosAvulsos?: string[];
 }
 
 export interface LeadClientEvolutionInstancePayload {
@@ -121,6 +125,8 @@ export interface LeadClientN8nSettingsSummary {
   updated_at: string | null;
   updated_by_email?: string | null;
   allowed_tabs?: string[] | null;
+  plan_tier?: string;
+  modulos_avulsos?: string[];
 }
 
 export function useLeadClients() {

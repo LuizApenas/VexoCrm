@@ -218,8 +218,8 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
                 <SelectValue placeholder="Selecione o plano" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="essencial">🟢 Plano Essencial (R$ 397/mês) — Base (Dashboard, Inbox, Disparos, IA)</SelectItem>
-                <SelectItem value="avancado">🟣 Plano Avançado (R$ 897/mês) — Completo (Antiban, Agente, SDR, Origem)</SelectItem>
+                <SelectItem value="essencial">🟢 Plano Essencial — Base (Dashboard, Inbox, Disparos, IA Atendimento)</SelectItem>
+                <SelectItem value="avancado">🟣 Plano Avançado — Completo (Antiban, Agente Campanha, SDR Broadcast, RAG)</SelectItem>
               </SelectContent>
             </Select>
           </div>

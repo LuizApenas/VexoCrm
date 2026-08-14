@@ -2474,7 +2474,7 @@ export default function UserAccessManagement() {
                             : "border-border/60 bg-muted/5 hover:bg-muted/10"
                         )}
                       >
-                        <p className="font-bold text-xs text-foreground">🟢 Plano Essencial (R$ 397/mês)</p>
+                        <p className="font-bold text-xs text-foreground">🟢 Plano Essencial — Base</p>
                         <p className="text-[10px] text-muted-foreground leading-3 mt-1">Dashboard, Inbox, Disparos, IA Atendimento</p>
                       </button>
                       <button
@@ -2491,7 +2491,7 @@ export default function UserAccessManagement() {
                             : "border-border/60 bg-muted/5 hover:bg-muted/10"
                         )}
                       >
-                        <p className="font-bold text-xs text-foreground">🟣 Plano Avançado (R$ 897/mês)</p>
+                        <p className="font-bold text-xs text-foreground">🟣 Plano Avançado — Completo</p>
                         <p className="text-[10px] text-muted-foreground leading-3 mt-1">Antiban, Agente Campanha, Base, SDR, Origem</p>
                       </button>
                     </div>

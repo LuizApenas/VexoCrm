@@ -737,7 +737,7 @@ export default function GeracaoDigitalPublicProposal() {
                     {planType === "avancado" ? "🟣 Plano Avançado Vexo OS" : "🟢 Plano Essencial Vexo OS"}
                   </Badge>
                   <span className="text-xs font-mono font-bold text-slate-300">
-                    {planType === "avancado" ? "R$ 897/mês · Setup R$ 1.490" : "R$ 397/mês · Setup R$ 690"}
+                    {planType === "avancado" ? "Plano Completo" : "Plano Base"}
                   </span>
                 </div>
                 <p className="text-xs text-slate-200 leading-relaxed font-medium">

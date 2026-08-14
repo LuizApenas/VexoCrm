@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Database, Save, Trash2 } from "lucide-react";
+import { Database, Save, Trash2, ShieldCheck, Megaphone, Zap, Sparkles, Layers } from "lucide-react";
 import { EvolutionChipsPanel } from "@/components/EvolutionChipsPanel";
 import {
   AlertDialog,
@@ -21,6 +21,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -55,6 +62,8 @@ export function TenantConfigDialog({ tenant, onClose, tableStatuses, setTableSta
         inboundBearerToken?: string;
         active?: boolean;
         allowedTabs?: string[] | null;
+        planTier?: "essencial" | "avancado";
+        modulosAvulsos?: string[];
       }
     >
   >({});
@@ -69,6 +78,8 @@ export function TenantConfigDialog({ tenant, onClose, tableStatuses, setTableSta
       inboundBearerToken?: string;
       active?: boolean;
       allowedTabs?: string[] | null;
+      planTier?: "essencial" | "avancado";
+      modulosAvulsos?: string[];
     }
   ) => {
     setN8nDrafts((current) => ({
@@ -82,6 +93,21 @@ export function TenantConfigDialog({ tenant, onClose, tableStatuses, setTableSta
 
   const getTenantN8nDraft = (tenant: LeadClient) => {
     const draft = n8nDrafts[tenant.id] || {};
+    const rawTier =
+      draft.planTier ??
+      tenant.n8n_settings?.plan_tier ??
+      (tenant as any).model_type ??
+      (tenant as any).plan_type ??
+      "essencial";
+    const planTier: "essencial" | "avancado" =
+      String(rawTier).toLowerCase() === "avancado" ? "avancado" : "essencial";
+
+    const modulosAvulsos =
+      draft.modulosAvulsos ??
+      tenant.n8n_settings?.modulos_avulsos ??
+      (tenant as any).modulos_avulsos ??
+      [];
+
     return {
       dispatchWebhookUrl:
         draft.dispatchWebhookUrl ?? tenant.n8n_settings?.dispatch_webhook_url ?? "",
@@ -89,6 +115,8 @@ export function TenantConfigDialog({ tenant, onClose, tableStatuses, setTableSta
       inboundBearerToken: draft.inboundBearerToken ?? "",
       active: draft.active ?? tenant.n8n_settings?.active ?? true,
       allowedTabs: draft.allowedTabs ?? tenant.n8n_settings?.allowed_tabs ?? null,
+      planTier,
+      modulosAvulsos,
     };
   };
 
@@ -103,6 +131,10 @@ export function TenantConfigDialog({ tenant, onClose, tableStatuses, setTableSta
         inboundBearerToken: draft.inboundBearerToken.trim() || undefined,
         active: draft.active,
         allowedTabs: draft.allowedTabs,
+        planTier: draft.planTier,
+        plan_tier: draft.planTier,
+        modulosAvulsos: draft.modulosAvulsos,
+        modulos_avulsos: draft.modulosAvulsos,
       });
 
       setN8nDrafts((current) => ({
@@ -113,20 +145,22 @@ export function TenantConfigDialog({ tenant, onClose, tableStatuses, setTableSta
           inboundBearerToken: "",
           active: draft.active,
           allowedTabs: draft.allowedTabs,
+          planTier: draft.planTier,
+          modulosAvulsos: draft.modulosAvulsos,
         },
       }));
 
       toast({
         title: "Configurações da empresa atualizadas",
-        description: `As configuracoes da empresa ${tenant.name} foram salvas.`,
+        description: `As configurações da empresa ${tenant.name} foram salvas.`,
       });
     } catch (settingsError) {
       toast({
-        title: "Falha ao salvar Evolution",
+        title: "Falha ao salvar configurações",
         description:
           settingsError instanceof Error
             ? settingsError.message
-            : "Nao foi possivel atualizar a configuracao de disparo.",
+            : "Não foi possível atualizar a configuração.",
         variant: "destructive",
       });
     }
@@ -237,6 +271,107 @@ export function TenantConfigDialog({ tenant, onClose, tableStatuses, setTableSta
             </DialogHeader>
 
             <div className="p-6 space-y-6">
+              {/* Plano do Cliente e Módulos Avulsos / Degustação */}
+              {canManageN8n ? (
+                <div className="space-y-4 rounded-lg border border-slate-200/80 bg-slate-50/50 p-4 dark:border-white/10 dark:bg-white/[0.01]">
+                  <div className="pb-2 border-b border-slate-200/60 dark:border-white/5 flex flex-wrap justify-between items-center gap-2">
+                    <div>
+                      <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Layers className="w-4 h-4 text-purple-500" />
+                        Plano do Cliente e Módulos Avulsos
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Selecione o plano contratado ou libere módulos específicos como degustação/avulso.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white"
+                      disabled={updateN8nSettings.isPending}
+                      onClick={() => void handleSaveTenantN8n(tenant)}
+                    >
+                      <Save className="h-3.5 w-3.5 mr-1" />
+                      {updateN8nSettings.isPending ? "Salvando..." : "Salvar Plano"}
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2 p-3 rounded-lg border border-slate-200/80 bg-white dark:border-white/5 dark:bg-black/20">
+                      <label className="text-xs font-semibold text-foreground">Plano Geral</label>
+                      <Select
+                        value={getTenantN8nDraft(tenant).planTier}
+                        onValueChange={(val: "essencial" | "avancado") =>
+                          updateTenantN8nDraft(tenant.id, { planTier: val })
+                        }
+                      >
+                        <SelectTrigger className="w-full text-xs">
+                          <SelectValue placeholder="Selecione o plano" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="essencial">🟢 Plano Essencial — Base (Dashboard, Inbox, Disparos, IA Atendimento)</SelectItem>
+                          <SelectItem value="avancado">🟣 Plano Avançado — Completo (Antiban, Agente Campanha, SDR Broadcast, RAG)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">
+                        No Plano Avançado, todos os módulos abaixo ficam automaticamente destravados.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2.5 p-3 rounded-lg border border-slate-200/80 bg-white dark:border-white/5 dark:bg-black/20">
+                      <label className="text-xs font-semibold text-foreground">Módulos Avulsos / Degustação</label>
+                      <div className="space-y-2 text-xs">
+                        {[
+                          { id: "antiban_groq", label: "Variações Antiban (Groq AI)", icon: ShieldCheck, color: "text-purple-500" },
+                          { id: "agente_campanha", label: "Agente IA por Campanha", icon: Megaphone, color: "text-indigo-500" },
+                          { id: "agente_rag", label: "Base de Conhecimento RAG", icon: Sparkles, color: "text-cyan-500" },
+                          { id: "followup_automations", label: "Automações por Evento (Follow-up)", icon: Zap, color: "text-amber-500" },
+                        ].map((mod) => {
+                          const currentAvulsos = getTenantN8nDraft(tenant).modulosAvulsos;
+                          const isChecked =
+                            getTenantN8nDraft(tenant).planTier === "avancado" ||
+                            currentAvulsos.includes(mod.id);
+                          const isLockedByPlan = getTenantN8nDraft(tenant).planTier === "avancado";
+
+                          const handleToggleModule = (checked: boolean) => {
+                            let next = [...currentAvulsos];
+                            if (checked) {
+                              if (!next.includes(mod.id)) next.push(mod.id);
+                            } else {
+                              next = next.filter((k) => k !== mod.id);
+                            }
+                            updateTenantN8nDraft(tenant.id, { modulosAvulsos: next });
+                          };
+
+                          const ModIcon = mod.icon;
+
+                          return (
+                            <label
+                              key={mod.id}
+                              className={`flex items-center justify-between p-1.5 rounded-md hover:bg-muted/50 cursor-pointer ${
+                                isLockedByPlan ? "opacity-80" : ""
+                              }`}
+                            >
+                              <span className="flex items-center gap-2 text-[11px] font-medium text-foreground">
+                                <ModIcon className={`w-3.5 h-3.5 ${mod.color}`} />
+                                {mod.label}
+                              </span>
+                              <input
+                                type="checkbox"
+                                className="rounded border-slate-300 dark:border-white/10 text-purple-600 focus:ring-purple-500"
+                                checked={isChecked}
+                                disabled={isLockedByPlan}
+                                onChange={(e) => handleToggleModule(e.target.checked)}
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {/* Database Verification */}
               <div className="space-y-3 rounded-lg border border-slate-200/80 bg-slate-50/50 p-4 dark:border-white/10 dark:bg-white/[0.01]">
                 <div className="flex items-center justify-between gap-3">
