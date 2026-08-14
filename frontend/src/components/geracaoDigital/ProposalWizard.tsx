@@ -6,14 +6,31 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { ArrowRight, X, FileText, CheckCircle, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  X,
+  FileText,
+  CheckCircle,
+  Sparkles,
+  Building2,
+  Target,
+  Package,
+  DollarSign,
+  CreditCard,
+} from "lucide-react";
 import { calculateProposalValues } from "@/lib/geracaoDigital/proposalCalculator";
 import { type PaymentTerm, termAplicaA, APLICA_A_LABELS } from "@/lib/geracaoDigital/paymentTerms";
 import PlanoEditor from "@/components/geracaoDigital/PlanoEditor";
 import { type Plano, planoVazio, planoValido } from "@/lib/geracaoDigital/plano";
 import { syncPlanoPackages } from "@/lib/geracaoDigital/planoSync";
 import FormasPagamentoEditor from "@/components/geracaoDigital/FormasPagamentoEditor";
-import { type FormasSelecionadas, formasVazias, formasParaTerms } from "@/lib/geracaoDigital/formasPagamento";
+import {
+  type FormasSelecionadas,
+  formasVazias,
+  formasParaTerms,
+  TODAS_FORMAS,
+  parcelasDe,
+} from "@/lib/geracaoDigital/formasPagamento";
 import { PERIODOS, mesesDoPeriodo, prazosOfertados } from "@/lib/geracaoDigital/plano";
 
 interface ProposalWizardProps {
@@ -354,47 +371,6 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
                 {/* STEP 3: CONDIÇÕES COMERCIAIS */}
         {wizardStep === 3 && (
           <div className="space-y-5 animate-fade-in">
-            {/* Fase 4: taxa de Setup passa a viver AQUI, no mesmo formulário de
-                criação. Antes só existia no painel de configuração pós-criação,
-                o que obrigava um segundo salvamento (e era esse save que
-                derrubava os pacotes ofertados). */}
-            <div className="rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-50/50 dark:bg-purple-950/10 p-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer select-none">
-                  {/* "Isentar" em vez de "Cobrar": a ação da mesa é conceder
-                      a cortesia. Valor > 0 + isento faz a proposta mostrar o
-                      valor riscado com "Isento". */}
-                  <input
-                    type="checkbox"
-                    checked={!newCobrarSetup}
-                    onChange={(e) => setNewCobrarSetup(!e.target.checked)}
-                    className="accent-purple-600"
-                  />
-                  Isentar setup
-                </label>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Valor do Setup (R$)</Label>
-                  <Input
-                    type="number"
-                    value={newValorSetup || ""}
-                    onChange={(e) => setNewValorSetup(Number(e.target.value))}
-                    placeholder="0"
-                    className="h-9 w-40 text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-white/10"
-                  />
-                </div>
-                {!newCobrarSetup && Number(newValorSetup || 0) > 0 && (
-                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 pb-2">
-                    Isento — o cliente vê R$ {Number(newValorSetup).toLocaleString("pt-BR")} riscado
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2">
-                Investimento único de entrada. Ao isentar, deixe o valor preenchido:
-                a proposta mostra ele riscado com "Isento" ao lado, deixando a
-                cortesia visível para o cliente.
-              </p>
-            </div>
-
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-700 dark:text-slate-350">Validade da Proposta</Label>
@@ -443,7 +419,7 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
               </div>
             </div>
 
-            {/* Formas fixas de pagamento — caminho principal. */}
+            {/* Formas fixas de pagamento — caminho principal (gerencia setup e mensalidade). */}
             <div className="pt-2 border-t border-slate-100 dark:border-white/5">
               <FormasPagamentoEditor
                 formas={formasPgto}
@@ -454,8 +430,7 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
               />
             </div>
 
-
-            <div className="flex justify-between pt-4 border-t border-slate-100">
+            <div className="flex justify-between pt-4 border-t border-slate-100 dark:border-white/5">
               <Button variant="outline" onClick={() => setWizardStep(2)} className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
                 Voltar
               </Button>
@@ -467,97 +442,244 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
           </div>
         )}
 
-        {/* STEP 5: REVISÃO E FECHAMENTO */}
+        {/* STEP 4: REVISÃO E FECHAMENTO */}
         {wizardStep === 4 && (() => {
-          const selectedGdPkg = availablePackages.find(p => p.id === newPackageId && (p.tipo === "gd" || !p.tipo));
-          const selectedVexoPkg = availablePackages.find(p => p.id === newPackageVexoId && p.tipo === "vexo");
+          const brl = (v: number) =>
+            Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-          const tempProposal = {
-            cobrar_setup: newCobrarSetup,
-            valor_setup_vexo: newValorSetup,
-            package_id: newPackageId || null,
-            package_vexo_id: newPackageVexoId || null,
-            periodo_plano: selectedGdPkg?.periodo || selectedVexoPkg?.periodo || "mensal",
-            itens: [
-              ...(selectedGdPkg ? [{ categoria: "gd", valor: 0 }] : []),
-              ...(selectedVexoPkg ? [{ categoria: "vexo", valor: 0 }] : []),
-              ...Object.entries(newVexoAvulsoIds).filter(([_, checked]) => checked).map(([id]) => {
-                const prod = vexoProducts.find(vp => vp.id === id);
-                return {
-                  product_id: id,
-                  categoria: "vexo",
-                  valor: prod ? Number(prod.valor) : 0,
-                  descricao: prod ? prod.nome : ""
-                };
-              })
-            ]
-          };
+          const resolvedSegmentText =
+            newSegmentId === "custom" || customSegmentName
+              ? customSegmentName || "Personalizado"
+              : segmentsList.find((s) => s.id === newSegmentId)?.nome || "Geral / B2B";
 
-          const calc = calculateProposalValues(tempProposal, availablePackages);
+          const gdItemsSelected = (plano.escopo.itens || [])
+            .map((id) => gdProducts.find((p) => p.id === id))
+            .filter(Boolean);
+
+          const vexoModulesSelected = (plano.escopo.vexo || [])
+            .map((id) => vexoProducts.find((p) => p.id === id))
+            .filter(Boolean);
+
+          const activeTerms = PERIODOS.filter(
+            (p) => plano.precos[p.id] !== undefined && Number(plano.precos[p.id]) > 0
+          );
+
+          const selectedPaymentMethods = formasPgto.marcadas.map((id) => {
+            const def = TODAS_FORMAS.find((f) => f.id === id);
+            const n = parcelasDe(formasPgto, id);
+            return {
+              id,
+              label: def?.label || id,
+              parcelas: def?.parcelavel ? n : null,
+              aplica_a: def?.aplica_a || "mensalidade",
+            };
+          });
 
           return (
             <div className="space-y-6 animate-fade-in">
-              {/* Financial blocks */}
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="p-4 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/40">
-                  <span className="text-[10px] text-purple-750 dark:text-purple-300 uppercase font-black tracking-wider block">Taxa de Setup</span>
-                  <h4 className="text-xl font-black text-slate-800 dark:text-slate-100 mt-1 font-mono">
-                    {calc.setupFinal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  </h4>
-                  <span className="text-[9px] text-slate-500 block mt-0.5">Investimento único de entrada</span>
-                </div>
-
-                <div className="p-4 rounded-xl bg-pink-50/50 dark:bg-pink-950/20 border border-pink-200 dark:border-pink-900/40">
-                  <span className="text-[10px] text-pink-750 dark:text-pink-300 uppercase font-black tracking-wider block">Valor Mensal</span>
-                  <h4 className="text-xl font-black text-pink-600 mt-1 font-mono">
-                    {calc.mensalidadeFinal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês
-                  </h4>
-                  <span className="text-[9px] text-slate-500 block mt-0.5">Soma dos pacotes e extras</span>
-                </div>
-
-                <div className="p-4 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/40">
-                  <span className="text-[10px] text-indigo-750 dark:text-indigo-300 uppercase font-black tracking-wider block">Compromisso do Período</span>
-                  <h4 className="text-xl font-black text-indigo-600 mt-1 font-mono">
-                    {calc.compromissoFinal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  </h4>
-                  <span className="text-[9px] text-slate-500 block mt-0.5">Total de {calc.mesesPeriodo} {calc.mesesPeriodo === 1 ? "mês" : "meses"} de contrato</span>
-                </div>
+              <div className="rounded-xl border border-purple-200/70 dark:border-purple-900/40 bg-gradient-to-r from-purple-50/70 to-indigo-50/50 dark:from-purple-950/20 dark:to-indigo-950/20 p-4">
+                <h3 className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-purple-600" />
+                  Revisão Geral da Proposta
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                  Confira todos os parâmetros antes de finalizar a criação do rascunho oficial.
+                </p>
               </div>
 
-              {/* Detail of proposal scope */}
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-3">
-                <h4 className="text-xs font-bold text-slate-850 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700 pb-1.5 uppercase tracking-wider">Escopo da Proposta ({newProspect})</h4>
-                <div className="space-y-2">
-                  {selectedGdPkg && (
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">Combo GD: {selectedGdPkg.nome}</span>
-                      <span className="font-mono text-slate-500">{(selectedGdPkg.valor / (selectedGdPkg.periodo === "anual" ? 12 : 1)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês</span>
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* 1. 🏢 Identificação do Cliente */}
+                <div className="p-4 rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700/80 space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-2">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                      <Building2 className="h-3.5 w-3.5 text-purple-600" />
+                      1. Identificação do Cliente
+                    </span>
+                    <Badge variant="outline" className="text-[10px] border-purple-300 text-purple-600 dark:text-purple-400">
+                      Cliente
+                    </Badge>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-slate-500 font-medium">Nome / Razão Social:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-100 text-right">{newProspect}</span>
                     </div>
-                  )}
-                  {selectedVexoPkg && (
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">Combo Vexo OS: {selectedVexoPkg.nome}</span>
-                      <span className="font-mono text-slate-500">{(selectedVexoPkg.valor / (selectedVexoPkg.periodo === "anual" ? 12 : 1)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês</span>
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-slate-500 font-medium flex items-center gap-1">
+                        <Target className="h-3 w-3 text-indigo-500" />
+                        Segmento / Nicho:
+                      </span>
+                      <span className="font-semibold text-indigo-600 dark:text-indigo-400 text-right">{resolvedSegmentText}</span>
                     </div>
-                  )}
-                  {Object.entries(newVexoAvulsoIds).filter(([_, checked]) => checked).map(([id]) => {
-                    const prod = vexoProducts.find(vp => vp.id === id);
-                    if (!prod) return null;
-                    return (
-                      <div key={id} className="flex justify-between items-center text-xs pl-3 border-l-2 border-slate-300">
-                        <span className="text-slate-650">Vexo Extra: {prod.nome}</span>
-                        <span className="font-mono text-slate-500">{Number(prod.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês</span>
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-slate-500 font-medium">Logo da Empresa:</span>
+                      {newProspectLogo ? (
+                        <div className="flex items-center gap-2">
+                          <img src={newProspectLogo} alt="Logo" className="h-6 w-6 object-contain rounded border bg-white" />
+                          <span className="text-[10px] text-emerald-600 font-semibold">Anexada</span>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">Sem logo anexada</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. 📦 Escopo do Projeto */}
+                <div className="p-4 rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700/80 space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-2">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                      <Package className="h-3.5 w-3.5 text-indigo-600" />
+                      2. Escopo do Projeto
+                    </span>
+                    <Badge variant="outline" className="text-[10px] border-indigo-300 text-indigo-600 dark:text-indigo-400">
+                      {gdItemsSelected.length + vexoModulesSelected.length} itens
+                    </Badge>
+                  </div>
+                  <div className="space-y-2 text-xs max-h-40 overflow-y-auto pr-1">
+                    {gdItemsSelected.length > 0 && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Serviços Geração Digital</span>
+                        <div className="space-y-1 pl-1">
+                          {gdItemsSelected.map((item: any) => (
+                            <div key={item.id} className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
+                              <span className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0" />
+                              <span className="truncate">{item.nome}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    );
-                  })}
+                    )}
+                    {vexoModulesSelected.length > 0 && (
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Módulos Vexo OS</span>
+                        <div className="space-y-1 pl-1">
+                          {vexoModulesSelected.map((mod: any) => (
+                            <div key={mod.id} className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
+                              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 shrink-0" />
+                              <span className="truncate">{mod.nome}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {gdItemsSelected.length === 0 && vexoModulesSelected.length === 0 && (
+                      <p className="text-slate-400 italic">Nenhum item adicionado ao escopo.</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex justify-between pt-4 border-t border-slate-100">
+              {/* 3. 💰 Preços Ofertados por Prazo */}
+              <div className="p-4 rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700/80 space-y-3 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-2">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
+                    3. Preços Ofertados por Prazo ({activeTerms.length} {activeTerms.length === 1 ? "prazo" : "prazos"})
+                  </span>
+                  <span className="text-[10px] text-slate-500">Valores com tabela e desconto já aplicados</span>
+                </div>
+
+                {activeTerms.length > 0 ? (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {activeTerms.map((t) => {
+                      const valMensal = Number(plano.precos[t.id] || 0);
+                      const compromisso = valMensal * t.meses;
+                      return (
+                        <div key={t.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 space-y-1">
+                          <span className="text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase block">{t.label}</span>
+                          <p className="text-base font-black text-purple-700 dark:text-purple-400 font-mono">
+                            {brl(valMensal)}<span className="text-[10px] font-normal text-slate-500">/mês</span>
+                          </p>
+                          <span className="text-[10px] text-slate-500 block">
+                            Compromisso total: <strong className="font-mono text-slate-700 dark:text-slate-300">{brl(compromisso)}</strong>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-600">Nenhum prazo configurado com valor.</p>
+                )}
+              </div>
+
+              {/* 4. 💳 Condições Comerciais & Pagamento */}
+              <div className="p-4 rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700/80 space-y-3 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-2">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                    <CreditCard className="h-3.5 w-3.5 text-purple-600" />
+                    4. Condições Comerciais & Pagamento
+                  </span>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 text-xs">
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-white/5">
+                      <span className="text-slate-500 font-medium">Taxa de Setup:</span>
+                      <span className="font-bold font-mono text-slate-800 dark:text-slate-200">
+                        {newCobrarSetup && Number(newValorSetup || 0) > 0 ? (
+                          brl(Number(newValorSetup))
+                        ) : Number(newValorSetup || 0) > 0 ? (
+                          <span className="text-emerald-600">Isento (R$ {Number(newValorSetup).toLocaleString("pt-BR")})</span>
+                        ) : (
+                          <span className="text-slate-500">Isento / Não aplicável</span>
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-white/5">
+                      <span className="text-slate-500 font-medium">Validade da Proposta:</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {newValidade ? new Date(`${newValidade}T00:00:00`).toLocaleDateString("pt-BR") : "Não definida"}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-white/5">
+                      <span className="text-slate-500 font-medium">1º Vencimento (Carência):</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {newCarencia ? `${newCarencia} dias após a contratação` : "Imediato (na contratação)"}
+                      </span>
+                    </div>
+
+                    {newPaymentLink && (
+                      <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-white/5">
+                        <span className="text-slate-500 font-medium">Link de Pagamento:</span>
+                        <span className="font-mono text-[10px] text-purple-600 truncate max-w-[180px]">{newPaymentLink}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">Formas de Pagamento Selecionadas:</span>
+                    {selectedPaymentMethods.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedPaymentMethods.map((m) => (
+                          <Badge key={m.id} variant="outline" className="text-[11px] font-medium bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                            {m.label} {m.parcelas ? `(${m.parcelas}x)` : ""}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 italic">Nenhuma forma de pagamento marcada</span>
+                    )}
+
+                    {newCondicoes && (
+                      <div className="pt-2">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Condições Contratuais:</span>
+                        <p className="text-slate-600 dark:text-slate-300 italic mt-0.5 bg-slate-50 dark:bg-slate-800/60 p-2 rounded border border-slate-200 dark:border-slate-700">
+                          {newCondicoes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-between pt-4 border-t border-slate-100 dark:border-white/5">
                 <Button variant="outline" onClick={() => setWizardStep(3)} className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
                   Voltar
                 </Button>
-                <Button onClick={() => handleCreateDirectProposal(formasParaTerms(formasPgto))} className="bg-gradient-to-r from-purple-700 to-indigo-600 text-white font-black text-xs px-8">
+                <Button onClick={() => handleCreateDirectProposal(formasParaTerms(formasPgto))} className="bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-800 hover:to-indigo-700 text-white font-black text-xs px-8 shadow-md">
                   Confirmar & Criar Proposta
                 </Button>
               </div>

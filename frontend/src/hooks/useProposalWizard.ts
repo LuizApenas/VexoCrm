@@ -209,11 +209,7 @@ export function useProposalWizard({
           escolhida: null
         },
         owner_company: isVexoCommercial ? "vexo" : "geracao-digital",
-        condicoes_especiais: (newPlano as any).condicoesEspeciais || (newPlano as any).condicoes_especiais || newCondicoes || null,
-        desconto_setup_pct: (newPlano as any).descontoSetupPorcentagem ?? (newPlano as any).desconto_setup_pct ?? 0,
-        desconto_mensal_pct: (newPlano as any).descontoMensalPorcentagem ?? (newPlano as any).desconto_mensal_pct ?? 0,
-        vexo_plan: (newPlano as any).vexoPlan || null,
-        vexo_price: (newPlano as any).vexoPlan === "essencial" ? 397 : (newPlano as any).vexoPlan === "avancado" ? 897 : 0
+        condicoes_especiais: newCondicoes || null,
       };
 
       const url = editingProposalId ? `/api/gd/proposals/${editingProposalId}` : `/api/gd/proposals`;
