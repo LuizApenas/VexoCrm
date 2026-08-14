@@ -1,5 +1,5 @@
 import { type Dispatch, type SetStateAction } from "react";
-import { Archive, Clock3, FilePlus2, Pause, Play, Plus, Trash2, Zap } from "lucide-react";
+import { Archive, Bot, Clock3, FilePlus2, Pause, Play, Plus, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
