@@ -1980,6 +1980,13 @@ function UserListItem({
   dirty,
   onSelect,
 }: UserListItemProps) {
+  const matchedClient = clients.find((c) => (draft.clientIds || []).includes(c.id));
+  const companyDisplayName = matchedClient?.name || (draft.companyName && draft.companyName !== user.displayName ? draft.companyName : null) || "Vexo Adm";
+  const userDisplayName = user.displayName || 
+                          (draft.companyName && draft.companyName !== companyDisplayName ? draft.companyName : null) || 
+                          user.email?.split("@")[0] || 
+                          "Usuário";
+
   return (
     <button
       type="button"
@@ -1994,7 +2001,7 @@ function UserListItem({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <p className="truncate text-sm font-medium text-foreground">
-            {user.displayName || user.email || "Usuario sem nome"}
+            {userDisplayName}
           </p>
           <p className="truncate text-xs text-muted-foreground">{user.email || "Sem e-mail"}</p>
         </div>
@@ -2020,7 +2027,7 @@ function UserListItem({
       ) : null}
 
       <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-        <p>{draft.companyName || "Sem empresa exibida"}</p>
+        <p>{companyDisplayName}</p>
         <p>{summarizeClientAssignments(draft.clientIds, clients)}</p>
       </div>
     </button>
@@ -2593,11 +2600,11 @@ export default function UserAccessManagement() {
                     />
                   </div>
                   <div className="sm:col-span-2 space-y-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Nome de Exibição</label>
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Nome Completo</label>
                     <Input
                       value={createDraft.displayName}
                       onChange={(event) => updateCreateDraft({ displayName: event.target.value })}
-                      placeholder="Nome completo ou alcunha"
+                      placeholder="Nome completo do usuário"
                       className="h-12 rounded-xl bg-muted/10 border-border/60 focus-visible:ring-primary/20"
                     />
                   </div>
@@ -2927,18 +2934,28 @@ export default function UserAccessManagement() {
                         {paginatedUsers.map((user) => {
                           const draft = drafts[user.uid] || buildUserDraft(user);
                           const protectedAccount = isProtectedAdmin(user);
-                          const tenantName = draft.companyName || summarizeClientAssignments(draft.clientIds, clients);
+
+                          // 1. Resolução do Nome Real da Empresa:
+                          const matchedClient = clients.find((c) => (draft.clientIds || []).includes(c.id)) || 
+                                                (selectedClientId ? clients.find((c) => c.id === selectedClientId) : null);
+                          const companyDisplayName = matchedClient?.name || (draft.companyName && draft.companyName !== user.displayName ? draft.companyName : null) || "Vexo Adm";
+
+                          // 2. Resolução do Nome do Usuário:
+                          const userDisplayName = user.displayName || 
+                                                  (draft.companyName && draft.companyName !== companyDisplayName ? draft.companyName : null) || 
+                                                  user.email?.split("@")[0] || 
+                                                  "Usuário";
 
                           return (
                             <TableRow key={user.uid} className="border-border/60 transition-colors hover:bg-muted/30">
                               <TableCell className="py-4 px-6">
                                 <div className="space-y-1">
-                                  <p className="text-sm font-semibold text-foreground">{user.displayName || user.email || "Usuário sem nome"}</p>
+                                  <p className="text-sm font-semibold text-foreground">{userDisplayName}</p>
                                   <p className="text-xs text-muted-foreground">{user.email || "Sem e-mail"}</p>
                                 </div>
                               </TableCell>
                               <TableCell className="py-4 px-6">
-                                <span className="text-sm font-medium text-foreground/80">{tenantName}</span>
+                                <span className="text-sm font-medium text-foreground/80">{companyDisplayName}</span>
                               </TableCell>
                               <TableCell className="py-4 px-6">
                                 <div className="flex flex-wrap gap-2">
@@ -3018,14 +3035,23 @@ export default function UserAccessManagement() {
               {/* Modal de Edição */}
               <Dialog open={!!selectedUserId} onOpenChange={(open) => { if (!open) setSelectedUserId(null); }}>
                     <DialogContent className="max-h-[85vh] max-w-4xl flex flex-col p-0 border-border/60 shadow-2xl bg-background/95 backdrop-blur-xl sm:rounded-[2.5rem] overflow-hidden">
-                      {selectedUser && selectedDraft ? (
-                        <div className="flex flex-col h-full min-h-0 flex-1">
-                          <DialogHeader className="px-8 pb-6 pt-8 border-b border-border/40 bg-muted/10 shrink-0">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="space-y-2">
-                                <DialogTitle className="text-2xl font-bold tracking-tight">
-                                  {selectedUser.displayName || selectedUser.email || "Usuário sem nome"}
-                                </DialogTitle>
+                      {selectedUser && selectedDraft ? (() => {
+                        const selectedMatchedClient = clients.find((c) => (selectedDraft.clientIds || []).includes(c.id)) || 
+                                                      (selectedClientId ? clients.find((c) => c.id === selectedClientId) : null);
+                        const selectedCompanyDisplayName = selectedMatchedClient?.name || (selectedDraft.companyName && selectedDraft.companyName !== selectedUser.displayName ? selectedDraft.companyName : null) || "Vexo Adm";
+                        const selectedUserDisplayName = selectedUser.displayName || 
+                                                        (selectedDraft.companyName && selectedDraft.companyName !== selectedCompanyDisplayName ? selectedDraft.companyName : null) || 
+                                                        selectedUser.email?.split("@")[0] || 
+                                                        "Usuário";
+
+                        return (
+                          <div className="flex flex-col h-full min-h-0 flex-1">
+                            <DialogHeader className="px-8 pb-6 pt-8 border-b border-border/40 bg-muted/10 shrink-0">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-2">
+                                  <DialogTitle className="text-2xl font-bold tracking-tight">
+                                    {selectedUserDisplayName}
+                                  </DialogTitle>
                                 <DialogDescription className="text-sm text-muted-foreground flex items-center gap-2">
                                   {selectedUser.email || "Sem e-mail"}
                                   <span>•</span>
@@ -3263,7 +3289,7 @@ export default function UserAccessManagement() {
                             </Button>
                           </DialogFooter>
                         </div>
-                      ) : (
+                      ); })() : (
                         <div className="p-8 text-center text-muted-foreground">Carregando...</div>
                       )}
                     </DialogContent>
