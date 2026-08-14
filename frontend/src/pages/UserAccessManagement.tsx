@@ -1489,63 +1489,232 @@ function applyGranularToDraft(
   };
 }
 
-// Matriz de toggles por ferramenta (objetivo 1b), categorizada A–E, filtrada pelo tipo
-// de acesso (interno/cliente). Alimentada pelo PERMISSIONS_REGISTRY do backend.
-function GranularPermissionMatrix({
-  registry,
-  role,
-  selected,
+function UserPlanAndSecurityControls({
+  draft,
   disabled,
-  onToggle,
+  onChange,
 }: {
-  registry: AccessRegistry | null;
-  role: ManagedRole;
-  selected: string[];
+  draft: AccessDraft;
   disabled: boolean;
-  onToggle: (key: string, checked: boolean) => void;
+  onChange: (patch: Partial<AccessDraft>) => void;
 }) {
-  if (!registry) {
-    return <p className="text-sm text-muted-foreground p-4">Carregando permissões…</p>;
-  }
+  const isAdvanced =
+    draft.accessPreset === "admin" ||
+    draft.accessPreset === "admin_vexo" ||
+    (draft.accessPreset === "gestor" &&
+      (draft.permissions.includes("users.manage") || draft.internalPages.includes("usuarios")));
 
-  const roleKey = role === "client" ? "client" : "internal";
-  const available = registry.permissions.filter((perm) => perm.roles.includes(roleKey));
-  const selectedSet = new Set(selected);
-  const categories = registry.categories.filter((category) =>
-    available.some((perm) => perm.category === category.key)
-  );
+  const permissionsSet = new Set(draft.permissions || []);
+  const pagesSet = new Set(draft.internalPages || []);
+
+  const allowLeadsExport = permissionsSet.has("leads.export");
+  const showAnalyticsReports = pagesSet.has("relatorios") || pagesSet.has("inteligencia-comercial");
+  const allowUsersManage = permissionsSet.has("users.manage") || pagesSet.has("usuarios");
+
+  const setPlan = (tier: "essencial" | "avancado") => {
+    if (tier === "avancado") {
+      const advancedPages = [...INTERNAL_PAGE_ORDER].filter((page) =>
+        showAnalyticsReports ? true : page !== "relatorios" && page !== "inteligencia-comercial"
+      );
+      if (!allowUsersManage) {
+        const idx = advancedPages.indexOf("usuarios");
+        if (idx !== -1) advancedPages.splice(idx, 1);
+      }
+      const advancedPerms = [...ACCESS_PERMISSION_ORDER].filter((p) => {
+        if (!allowLeadsExport && p === "leads.export") return false;
+        if (!allowUsersManage && (p === "users.manage" || p === "users.view")) return false;
+        return true;
+      });
+
+      onChange({
+        accessPreset: "admin",
+        permissions: advancedPerms,
+        internalPages: advancedPages,
+      });
+    } else {
+      const essentialPages: InternalPage[] = [
+        "dashboard",
+        "leads",
+        "banco-de-dados",
+        "whatsapp",
+        "followup",
+        "fila-de-followup",
+        "campanhas",
+        "planilhas",
+        "agente",
+        "conexoes",
+        "onboarding-wizard",
+      ];
+      if (showAnalyticsReports) {
+        essentialPages.push("relatorios");
+      }
+      if (allowUsersManage) {
+        essentialPages.push("usuarios");
+      }
+      const essentialPermissions: AccessPermission[] = [
+        "dashboard.view",
+        "leads.view",
+        "imports.manage",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.manage",
+        "agente.view",
+      ];
+      if (allowLeadsExport) {
+        essentialPermissions.push("leads.export");
+      }
+      if (allowUsersManage) {
+        essentialPermissions.push("users.view", "users.manage");
+      }
+
+      onChange({
+        accessPreset: "commercial",
+        permissions: essentialPermissions,
+        internalPages: essentialPages,
+      });
+    }
+  };
+
+  const toggleLeadsExport = (checked: boolean) => {
+    const nextPerms = checked
+      ? Array.from(new Set([...draft.permissions, "leads.export" as AccessPermission]))
+      : draft.permissions.filter((p) => p !== "leads.export");
+    onChange({ permissions: nextPerms });
+  };
+
+  const toggleAnalyticsReports = (checked: boolean) => {
+    const nextPages = checked
+      ? Array.from(
+          new Set([
+            ...draft.internalPages,
+            "relatorios" as InternalPage,
+            "inteligencia-comercial" as InternalPage,
+          ])
+        )
+      : draft.internalPages.filter((p) => p !== "relatorios" && p !== "inteligencia-comercial");
+    onChange({ internalPages: nextPages });
+  };
+
+  const toggleUsersManage = (checked: boolean) => {
+    const nextPerms = checked
+      ? Array.from(
+          new Set([
+            ...draft.permissions,
+            "users.view" as AccessPermission,
+            "users.manage" as AccessPermission,
+          ])
+        )
+      : draft.permissions.filter((p) => p !== "users.view" && p !== "users.manage");
+    const nextPages = checked
+      ? Array.from(new Set([...draft.internalPages, "usuarios" as InternalPage]))
+      : draft.internalPages.filter((p) => p !== "usuarios");
+    onChange({ permissions: nextPerms, internalPages: nextPages });
+  };
 
   return (
     <div className="space-y-6">
-      {categories.map((category) => {
-        const perms = available.filter((perm) => perm.category === category.key);
-        return (
-          <div key={category.key} className="space-y-3">
-            <h5 className="text-sm font-bold text-foreground">{category.label}</h5>
-            <div className="grid gap-2 md:grid-cols-2">
-              {perms.map((perm) => {
-                const checked = selectedSet.has(perm.key);
-                return (
-                  <label
-                    key={perm.key}
-                    className={cn(
-                      "flex items-center justify-between gap-3 rounded-xl border p-3 transition-colors",
-                      checked ? "border-primary/40 bg-primary/5" : "border-border/60 bg-muted/5"
-                    )}
-                  >
-                    <span className="text-sm text-foreground">{perm.label}</span>
-                    <Switch
-                      checked={checked}
-                      disabled={disabled}
-                      onCheckedChange={(value) => onToggle(perm.key, value === true)}
-                    />
-                  </label>
-                );
-              })}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+            Plano de Funcionalidades
+          </label>
+          <Badge variant="outline" className="font-semibold text-[10px]">
+            {isAdvanced ? "🟣 Plano Avançado" : "🟢 Plano Essencial"}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setPlan("essencial")}
+            className={cn(
+              "rounded-xl border p-4 text-left transition-all relative cursor-pointer",
+              !isAdvanced
+                ? "border-emerald-500 bg-emerald-500/10 shadow-sm ring-1 ring-emerald-500/30"
+                : "border-border/60 bg-muted/5 hover:bg-muted/10"
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <p className="font-bold text-sm text-foreground">🟢 Plano Essencial — Base</p>
+              {!isAdvanced && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
             </div>
-          </div>
-        );
-      })}
+            <p className="text-xs text-muted-foreground leading-4 mt-1.5">
+              Dashboard, Leads, Banco de Dados, Inbox/Conversas, Disparos, IA Atendimento, Follow-up e Campanhas.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setPlan("avancado")}
+            className={cn(
+              "rounded-xl border p-4 text-left transition-all relative cursor-pointer",
+              isAdvanced
+                ? "border-purple-500 bg-purple-500/10 shadow-sm ring-1 ring-purple-500/30"
+                : "border-border/60 bg-muted/5 hover:bg-muted/10"
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <p className="font-bold text-sm text-foreground">🟣 Plano Avançado — Completo</p>
+              {isAdvanced && <CheckCircle2 className="w-4 h-4 text-purple-600" />}
+            </div>
+            <p className="text-xs text-muted-foreground leading-4 mt-1.5">
+              Variações Antiban (Groq AI), Agente Campanha, Base RAG, SDR Broadcast, Origem de Leads e Relatórios Avançados.
+            </p>
+          </button>
+        </div>
+      </div>
+
+      {/* Restrições Opcionais de Segurança */}
+      <div className="space-y-3 pt-4 border-t border-border/40">
+        <div className="space-y-0.5">
+          <h5 className="text-xs font-bold text-foreground uppercase tracking-wider">
+            Restrições Opcionais de Segurança
+          </h5>
+          <p className="text-xs text-muted-foreground">
+            Ajuste permissões sensíveis de dados sem precisar alterar a base de ferramentas do plano.
+          </p>
+        </div>
+
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/5 p-3.5 hover:bg-muted/10 transition-colors cursor-pointer">
+            <div className="space-y-0.5">
+              <span className="text-xs font-bold text-foreground block">Permitir Exportação de Leads</span>
+              <span className="text-[11px] text-muted-foreground block">Download de planilhas e bases</span>
+            </div>
+            <Switch
+              checked={allowLeadsExport}
+              disabled={disabled}
+              onCheckedChange={toggleLeadsExport}
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/5 p-3.5 hover:bg-muted/10 transition-colors cursor-pointer">
+            <div className="space-y-0.5">
+              <span className="text-xs font-bold text-foreground block">Acesso a Relatórios Analíticos</span>
+              <span className="text-[11px] text-muted-foreground block">Gráficos gerenciais e métricas avançadas</span>
+            </div>
+            <Switch
+              checked={showAnalyticsReports}
+              disabled={disabled}
+              onCheckedChange={toggleAnalyticsReports}
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/5 p-3.5 hover:bg-muted/10 transition-colors cursor-pointer sm:col-span-2">
+            <div className="space-y-0.5">
+              <span className="text-xs font-bold text-foreground block">Permitir Gerenciamento de Usuários</span>
+              <span className="text-[11px] text-muted-foreground block">Criar, aprovar e editar outros operadores do CRM</span>
+            </div>
+            <Switch
+              checked={allowUsersManage}
+              disabled={disabled}
+              onCheckedChange={toggleUsersManage}
+            />
+          </label>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1708,30 +1877,12 @@ function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, ed
       )}
 
       {normalized.role !== "pending" ? (
-        <div className="pt-8 border-t border-border/40 space-y-5">
-          <div className="flex items-center justify-between">
-            <h4 className="text-base font-bold text-foreground">Matriz de Permissões</h4>
-            <Badge variant="outline" className="font-medium bg-muted/20">Por ferramenta</Badge>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Ligue apenas as ferramentas que este usuário pode acessar. A lista se atualiza
-            automaticamente quando novos módulos são adicionados ao sistema.
-          </p>
-          <div className="rounded-[2rem] border border-border/60 bg-muted/5 p-4">
-            <GranularPermissionMatrix
-              registry={registry}
-              role={normalized.role}
-              selected={normalized.granularPermissions ?? (normalized.permissions as string[])}
-              disabled={matrixDisabled}
-              onToggle={(key, checked) => {
-                const current = normalized.granularPermissions ?? [...(normalized.permissions as string[])];
-                const next = checked
-                  ? Array.from(new Set([...current, key]))
-                  : current.filter((entry) => entry !== key);
-                applyPatch(applyGranularToDraft(registry, normalized.role, next, normalized.internalPages, normalized.allowedViews));
-              }}
-            />
-          </div>
+        <div className="pt-8 border-t border-border/40">
+          <UserPlanAndSecurityControls
+            draft={normalized}
+            disabled={matrixDisabled}
+            onChange={applyPatch}
+          />
         </div>
       ) : null}
     </div>  );
@@ -2545,25 +2696,11 @@ export default function UserAccessManagement() {
 
               {createDraft.role !== "pending" && (
                 <TabsContent value="permissoes" className="space-y-4 mt-0 outline-none">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-bold text-foreground">Matriz de Permissões</h4>
-                    <Badge variant="outline" className="font-medium bg-muted/20 text-[10px]">Por ferramenta</Badge>
-                  </div>
-                  <div className="rounded-[2rem] border border-border/60 bg-muted/5 p-4">
-                    <GranularPermissionMatrix
-                      registry={accessRegistry}
-                      role={createDraft.role}
-                      selected={createDraft.granularPermissions ?? (createDraft.permissions as string[])}
-                      disabled={!canEditUsers}
-                      onToggle={(key, checked) => {
-                        const current = createDraft.granularPermissions ?? [...(createDraft.permissions as string[])];
-                        const next = checked
-                          ? Array.from(new Set([...current, key]))
-                          : current.filter((entry) => entry !== key);
-                        updateCreateDraft(applyGranularToDraft(accessRegistry, createDraft.role, next, createDraft.internalPages, createDraft.allowedViews));
-                      }}
-                    />
-                  </div>
+                  <UserPlanAndSecurityControls
+                    draft={createDraft}
+                    disabled={!canEditUsers}
+                    onChange={(patch) => updateCreateDraft(patch)}
+                  />
                 </TabsContent>
               )}
             </div>
@@ -2992,32 +3129,11 @@ export default function UserAccessManagement() {
                                         Esta é uma conta de Administrador. As permissões e atalhos são fixos do sistema para garantir o acesso.
                                       </div>
                                     )}
-
-                                    <div className="space-y-4">
-                                      <div className="flex items-center justify-between">
-                                        <h4 className="text-sm font-bold text-foreground">Matriz de Permissões</h4>
-                                        <Badge variant="outline" className="font-medium bg-muted/20 text-[10px]">Por ferramenta</Badge>
-                                      </div>
-                                      <p className="text-xs text-muted-foreground">
-                                        Ligue apenas as ferramentas liberadas para este usuário. A lista se atualiza
-                                        sozinha quando novos módulos entram no sistema.
-                                      </p>
-                                      <div className="rounded-2xl border border-border/60 bg-muted/5 p-4">
-                                        <GranularPermissionMatrix
-                                          registry={accessRegistry}
-                                          role={selectedDraft.role}
-                                          selected={selectedDraft.granularPermissions ?? (selectedDraft.permissions as string[])}
-                                          disabled={!selectedEditable}
-                                          onToggle={(key, checked) => {
-                                            const current = selectedDraft.granularPermissions ?? [...(selectedDraft.permissions as string[])];
-                                            const next = checked
-                                              ? Array.from(new Set([...current, key]))
-                                              : current.filter((entry) => entry !== key);
-                                            updateDraft(selectedUser.uid, applyGranularToDraft(accessRegistry, selectedDraft.role, next, selectedDraft.internalPages, selectedDraft.allowedViews));
-                                          }}
-                                        />
-                                      </div>
-                                    </div>
+                                    <UserPlanAndSecurityControls
+                                      draft={selectedDraft}
+                                      disabled={!selectedEditable}
+                                      onChange={(patch) => updateDraft(selectedUser.uid, patch)}
+                                    />
                                   </TabsContent>
 
                                   <TabsContent value="acoes" className="space-y-6 mt-0 outline-none">

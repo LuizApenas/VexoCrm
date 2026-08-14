@@ -114,14 +114,6 @@ export default function FollowupDashboard() {
     }
   }, [companies, companyId]);
 
-  if (!canAccessInternalPage("fila-de-followup")) {
-    return (
-      <PageShell title="Follow-up" subtitle="Acesso restrito">
-        <p className="text-sm text-slate-500">Você não tem permissão para acessar o painel de follow-up.</p>
-      </PageShell>
-    );
-  }
-
   const activeCompany = companies.find((c) => c.id === companyId) || null;
   const hasCompany = companies.length > 0;
 

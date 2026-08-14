@@ -33,6 +33,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { UpsellCard } from "@/components/UpsellCard";
+import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
 import { PageShell } from "@/components/PageShell";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -1178,124 +1180,176 @@ export default function BancoDeDados() {
         </SectionHeader>
 
         {/* Painel de Atribuição & Origem de Marketing */}
-        <div className="space-y-3 p-4 rounded-2xl bg-gradient-to-b from-card/80 via-card/50 to-card/30 border border-border dark:border-zinc-800 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                Atribuição & Origem de Marketing
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-                (Clique no canal para filtrar contatos em tempo real e disparar campanhas)
-              </span>
+        {!isAdvancedOriginsUnlocked ? (
+          <div className="relative rounded-2xl border border-purple-500/30 overflow-hidden shadow-sm bg-gradient-to-b from-card/80 via-card/50 to-card/30">
+            <div className="p-4 filter blur-[4px] opacity-35 pointer-events-none select-none">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                  Atribuição & Origem de Marketing
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  (Rastreamento de canais em tempo real)
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                {MARKETING_CHANNELS.map((ch) => (
+                  <div
+                    key={ch.id}
+                    className="p-3 rounded-xl border border-border bg-card h-[88px] flex flex-col justify-between"
+                  >
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <span>{ch.icon}</span>
+                      <span>{ch.name}</span>
+                    </span>
+                    <div className="flex items-baseline justify-between pt-1">
+                      <span className="text-lg font-black">124</span>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-bold">18%</Badge>
+                    </div>
+                    <div className="w-full bg-slate-100 dark:bg-zinc-800 h-1 rounded-full" />
+                  </div>
+                ))}
+              </div>
             </div>
-            {selectedChannel !== "all" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedChannel("all")}
-                className="h-6 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 px-2"
-              >
-                <X className="w-3 h-3" />
-                Limpar Filtro
-              </Button>
-            )}
-          </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-            {MARKETING_CHANNELS.map((ch) => {
-              const count = marketingMetrics.counts[ch.id] || 0;
-              const pct = marketingMetrics.percentages[ch.id as keyof typeof marketingMetrics.percentages] || 0;
-              const isSelected = selectedChannel === ch.id;
+            <div className="absolute inset-0 z-10 flex items-center justify-center p-4 bg-background/60 backdrop-blur-sm">
+              <div className="max-w-2xl w-full">
+                <UpsellCard
+                  title="Rastreamento e Atribuição de Origens de Marketing"
+                  subtitle="Exclusivo do Plano Avançado"
+                  moduleName="Atribuição de Origens de Marketing"
+                  description="O Rastreamento e Atribuição de Origens de Marketing (Instagram, Google, TikTok, Indicação) é exclusivo do Plano Avançado. Saiba de onde vem cada lead para otimizar suas campanhas!"
+                  benefits={[
+                    "Identificação automática da origem de cada contato e lead",
+                    "Filtros rápidos e segmentação de campanhas em 1 clique por canal",
+                    "Métricas comparativas de conversão por fonte de tráfego",
+                  ]}
+                  whatsappMessageUpgrade="Olá! Gostaria de fazer o upgrade para o Plano Avançado para desbloquear a Atribuição de Origens de Marketing no Banco de Dados."
+                  whatsappMessageAvulso="Olá! Gostaria de adquirir o módulo avulso de Origem de Leads no Banco de Dados."
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3 p-4 rounded-2xl bg-gradient-to-b from-card/80 via-card/50 to-card/30 border border-border dark:border-zinc-800 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                  Atribuição & Origem de Marketing
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+                  (Clique no canal para filtrar contatos em tempo real e disparar campanhas)
+                </span>
+              </div>
+              {selectedChannel !== "all" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedChannel("all")}
+                  className="h-6 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 px-2"
+                >
+                  <X className="w-3 h-3" />
+                  Limpar Filtro
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+              {MARKETING_CHANNELS.map((ch) => {
+                const count = marketingMetrics.counts[ch.id] || 0;
+                const pct = marketingMetrics.percentages[ch.id as keyof typeof marketingMetrics.percentages] || 0;
+                const isSelected = selectedChannel === ch.id;
+
+                return (
+                  <button
+                    key={ch.id}
+                    type="button"
+                    onClick={() => setSelectedChannel((prev) => (prev === ch.id ? "all" : ch.id))}
+                    title={`${ch.name}: ${count} leads (${pct}%)`}
+                    className={cn(
+                      "p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer group bg-card min-w-0 h-[88px]",
+                      isSelected
+                        ? ch.activeBorder
+                        : "border-border dark:border-zinc-800/80 hover:border-primary/50 dark:hover:border-zinc-700 hover:shadow-sm"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-1 w-full min-w-0">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 min-w-0 truncate">
+                        <span className="text-base leading-none shrink-0">{ch.icon}</span>
+                        <span className="truncate">{ch.name}</span>
+                      </span>
+                      {isSelected && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                      )}
+                    </div>
+                    
+                    <div className="flex items-baseline justify-between pt-1">
+                      <span className="text-lg font-black text-foreground">
+                        {count.toLocaleString("pt-BR")}
+                      </span>
+                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 font-bold shrink-0", ch.badgeClass)}>
+                        {pct}%
+                      </Badge>
+                    </div>
+
+                    <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
+                      <div
+                        className="bg-primary h-full rounded-full transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Barra de Ação Rápida do Filtro de Canal Selecionado */}
+            {selectedChannel !== "all" && (() => {
+              const activeCh = MARKETING_CHANNELS.find((c) => c.id === selectedChannel);
+              if (!activeCh) return null;
+              const count = marketingMetrics.counts[activeCh.id] || 0;
 
               return (
-                <button
-                  key={ch.id}
-                  type="button"
-                  onClick={() => setSelectedChannel((prev) => (prev === ch.id ? "all" : ch.id))}
-                  title={`${ch.name}: ${count} leads (${pct}%)`}
-                  className={cn(
-                    "p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer group bg-card min-w-0 h-[88px]",
-                    isSelected
-                      ? ch.activeBorder
-                      : "border-border dark:border-zinc-800/80 hover:border-primary/50 dark:hover:border-zinc-700 hover:shadow-sm"
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 min-w-0 truncate">
-                      <span className="text-base leading-none shrink-0">{ch.icon}</span>
-                      <span className="truncate">{ch.name}</span>
-                    </span>
-                    {isSelected && (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                    )}
-                  </div>
-                  
-                  <div className="flex items-baseline justify-between pt-1">
-                    <span className="text-lg font-black text-foreground">
-                      {count.toLocaleString("pt-BR")}
-                    </span>
-                    <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 font-bold shrink-0", ch.badgeClass)}>
-                      {pct}%
-                    </Badge>
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-gradient-to-r from-primary/10 via-purple-500/5 to-transparent border border-primary/30 animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{activeCh.icon}</span>
+                    <div>
+                      <span className="text-xs font-bold text-foreground block">
+                        Filtro Ativo: {activeCh.name}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {count} {count === 1 ? "lead encontrado" : "leads encontrados"} ({marketingMetrics.percentages[activeCh.id as keyof typeof marketingMetrics.percentages]}% da base total)
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
-                    <div
-                      className="bg-primary h-full rounded-full transition-all"
-                      style={{ width: `${pct}%` }}
-                    />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => handleOpenCampaignForChannel(activeCh)}
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs gap-1.5 h-8 font-bold shadow-sm"
+                    >
+                      <Rocket className="w-3.5 h-3.5" />
+                      Disparar Campanha para {activeCh.name} ({count})
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedChannel("all")}
+                      className="text-xs h-8 gap-1"
+                    >
+                      <X className="w-3 h-3" />
+                      Remover Filtro
+                    </Button>
                   </div>
-                </button>
+                </div>
               );
-            })}
+            })()}
           </div>
-
-          {/* Barra de Ação Rápida do Filtro de Canal Selecionado */}
-          {selectedChannel !== "all" && (() => {
-            const activeCh = MARKETING_CHANNELS.find((c) => c.id === selectedChannel);
-            if (!activeCh) return null;
-            const count = marketingMetrics.counts[activeCh.id] || 0;
-
-            return (
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-gradient-to-r from-primary/10 via-purple-500/5 to-transparent border border-primary/30 animate-in fade-in">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">{activeCh.icon}</span>
-                  <div>
-                    <span className="text-xs font-bold text-foreground block">
-                      Filtro Ativo: {activeCh.name}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {count} {count === 1 ? "lead encontrado" : "leads encontrados"} ({marketingMetrics.percentages[activeCh.id as keyof typeof marketingMetrics.percentages]}% da base total)
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => handleOpenCampaignForChannel(activeCh)}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs gap-1.5 h-8 font-bold shadow-sm"
-                  >
-                    <Rocket className="w-3.5 h-3.5" />
-                    Disparar Campanha para {activeCh.name} ({count})
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedChannel("all")}
-                    className="text-xs h-8 gap-1"
-                  >
-                    <X className="w-3 h-3" />
-                    Remover Filtro
-                  </Button>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
+        )}
 
         {/* Header Métrico (Cards KPIs) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
