@@ -397,29 +397,17 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-700 dark:text-slate-350">Condições Contratuais / Comerciais</Label>
-                <Input
-                  value={newCondicoes}
-                  onChange={(e) => setNewCondicoes(e.target.value)}
-                  placeholder="Ex: Contrato de 12 meses. Mensalidade reajustada pelo IGPM."
-                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-xs dark:text-white h-10 focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-700 dark:text-slate-350">Link de Checkout / Pagamento</Label>
-                <Input
-                  value={newPaymentLink}
-                  onChange={(e) => setNewPaymentLink(e.target.value)}
-                  placeholder="Ex: https://checkout.vexo.com.br/proposta"
-                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-xs dark:text-white h-10 focus:border-indigo-500"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-350">Link de Checkout / Pagamento (Opcional)</Label>
+              <Input
+                value={newPaymentLink}
+                onChange={(e) => setNewPaymentLink(e.target.value)}
+                placeholder="Ex: https://checkout.vexo.com.br/proposta"
+                className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-xs dark:text-white h-10 focus:border-indigo-500"
+              />
             </div>
 
-            {/* Formas fixas de pagamento — caminho principal (gerencia setup e mensalidade). */}
+            {/* Formas fixas de pagamento — caminho principal (gerencia setup, mensalidade e condições especiais). */}
             <div className="pt-2 border-t border-slate-100 dark:border-white/5">
               <FormasPagamentoEditor
                 formas={formasPgto}
@@ -427,6 +415,8 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
                 totalSetup={newCobrarSetup ? Number(newValorSetup || 0) : 0}
                 mensalidade={mensalidadePlano}
                 meses={mesesPlano}
+                condicaoEspecialTexto={newCondicoes}
+                onCondicaoEspecialChange={setNewCondicoes}
               />
             </div>
 
@@ -452,16 +442,16 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
               ? customSegmentName || "Personalizado"
               : segmentsList.find((s) => s.id === newSegmentId)?.nome || "Geral / B2B";
 
-          const gdItemsSelected = (plano.escopo.itens || [])
+          const gdItemsSelected = (plano?.gdIds || [])
             .map((id) => gdProducts.find((p) => p.id === id))
             .filter(Boolean);
 
-          const vexoModulesSelected = (plano.escopo.vexo || [])
+          const vexoModulesSelected = (plano?.vexoIds || [])
             .map((id) => vexoProducts.find((p) => p.id === id))
             .filter(Boolean);
 
           const activeTerms = PERIODOS.filter(
-            (p) => plano.precos[p.id] !== undefined && Number(plano.precos[p.id]) > 0
+            (p) => plano?.precos?.[p.key] !== undefined && Number(plano.precos[p.key]) > 0
           );
 
           const selectedPaymentMethods = formasPgto.marcadas.map((id) => {
@@ -583,10 +573,10 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
                 {activeTerms.length > 0 ? (
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     {activeTerms.map((t) => {
-                      const valMensal = Number(plano.precos[t.id] || 0);
+                      const valMensal = Number(plano?.precos?.[t.key] || 0);
                       const compromisso = valMensal * t.meses;
                       return (
-                        <div key={t.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 space-y-1">
+                        <div key={t.key} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 space-y-1">
                           <span className="text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase block">{t.label}</span>
                           <p className="text-base font-black text-purple-700 dark:text-purple-400 font-mono">
                             {brl(valMensal)}<span className="text-[10px] font-normal text-slate-500">/mês</span>
