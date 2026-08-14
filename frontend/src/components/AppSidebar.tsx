@@ -116,12 +116,6 @@ export function AppSidebar() {
 
   const filterItems = (items: typeof OPERACAO_ITEMS) => {
     return items
-      .map((f) => {
-        if (f.key === "followup" && suggestionCount > 0) {
-          return { ...f, badge: suggestionCount.toString() };
-        }
-        return f;
-      })
       .filter((f) => {
         const hasAccess = isAdminUser || canAccessInternalPage(f.page) || inheritedPages.includes(f.page);
         return hasAccess && (isInternalUser || isPathAllowedForClient(f.url, allowedTabs));

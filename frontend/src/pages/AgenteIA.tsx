@@ -1,12 +1,11 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bot, KanbanSquare, Settings2, BookOpen, AlertTriangle, ShieldCheck, Megaphone, Database } from "lucide-react";
+import { Bot, KanbanSquare, Settings2, BookOpen, ShieldCheck, Megaphone, Database } from "lucide-react";
 import ChatbotKanban from "./ChatbotKanban";
 import ChatbotSettings from "./ChatbotSettings";
 import InboundAgentConfig from "./InboundAgentConfig";
 import ChatbotDocs from "./ChatbotDocs";
-import Agente from "./Agente";
 import { AntibanGroqTab } from "@/components/agente/AntibanGroqTab";
 import { CampaignAgentTab } from "@/components/agente/CampaignAgentTab";
 import { KnowledgeBaseRagTab } from "@/components/agente/KnowledgeBaseRagTab";
@@ -18,7 +17,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PageShell, PageShellContext } from "@/components/PageShell";
 
 export default function AgenteIA() {
-  const { isInternalUser } = useAuth();
+  const { isInternalUser, isAdminUser } = useAuth();
   const crmClient = useOptionalCrmClient();
   const selectedClient = crmClient?.selectedClient;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -29,9 +28,10 @@ export default function AgenteIA() {
 
   const hasAgente = isInternalUser;
   const hasSettings = isInternalUser;
+  const hasDocs = isAdminUser;
 
   const rawTab = searchParams.get("tab");
-  const validTabs = ["operacao", "inbound", "antiban", "campanhas", "rag", "settings", "docs", "alertas"];
+  const validTabs = ["operacao", "settings", "inbound", "antiban", "campanhas", "rag", ...(hasDocs ? ["docs"] : [])];
   const activeTab = validTabs.includes(rawTab || "") ? (rawTab as string) : "operacao";
 
   const handleTabChange = (val: string) => {
@@ -64,6 +64,12 @@ export default function AgenteIA() {
                     Operação
                   </TabsTrigger>
                 )}
+                {hasSettings && (
+                  <TabsTrigger value="settings" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
+                    <Settings2 className="h-3.5 w-3.5 mr-1.5" />
+                    Configurações
+                  </TabsTrigger>
+                )}
                 {hasAgente && (
                   <TabsTrigger value="inbound" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
                     <Bot className="h-3.5 w-3.5 mr-1.5" />
@@ -88,22 +94,10 @@ export default function AgenteIA() {
                     Base RAG (Arquivos)
                   </TabsTrigger>
                 )}
-                {hasSettings && (
-                  <TabsTrigger value="settings" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
-                    <Settings2 className="h-3.5 w-3.5 mr-1.5" />
-                    Configurações
-                  </TabsTrigger>
-                )}
-                {hasAgente && (
+                {hasDocs && (
                   <TabsTrigger value="docs" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
                     <BookOpen className="h-3.5 w-3.5 mr-1.5" />
                     Documentação
-                  </TabsTrigger>
-                )}
-                {hasAgente && (
-                  <TabsTrigger value="alertas" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
-                    <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
-                    Alertas n8n
                   </TabsTrigger>
                 )}
               </TabsList>
@@ -113,6 +107,14 @@ export default function AgenteIA() {
               <TabsContent value="operacao" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
                 <ErrorBoundary>
                   <ChatbotKanban />
+                </ErrorBoundary>
+              </TabsContent>
+            )}
+
+            {hasSettings && (
+              <TabsContent value="settings" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
+                <ErrorBoundary>
+                  <ChatbotSettings />
                 </ErrorBoundary>
               </TabsContent>
             )}
@@ -200,26 +202,10 @@ export default function AgenteIA() {
               </TabsContent>
             )}
 
-            {hasSettings && (
-              <TabsContent value="settings" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
-                <ErrorBoundary>
-                  <ChatbotSettings />
-                </ErrorBoundary>
-              </TabsContent>
-            )}
-
-            {hasAgente && (
+            {hasDocs && (
               <TabsContent value="docs" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
                 <ErrorBoundary>
                   <ChatbotDocs />
-                </ErrorBoundary>
-              </TabsContent>
-            )}
-
-            {hasAgente && (
-              <TabsContent value="alertas" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
-                <ErrorBoundary>
-                  <Agente />
                 </ErrorBoundary>
               </TabsContent>
             )}
