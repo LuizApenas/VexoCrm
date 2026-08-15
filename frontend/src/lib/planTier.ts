@@ -42,13 +42,16 @@ export const FEATURE_TIERS = {
 } as const;
 
 export const AVAILABLE_MODULAR_FEATURES = [
+  { id: "disparador_campanhas", featureKey: "disparador_campanhas", label: "Disparador & Campanhas em Massa", desc: "Envio em massa com intervalos humanizados e rotação de instâncias" },
+  { id: "agente_inbound", featureKey: "agente_inbound", label: "Agente IA & Chatbot Inbound", desc: "Atendimento automático de clientes com inteligência artificial" },
   { id: "agente_rag", featureKey: "agente_rag", label: "Base de Conhecimento RAG (Upload de Arquivos & PDFs)", desc: "IA treinada nos documentos, manuais e tabelas de preço" },
+  { id: "followup", featureKey: "followup", label: "Follow-up & Cadências de Retorno", desc: "Gestão e régua de recontato automático de oportunidades" },
   { id: "followup_automations", featureKey: "followup_automations", label: "Automações por Evento (Follow-up Inteligente)", desc: "Retomada inteligente de propostas e oportunidades paradas" },
   { id: "sdr_broadcast", featureKey: "sdr_broadcast", label: "Alertas SDR Broadcast (Multiatendentes & Distribuição)", desc: "Distribuição automática de leads quentes para consultores" },
   { id: "multiplos_chips", featureKey: "multiplos_chips", label: "Chips WhatsApp Adicionais / Múltiplos", desc: "Conexões extras de WhatsApp para múltiplos números" },
   { id: "origem_leads", featureKey: "origem_leads", label: "Rastreamento de Origem de Leads (Campanhas & Tráfego)", desc: "Atribuição precisa do canal de aquisição (Instagram/Google/TikTok)" },
-  { id: "disparador_campanhas", featureKey: "disparador_campanhas", label: "Disparador & Campanhas WhatsApp em Massa", desc: "Envio em massa com intervalos humanizados e rotação de instâncias" },
   { id: "antiban_groq", featureKey: "antiban_groq", label: "Variações Antiban com IA Groq", desc: "Reescrita dinâmica de mensagens em tempo real para evitar bloqueios" },
+  { id: "relatorios", featureKey: "relatorios", label: "Relatórios de Vendas & Envios", desc: "Métricas avançadas de disparos e performance operacional" },
 ] as const;
 
 export function resolveTenantPlan(client?: any): PlanTier {
@@ -120,19 +123,22 @@ export function hasFeatureUnlocked(client: any, featureKey: string): boolean {
   const tier = resolveTenantPlan(client);
   if (tier === "avancado") return true;
 
-  // Recursos base universais que sempre estão liberados
-  const BASE_FEATURES = new Set([
+  // Recursos base universais que sempre estão liberados para todo cliente
+  const UNIVERSAL_BASE_FEATURES = new Set([
     "dashboard",
     "leads",
+    "banco_dados",
+    "banco-de-dados",
     "conversas",
     "inbox",
     "whatsapp",
-    "banco_dados",
-    "relatorios",
-    "inteligencia",
+    "onboarding",
+    "onboarding-wizard",
     "admin",
+    "empresas",
+    "usuarios",
   ]);
-  if (BASE_FEATURES.has(featureKey)) return true;
+  if (UNIVERSAL_BASE_FEATURES.has(featureKey)) return true;
 
   const modulosAvulsos =
     client.modulos_avulsos ||
@@ -153,11 +159,69 @@ export function hasFeatureUnlocked(client: any, featureKey: string): boolean {
     );
   };
 
-  // Se o plano é Modular/Avulso, os módulos configurados são contratados e permanentes
+  // Se o plano é Modular/Avulso, APENAS os módulos contratados em modulos_avulsos estão liberados
   if (tier === "modular") {
-    if (isModuleInList(modulosAvulsos, featureKey)) {
-      return true;
+    if (isModuleInList(modulosAvulsos, featureKey)) return true;
+
+    // Resolução de sinônimos / telas agregadas
+    if (["campanhas", "planilhas", "disparos", "disparador_campanhas"].includes(featureKey)) {
+      return isModuleInList(modulosAvulsos, "disparador_campanhas") || isModuleInList(modulosAvulsos, "campanhas");
     }
+    if (["agente", "agente_inbound", "chatbot", "chatbot-kanban", "inbound-agents"].includes(featureKey)) {
+      return (
+        isModuleInList(modulosAvulsos, "agente_inbound") ||
+        isModuleInList(modulosAvulsos, "agente") ||
+        isModuleInList(modulosAvulsos, "agente_rag")
+      );
+    }
+    if (["agente_rag", "rag", "chatbot-docs"].includes(featureKey)) {
+      return isModuleInList(modulosAvulsos, "agente_rag");
+    }
+    if (["followup", "fila-de-followup"].includes(featureKey)) {
+      return (
+        isModuleInList(modulosAvulsos, "followup") ||
+        isModuleInList(modulosAvulsos, "followup_automations")
+      );
+    }
+    if (["followup_automations"].includes(featureKey)) {
+      return isModuleInList(modulosAvulsos, "followup_automations");
+    }
+    if (["sdr_broadcast"].includes(featureKey)) {
+      return isModuleInList(modulosAvulsos, "sdr_broadcast");
+    }
+    if (["conexoes", "multiplos_chips", "chips", "chips-whatsapp", "aquecimento"].includes(featureKey)) {
+      return isModuleInList(modulosAvulsos, "multiplos_chips") || isModuleInList(modulosAvulsos, "conexoes");
+    }
+    if (["origem_leads"].includes(featureKey)) {
+      return isModuleInList(modulosAvulsos, "origem_leads");
+    }
+    if (["antiban_groq"].includes(featureKey)) {
+      return isModuleInList(modulosAvulsos, "antiban_groq");
+    }
+    if (["relatorios"].includes(featureKey)) {
+      return isModuleInList(modulosAvulsos, "relatorios");
+    }
+    if (["comercial-vexo", "apresentacao"].includes(featureKey)) {
+      return isModuleInList(modulosAvulsos, "comercial-vexo");
+    }
+
+    return false;
+  }
+
+  // Se o plano é Essencial (não modular):
+  // Módulos avançados requerem degustação ativa ou módulo avulso
+  const ADVANCED_ONLY_FEATURES = new Set([
+    "agente_rag",
+    "followup_automations",
+    "sdr_broadcast",
+    "multiplos_chips",
+    "origem_leads",
+    "antiban_groq",
+    "agente_campanha",
+  ]);
+
+  if (!ADVANCED_ONLY_FEATURES.has(featureKey)) {
+    return true;
   }
 
   // Se a degustação expirou, módulos em degustação deixam de estar liberados

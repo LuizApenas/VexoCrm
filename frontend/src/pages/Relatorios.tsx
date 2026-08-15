@@ -31,6 +31,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { UpsellCard } from "@/components/UpsellCard";
+import { hasFeatureUnlocked } from "@/lib/planTier";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLeadClients } from "@/hooks/useLeadClients";
 import { useCrmClient } from "@/hooks/useCrmClient";
@@ -54,13 +56,36 @@ export default function Relatorios() {
 
   const activeClientId = selectedClientId || clientId || "";
 
-  const { data, isLoading, error } = useEvolutionUsageReport(activeClientId || null, REPORT_DAYS);
-  const items = data?.items ?? [];
-
   // Active tenant matching activeClientId for listing instances health
   const activeTenant = useMemo(() => {
     return tenants.find((t) => t.id === activeClientId);
   }, [tenants, activeClientId]);
+
+  const isRelatoriosUnlocked = hasFeatureUnlocked(activeTenant, "relatorios");
+
+  const { data, isLoading, error } = useEvolutionUsageReport(activeClientId || null, REPORT_DAYS);
+  const items = data?.items ?? [];
+
+  if (!isRelatoriosUnlocked) {
+    return (
+      <PageShell title="Relatórios & Métricas" subtitle="Acompanhe o desempenho de envios e respostas">
+        <div className="max-w-2xl mx-auto py-8">
+          <UpsellCard
+            title="Relatórios & Métricas Avançadas"
+            subtitle="Módulo Não Contratado no Plano Modular"
+            description="Tenha visibilidade total do volume de disparos, taxas de conversão por chip e performance operacional."
+            moduleName="Relatórios Comerciais"
+            benefits={[
+              "Gráficos diários de envios e respostas",
+              "Relatório de saúde e volume por chip",
+              "Exportação completa de dados para auditoria",
+              "Taxas de conversão consolidadas por período",
+            ]}
+          />
+        </div>
+      </PageShell>
+    );
+  }
 
   const tenantInstances = useMemo(() => {
     return activeTenant?.n8n_settings?.evolution_instances ?? [];

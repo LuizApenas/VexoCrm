@@ -238,13 +238,16 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
                 </div>
                 <div className="grid gap-1.5 sm:grid-cols-2 text-xs">
                   {[
+                    { id: "disparador_campanhas", label: "Disparador & Campanhas" },
+                    { id: "agente_inbound", label: "Agente IA & Inbound" },
                     { id: "agente_rag", label: "Base RAG (Arquivos & PDFs)" },
+                    { id: "followup", label: "Follow-up & Cadências" },
                     { id: "followup_automations", label: "Automações de Follow-up" },
                     { id: "sdr_broadcast", label: "SDR Broadcast" },
                     { id: "multiplos_chips", label: "Múltiplos Chips WhatsApp" },
                     { id: "origem_leads", label: "Rastreamento de Origens" },
-                    { id: "disparador_campanhas", label: "Disparador & Campanhas" },
                     { id: "antiban_groq", label: "Variações Antiban IA" },
+                    { id: "relatorios", label: "Relatórios de Vendas" },
                   ].map((mod) => {
                     const isChecked = modulosAvulsos.includes(mod.id);
                     return (

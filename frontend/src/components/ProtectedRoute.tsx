@@ -35,7 +35,7 @@ export default function ProtectedRoute({
   const crmClient = useOptionalCrmClient();
   const allowedTabs = crmClient?.selectedClient?.n8n_settings?.allowed_tabs;
   const planTier = resolveTenantPlan(crmClient?.selectedClient);
-  const inheritedPages = getInheritedPlanPages(planTier);
+  const inheritedPages = getInheritedPlanPages(planTier, crmClient?.selectedClient);
 
   if (loading) {
     return (

@@ -604,18 +604,48 @@ export function getDefaultClientRoute(clientId: string, allowedViews: AccessView
   return `/clientes/${clientId}/dashboard`;
 }
 
-export function canAccessInternalPage(
-  page: InternalPage,
+import { resolveTenantPlan, hasFeatureUnlocked } from "./planTier";
+
+export function isInternalPageAllowed(
   internalPages: InternalPage[],
+  page: InternalPage,
   isAdmin = false
 ): boolean {
   return isAdmin || internalPages.includes(page);
 }
 
-export function getInheritedPlanPages(planTier?: string | null): InternalPage[] {
-  const tier = String(planTier || "").toLowerCase().includes("avancad") ? "avancado" : "essencial";
+export function getInheritedPlanPages(planTier?: string | null, client?: any): InternalPage[] {
+  const tier = resolveTenantPlan(client || { plan_tier: planTier });
   if (tier === "avancado") {
     return [...INTERNAL_PAGE_ORDER];
+  }
+  if (tier === "modular") {
+    const pages: InternalPage[] = [
+      "dashboard",
+      "leads",
+      "banco-de-dados",
+      "whatsapp",
+      "onboarding-wizard",
+    ];
+    if (hasFeatureUnlocked(client, "disparador_campanhas")) {
+      pages.push("campanhas", "planilhas", "disparos");
+    }
+    if (hasFeatureUnlocked(client, "agente_inbound") || hasFeatureUnlocked(client, "agente_rag")) {
+      pages.push("agente", "chatbot-kanban", "chatbot-config", "inbound-agents", "chatbot-docs");
+    }
+    if (hasFeatureUnlocked(client, "followup") || hasFeatureUnlocked(client, "followup_automations")) {
+      pages.push("followup", "fila-de-followup", "followup-empresas", "followup-campanhas", "followup-analytics", "followup-sugestoes");
+    }
+    if (hasFeatureUnlocked(client, "multiplos_chips") || hasFeatureUnlocked(client, "conexoes")) {
+      pages.push("conexoes", "aquecimento");
+    }
+    if (hasFeatureUnlocked(client, "relatorios")) {
+      pages.push("relatorios");
+    }
+    if (hasFeatureUnlocked(client, "comercial-vexo")) {
+      pages.push("apresentacao");
+    }
+    return pages;
   }
   return [
     "dashboard",
@@ -628,6 +658,7 @@ export function getInheritedPlanPages(planTier?: string | null): InternalPage[] 
     "planilhas",
     "agente",
     "conexoes",
+    "relatorios",
     "onboarding-wizard",
   ];
 }

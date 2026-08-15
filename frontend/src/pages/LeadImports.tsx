@@ -58,6 +58,8 @@ import {
 } from "@/hooks/useConsultantSchedules";
 import { PageShell } from "@/components/PageShell";
 import { ErrorMessage } from "@/components/ErrorMessage";
+import { UpsellCard } from "@/components/UpsellCard";
+import { hasFeatureUnlocked } from "@/lib/planTier";
 import { cn } from "@/lib/utils";
 import { useCampaignPrompts, useSaveCampaignPrompt } from "@/hooks/useCampaignPrompts";
 import { toast } from "@/components/ui/use-toast";
@@ -118,7 +120,10 @@ const defaultDispatchOptions: CampaignDispatchOptions = {
   templateVariantCount: 0,
   waitForReply: false,
   replyTimeoutSeconds: 60,
-  replyPollIntervalSeconds: 5,
+  minWaitSeconds: 15,
+  maxWaitSeconds: 45,
+  dailyQuotaPerChip: 200,
+  maxRepetitionsPerTemplate: 5,
 };
 
 const darkFieldClass =
@@ -132,10 +137,13 @@ export default function LeadImports({
   headerRight,
 }: LeadImportsProps) {
   const { clientId, getIdToken } = useAuth();
-  const { selectedClientId } = useOptionalCrmClient();
+  const crmClient = useOptionalCrmClient();
+  const selectedClientId = crmClient?.selectedClientId;
   const activeClientId = fixedClientId || selectedClientId || "";
   const isInternalUser = useAuth().isInternalUser;
   const queryClient = useQueryClient();
+
+  const isCampanhasUnlocked = hasFeatureUnlocked(crmClient?.selectedClient, "disparador_campanhas");
 
   const [activeTab, setActiveTab] = useLocalStorage<SheetTab>(`vexo_activeTab_${activeClientId}`, "campanha");
 
@@ -267,7 +275,6 @@ export default function LeadImports({
   const updateDispatch = useUpdateDispatch("");
 
   // Resolving tenant options
-  const crmClient = useOptionalCrmClient();
   const selectedClient = crmClient?.selectedClient || null;
   const selectedLeadClient = selectedClient || crmClient?.clients.find((c) => c.id === activeClientId) || null;
   const evolutionInstanceOptions = useMemo(
@@ -1163,6 +1170,33 @@ export default function LeadImports({
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro ao excluir.", variant: "destructive" });
     }
   };
+
+  if (!isCampanhasUnlocked) {
+    return (
+      <PageShell
+        title={title}
+        subtitle={subtitle}
+        headerRight={headerRight}
+        spacing="space-y-6"
+        showGlobalClientSelector={!fixedClientId}
+      >
+        <div className="max-w-2xl mx-auto py-8">
+          <UpsellCard
+            title="Disparador & Campanhas em Massa"
+            subtitle="Módulo Não Contratado no Plano Modular"
+            description="Crie campanhas de disparo em massa com intervalos humanizados, variações antiban com IA e rotação automática de chips WhatsApp."
+            moduleName="Disparador & Campanhas"
+            benefits={[
+              "Importação de planilhas Excel e CSV",
+              "Disparo inteligente em massa com cadência segura",
+              "Variações automáticas anti-bloqueio",
+              "Relatórios de entrega e respostas em tempo real",
+            ]}
+          />
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell

@@ -6,12 +6,20 @@ import Conexoes from "./Conexoes";
 import Aquecimento from "./Aquecimento";
 import EvolutionAdmin from "./EvolutionAdmin";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { hasFeatureUnlocked } from "@/lib/planTier";
+import { UpsellCard } from "@/components/UpsellCard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PageShell, PageShellContext } from "@/components/PageShell";
 
 export default function ChipsWhatsapp() {
   const { canAccessInternalPage, isAdminUser } = useAuth();
+  const crmClient = useOptionalCrmClient();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const isChipsUnlocked =
+    hasFeatureUnlocked(crmClient?.selectedClient, "multiplos_chips") ||
+    hasFeatureUnlocked(crmClient?.selectedClient, "conexoes");
 
   const hasConexoes = canAccessInternalPage("conexoes");
   const hasAquecimento = canAccessInternalPage("aquecimento");
@@ -34,6 +42,27 @@ export default function ChipsWhatsapp() {
   const handleTabChange = (val: string) => {
     setSearchParams({ tab: val });
   };
+
+  if (!isChipsUnlocked) {
+    return (
+      <PageShell title="Canais & Chips" subtitle="Gerencie instâncias de WhatsApp e rotinas de aquecimento de chips">
+        <div className="max-w-2xl mx-auto py-8">
+          <UpsellCard
+            title="Chips WhatsApp Adicionais"
+            subtitle="Módulo Não Contratado no Plano Modular"
+            description="Conecte múltiplos números de WhatsApp, distribua a carga de disparos e ative o sistema de aquecimento de chips."
+            moduleName="Chips WhatsApp"
+            benefits={[
+              "Conexão de múltiplos números de WhatsApp",
+              "Aquecimento automático anti-ban",
+              "Distribuição inteligente de tráfego entre números",
+              "Monitoramento de saúde e status das instâncias",
+            ]}
+          />
+        </div>
+      </PageShell>
+    );
+  }
 
   if (!defaultTab) {
     return (

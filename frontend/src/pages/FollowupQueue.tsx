@@ -117,7 +117,36 @@ export default function FollowupDashboard() {
   const activeCompany = companies.find((c) => c.id === companyId) || null;
   const hasCompany = companies.length > 0;
 
+  const isFollowupUnlocked =
+    hasFeatureUnlocked(selectedCrmClient, "followup") ||
+    hasFeatureUnlocked(selectedCrmClient, "followup_automations");
+
   const isAutomationsUnlocked = hasFeatureUnlocked(selectedCrmClient, "followup_automations");
+
+  if (!isFollowupUnlocked) {
+    return (
+      <PageShell
+        title="Módulo de Follow-up"
+        subtitle="Configure o acompanhamento automático dos seus leads."
+        spacing="space-y-4"
+      >
+        <div className="max-w-2xl mx-auto py-8">
+          <UpsellCard
+            title="Módulo de Follow-up & Cadências"
+            subtitle="Módulo Não Contratado no Plano Modular"
+            description="Recupere propostas paradas e reengaje leads frios automaticamente com réguas de contato inteligentes."
+            moduleName="Módulo de Follow-up"
+            benefits={[
+              "Cadências de retorno programadas",
+              "Gatilhos por evento e status do lead",
+              "Sugestões inteligentes de recontato com IA",
+              "Aumento comprovado na conversão de vendas",
+            ]}
+          />
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell

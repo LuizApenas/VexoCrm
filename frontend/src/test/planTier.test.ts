@@ -98,4 +98,25 @@ describe("planTier resolver", () => {
     expect(hasFeatureUnlocked(activeTenant, "followup_automations")).toBe(true);
     expect(hasFeatureUnlocked(activeTenant, "agente_rag")).toBe(true);
   });
+
+  it("strictly locks uncontracted tools in modular plan", () => {
+    const modularTenant = {
+      plan_tier: "modular",
+      modulos_avulsos: ["agente_rag", "followup_automations"],
+    };
+    // Contracted tools
+    expect(hasFeatureUnlocked(modularTenant, "agente_rag")).toBe(true);
+    expect(hasFeatureUnlocked(modularTenant, "agente")).toBe(true);
+    expect(hasFeatureUnlocked(modularTenant, "followup_automations")).toBe(true);
+    expect(hasFeatureUnlocked(modularTenant, "followup")).toBe(true);
+
+    // Uncontracted tools
+    expect(hasFeatureUnlocked(modularTenant, "disparador_campanhas")).toBe(false);
+    expect(hasFeatureUnlocked(modularTenant, "campanhas")).toBe(false);
+    expect(hasFeatureUnlocked(modularTenant, "multiplos_chips")).toBe(false);
+    expect(hasFeatureUnlocked(modularTenant, "conexoes")).toBe(false);
+    expect(hasFeatureUnlocked(modularTenant, "sdr_broadcast")).toBe(false);
+    expect(hasFeatureUnlocked(modularTenant, "origem_leads")).toBe(false);
+    expect(hasFeatureUnlocked(modularTenant, "relatorios")).toBe(false);
+  });
 });

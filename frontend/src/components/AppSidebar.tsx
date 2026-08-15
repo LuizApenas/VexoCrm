@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { isPathAllowedForClient, getInheritedPlanPages } from "@/lib/access";
-import { resolveTenantPlan } from "@/lib/planTier";
+import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 import { 
   OPERACAO_ITEMS, 
   INTELIGENCIA_ITEMS, 
@@ -112,11 +112,50 @@ export function AppSidebar() {
 
   const allowedTabs = crmClient?.selectedClient?.n8n_settings?.allowed_tabs;
   const planTier = resolveTenantPlan(crmClient?.selectedClient);
-  const inheritedPages = getInheritedPlanPages(planTier);
+  const inheritedPages = getInheritedPlanPages(planTier, crmClient?.selectedClient);
+
+  const isSidebarItemModularlyUnlocked = (item: (typeof OPERACAO_ITEMS)[number]): boolean => {
+    if (!crmClient?.selectedClient) return true;
+    if (planTier !== "modular") return true;
+
+    // Em plano modular, validar se a ferramenta específica está contratada para o tenant selecionado
+    if (item.key === "campanhas" || item.page === "planilhas") {
+      return hasFeatureUnlocked(crmClient.selectedClient, "disparador_campanhas");
+    }
+    if (item.key === "followup" || item.page === "fila-de-followup") {
+      return (
+        hasFeatureUnlocked(crmClient.selectedClient, "followup") ||
+        hasFeatureUnlocked(crmClient.selectedClient, "followup_automations")
+      );
+    }
+    if (item.key === "agente-ia" || item.page === "agente") {
+      return (
+        hasFeatureUnlocked(crmClient.selectedClient, "agente_inbound") ||
+        hasFeatureUnlocked(crmClient.selectedClient, "agente") ||
+        hasFeatureUnlocked(crmClient.selectedClient, "agente_rag")
+      );
+    }
+    if (item.key === "chips-whatsapp" || item.page === "conexoes") {
+      return (
+        hasFeatureUnlocked(crmClient.selectedClient, "multiplos_chips") ||
+        hasFeatureUnlocked(crmClient.selectedClient, "conexoes")
+      );
+    }
+    if (item.key === "relatorios" || item.page === "relatorios") {
+      return hasFeatureUnlocked(crmClient.selectedClient, "relatorios");
+    }
+    if (item.key === "comercial-vexo" || item.page === "apresentacao") {
+      return hasFeatureUnlocked(crmClient.selectedClient, "comercial-vexo");
+    }
+    return true;
+  };
 
   const filterItems = (items: typeof OPERACAO_ITEMS) => {
     return items
       .filter((f) => {
+        if (!isSidebarItemModularlyUnlocked(f)) {
+          return false;
+        }
         const hasAccess = isAdminUser || canAccessInternalPage(f.page) || inheritedPages.includes(f.page);
         return hasAccess && (isInternalUser || isPathAllowedForClient(f.url, allowedTabs));
       });

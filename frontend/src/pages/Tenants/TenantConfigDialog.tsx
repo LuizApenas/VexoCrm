@@ -15,8 +15,10 @@ import {
   PhoneCall,
   Smartphone,
   BarChart3,
+  BarChart2,
   Send,
   Bot,
+  ListChecks,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -385,13 +387,16 @@ export function TenantConfigDialog({
 
                       <div className="space-y-2 text-xs">
                         {[
+                          { id: "disparador_campanhas", label: "Disparador & Campanhas em Massa", icon: Send, color: "text-indigo-500" },
+                          { id: "agente_inbound", label: "Agente IA & Chatbot Inbound", icon: Bot, color: "text-blue-500" },
                           { id: "agente_rag", label: "Base de Conhecimento RAG (Upload de Arquivos)", icon: Sparkles, color: "text-cyan-500" },
-                          { id: "followup_automations", label: "Automações por Evento (Follow-up)", icon: Zap, color: "text-amber-500" },
+                          { id: "followup", label: "Follow-up & Cadências de Retorno", icon: ListChecks, color: "text-amber-500" },
+                          { id: "followup_automations", label: "Automações por Evento (Follow-up)", icon: Zap, color: "text-yellow-500" },
                           { id: "sdr_broadcast", label: "Alertas SDR Broadcast (Multiatendentes)", icon: PhoneCall, color: "text-purple-500" },
                           { id: "multiplos_chips", label: "Chips WhatsApp Adicionais / Múltiplos", icon: Smartphone, color: "text-emerald-500" },
                           { id: "origem_leads", label: "Rastreamento de Origem de Leads", icon: BarChart3, color: "text-pink-500" },
-                          { id: "disparador_campanhas", label: "Disparador & Campanhas em Massa", icon: Send, color: "text-indigo-500" },
-                          { id: "antiban_groq", label: "Variações Antiban com IA Groq", icon: Bot, color: "text-blue-500" },
+                          { id: "antiban_groq", label: "Variações Antiban com IA Groq", icon: ShieldCheck, color: "text-teal-500" },
+                          { id: "relatorios", label: "Relatórios de Vendas & Envios", icon: BarChart2, color: "text-orange-500" },
                         ].map((mod) => {
                           const currentAvulsos = draft.modulosAvulsos;
                           const isChecked =
