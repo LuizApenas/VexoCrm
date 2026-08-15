@@ -396,6 +396,14 @@ export default function GeracaoDigitalPublicProposal() {
     ? new Date(Date.now() + carenciaDias * 24 * 60 * 60 * 1000)
     : null;
 
+  const handleReturnToSystem = () => {
+    const isVexo = proposal?.owner_company === "vexo";
+    const targetUrl = isVexo 
+      ? `/crm/comercial-vexo?tab=propostas&proposta=${id}`
+      : `/crm/propostas-gd?proposta=${id}`;
+    navigate(targetUrl);
+  };
+
   return (
     <div className="dark min-h-screen bg-slate-950 text-white font-sans selection:bg-purple-500/35 pb-16">
 
@@ -408,10 +416,12 @@ export default function GeracaoDigitalPublicProposal() {
       <header className="relative z-10 max-w-7xl mx-auto px-6 lg:px-10 py-8 flex justify-between items-center border-b border-slate-900">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg">
-            GD
+            {proposal?.owner_company === "vexo" ? "VX" : "GD"}
           </div>
           <div>
-            <h2 className="text-base font-black text-white leading-tight">Geração Digital</h2>
+            <h2 className="text-base font-black text-white leading-tight">
+              {proposal?.owner_company === "vexo" ? "Vexo OS" : "Geração Digital"}
+            </h2>
             <span className="text-[10px] text-slate-400 uppercase font-mono">Proposta Comercial</span>
           </div>
         </div>
@@ -429,10 +439,8 @@ export default function GeracaoDigitalPublicProposal() {
                 Enviar ao Cliente
               </Button>
               <Button
-                // Leva o id de volta para a lista reabrir ESTA proposta.
-                // Sem isso a lista caía sempre na primeira e o vendedor tinha
-                // que procurar de novo o cliente que estava vendo.
-                onClick={() => navigate(`/crm/propostas-gd?proposta=${id}`)}
+                // Leva o id de volta para a lista reabrir ESTA proposta no módulo correto.
+                onClick={handleReturnToSystem}
                 variant="outline"
                 className="h-9 gap-1.5 border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white text-xs font-bold"
               >

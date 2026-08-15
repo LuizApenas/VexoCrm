@@ -19,6 +19,7 @@ export default function GeracaoDigitalProposalPresentation() {
   const navigate = useNavigate();
   const { isAuthenticated, getIdToken, clientId } = useAuth();
 
+  const [proposal, setProposal] = useState<any>(null);
   const [companyName, setCompanyName] = useState<string>("");
   const [segmentName, setSegmentName] = useState<string | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export default function GeracaoDigitalProposalPresentation() {
         const prop = propJson?.data || propJson;
         if (cancelled) return;
 
+        setProposal(prop);
         setCompanyName(prop?.prospect_name || "Sua Empresa");
         setLogoUrl(prop?.prospect_logo || null);
         setCustomSlides(Array.isArray(prop?.presentation_slides) && prop.presentation_slides.length > 0 ? prop.presentation_slides : null);
@@ -77,6 +79,14 @@ export default function GeracaoDigitalProposalPresentation() {
     return () => { cancelled = true; };
   }, [id, isAuthenticated, clientId, getIdToken]);
 
+  const handleClosePresentation = () => {
+    const isVexo = proposal?.owner_company === "vexo";
+    const targetUrl = isVexo
+      ? `/crm/comercial-vexo?tab=propostas&proposta=${proposal?.id || id || ""}`
+      : `/crm/propostas-gd?proposta=${proposal?.id || id || ""}`;
+    navigate(targetUrl);
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-950 text-slate-300 text-sm">
@@ -90,7 +100,7 @@ export default function GeracaoDigitalProposalPresentation() {
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-950 p-6 text-center">
         <p className="text-sm text-red-400">{error}</p>
         <button
-          onClick={() => navigate("/crm/propostas-gd")}
+          onClick={handleClosePresentation}
           className="rounded-lg border border-white/15 px-4 py-2 text-xs font-bold text-slate-200 hover:bg-white/10"
         >
           Voltar às propostas
@@ -106,7 +116,7 @@ export default function GeracaoDigitalProposalPresentation() {
       logoUrl={logoUrl}
       customSlides={customSlides}
       proposalHref={id ? `/proposta/${id}` : null}
-      onClose={() => navigate(-1)}
+      onClose={handleClosePresentation}
     />
   );
 }
