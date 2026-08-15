@@ -785,10 +785,10 @@ export default function OnboardingWizard() {
                       <div className="space-y-3 max-w-xl mx-auto">
                         <div className="flex items-center justify-center gap-2 flex-wrap">
                           <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-xs px-3 py-1 font-bold">
-                            🔒 Recurso do Plano Avançado
+                            🔒 Módulo Não Contratado
                           </Badge>
                           <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-xs px-3 py-1 font-bold">
-                            🟣 Plano Avançado
+                            🟣 Disponível no Plano Avançado ou Avulso
                           </Badge>
                         </div>
                         <h3 className="text-2xl font-black text-amber-400">{module.title}</h3>
@@ -819,6 +819,11 @@ export default function OnboardingWizard() {
                 <TabsContent key={module.value} value={module.value} className="m-0 space-y-6 animate-fade-in-up">
                   <Card>
                     <CardHeader>
+                      <div className="flex items-center justify-between gap-2 flex-wrap pb-1">
+                        <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-xs font-bold px-2.5 py-0.5">
+                          ✔ Aula Liberada
+                        </Badge>
+                      </div>
                       <CardTitle className="text-2xl text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
                         <ModuleIcon className="h-6 w-6" />
                         {module.title}

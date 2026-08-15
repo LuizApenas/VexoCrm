@@ -24,12 +24,38 @@ describe("planTier resolver", () => {
     expect(resolveTenantPlan({ plan_tier: "pro" })).toBe("avancado");
   });
 
+  it("identifies modular plan correctly across various fields", () => {
+    expect(resolveTenantPlan({ plan_tier: "modular" })).toBe("modular");
+    expect(resolveTenantPlan({ plan_type: "modular" })).toBe("modular");
+    expect(resolveTenantPlan({ model_type: "modular" })).toBe("modular");
+    expect(resolveTenantPlan({ n8n_settings: { plan_tier: "modular" } })).toBe("modular");
+    expect(resolveTenantPlan({ plan_tier: "avulso" })).toBe("modular");
+    expect(resolveTenantPlan({ plan_tier: "modular", modulos_avulsos: ["agente_rag"] })).toBe("modular");
+  });
+
   it("unlocks all features when tenant is in Plano Avancado", () => {
     const advancedTenant = { plan_tier: "avancado" };
     expect(hasFeatureUnlocked(advancedTenant, "followup_automations")).toBe(true);
     expect(hasFeatureUnlocked(advancedTenant, "antiban_groq")).toBe(true);
     expect(hasFeatureUnlocked(advancedTenant, "agente_campanha")).toBe(true);
     expect(hasFeatureUnlocked(advancedTenant, "agente_rag")).toBe(true);
+  });
+
+  it("unlocks only contracted modules when tenant is in Plano Modular", () => {
+    const modularTenant = {
+      plan_tier: "modular",
+      modulos_avulsos: ["agente_rag", "sdr_broadcast"],
+    };
+    // Contracted modules
+    expect(hasFeatureUnlocked(modularTenant, "agente_rag")).toBe(true);
+    expect(hasFeatureUnlocked(modularTenant, "sdr_broadcast")).toBe(true);
+    // Non-contracted advanced modules
+    expect(hasFeatureUnlocked(modularTenant, "followup_automations")).toBe(false);
+    expect(hasFeatureUnlocked(modularTenant, "antiban_groq")).toBe(false);
+    // Universal base modules
+    expect(hasFeatureUnlocked(modularTenant, "dashboard")).toBe(true);
+    expect(hasFeatureUnlocked(modularTenant, "leads")).toBe(true);
+    expect(hasFeatureUnlocked(modularTenant, "conversas")).toBe(true);
   });
 
   it("locks advanced features when tenant is in Plano Essencial without degustacao", () => {

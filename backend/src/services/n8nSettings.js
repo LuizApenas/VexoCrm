@@ -203,7 +203,14 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
     chatbot_enabled: chatbotEnabledProvided ? body.chatbotEnabled === true : existing?.chatbot_enabled ?? false,
     chatbot_model: chatbotModelProvided ? (body.chatbotModel || "outlier") : existing?.chatbot_model ?? "outlier",
     chatbot_llm_model: chatbotLlmModelProvided ? (body.chatbotLlmModel || body.chatbot_llm_model || "llama-3.3-70b-versatile") : existing?.chatbot_llm_model ?? "llama-3.3-70b-versatile",
-    plan_tier: planTierProvided ? (String(body.planTier ?? body.plan_tier).toLowerCase() === "avancado" ? "avancado" : "essencial") : existing?.plan_tier ?? "essencial",
+    plan_tier: planTierProvided
+      ? (() => {
+          const pt = String(body.planTier ?? body.plan_tier).toLowerCase().trim();
+          if (pt === "avancado" || pt.includes("avancad")) return "avancado";
+          if (pt === "modular" || pt.includes("modular") || pt.includes("avulso")) return "modular";
+          return "essencial";
+        })()
+      : existing?.plan_tier ?? "essencial",
     modulos_avulsos: modulosAvulsosProvided
       ? (Array.isArray(body.modulosAvulsos ?? body.modulos_avulsos) ? (body.modulosAvulsos ?? body.modulos_avulsos) : [])
       : existing?.modulos_avulsos ?? [],

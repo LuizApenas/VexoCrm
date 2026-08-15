@@ -35,7 +35,8 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
   const [formError, setFormError] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [chatbotModel, setChatbotModel] = useState<ChatbotModelValue>("energia-solar");
-  const [planTier, setPlanTier] = useState<"essencial" | "avancado">("essencial");
+  const [planTier, setPlanTier] = useState<"essencial" | "avancado" | "modular">("essencial");
+  const [modulosAvulsos, setModulosAvulsos] = useState<string[]>([]);
   const [tenantIdEdited, setTenantIdEdited] = useState(false);
   const canManageTenants = hasPermission("tenants.manage");
   const canManageN8n = isAdminUser;
@@ -100,6 +101,7 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
           inboundBearerToken: inboundBearerToken.trim() || null,
           active: true,
           plan_tier: planTier,
+          modulos_avulsos: planTier === "modular" ? modulosAvulsos : [],
         },
       });
 
@@ -213,15 +215,62 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
 
           <div className="space-y-2">
             <label className="text-xs font-semibold text-foreground">Plano do Cliente</label>
-            <Select value={planTier} onValueChange={(val: "essencial" | "avancado") => setPlanTier(val)}>
+            <Select value={planTier} onValueChange={(val: "essencial" | "avancado" | "modular") => setPlanTier(val)}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Selecione o plano" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="essencial">🟢 Plano Essencial — Base (Dashboard, Leads, Conversas, Disparos, IA Inbound, Follow-up)</SelectItem>
                 <SelectItem value="avancado">🟣 Plano Avançado — Completo (Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips)</SelectItem>
+                <SelectItem value="modular">🧩 Plano Modular / Avulso (Ferramentas Personalizadas)</SelectItem>
               </SelectContent>
             </Select>
+
+            {planTier === "modular" && (
+              <div className="mt-2 space-y-2 rounded-lg border border-sky-500/30 bg-sky-500/[0.03] p-3 dark:bg-sky-950/10">
+                <div className="space-y-0.5">
+                  <label className="text-xs font-bold text-sky-700 dark:text-sky-300">
+                    🧩 Módulos Contratados no Plano Modular
+                  </label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Selecione as ferramentas ativas para esta empresa:
+                  </p>
+                </div>
+                <div className="grid gap-1.5 sm:grid-cols-2 text-xs">
+                  {[
+                    { id: "agente_rag", label: "Base RAG (Arquivos & PDFs)" },
+                    { id: "followup_automations", label: "Automações de Follow-up" },
+                    { id: "sdr_broadcast", label: "SDR Broadcast" },
+                    { id: "multiplos_chips", label: "Múltiplos Chips WhatsApp" },
+                    { id: "origem_leads", label: "Rastreamento de Origens" },
+                    { id: "disparador_campanhas", label: "Disparador & Campanhas" },
+                    { id: "antiban_groq", label: "Variações Antiban IA" },
+                  ].map((mod) => {
+                    const isChecked = modulosAvulsos.includes(mod.id);
+                    return (
+                      <label
+                        key={mod.id}
+                        className="flex items-center justify-between p-2 rounded-md border border-border/60 bg-background/60 hover:bg-muted/50 cursor-pointer"
+                      >
+                        <span className="text-xs font-medium text-foreground">{mod.label}</span>
+                        <input
+                          type="checkbox"
+                          className="size-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setModulosAvulsos((prev) => [...prev, mod.id]);
+                            } else {
+                              setModulosAvulsos((prev) => prev.filter((id) => id !== mod.id));
+                            }
+                          }}
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

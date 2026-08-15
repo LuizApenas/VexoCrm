@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import { useAuth } from "@/contexts/AuthContext";
 import { HelpDeskWidget } from "@/components/HelpDeskWidget";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { resolveTenantPlan } from "@/lib/planTier";
 import { cn } from "@/lib/utils";
@@ -154,6 +155,10 @@ export function PageShell({
           <span>🟣</span>
           <span>Plano Avançado</span>
         </div>
+      ) : currentPlanTier === "modular" ? (
+        <Badge className="bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30 text-xs font-bold px-2.5 py-1">
+          🧩 Plano Modular
+        </Badge>
       ) : (
         <>
           <div className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">

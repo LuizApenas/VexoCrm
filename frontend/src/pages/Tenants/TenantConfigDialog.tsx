@@ -14,6 +14,9 @@ import {
   CheckCircle2,
   PhoneCall,
   Smartphone,
+  BarChart3,
+  Send,
+  Bot,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -76,7 +79,7 @@ export function TenantConfigDialog({
     Record<
       string,
       {
-        planTier?: "essencial" | "avancado";
+        planTier?: "essencial" | "avancado" | "modular";
         modulosAvulsos?: string[];
         degustacaoExpiraEm?: string | null;
         degustacaoDiasInput?: string;
@@ -90,7 +93,7 @@ export function TenantConfigDialog({
   const updateTenantN8nDraft = (
     tenantId: string,
     patch: {
-      planTier?: "essencial" | "avancado";
+      planTier?: "essencial" | "avancado" | "modular";
       modulosAvulsos?: string[];
       degustacaoExpiraEm?: string | null;
       degustacaoDiasInput?: string;
@@ -113,8 +116,13 @@ export function TenantConfigDialog({
       (tenant as any).model_type ??
       (tenant as any).plan_type ??
       "essencial";
-    const planTier: "essencial" | "avancado" =
-      String(rawTier).toLowerCase() === "avancado" ? "avancado" : "essencial";
+    const strTier = String(rawTier).toLowerCase();
+    const planTier: "essencial" | "avancado" | "modular" =
+      strTier === "avancado" || strTier.includes("avancad")
+        ? "avancado"
+        : strTier === "modular" || strTier.includes("modular") || strTier.includes("avulso")
+        ? "modular"
+        : "essencial";
 
     const modulosAvulsos =
       draft.modulosAvulsos ??
@@ -332,7 +340,7 @@ export function TenantConfigDialog({
                       </div>
                       <Select
                         value={draft.planTier}
-                        onValueChange={(val: "essencial" | "avancado") =>
+                        onValueChange={(val: "essencial" | "avancado" | "modular") =>
                           updateTenantN8nDraft(tenant.id, { planTier: val })
                         }
                       >
@@ -346,12 +354,17 @@ export function TenantConfigDialog({
                           <SelectItem value="avancado">
                             🟣 Plano Avançado — Completo (Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips, Origens)
                           </SelectItem>
+                          <SelectItem value="modular">
+                            🧩 Plano Modular / Avulso (Ferramentas Personalizadas)
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <p className="text-[10px] text-muted-foreground">
                         {draft.planTier === "avancado"
                           ? "🟣 Todas as ferramentas e módulos avançados estão 100% liberados."
-                          : "🟢 Plano base ativo. Módulos avançados abaixo podem ser liberados avulsos ou em degustação."}
+                          : draft.planTier === "modular"
+                          ? "🧩 Plano Modular ativo. Os módulos marcados ao lado estão liberados permanentemente para todos os usuários desta empresa."
+                          : "🟢 Plano base ativo. Módulos avançados abaixo podem ser liberados avulsos ou em degustação temporária."}
                       </p>
                     </div>
 
@@ -359,10 +372,14 @@ export function TenantConfigDialog({
                     <div className="space-y-3 p-4 rounded-xl border border-slate-200/80 bg-white dark:border-white/5 dark:bg-black/20">
                       <div className="space-y-1">
                         <label className="text-xs font-bold text-foreground uppercase tracking-wider">
-                          Módulos Adicionais / Degustação
+                          {draft.planTier === "modular"
+                            ? "Módulos Contratados (Ativação Permanente)"
+                            : "Módulos Adicionais / Degustação"}
                         </label>
                         <p className="text-[11px] text-muted-foreground">
-                          Ative recursos pontuais para teste ou contratação avulsa.
+                          {draft.planTier === "modular"
+                            ? "Marque as ferramentas de software contratadas avulsas para esta empresa."
+                            : "Ative recursos pontuais para teste ou contratação avulsa."}
                         </p>
                       </div>
 
@@ -371,7 +388,10 @@ export function TenantConfigDialog({
                           { id: "agente_rag", label: "Base de Conhecimento RAG (Upload de Arquivos)", icon: Sparkles, color: "text-cyan-500" },
                           { id: "followup_automations", label: "Automações por Evento (Follow-up)", icon: Zap, color: "text-amber-500" },
                           { id: "sdr_broadcast", label: "Alertas SDR Broadcast (Multiatendentes)", icon: PhoneCall, color: "text-purple-500" },
-                          { id: "multiplos_chips", label: "Chips WhatsApp Adicionais / Ilimitados", icon: Smartphone, color: "text-emerald-500" },
+                          { id: "multiplos_chips", label: "Chips WhatsApp Adicionais / Múltiplos", icon: Smartphone, color: "text-emerald-500" },
+                          { id: "origem_leads", label: "Rastreamento de Origem de Leads", icon: BarChart3, color: "text-pink-500" },
+                          { id: "disparador_campanhas", label: "Disparador & Campanhas em Massa", icon: Send, color: "text-indigo-500" },
+                          { id: "antiban_groq", label: "Variações Antiban com IA Groq", icon: Bot, color: "text-blue-500" },
                         ].map((mod) => {
                           const currentAvulsos = draft.modulosAvulsos;
                           const isChecked =
