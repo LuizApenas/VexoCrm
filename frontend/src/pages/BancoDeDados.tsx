@@ -29,12 +29,13 @@ import {
   CheckCircle2,
   ChevronDown,
   Lock,
+  Target,
+  Puzzle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { UpsellCard } from "@/components/UpsellCard";
 import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
 import { PageShell } from "@/components/PageShell";
@@ -220,6 +221,8 @@ export default function BancoDeDados() {
   });
   const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
   const [tempTicketInput, setTempTicketInput] = useState(String(ticketMedio));
+  const [isOriginUpsellModalOpen, setIsOriginUpsellModalOpen] = useState(false);
+  const [upsellWhatsappNumber, setUpsellWhatsappNumber] = useState("5511999999999");
 
   // Evolution Instances for WA Extractor
   const [evolutionInstances, setEvolutionInstances] = useState<EvolutionInstanceItem[]>([]);
@@ -358,6 +361,35 @@ export default function BancoDeDados() {
   useEffect(() => {
     fetchEvolutionInstances();
   }, [clientId]);
+
+  useEffect(() => {
+    async function loadUpsellSettings() {
+      try {
+        const token = await getIdToken();
+        if (!token) return;
+        const res = await fetch(`${API_BASE_URL}/api/admin/settings`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.upsellWhatsappNumber) {
+            setUpsellWhatsappNumber(data.upsellWhatsappNumber);
+          }
+        }
+      } catch (e) {
+        // Fallback default
+      }
+    }
+    loadUpsellSettings();
+  }, [getIdToken]);
+
+  const cleanUpsellPhone = (upsellWhatsappNumber || "5511999999999").replace(/\D/g, "");
+  const whatsappUrlUpgrade = `https://wa.me/${cleanUpsellPhone}?text=${encodeURIComponent(
+    "Olá! Gostaria de fazer o upgrade para o Plano Avançado para desbloquear a Atribuição de Origens de Marketing no Banco de Dados."
+  )}`;
+  const whatsappUrlAvulso = `https://wa.me/${cleanUpsellPhone}?text=${encodeURIComponent(
+    "Olá! Gostaria de adquirir o módulo avulso de Origem de Leads no Banco de Dados."
+  )}`;
 
   // Handle WhatsApp Extraction Execution
   const handleExtractWA = async () => {
@@ -1193,167 +1225,147 @@ export default function BancoDeDados() {
         </SectionHeader>
 
         {/* Painel de Atribuição & Origem de Marketing */}
-        {!isAdvancedOriginsUnlocked ? (
-          <UpsellCard
-            title="Rastreamento e Atribuição de Origens de Marketing"
-            subtitle="Exclusivo do Plano Avançado"
-            moduleName="Atribuição de Origens de Marketing"
-            description="O Rastreamento e Atribuição de Origens de Marketing (Instagram, Google, TikTok, Indicação) é exclusivo do Plano Avançado. Saiba de onde vem cada lead para otimizar suas campanhas!"
-            benefits={[
-              "Identificação automática da origem de cada contato e lead",
-              "Filtros rápidos e segmentação de campanhas em 1 clique por canal",
-              "Métricas comparativas de conversão por fonte de tráfego",
-            ]}
-            whatsappMessageUpgrade="Olá! Gostaria de fazer o upgrade para o Plano Avançado para desbloquear a Atribuição de Origens de Marketing no Banco de Dados."
-            whatsappMessageAvulso="Olá! Gostaria de adquirir o módulo avulso de Origem de Leads no Banco de Dados."
-          >
-            <div className="p-4 space-y-3">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                  Atribuição & Origem de Marketing
-                </span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                {MARKETING_CHANNELS.map((ch) => (
-                  <div
-                    key={ch.id}
-                    className="p-3 rounded-xl border border-border bg-card h-[80px] flex flex-col justify-between"
-                  >
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 truncate">
-                      <span>{ch.icon}</span>
-                      <span className="truncate">{ch.name}</span>
-                    </span>
-                    <div className="flex items-baseline justify-between pt-1">
-                      <span className="text-base font-black">124</span>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-bold">18%</Badge>
-                    </div>
-                    <div className="w-full bg-slate-100 dark:bg-zinc-800 h-1 rounded-full" />
-                  </div>
-                ))}
-              </div>
+        <div
+          className={cn(
+            isAdvancedOriginsUnlocked
+              ? "space-y-3 p-4 rounded-2xl bg-gradient-to-b from-card/80 via-card/50 to-card/30 border border-border dark:border-zinc-800 shadow-sm"
+              : "relative group cursor-pointer select-none rounded-xl border border-dashed border-purple-500/30 p-3 bg-muted/20 hover:bg-muted/30 transition-all space-y-3"
+          )}
+          onClick={() => {
+            if (!isAdvancedOriginsUnlocked) {
+              setIsOriginUpsellModalOpen(true);
+            }
+          }}
+        >
+          {!isAdvancedOriginsUnlocked && (
+            <div 
+              onClick={() => setIsOriginUpsellModalOpen(true)}
+              className="absolute inset-0 flex items-center justify-center bg-background/20 backdrop-blur-[1px] rounded-xl z-10"
+            >
+              <Badge className="bg-zinc-900/90 text-white dark:bg-zinc-100 dark:text-zinc-900 border border-purple-500/40 text-xs font-bold px-3 py-1.5 shadow-lg gap-1.5 group-hover:scale-105 transition-transform">
+                <Lock className="w-3.5 h-3.5 text-purple-400 dark:text-purple-600" />
+                Rastreamento de Origens · Clique para saber mais ⚡
+              </Badge>
             </div>
-          </UpsellCard>
-        ) : (
-          <div className="space-y-3 p-4 rounded-2xl bg-gradient-to-b from-card/80 via-card/50 to-card/30 border border-border dark:border-zinc-800 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                  Atribuição & Origem de Marketing
-                </span>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-                  (Clique no canal para filtrar contatos em tempo real e disparar campanhas)
-                </span>
-              </div>
-              {selectedChannel !== "all" && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedChannel("all")}
-                  className="h-6 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 px-2"
-                >
-                  <X className="w-3 h-3" />
-                  Limpar Filtro
-                </Button>
-              )}
+          )}
+
+          <div className={cn("flex flex-wrap items-center justify-between gap-2", !isAdvancedOriginsUnlocked && "opacity-40 blur-[0.5px] pointer-events-none")}>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                Atribuição & Origem de Marketing
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+                (Clique no canal para filtrar contatos em tempo real e disparar campanhas)
+              </span>
             </div>
+            {isAdvancedOriginsUnlocked && selectedChannel !== "all" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedChannel("all")}
+                className="h-6 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 gap-1 px-2"
+              >
+                <X className="w-3 h-3" />
+                Limpar Filtro
+              </Button>
+            )}
+          </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-              {MARKETING_CHANNELS.map((ch) => {
-                const count = marketingMetrics.counts[ch.id] || 0;
-                const pct = marketingMetrics.percentages[ch.id as keyof typeof marketingMetrics.percentages] || 0;
-                const isSelected = selectedChannel === ch.id;
-
-                return (
-                  <button
-                    key={ch.id}
-                    type="button"
-                    onClick={() => setSelectedChannel((prev) => (prev === ch.id ? "all" : ch.id))}
-                    title={`${ch.name}: ${count} leads (${pct}%)`}
-                    className={cn(
-                      "p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer group bg-card min-w-0 h-[88px]",
-                      isSelected
-                        ? ch.activeBorder
-                        : "border-border dark:border-zinc-800/80 hover:border-primary/50 dark:hover:border-zinc-700 hover:shadow-sm"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 min-w-0 truncate">
-                        <span className="text-base leading-none shrink-0">{ch.icon}</span>
-                        <span className="truncate">{ch.name}</span>
-                      </span>
-                      {isSelected && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                      )}
-                    </div>
-                    
-                    <div className="flex items-baseline justify-between pt-1">
-                      <span className="text-lg font-black text-foreground">
-                        {count.toLocaleString("pt-BR")}
-                      </span>
-                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 font-bold shrink-0", ch.badgeClass)}>
-                        {pct}%
-                      </Badge>
-                    </div>
-
-                    <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
-                      <div
-                        className="bg-primary h-full rounded-full transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Barra de Ação Rápida do Filtro de Canal Selecionado */}
-            {selectedChannel !== "all" && (() => {
-              const activeCh = MARKETING_CHANNELS.find((c) => c.id === selectedChannel);
-              if (!activeCh) return null;
-              const count = marketingMetrics.counts[activeCh.id] || 0;
+          <div className={cn("grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5", !isAdvancedOriginsUnlocked && "opacity-40 blur-[0.5px] pointer-events-none")}>
+            {MARKETING_CHANNELS.map((ch) => {
+              const count = isAdvancedOriginsUnlocked ? (marketingMetrics.counts[ch.id] || 0) : 124;
+              const pct = isAdvancedOriginsUnlocked ? (marketingMetrics.percentages[ch.id as keyof typeof marketingMetrics.percentages] || 0) : 18;
+              const isSelected = isAdvancedOriginsUnlocked && selectedChannel === ch.id;
 
               return (
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-gradient-to-r from-primary/10 via-purple-500/5 to-transparent border border-primary/30 animate-in fade-in">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{activeCh.icon}</span>
-                    <div>
-                      <span className="text-xs font-bold text-foreground block">
-                        Filtro Ativo: {activeCh.name}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {count} {count === 1 ? "lead encontrado" : "leads encontrados"} ({marketingMetrics.percentages[activeCh.id as keyof typeof marketingMetrics.percentages]}% da base total)
-                      </span>
-                    </div>
+                <button
+                  key={ch.id}
+                  type="button"
+                  onClick={() => isAdvancedOriginsUnlocked && setSelectedChannel((prev) => (prev === ch.id ? "all" : ch.id))}
+                  title={isAdvancedOriginsUnlocked ? `${ch.name}: ${count} leads (${pct}%)` : ch.name}
+                  className={cn(
+                    "p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer group bg-card min-w-0 h-[88px]",
+                    isSelected
+                      ? ch.activeBorder
+                      : "border-border dark:border-zinc-800/80 hover:border-primary/50 dark:hover:border-zinc-700 hover:shadow-sm"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-1 w-full min-w-0">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 min-w-0 truncate">
+                      <span className="text-base leading-none shrink-0">{ch.icon}</span>
+                      <span className="truncate">{ch.name}</span>
+                    </span>
+                    {isSelected && (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                    )}
+                  </div>
+                  
+                  <div className="flex items-baseline justify-between pt-1">
+                    <span className="text-lg font-black text-foreground">
+                      {count.toLocaleString("pt-BR")}
+                    </span>
+                    <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 font-bold shrink-0", ch.badgeClass)}>
+                      {pct}%
+                    </Badge>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => handleOpenCampaignForChannel(activeCh)}
-                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs gap-1.5 h-8 font-bold shadow-sm"
-                    >
-                      <Rocket className="w-3.5 h-3.5" />
-                      Disparar Campanha para {activeCh.name} ({count})
-                    </Button>
+                  <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
+                    <div
+                      className="bg-primary h-full rounded-full transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedChannel("all")}
-                      className="text-xs h-8 gap-1"
-                    >
-                      <X className="w-3 h-3" />
-                      Remover Filtro
-                    </Button>
+          {/* Barra de Ação Rápida do Filtro de Canal Selecionado */}
+          {isAdvancedOriginsUnlocked && selectedChannel !== "all" && (() => {
+            const activeCh = MARKETING_CHANNELS.find((c) => c.id === selectedChannel);
+            if (!activeCh) return null;
+            const count = marketingMetrics.counts[activeCh.id] || 0;
+
+            return (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-gradient-to-r from-primary/10 via-purple-500/5 to-transparent border border-primary/30 animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{activeCh.icon}</span>
+                  <div>
+                    <span className="text-xs font-bold text-foreground block">
+                      Filtro Ativo: {activeCh.name}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {count} {count === 1 ? "lead encontrado" : "leads encontrados"} ({marketingMetrics.percentages[activeCh.id as keyof typeof marketingMetrics.percentages]}% da base total)
+                    </span>
                   </div>
                 </div>
-              );
-            })()}
-          </div>
-        )}
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => handleOpenCampaignForChannel(activeCh)}
+                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs gap-1.5 h-8 font-bold shadow-sm"
+                  >
+                    <Rocket className="w-3.5 h-3.5" />
+                    Disparar Campanha para {activeCh.name} ({count})
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedChannel("all")}
+                    className="text-xs h-8 gap-1"
+                  >
+                    <X className="w-3 h-3" />
+                    Remover Filtro
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
 
         {/* Header Métrico (Cards KPIs) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
@@ -2676,6 +2688,78 @@ export default function BancoDeDados() {
             </Button>
             <Button size="sm" onClick={handleBulkTagSubmit} className="bg-indigo-600 text-white">
               Adicionar Tag
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Compacto de Upsell de Origens */}
+      <Dialog open={isOriginUpsellModalOpen} onOpenChange={setIsOriginUpsellModalOpen}>
+        <DialogContent className="sm:max-w-md bg-card border-border shadow-2xl">
+          <DialogHeader className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-purple-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20">
+                <Target className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold flex items-center gap-1.5">
+                  🎯 Rastreamento & Atribuição de Origens
+                </DialogTitle>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <Badge className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30 text-[10px] px-1.5 py-0 font-bold">
+                    Exclusivo do Plano Avançado
+                  </Badge>
+                </div>
+              </div>
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground leading-relaxed pt-1">
+              Descubra exatamente de onde vem cada lead (Instagram, Google, TikTok, Indicação) e meça a conversão real de cada canal de aquisição.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="bg-muted/40 dark:bg-zinc-900/60 border border-border/80 dark:border-zinc-800/80 rounded-xl p-3 text-left space-y-2 my-1">
+            <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
+              O que você ganha com este recurso:
+            </span>
+            <ul className="space-y-1.5 text-xs text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                <span>Identificação automática da origem de cada contato e lead</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                <span>Filtros rápidos e segmentação de campanhas em 1 clique por canal</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                <span>Métricas comparativas de conversão por fonte de tráfego</span>
+              </li>
+            </ul>
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-col gap-2 pt-2">
+            <Button
+              className="w-full bg-gradient-to-r from-amber-500 to-purple-600 hover:from-amber-600 hover:to-purple-700 text-white font-bold text-xs gap-2 shadow-md shadow-purple-500/20"
+              onClick={() => window.open(whatsappUrlUpgrade, "_blank")}
+            >
+              <Rocket className="w-3.5 h-3.5" />
+              🚀 Fazer Upgrade para o Plano Avançado
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full border-purple-500/40 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 font-bold text-xs gap-2"
+              onClick={() => window.open(whatsappUrlAvulso, "_blank")}
+            >
+              <Puzzle className="w-3.5 h-3.5" />
+              🧩 Contratar Módulo Avulso
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setIsOriginUpsellModalOpen(false)}
+            >
+              Cancelar / Fechar
             </Button>
           </DialogFooter>
         </DialogContent>
