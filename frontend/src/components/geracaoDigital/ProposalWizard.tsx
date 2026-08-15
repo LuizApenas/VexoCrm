@@ -31,7 +31,12 @@ import {
   TODAS_FORMAS,
   parcelasDe,
 } from "@/lib/geracaoDigital/formasPagamento";
-import { PERIODOS, mesesDoPeriodo, prazosOfertados } from "@/lib/geracaoDigital/plano";
+import {
+  PERIODOS,
+  mesesDoPeriodo,
+  prazosOfertados,
+  VEXO_STANDARD_MODULES,
+} from "@/lib/geracaoDigital/plano";
 
 interface ProposalWizardProps {
   onClose: () => void;
@@ -85,6 +90,7 @@ interface ProposalWizardProps {
   /** Plano com que o step 2 abre. Preenchido ao editar uma proposta. */
   planoInicial?: Plano;
   segmentsList: any[];
+  isVexoCommercial?: boolean;
 }
 
 export const ProposalWizard: React.FC<ProposalWizardProps> = ({
@@ -99,7 +105,8 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
   getIdToken,
   onPackageCreated,
   planoInicial,
-  segmentsList
+  segmentsList = [],
+  isVexoCommercial = false,
 }) => {
   const {
     wizardStep,
@@ -354,6 +361,7 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
               onChange={setPlano}
               gdProducts={gdProducts}
               vexoProducts={vexoProducts}
+              isVexoCommercial={isVexoCommercial}
             />
 
             <div className="flex justify-between pt-4 border-t border-slate-100 dark:border-white/5">
@@ -446,8 +454,21 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
             .map((id) => gdProducts.find((p) => p.id === id))
             .filter(Boolean);
 
+          const combinedVexoPool = [...(vexoProducts || [])];
+          VEXO_STANDARD_MODULES.forEach((mod) => {
+            if (!combinedVexoPool.some((p) => p.id === mod.id)) {
+              combinedVexoPool.push(mod);
+            }
+          });
+          if (!combinedVexoPool.some(p => p.id === "essencial")) {
+            combinedVexoPool.push({ id: "essencial", nome: "🟢 Plano Essencial Vexo OS" });
+          }
+          if (!combinedVexoPool.some(p => p.id === "avancado")) {
+            combinedVexoPool.push({ id: "avancado", nome: "🟣 Plano Avançado Vexo OS" });
+          }
+
           const vexoModulesSelected = (plano?.vexoIds || [])
-            .map((id) => vexoProducts.find((p) => p.id === id))
+            .map((id) => combinedVexoPool.find((p) => p.id === id))
             .filter(Boolean);
 
           const activeTerms = PERIODOS.filter(

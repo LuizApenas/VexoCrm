@@ -9,6 +9,7 @@ import {
   type PeriodoKey,
   mesesDoPeriodo,
   prazosOfertados,
+  VEXO_STANDARD_MODULES,
 } from "@/lib/geracaoDigital/plano";
 
 const brl = (v: number) =>
@@ -19,13 +20,14 @@ interface Props {
   onChange: (p: Plano) => void;
   gdProducts: any[];
   vexoProducts: any[];
+  isVexoCommercial?: boolean;
 }
 
 /**
  * Escopo × prazos. Um escopo, até 4 preços. Sem nome, sem biblioteca:
  * preencher o preço de um prazo É ofertá-lo.
  */
-export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts }: Props) {
+export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts, isVexoCommercial = false }: Props) {
   const toggle = (lista: "gdIds" | "vexoIds", id: string) => {
     const atual = plano[lista];
     onChange({
@@ -40,6 +42,13 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
   const totalEscopo = plano.gdIds.length + plano.vexoIds.length;
   const ofertados = prazosOfertados(plano);
 
+  const combinedVexoModules = [...(vexoProducts || [])];
+  VEXO_STANDARD_MODULES.forEach((mod) => {
+    if (!combinedVexoModules.some((p) => p.id === mod.id)) {
+      combinedVexoModules.push(mod);
+    }
+  });
+
   const ItemEscopo = ({ id, nome, lista }: { id: string; nome: string; lista: "gdIds" | "vexoIds" }) => {
     const on = plano[lista].includes(id);
     return (
@@ -49,7 +58,7 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
         className={cn(
           "px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all flex items-center gap-1 text-left",
           on
-            ? "bg-purple-600 text-white border-purple-500"
+            ? "bg-purple-600 text-white border-purple-500 shadow-sm"
             : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-purple-300"
         )}
       >
@@ -68,27 +77,33 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
             1. Escopo do plano
           </Label>
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            O que o cliente recebe. Vale igual para todos os prazos.
+            {isVexoCommercial
+              ? "Selecione o plano estruturado Vexo OS e os módulos/ferramentas de software adicionais."
+              : "O que o cliente recebe. Vale igual para todos os prazos."}
           </p>
         </div>
 
-        <div className="space-y-1.5">
-          <span className="text-[10px] font-black uppercase tracking-wider text-pink-500 dark:text-pink-300">
-            Geração Digital
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {gdProducts.map((p: any) => (
-              <ItemEscopo key={p.id} id={p.id} nome={p.nome} lista="gdIds" />
-            ))}
-            {gdProducts.length === 0 && (
-              <span className="text-[10px] text-slate-400 italic">
-                Nenhum serviço no catálogo. Cadastre na aba Catálogo.
-              </span>
-            )}
+        {/* Bloco GD — Exibido apenas fora do Comercial Vexo */}
+        {!isVexoCommercial && (
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wider text-pink-500 dark:text-pink-300">
+              Geração Digital
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {gdProducts.map((p: any) => (
+                <ItemEscopo key={p.id} id={p.id} nome={p.nome} lista="gdIds" />
+              ))}
+              {gdProducts.length === 0 && (
+                <span className="text-[10px] text-slate-400 italic">
+                  Nenhum serviço no catálogo. Cadastre na aba Catálogo.
+                </span>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="space-y-2 pt-2 border-t border-dashed border-slate-200 dark:border-white/10">
+        {/* Bloco Plano Estruturado Vexo OS */}
+        <div className={cn("space-y-2", !isVexoCommercial && "pt-2 border-t border-dashed border-slate-200 dark:border-white/10")}>
           <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500 dark:text-indigo-300 block">
             Plano Estruturado Vexo OS (Selecione 1)
           </span>
@@ -97,12 +112,15 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
             <button
               type="button"
               onClick={() => {
-                const isSelected = (plano as any).vexoPlan === "essencial";
+                const isSelected = (plano as any).vexoPlan === "essencial" || plano.vexoIds.includes("essencial");
                 const newPlan = isSelected ? null : "essencial";
                 onChange({
                   ...plano,
                   vexoPlan: newPlan,
                   repasse_vexo_pct: newPlan ? 35 : null,
+                  vexoIds: newPlan
+                    ? Array.from(new Set([...plano.vexoIds.filter(id => id !== "avancado"), "essencial"]))
+                    : plano.vexoIds.filter(id => id !== "essencial"),
                 } as any);
               }}
               className={cn(
@@ -132,12 +150,15 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
             <button
               type="button"
               onClick={() => {
-                const isSelected = (plano as any).vexoPlan === "avancado";
+                const isSelected = (plano as any).vexoPlan === "avancado" || plano.vexoIds.includes("avancado");
                 const newPlan = isSelected ? null : "avancado";
                 onChange({
                   ...plano,
                   vexoPlan: newPlan,
                   repasse_vexo_pct: newPlan ? 45 : null,
+                  vexoIds: newPlan
+                    ? Array.from(new Set([...plano.vexoIds.filter(id => id !== "essencial"), "avancado"]))
+                    : plano.vexoIds.filter(id => id !== "avancado"),
                 } as any);
               }}
               className={cn(
@@ -162,6 +183,18 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts 
                 Múltiplos Chips, Variações Antiban (Groq AI), Agente por Campanha, Base de Conhecimento RAG, Broadcast SDR, Origem de Leads e Follow-up Avançado.
               </p>
             </button>
+          </div>
+        </div>
+
+        {/* Bloco Módulos & Ferramentas Vexo OS (Avulsos) */}
+        <div className="space-y-1.5 pt-2 border-t border-dashed border-slate-200 dark:border-white/10">
+          <span className="text-[10px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-400 block">
+            Módulos & Ferramentas Vexo OS (Avulsos)
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {combinedVexoModules.map((p: any) => (
+              <ItemEscopo key={p.id} id={p.id} nome={p.nome} lista="vexoIds" />
+            ))}
           </div>
         </div>
 

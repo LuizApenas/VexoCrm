@@ -1204,6 +1204,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                 getIdToken={getIdToken}
                 onPackageCreated={(pkg) => setAvailablePackages((prev) => [...prev, pkg])}
                 segmentsList={segmentsList}
+                isVexoCommercial={isVexoCommercial}
               />
             </div>
           ) : (
@@ -1245,6 +1246,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                   getIdToken={getIdToken}
                   onPackageCreated={(pkg) => setAvailablePackages((prev) => [...prev, pkg])}
                   segmentsList={segmentsList}
+                  isVexoCommercial={isVexoCommercial}
                 />
               </div>
             )}
@@ -1706,6 +1708,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                             onChange={setEditPlano}
                             gdProducts={gdProducts}
                             vexoProducts={vexoProducts}
+                            isVexoCommercial={isVexoCommercial}
                           />
                         </div>
 

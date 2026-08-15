@@ -78,6 +78,16 @@ export interface ProdutoRef {
   origem: "gd" | "vexo";
 }
 
+export const VEXO_STANDARD_MODULES = [
+  { id: "mod_disparador", nome: "📢 Disparador & Campanhas WhatsApp", descricao: "Envio em massa com intervalos humanizados e rotação de instâncias" },
+  { id: "mod_rag", nome: "🧠 Base de Conhecimento RAG (Upload de PDFs & Catálogos)", descricao: "IA treinada nos documentos, manuais e tabelas de preço da empresa" },
+  { id: "mod_origens", nome: "🎯 Rastreamento de Origens de Marketing (Instagram/Google/TikTok)", descricao: "Atribuição precisa do canal de aquisição de cada lead" },
+  { id: "mod_sdr", nome: "👥 SDR Broadcast (Distribuição de Leads Multiatendentes)", descricao: "Distribuição automática de leads qualificados para corretores/vendedores" },
+  { id: "mod_chips", nome: "📱 Chips WhatsApp Adicionais", descricao: "Conexões extras de WhatsApp para contingência e múltiplos números" },
+  { id: "mod_followup", nome: "🔄 Régua de Follow-up Automático Pós-Orçamento", descricao: "Retomada inteligente de propostas e orçamentos parados" },
+  { id: "mod_agente_inbound", nome: "🤖 Agente IA de Atendimento Inbound Personalizado", descricao: "Chatbot IA com personalidade e scripts customizados da empresa" },
+];
+
 export function produtosDoPlano(
   plano: Plano,
   gdProducts: any[],
@@ -86,7 +96,22 @@ export function produtosDoPlano(
   const gd = (gdProducts || [])
     .filter((p) => plano.gdIds.includes(p.id))
     .map((p) => ({ product_id: p.id, nome: p.nome, origem: "gd" as const }));
-  const vexo = (vexoProducts || [])
+
+  const combinedVexo = [...(vexoProducts || [])];
+  VEXO_STANDARD_MODULES.forEach((mod) => {
+    if (!combinedVexo.some((p) => p.id === mod.id)) {
+      combinedVexo.push(mod);
+    }
+  });
+
+  if (plano.vexoIds.includes("essencial") && !combinedVexo.some((p) => p.id === "essencial")) {
+    combinedVexo.push({ id: "essencial", nome: "🟢 Plano Essencial Vexo OS" });
+  }
+  if (plano.vexoIds.includes("avancado") && !combinedVexo.some((p) => p.id === "avancado")) {
+    combinedVexo.push({ id: "avancado", nome: "🟣 Plano Avançado Vexo OS" });
+  }
+
+  const vexo = combinedVexo
     .filter((p) => plano.vexoIds.includes(p.id))
     .map((p) => ({ product_id: p.id, nome: p.nome, origem: "vexo" as const }));
   return [...gd, ...vexo];

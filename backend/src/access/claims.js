@@ -102,11 +102,9 @@ export const ACCESS_PRESET_LABELS = {
   pending: "Aguardando aprovacao",
 };
 export const FIXED_ADMIN_UIDS = new Set([
-  "IozfnQTmWHQAxopr3FyNb1SdYs52",
   "pKpOKg3Fttf6AnYsTzZD7xjJLaN2",
 ]);
 export const FIXED_ADMIN_EMAILS = new Set([
-  "luizz.felipe.santos17@gmail.com",
   "conradofl@gmail.com",
 ]);
 

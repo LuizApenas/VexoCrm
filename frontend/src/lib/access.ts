@@ -108,10 +108,6 @@ export const USER_MANAGEMENT_PRESETS: AccessPreset[] = [
 
 export const FIXED_ADMIN_ACCOUNTS = [
   {
-    email: "luizz.felipe.santos17@gmail.com",
-    uid: "IozfnQTmWHQAxopr3FyNb1SdYs52",
-  },
-  {
     email: "conradofl@gmail.com",
     uid: "pKpOKg3Fttf6AnYsTzZD7xjJLaN2",
   },
