@@ -1190,23 +1190,45 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
             </CardContent>
           </Card>
         ) : proposals.length === 0 ? (
-          <Card className="bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-white/10 text-center max-w-lg mx-auto py-12 relative z-10 shadow-sm">
-            <CardContent className="space-y-4">
-              <FileText className="h-12 w-12 text-slate-400 mx-auto" />
-              <h3 className="text-lg font-bold text-slate-800 dark:text-white">Nenhuma Proposta Gerada</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Inicie uma apresentação comercial a partir da aba "Geração Digital" e escolha um pacote — ou crie uma proposta direta abaixo.
-              </p>
-              <Button
-                size="sm"
-                onClick={() => { setShowNewForm(true); resetWizard(); }}
-                className="bg-gradient-to-r from-purple-700 to-indigo-600 hover:opacity-90 text-white font-bold text-xs"
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Nova Proposta
-              </Button>
-            </CardContent>
-          </Card>
+          showNewForm ? (
+            <div className="w-full relative z-10">
+              <ProposalWizard
+                onClose={() => { setShowNewForm(false); resetWizard(); }}
+                availablePackages={availablePackages}
+                vexoProducts={vexoProducts}
+                gdProducts={gdProducts}
+                availableTerms={availableTerms}
+                wizardState={wizardState}
+                toast={toast}
+                clientId={clientId}
+                getIdToken={getIdToken}
+                onPackageCreated={(pkg) => setAvailablePackages((prev) => [...prev, pkg])}
+                segmentsList={segmentsList}
+              />
+            </div>
+          ) : (
+            <Card className="bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-white/10 text-center max-w-lg mx-auto py-12 relative z-10 shadow-sm">
+              <CardContent className="space-y-4">
+                <FileText className="h-12 w-12 text-slate-400 mx-auto" />
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white">
+                  {isVexoCommercial ? "Nenhuma Proposta Vexo OS Gerada" : "Nenhuma Proposta Gerada"}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {isVexoCommercial
+                    ? "Crie sua primeira proposta comercial para apresentar o software Vexo OS e gerar slides sob medida com IA."
+                    : "Inicie uma apresentação comercial a partir da aba \"Geração Digital\" e escolha um pacote — ou crie uma proposta direta abaixo."}
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => { setShowNewForm(true); resetWizard(); }}
+                  className="bg-gradient-to-r from-purple-700 to-indigo-600 hover:opacity-90 text-white font-bold text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  {isVexoCommercial ? "+ Nova Proposta Vexo OS" : "Nova Proposta"}
+                </Button>
+              </CardContent>
+            </Card>
+          )
         ) : (
           <div className="grid gap-6 lg:grid-cols-4 relative z-10">
             {showNewForm && (

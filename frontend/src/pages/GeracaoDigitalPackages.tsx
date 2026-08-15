@@ -33,13 +33,19 @@ interface VexoProduct {
   ativo: boolean;
 }
 
-export default function GeracaoDigitalPackages() {
+interface GeracaoDigitalPackagesProps {
+  isVexoCommercial?: boolean;
+}
+
+export default function GeracaoDigitalPackages({ isVexoCommercial = false }: GeracaoDigitalPackagesProps) {
   const { isAuthenticated, getIdToken, clientId } = useAuth();
 
   // State
-  const [activeSection, setActiveSection] = useState<"vexo-products" | "gd-products">("gd-products");
+  const [activeSection, setActiveSection] = useState<"vexo-products" | "gd-products">(
+    isVexoCommercial ? "vexo-products" : "gd-products"
+  );
   // Seção de módulos parametrizada: "vexo-products" e "gd-products" reusam o mesmo form/lista
-  const moduleOrigin: "gd" | "vexo" = activeSection === "gd-products" ? "gd" : "vexo";
+  const moduleOrigin: "gd" | "vexo" = isVexoCommercial ? "vexo" : activeSection === "gd-products" ? "gd" : "vexo";
   const [products, setProducts] = useState<ProductApi[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -276,11 +282,15 @@ export default function GeracaoDigitalPackages() {
 
   return (
     <PageShell
-      title="Configurações Comerciais GD"
-      subtitle="Monte e gerencie templates de pacotes fechados e valores dos módulos Vexo OS."
+      title={isVexoCommercial ? "Catálogo de Módulos & Ferramentas Vexo OS" : "Configurações Comerciais GD"}
+      subtitle={
+        isVexoCommercial
+          ? "Cadastre e precifique módulos e ferramentas avulsas do software Vexo OS (ex: Rastreamento de Origens, Base RAG, Chips Extras, Disparos)."
+          : "Monte e gerencie templates de pacotes fechados e valores dos módulos Vexo OS."
+      }
       icon={Layers}
     >
-      <GeracaoDigitalTabs />
+      {!isVexoCommercial && <GeracaoDigitalTabs />}
 
       <div className="w-full min-h-screen bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-3xl p-6 border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden">
 
@@ -288,52 +298,59 @@ export default function GeracaoDigitalPackages() {
         <div className="absolute top-0 right-0 h-96 w-96 bg-purple-50 dark:bg-purple-950/20 rounded-full blur-[100px] pointer-events-none" />
         <div className="absolute bottom-0 left-0 h-96 w-96 bg-pink-50 dark:bg-pink-950/20 rounded-full blur-[100px] pointer-events-none" />
 
-        {/* Toggle between Pacotes and Módulos Vexo */}
-        <div className="flex justify-center mb-8 relative z-10">
-          <div className="bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-white/10 flex gap-1">
-                        <button
-              onClick={() => {
-                setActiveSection("gd-products");
-                setIsVexoEditing(false);
-              }}
-              className={cn(
-                "px-5 py-2 rounded-lg text-xs font-bold transition-all",
-                activeSection === "gd-products"
-                  ? "bg-white dark:bg-slate-800 text-purple-650 dark:text-purple-400 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-              )}
-            >
-              Módulos Geração Digital
-            </button>
-                        <button
-              onClick={() => {
-                setActiveSection("vexo-products");
-                setIsVexoEditing(false);
-              }}
-              className={cn(
-                "px-5 py-2 rounded-lg text-xs font-bold transition-all",
-                activeSection === "vexo-products"
-                  ? "bg-white dark:bg-slate-800 text-purple-650 dark:text-purple-400 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-              )}
-            >
-              Módulos Vexo OS
-            </button>
+        {/* Toggle between Pacotes and Módulos Vexo (Apenas na visão GD) */}
+        {!isVexoCommercial && (
+          <div className="flex justify-center mb-8 relative z-10">
+            <div className="bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-white/10 flex gap-1">
+              <button
+                onClick={() => {
+                  setActiveSection("gd-products");
+                  setIsVexoEditing(false);
+                }}
+                className={cn(
+                  "px-5 py-2 rounded-lg text-xs font-bold transition-all",
+                  activeSection === "gd-products"
+                    ? "bg-white dark:bg-slate-800 text-purple-650 dark:text-purple-400 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                )}
+              >
+                Módulos Geração Digital
+              </button>
+              <button
+                onClick={() => {
+                  setActiveSection("vexo-products");
+                  setIsVexoEditing(false);
+                }}
+                className={cn(
+                  "px-5 py-2 rounded-lg text-xs font-bold transition-all",
+                  activeSection === "vexo-products"
+                    ? "bg-white dark:bg-slate-800 text-purple-650 dark:text-purple-400 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                )}
+              >
+                Módulos Vexo OS
+              </button>
+            </div>
           </div>
-        </div>
-
+        )}
 
         {/* SECTION 2: VEXO PRODUCTS CRUD */}
         {(activeSection === "vexo-products" || activeSection === "gd-products") && (
           <>
             {/* Top Header Controls */}
-            <div className="flex justify-between items-center mb-8 relative z-10 border-b border-slate-200 pb-4">
+            <div className="flex justify-between items-center mb-8 relative z-10 border-b border-slate-200 dark:border-white/10 pb-4">
               <div className="space-y-0.5">
                 <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">
-                  {moduleOrigin === "gd" ? "Catálogo de Módulos Geração Digital (avulsos)" : "Catálogo de Módulos Vexo OS"}
+                  {isVexoCommercial
+                    ? "Catálogo de Módulos & Ferramentas Vexo OS"
+                    : moduleOrigin === "gd"
+                    ? "Catálogo de Módulos Geração Digital (avulsos)"
+                    : "Catálogo de Módulos Vexo OS"}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {moduleOrigin === "gd"
+                  {isVexoCommercial
+                    ? "Cadastre e precifique módulos avulsos de software (ex: Rastreamento de Origens, Base de Conhecimento RAG, Chips Extras, Pacotes de Disparos)."
+                    : moduleOrigin === "gd"
                     ? "Serviços GD vendidos avulsos, fora de pacote — nome, descrição, valor mensal e recorrência."
                     : "Configure as opções de módulos e funcionalidades Vexo com valores e recorrências editáveis."}
                 </p>
@@ -341,7 +358,7 @@ export default function GeracaoDigitalPackages() {
               {!isVexoEditing && (
                 <Button onClick={handleOpenVexoCreate} size="sm" className="bg-gradient-to-r from-purple-700 to-indigo-600 font-extrabold text-white text-xs">
                   <Plus className="h-4 w-4 mr-1.5" />
-                  Novo Módulo
+                  {isVexoCommercial ? "Novo Módulo Vexo OS" : "Novo Módulo"}
                 </Button>
               )}
             </div>
