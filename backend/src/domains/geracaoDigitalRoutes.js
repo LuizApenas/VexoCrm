@@ -2228,6 +2228,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       const finalDescontoMensalPct = desconto_mensal_pct !== undefined ? Number(desconto_mensal_pct || 0) : current.desconto_mensal_pct;
       const finalVexoPlan = vexo_plan || vexi_plan || current.vexo_plan || current.vexi_plan;
       const finalVexoPrice = vexo_price !== undefined ? Number(vexo_price || 0) : (vexi_price !== undefined ? Number(vexi_price || 0) : current.vexo_price);
+      const finalOwnerCompany = req.body.owner_company || req.body.ownerCompany || (req.body.isVexo ? "vexo" : null);
 
       const podeSegLogo = await proposalHasSegmentLogo();
       const segLogoSet = podeSegLogo
@@ -2262,7 +2263,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
              vexi_plan = $28,
              vexi_price = $29,
              vexo_plan = $28,
-             vexo_price = $29${segLogoSet}
+             vexo_price = $29,
+             owner_company = COALESCE($30, owner_company)${segLogoSet}
          WHERE id = $19 AND tenant_id = $20 RETURNING *`,
         [
           prospect_name,
@@ -2293,7 +2295,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           finalDescontoSetupPct,
           finalDescontoMensalPct,
           finalVexoPlan,
-          finalVexoPrice
+          finalVexoPrice,
+          finalOwnerCompany || null
         ]
       );
 
@@ -2819,7 +2822,7 @@ Condições: ${condicoes}`;
       const { id } = req.params;
 
       const result = await pool.query(
-        `SELECT id, tenant_id, presentation_id, package_id, package_vexo_id, prospect_name, itens, valor_total, condicoes, status, payment_link, assinatura, signer_name, signed_at, created_at, sent_at, cobrar_setup, valor_setup_vexo, condicoes_pagamento, periodo_plano, validade_ate, valor_apos_validade, observacao_validade, descontos_concedidos, assinatura_metodo, valor_vp, meio_pagamento, carencia_dias, pacotes_ofertados, presentation_slides
+        `SELECT id, tenant_id, presentation_id, package_id, package_vexo_id, prospect_name, itens, valor_total, condicoes, status, payment_link, assinatura, signer_name, signed_at, created_at, sent_at, cobrar_setup, valor_setup_vexo, condicoes_pagamento, periodo_plano, validade_ate, valor_apos_validade, observacao_validade, descontos_concedidos, assinatura_metodo, valor_vp, meio_pagamento, carencia_dias, pacotes_ofertados, presentation_slides, owner_company
          FROM public.gd_proposals WHERE id = $1`,
         [id]
       );

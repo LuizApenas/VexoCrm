@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { fetchApi } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { PresentationViewer } from "@/components/presentation/PresentationViewer";
+import { isVexoProposal } from "./GeracaoDigitalPublicProposal";
 
 // Apresentação da proposta — ABRE DIRETO.
 //
@@ -80,7 +81,7 @@ export default function GeracaoDigitalProposalPresentation() {
   }, [id, isAuthenticated, clientId, getIdToken]);
 
   const handleClosePresentation = () => {
-    const isVexo = proposal?.owner_company === "vexo";
+    const isVexo = isVexoProposal(proposal);
     const targetUrl = isVexo
       ? `/crm/comercial-vexo?tab=propostas&proposta=${proposal?.id || id || ""}`
       : `/crm/propostas-gd?proposta=${proposal?.id || id || ""}`;

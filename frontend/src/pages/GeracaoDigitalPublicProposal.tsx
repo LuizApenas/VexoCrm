@@ -79,6 +79,28 @@ interface Proposal {
   assinatura_metodo?: string | null;
   package_id?: string | null;
   packages?: any[];
+  owner_company?: string | null;
+}
+
+export function isVexoProposal(prop: Proposal | null | undefined): boolean {
+  if (!prop) return false;
+  if (prop.owner_company === "vexo") return true;
+  if (Boolean(prop.package_vexo_id)) return true;
+  if (Array.isArray(prop.itens)) {
+    const hasVexoItem = prop.itens.some((it: any) => {
+      const cat = String(it.categoria || "").toLowerCase();
+      const desc = String(it.descricao || "").toLowerCase();
+      return (
+        cat === "vexo" ||
+        desc.includes("vexo") ||
+        desc.includes("plano avançado") ||
+        desc.includes("plano avancado") ||
+        desc.includes("plano essencial")
+      );
+    });
+    if (hasVexoItem) return true;
+  }
+  return false;
 }
 
 const PERIODO_LABELS: Record<string, string> = {
@@ -118,7 +140,7 @@ export default function GeracaoDigitalPublicProposal() {
     if (!id || !supabase) return;
 
     const channel = supabase
-      .channel(`public-proposal-${id}`)
+      .channel(`public_proposal_${id}`)
       .on(
         "postgres_changes",
         {
@@ -127,33 +149,38 @@ export default function GeracaoDigitalPublicProposal() {
           table: "gd_proposals",
           filter: `id=eq.${id}`
         },
-        (payload) => {
-          console.log("Realtime update received:", payload);
-          reloadPublicProposalSilent();
+        (payload: any) => {
+          if (payload.new) {
+            setProposal((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                ...payload.new,
+                itens: Array.isArray(payload.new.itens) ? payload.new.itens : prev.itens,
+                condicoes_pagamento: payload.new.condicoes_pagamento !== undefined
+                  ? payload.new.condicoes_pagamento
+                  : prev.condicoes_pagamento,
+                meio_pagamento: payload.new.meio_pagamento !== undefined
+                  ? payload.new.meio_pagamento
+                  : prev.meio_pagamento,
+                status: payload.new.status || prev.status,
+                assinatura: payload.new.assinatura !== undefined ? payload.new.assinatura : prev.assinatura,
+                signer_name: payload.new.signer_name !== undefined ? payload.new.signer_name : prev.signer_name,
+                signed_at: payload.new.signed_at !== undefined ? payload.new.signed_at : prev.signed_at,
+                carencia_dias: payload.new.carencia_dias !== undefined ? payload.new.carencia_dias : prev.carencia_dias,
+                pacotes_ofertados: payload.new.pacotes_ofertados !== undefined ? payload.new.pacotes_ofertados : (prev as any).pacotes_ofertados,
+                owner_company: payload.new.owner_company !== undefined ? payload.new.owner_company : prev.owner_company
+              };
+            });
+          }
         }
       )
-      .subscribe((status) => {
-        console.log(`Supabase Realtime subscription status for proposal ${id}:`, status);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [id]);
-
-  async function reloadPublicProposalSilent() {
-    try {
-      const res = await fetchApi(`/api/gd/public/proposals/${id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.data) {
-          setProposal(data.data);
-        }
-      }
-    } catch (err) {
-      console.error("Silent reload error:", err);
-    }
-  }
 
   async function loadPublicProposal() {
     try {
@@ -198,7 +225,7 @@ export default function GeracaoDigitalPublicProposal() {
       console.error(err);
       toast({
         title: "Erro ao Alterar Plano",
-        description: err.message || "Não foi possível alterar seu plano.",
+        description: err.message || "Não foi possível selecionar o plano.",
         variant: "destructive"
       });
     }
@@ -396,8 +423,9 @@ export default function GeracaoDigitalPublicProposal() {
     ? new Date(Date.now() + carenciaDias * 24 * 60 * 60 * 1000)
     : null;
 
+  const isVexo = isVexoProposal(proposal);
+
   const handleReturnToSystem = () => {
-    const isVexo = proposal?.owner_company === "vexo";
     const targetUrl = isVexo 
       ? `/crm/comercial-vexo?tab=propostas&proposta=${id}`
       : `/crm/propostas-gd?proposta=${id}`;
@@ -416,11 +444,11 @@ export default function GeracaoDigitalPublicProposal() {
       <header className="relative z-10 max-w-7xl mx-auto px-6 lg:px-10 py-8 flex justify-between items-center border-b border-slate-900">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg">
-            {proposal?.owner_company === "vexo" ? "VX" : "GD"}
+            {isVexo ? "VX" : "GD"}
           </div>
           <div>
             <h2 className="text-base font-black text-white leading-tight">
-              {proposal?.owner_company === "vexo" ? "Vexo OS" : "Geração Digital"}
+              {isVexo ? "Vexo OS" : "Geração Digital"}
             </h2>
             <span className="text-[10px] text-slate-400 uppercase font-mono">Proposta Comercial</span>
           </div>
