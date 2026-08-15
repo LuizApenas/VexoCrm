@@ -1161,7 +1161,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
     <PageShellContext.Provider value={isVexoCommercial}>
       <PageShell
         title={isVexoCommercial ? "Propostas Comerciais Vexo OS" : "Propostas Comerciais GD"}
-        subtitle={isVexoCommercial ? "Editor de propostas e termos de aceite comercial do Vexo OS." : "Editor de itens, termos de aceite comercial e assinatura eletrônica para fechamento de contratos."}
+        subtitle={isVexoCommercial ? "Editor de propostas, apresentações integradas e termos de aceite comercial do Vexo OS." : "Editor de itens, termos de aceite comercial e assinatura eletrônica para fechamento de contratos."}
         icon={FileText}
       >
         {!isVexoCommercial && <GeracaoDigitalTabs />}
