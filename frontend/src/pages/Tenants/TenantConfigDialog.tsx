@@ -21,6 +21,33 @@ import {
   Bot,
   ListChecks,
 } from "lucide-react";
+import { AVAILABLE_CUSTOM_MODULES } from "@/lib/planTier";
+
+const MODULE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  disparador_campanhas: Send,
+  agente_inbound: Bot,
+  agente_rag: Sparkles,
+  followup: ListChecks,
+  followup_automations: Zap,
+  sdr_broadcast: PhoneCall,
+  multiplos_chips: Smartphone,
+  origem_leads: BarChart3,
+  antiban_groq: ShieldCheck,
+  relatorios: BarChart2,
+};
+
+const MODULE_COLORS: Record<string, string> = {
+  disparador_campanhas: "text-indigo-500",
+  agente_inbound: "text-blue-500",
+  agente_rag: "text-cyan-500",
+  followup: "text-amber-500",
+  followup_automations: "text-yellow-500",
+  sdr_broadcast: "text-purple-500",
+  multiplos_chips: "text-emerald-500",
+  origem_leads: "text-pink-500",
+  antiban_groq: "text-teal-500",
+  relatorios: "text-orange-500",
+};
 import {
   AlertDialog,
   AlertDialogAction,
@@ -392,18 +419,7 @@ export function TenantConfigDialog({
                       </div>
 
                       <div className="space-y-2 text-xs">
-                        {[
-                          { id: "disparador_campanhas", label: "Disparador & Campanhas em Massa", icon: Send, color: "text-indigo-500" },
-                          { id: "agente_inbound", label: "Agente IA & Chatbot Inbound", icon: Bot, color: "text-blue-500" },
-                          { id: "agente_rag", label: "Base de Conhecimento RAG (Upload de Arquivos)", icon: Sparkles, color: "text-cyan-500" },
-                          { id: "followup", label: "Follow-up & Cadências de Retorno", icon: ListChecks, color: "text-amber-500" },
-                          { id: "followup_automations", label: "Automações por Evento (Follow-up)", icon: Zap, color: "text-yellow-500" },
-                          { id: "sdr_broadcast", label: "Alertas SDR Broadcast (Multiatendentes)", icon: PhoneCall, color: "text-purple-500" },
-                          { id: "multiplos_chips", label: "Chips WhatsApp Adicionais / Múltiplos", icon: Smartphone, color: "text-emerald-500" },
-                          { id: "origem_leads", label: "Rastreamento de Origem de Leads", icon: BarChart3, color: "text-pink-500" },
-                          { id: "antiban_groq", label: "Variações Antiban com IA Groq", icon: ShieldCheck, color: "text-teal-500" },
-                          { id: "relatorios", label: "Relatórios de Vendas & Envios", icon: BarChart2, color: "text-orange-500" },
-                        ].map((mod) => {
+                        {AVAILABLE_CUSTOM_MODULES.map((mod) => {
                           const currentAvulsos = draft.modulosAvulsos;
                           const isChecked =
                             draft.planTier === "avancado" || currentAvulsos.includes(mod.id);
@@ -419,7 +435,8 @@ export function TenantConfigDialog({
                             updateTenantN8nDraft(tenant.id, { modulosAvulsos: next });
                           };
 
-                          const ModIcon = mod.icon;
+                          const ModIcon = MODULE_ICONS[mod.id] || Sparkles;
+                          const colorClass = MODULE_COLORS[mod.id] || "text-purple-500";
 
                           return (
                             <label
@@ -429,7 +446,7 @@ export function TenantConfigDialog({
                               }`}
                             >
                               <span className="flex items-center gap-2 text-xs font-medium text-foreground">
-                                <ModIcon className={`w-4 h-4 ${mod.color}`} />
+                                <ModIcon className={`w-4 h-4 ${colorClass}`} />
                                 {mod.label}
                               </span>
                               <input

@@ -121,9 +121,9 @@ export function AppSidebar() {
   const planTier = resolveTenantPlan(crmClient?.selectedClient);
   const inheritedPages = getInheritedPlanPages(planTier, crmClient?.selectedClient);
 
-  const isSidebarItemModularlyUnlocked = (item: (typeof OPERACAO_ITEMS)[number]): boolean => {
-    if (!crmClient?.selectedClient) return true;
-    if (planTier !== "modular") return true;
+  const isSidebarItemModularlyLocked = (item: (typeof OPERACAO_ITEMS)[number]): boolean => {
+    if (!crmClient?.selectedClient) return false;
+    if (planTier !== "modular") return false;
 
     // Ferramentas base universais (Dashboard, Leads, Banco de Dados, Conversas)
     if (
@@ -131,49 +131,20 @@ export function AppSidebar() {
       item.key === "leads" ||
       item.key === "banco-de-dados" ||
       item.key === "conversas" ||
-      item.key === "whatsapp"
+      item.key === "whatsapp" ||
+      item.key === "admin" ||
+      item.key === "onboarding" ||
+      item.key === "equipe-usuarios"
     ) {
-      return true;
+      return false;
     }
 
-    // Em plano modular, validar estritamente se a ferramenta foi contratada para o tenant selecionado
-    if (item.key === "campanhas" || item.page === "planilhas") {
-      return hasFeatureUnlocked(crmClient.selectedClient, "disparador_campanhas");
-    }
-    if (item.key === "followup" || item.page === "fila-de-followup") {
-      return (
-        hasFeatureUnlocked(crmClient.selectedClient, "followup") ||
-        hasFeatureUnlocked(crmClient.selectedClient, "followup_automations")
-      );
-    }
-    if (item.key === "agente-ia" || item.key === "agente" || item.page === "agente") {
-      return (
-        hasFeatureUnlocked(crmClient.selectedClient, "agente_inbound") ||
-        hasFeatureUnlocked(crmClient.selectedClient, "agente") ||
-        hasFeatureUnlocked(crmClient.selectedClient, "agente_rag")
-      );
-    }
-    if (item.key === "chips-whatsapp" || item.page === "conexoes") {
-      return (
-        hasFeatureUnlocked(crmClient.selectedClient, "multiplos_chips") ||
-        hasFeatureUnlocked(crmClient.selectedClient, "conexoes")
-      );
-    }
-    if (item.key === "relatorios" || item.page === "relatorios") {
-      return hasFeatureUnlocked(crmClient.selectedClient, "relatorios");
-    }
-    if (item.key === "comercial-vexo" || item.page === "apresentacao") {
-      return hasFeatureUnlocked(crmClient.selectedClient, "comercial-vexo");
-    }
-    return false;
+    return !hasFeatureUnlocked(crmClient.selectedClient, item.key || item.page);
   };
 
   const filterItems = (items: typeof OPERACAO_ITEMS) => {
     return items
       .filter((f) => {
-        if (!isSidebarItemModularlyUnlocked(f)) {
-          return false;
-        }
         const hasAccess = isAdminUser || canAccessInternalPage(f.page) || inheritedPages.includes(f.page);
         return hasAccess && (isInternalUser || isPathAllowedForClient(f.url, allowedTabs));
       });
@@ -225,7 +196,12 @@ export function AppSidebar() {
             )}
             <div className="space-y-1">
               {visibleOperacao.map((item) => (
-                <NavItem key={item.key} item={item} collapsed={collapsed} />
+                <NavItem
+                  key={item.key}
+                  item={item}
+                  collapsed={collapsed}
+                  isLocked={isSidebarItemModularlyLocked(item)}
+                />
               ))}
             </div>
           </>
@@ -241,7 +217,12 @@ export function AppSidebar() {
             )}
             <div className="space-y-1">
               {visibleInteligencia.map((item) => (
-                <NavItem key={item.key} item={item} collapsed={collapsed} />
+                <NavItem
+                  key={item.key}
+                  item={item}
+                  collapsed={collapsed}
+                  isLocked={isSidebarItemModularlyLocked(item)}
+                />
               ))}
             </div>
           </>
@@ -257,7 +238,12 @@ export function AppSidebar() {
             )}
             <div className="space-y-1">
               {visibleAgenteIa.map((item) => (
-                <NavItem key={item.key} item={item} collapsed={collapsed} />
+                <NavItem
+                  key={item.key}
+                  item={item}
+                  collapsed={collapsed}
+                  isLocked={isSidebarItemModularlyLocked(item)}
+                />
               ))}
             </div>
           </>
@@ -273,7 +259,12 @@ export function AppSidebar() {
             )}
             <div className="space-y-1">
               {visibleCanais.map((item) => (
-                <NavItem key={item.key} item={item} collapsed={collapsed} />
+                <NavItem
+                  key={item.key}
+                  item={item}
+                  collapsed={collapsed}
+                  isLocked={isSidebarItemModularlyLocked(item)}
+                />
               ))}
             </div>
           </>
@@ -289,7 +280,12 @@ export function AppSidebar() {
             )}
             <div className="space-y-1">
               {visibleModulos.map((item) => (
-                <NavItem key={item.key} item={item} collapsed={collapsed} />
+                <NavItem
+                  key={item.key}
+                  item={item}
+                  collapsed={collapsed}
+                  isLocked={isSidebarItemModularlyLocked(item)}
+                />
               ))}
               {visibleGeracaoDigital.map((item) => (
                 <NavItem key={item.key} item={item} collapsed={collapsed} />

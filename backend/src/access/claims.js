@@ -36,6 +36,7 @@ export const DEFAULT_CLIENT_VIEWS = ["dashboard", "leads"];
 export const INTERNAL_PAGE_KEYS = [
   "dashboard",
   "leads",
+  "banco-de-dados",
   "planilhas",
   "whatsapp",
   "agente",
@@ -544,6 +545,117 @@ export function normalizeInternalPages(value, role, isAdmin = false, preset = "i
   }
 
   return Array.from(new Set(pages));
+}
+
+export function deriveTenantInternalPages(tenant = {}) {
+  const rawTier = String(
+    tenant.plan_tier ||
+    tenant.planTier ||
+    tenant.n8n_settings?.plan_tier ||
+    tenant.n8n_settings?.planTier ||
+    tenant.plan_type ||
+    tenant.planType ||
+    ""
+  ).toLowerCase().trim();
+
+  if (rawTier.includes("avancad") || rawTier.includes("advanced") || rawTier === "avancado") {
+    return [...INTERNAL_PAGE_KEYS];
+  }
+
+  const rawModulos =
+    tenant.modulos_avulsos ||
+    tenant.modulosAvulsos ||
+    tenant.n8n_settings?.modulos_avulsos ||
+    tenant.n8n_settings?.modulosAvulsos ||
+    [];
+
+  const modulosAvulsos = Array.isArray(rawModulos)
+    ? rawModulos
+    : typeof rawModulos === "string"
+      ? rawModulos.split(",").map((s) => s.trim())
+      : [];
+
+  const isModuleContracted = (key) => {
+    if (modulosAvulsos.includes("all") || modulosAvulsos.includes("*") || modulosAvulsos.includes(key)) return true;
+    const cleanKey = key.toLowerCase().replace(/^(mod_|modulo_)/, "").trim();
+    return modulosAvulsos.some((item) => {
+      const cleanItem = String(item).toLowerCase().replace(/^(mod_|modulo_)/, "").trim();
+      return cleanItem === cleanKey || cleanItem === key.toLowerCase().trim();
+    });
+  };
+
+  if (rawTier.includes("modular") || rawTier.includes("avulso") || rawTier === "modular") {
+    const pages = ["dashboard", "leads", "banco-de-dados", "whatsapp", "onboarding-wizard"];
+
+    if (
+      isModuleContracted("disparador_campanhas") ||
+      isModuleContracted("campanhas") ||
+      isModuleContracted("disparos") ||
+      isModuleContracted("planilhas")
+    ) {
+      pages.push("campanhas", "planilhas", "disparos");
+    }
+    if (
+      isModuleContracted("agente_inbound") ||
+      isModuleContracted("agente") ||
+      isModuleContracted("agente_rag") ||
+      isModuleContracted("agente-ia")
+    ) {
+      pages.push("agente", "chatbot-kanban", "chatbot-config", "inbound-agents");
+    }
+    if (isModuleContracted("agente_rag") || isModuleContracted("rag")) {
+      pages.push("chatbot-docs");
+      if (!pages.includes("agente")) pages.push("agente");
+    }
+    if (
+      isModuleContracted("followup") ||
+      isModuleContracted("followup_automations") ||
+      isModuleContracted("fila-de-followup")
+    ) {
+      pages.push("followup", "fila-de-followup", "followup-sugestoes");
+    }
+    if (isModuleContracted("followup_automations")) {
+      pages.push("followup-empresas", "followup-campanhas", "followup-analytics");
+    }
+    if (
+      isModuleContracted("multiplos_chips") ||
+      isModuleContracted("conexoes") ||
+      isModuleContracted("chips-whatsapp")
+    ) {
+      pages.push("conexoes", "aquecimento");
+    }
+    if (
+      isModuleContracted("origem_leads") ||
+      isModuleContracted("origens") ||
+      isModuleContracted("rastreamento")
+    ) {
+      pages.push("inteligencia-comercial");
+    }
+    if (isModuleContracted("relatorios") || isModuleContracted("relatorio")) {
+      pages.push("relatorios");
+    }
+    if (isModuleContracted("comercial-vexo") || isModuleContracted("apresentacao")) {
+      pages.push("apresentacao");
+    }
+
+    return Array.from(new Set(pages.filter((p) => INTERNAL_PAGE_KEYS.includes(p))));
+  }
+
+  // Plano essencial padrão (inalterado)
+  return [
+    "dashboard",
+    "leads",
+    "banco-de-dados",
+    "whatsapp",
+    "followup",
+    "fila-de-followup",
+    "campanhas",
+    "planilhas",
+    "agente",
+    "conexoes",
+    "relatorios",
+    "onboarding-wizard",
+  ];
 }
 
 export function hasManagedAccessClaims(rawClaims = {}) {

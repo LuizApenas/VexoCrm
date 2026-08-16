@@ -14,6 +14,89 @@
 // Ao adicionar uma ferramenta nova ao sistema, basta registrar a permissão aqui:
 // admin e treinamento se atualizam sozinhos para todos os usuários.
 
+export const AVAILABLE_CUSTOM_MODULES = [
+  {
+    id: "disparador_campanhas",
+    featureKey: "disparador_campanhas",
+    label: "Campanhas & Disparos em Massa",
+    desc: "Disparos automáticos e importação de planilhas de leads",
+    pages: ["campanhas", "planilhas", "disparos"],
+    views: ["planilhas"],
+  },
+  {
+    id: "agente_inbound",
+    featureKey: "agente_inbound",
+    label: "Agente IA Inbound",
+    desc: "Atendimento inteligente e qualificação automática 24/7",
+    pages: ["agente", "chatbot-kanban", "chatbot-config", "inbound-agents"],
+    views: [],
+  },
+  {
+    id: "agente_rag",
+    featureKey: "agente_rag",
+    label: "Base de Conhecimento RAG",
+    desc: "Upload de arquivos, PDFs e documentos de treino para IA",
+    pages: ["chatbot-docs", "agente"],
+    views: [],
+  },
+  {
+    id: "followup",
+    featureKey: "followup",
+    label: "Follow-up & Cadências de Retorno",
+    desc: "Fila de follow-up e sugestões de recontato comercial",
+    pages: ["followup", "fila-de-followup", "followup-sugestoes"],
+    views: [],
+  },
+  {
+    id: "followup_automations",
+    featureKey: "followup_automations",
+    label: "Automações de Follow-up",
+    desc: "Disparos automáticos e cadências pós-atendimento",
+    pages: ["followup", "fila-de-followup", "followup-empresas", "followup-campanhas", "followup-analytics"],
+    views: [],
+  },
+  {
+    id: "sdr_broadcast",
+    featureKey: "sdr_broadcast",
+    label: "Alertas SDR Broadcast",
+    desc: "Distribuição automática de leads quentes para consultores",
+    pages: ["leads", "conversas"],
+    views: [],
+  },
+  {
+    id: "multiplos_chips",
+    featureKey: "multiplos_chips",
+    label: "Múltiplos Chips WhatsApp",
+    desc: "Conexões extras de WhatsApp para múltiplos números",
+    pages: ["conexoes", "aquecimento"],
+    views: [],
+  },
+  {
+    id: "origem_leads",
+    featureKey: "origem_leads",
+    label: "Rastreamento de Origens",
+    desc: "Atribuição precisa do canal de aquisição (Instagram/Google/TikTok)",
+    pages: ["leads", "inteligencia-comercial"],
+    views: [],
+  },
+  {
+    id: "antiban_groq",
+    featureKey: "antiban_groq",
+    label: "Variações Antiban Groq",
+    desc: "Reescrita dinâmica de mensagens em tempo real para evitar bloqueios",
+    pages: ["campanhas", "disparos"],
+    views: [],
+  },
+  {
+    id: "relatorios",
+    featureKey: "relatorios",
+    label: "Relatórios & Inteligência",
+    desc: "Métricas avançadas de disparos e performance operacional",
+    pages: ["relatorios", "inteligencia-comercial"],
+    views: [],
+  },
+];
+
 export const PERMISSION_CATEGORIES = [
   { key: "vendas_crm", label: "Máquina de Vendas & CRM" },
   { key: "disparos_whatsapp", label: "Máquina de Disparos & WhatsApp" },

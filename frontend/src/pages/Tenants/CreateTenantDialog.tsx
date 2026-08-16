@@ -20,6 +20,7 @@ import { LeadClient, useCreateLeadClient } from "@/hooks/useLeadClients";
 import { createTenantSchema } from "@/lib/validationSchemas";
 import { CHATBOT_MODEL_OPTIONS, CREATION_STEPS, type ChatbotModelValue } from "@/lib/tenants/constants";
 import { buildTenantKey } from "@/lib/tenants/helpers";
+import { AVAILABLE_CUSTOM_MODULES } from "@/lib/planTier";
 
 interface CreateTenantDialogProps {
   onTenantCreated: (tenant: LeadClient) => void;
@@ -243,18 +244,7 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
                   </p>
                 </div>
                 <div className="grid gap-1.5 sm:grid-cols-2 text-xs">
-                  {[
-                    { id: "disparador_campanhas", label: "Disparador & Campanhas" },
-                    { id: "agente_inbound", label: "Agente IA & Inbound" },
-                    { id: "agente_rag", label: "Base RAG (Arquivos & PDFs)" },
-                    { id: "followup", label: "Follow-up & Cadências" },
-                    { id: "followup_automations", label: "Automações de Follow-up" },
-                    { id: "sdr_broadcast", label: "SDR Broadcast" },
-                    { id: "multiplos_chips", label: "Múltiplos Chips WhatsApp" },
-                    { id: "origem_leads", label: "Rastreamento de Origens" },
-                    { id: "antiban_groq", label: "Variações Antiban IA" },
-                    { id: "relatorios", label: "Relatórios de Vendas" },
-                  ].map((mod) => {
+                  {AVAILABLE_CUSTOM_MODULES.map((mod) => {
                     const isChecked = modulosAvulsos.includes(mod.id);
                     return (
                       <label

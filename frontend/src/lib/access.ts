@@ -619,34 +619,6 @@ export function getInheritedPlanPages(planTier?: string | null, client?: any): I
   if (tier === "avancado") {
     return [...INTERNAL_PAGE_ORDER];
   }
-  if (tier === "modular") {
-    const pages: InternalPage[] = [
-      "dashboard",
-      "leads",
-      "banco-de-dados",
-      "whatsapp",
-      "onboarding-wizard",
-    ];
-    if (hasFeatureUnlocked(client, "disparador_campanhas")) {
-      pages.push("campanhas", "planilhas", "disparos");
-    }
-    if (hasFeatureUnlocked(client, "agente_inbound") || hasFeatureUnlocked(client, "agente_rag")) {
-      pages.push("agente", "chatbot-kanban", "chatbot-config", "inbound-agents", "chatbot-docs");
-    }
-    if (hasFeatureUnlocked(client, "followup") || hasFeatureUnlocked(client, "followup_automations")) {
-      pages.push("followup", "fila-de-followup", "followup-empresas", "followup-campanhas", "followup-analytics", "followup-sugestoes");
-    }
-    if (hasFeatureUnlocked(client, "multiplos_chips") || hasFeatureUnlocked(client, "conexoes")) {
-      pages.push("conexoes", "aquecimento");
-    }
-    if (hasFeatureUnlocked(client, "relatorios")) {
-      pages.push("relatorios");
-    }
-    if (hasFeatureUnlocked(client, "comercial-vexo")) {
-      pages.push("apresentacao");
-    }
-    return pages;
-  }
   return [
     "dashboard",
     "leads",
@@ -660,6 +632,7 @@ export function getInheritedPlanPages(planTier?: string | null, client?: any): I
     "conexoes",
     "relatorios",
     "onboarding-wizard",
+    "apresentacao",
   ];
 }
 

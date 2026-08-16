@@ -41,18 +41,28 @@ export const FEATURE_TIERS = {
   },
 } as const;
 
-export const AVAILABLE_MODULAR_FEATURES = [
-  { id: "disparador_campanhas", featureKey: "disparador_campanhas", label: "Disparador & Campanhas em Massa", desc: "Envio em massa com intervalos humanizados e rotação de instâncias" },
-  { id: "agente_inbound", featureKey: "agente_inbound", label: "Agente IA & Chatbot Inbound", desc: "Atendimento automático de clientes com inteligência artificial" },
-  { id: "agente_rag", featureKey: "agente_rag", label: "Base de Conhecimento RAG (Upload de Arquivos & PDFs)", desc: "IA treinada nos documentos, manuais e tabelas de preço" },
-  { id: "followup", featureKey: "followup", label: "Follow-up & Cadências de Retorno", desc: "Gestão e régua de recontato automático de oportunidades" },
-  { id: "followup_automations", featureKey: "followup_automations", label: "Automações por Evento (Follow-up Inteligente)", desc: "Retomada inteligente de propostas e oportunidades paradas" },
-  { id: "sdr_broadcast", featureKey: "sdr_broadcast", label: "Alertas SDR Broadcast (Multiatendentes & Distribuição)", desc: "Distribuição automática de leads quentes para consultores" },
-  { id: "multiplos_chips", featureKey: "multiplos_chips", label: "Chips WhatsApp Adicionais / Múltiplos", desc: "Conexões extras de WhatsApp para múltiplos números" },
-  { id: "origem_leads", featureKey: "origem_leads", label: "Rastreamento de Origem de Leads (Campanhas & Tráfego)", desc: "Atribuição precisa do canal de aquisição (Instagram/Google/TikTok)" },
-  { id: "antiban_groq", featureKey: "antiban_groq", label: "Variações Antiban com IA Groq", desc: "Reescrita dinâmica de mensagens em tempo real para evitar bloqueios" },
-  { id: "relatorios", featureKey: "relatorios", label: "Relatórios de Vendas & Envios", desc: "Métricas avançadas de disparos e performance operacional" },
+export interface CustomModuleDefinition {
+  id: string;
+  featureKey: string;
+  label: string;
+  desc: string;
+  pages?: readonly string[];
+}
+
+export const AVAILABLE_CUSTOM_MODULES: readonly CustomModuleDefinition[] = [
+  { id: "disparador_campanhas", featureKey: "disparador_campanhas", label: "Campanhas & Disparos", desc: "Disparos automáticos e importação de planilhas de leads", pages: ["campanhas", "planilhas", "disparos"] },
+  { id: "agente_inbound", featureKey: "agente_inbound", label: "Agente IA Inbound", desc: "Atendimento inteligente e qualificação automática 24/7", pages: ["agente", "chatbot-kanban", "chatbot-config", "inbound-agents"] },
+  { id: "agente_rag", featureKey: "agente_rag", label: "Base de Conhecimento RAG", desc: "Upload de arquivos, PDFs e documentos de treino para IA", pages: ["chatbot-docs", "agente"] },
+  { id: "followup", featureKey: "followup", label: "Follow-up & Cadências", desc: "Fila de follow-up e sugestões de recontato comercial", pages: ["followup", "fila-de-followup", "followup-sugestoes"] },
+  { id: "followup_automations", featureKey: "followup_automations", label: "Automações de Follow-up", desc: "Disparos automáticos e cadências pós-atendimento", pages: ["followup", "fila-de-followup", "followup-empresas", "followup-campanhas", "followup-analytics"] },
+  { id: "sdr_broadcast", featureKey: "sdr_broadcast", label: "Alertas SDR Broadcast", desc: "Distribuição automática de leads quentes para consultores", pages: ["leads", "conversas"] },
+  { id: "multiplos_chips", featureKey: "multiplos_chips", label: "Múltiplos Chips WhatsApp", desc: "Conexões extras de WhatsApp para múltiplos números", pages: ["conexoes", "aquecimento"] },
+  { id: "origem_leads", featureKey: "origem_leads", label: "Rastreamento de Origens", desc: "Atribuição precisa do canal de aquisição (Instagram/Google/TikTok)", pages: ["leads", "inteligencia-comercial"] },
+  { id: "antiban_groq", featureKey: "antiban_groq", label: "Variações Antiban Groq", desc: "Reescrita dinâmica de mensagens em tempo real para evitar bloqueios", pages: ["campanhas", "disparos"] },
+  { id: "relatorios", featureKey: "relatorios", label: "Relatórios & Inteligência", desc: "Métricas avançadas de disparos e performance operacional", pages: ["relatorios", "inteligencia-comercial"] },
 ] as const;
+
+export const AVAILABLE_MODULAR_FEATURES = AVAILABLE_CUSTOM_MODULES;
 
 export function resolveTenantPlan(client?: any): PlanTier {
   if (!client) return "essencial";
