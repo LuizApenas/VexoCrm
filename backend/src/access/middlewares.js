@@ -7,6 +7,7 @@ import { buildAccessProfile } from "./claims.js";
 import { canAccessAppView, hasInternalPageAccess } from "../accessGuards.js";
 import { hasUserPermission } from "../userAccessScope.js";
 import { accessHasPagePermission, accessHasViewPermission } from "./permissionsRegistry.js";
+import { applyModularPlanGate } from "./modularGate.js";
 
 export async function requireFirebaseAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -73,7 +74,11 @@ export async function requireFirebaseAuth(req, res, next) {
     }
 
     req.authUser = decoded;
-    req.authAccess = accessProfile;
+    // Plano modular aplicado AQUI, o unico ponto por onde toda rota autenticada
+    // passa. O gate so restringe tenant modular; para os demais devolve o perfil
+    // intacto. Sem isto o backend respondia normalmente a modulo nao contratado —
+    // a sidebar escondia o item e a rota continuava aberta.
+    req.authAccess = await applyModularPlanGate(accessProfile);
     next();
   } catch (error) {
     console.error("Firebase token validation failed:", error);
