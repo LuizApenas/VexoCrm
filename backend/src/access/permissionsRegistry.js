@@ -293,3 +293,108 @@ export function buildPermissionsRegistryPayload() {
     })),
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CATALOGO DE MODULOS AVULSOS (plano modular) — fonte unica.
+//
+// Antes isto vivia como uma cascata de `if (isModuleContracted(...))` dentro de
+// deriveTenantInternalPages, com SEIS apelidos so para "agente_inbound" espalhados
+// pelas condicoes. Apelido espalhado e sintoma de nao haver catalogo: cada tela que
+// gravava um nome diferente virava mais um `||`.
+//
+// Aqui os apelidos viram DADO, num lugar so. Nenhum apelido novo foi inventado:
+// `aliases` reproduz exatamente os que a cascata ja aceitava, para tenant que
+// gravou o nome antigo continuar funcionando.
+//
+// `pages` precisa bater com AVAILABLE_CUSTOM_MODULES de frontend/src/lib/planTier.ts.
+// Ha teste travando essa paridade — se divergirem, ele quebra.
+export const MODULE_CATALOG = [
+  {
+    id: "disparador_campanhas",
+    label: "Campanhas & Disparos",
+    pages: ["campanhas", "planilhas", "disparos"],
+    aliases: ["campanhas", "disparos", "planilhas"],
+  },
+  {
+    id: "agente_inbound",
+    label: "Agente IA Inbound",
+    pages: ["agente", "chatbot-kanban", "chatbot-config", "inbound-agents"],
+    aliases: ["agente", "agente_rag", "agente-ia"],
+  },
+  {
+    id: "agente_rag",
+    label: "Base de Conhecimento RAG",
+    pages: ["chatbot-docs", "agente"],
+    aliases: ["rag"],
+  },
+  {
+    id: "followup",
+    label: "Follow-up & Cadências",
+    pages: ["followup", "fila-de-followup", "followup-sugestoes"],
+    aliases: ["followup_automations", "fila-de-followup"],
+  },
+  {
+    id: "followup_automations",
+    label: "Automações de Follow-up",
+    pages: ["followup", "fila-de-followup", "followup-empresas", "followup-campanhas", "followup-analytics"],
+    aliases: [],
+  },
+  {
+    id: "sdr_broadcast",
+    label: "Alertas SDR Broadcast",
+    pages: ["leads", "conversas"],
+    aliases: [],
+  },
+  {
+    id: "multiplos_chips",
+    label: "Múltiplos Chips WhatsApp",
+    pages: ["conexoes", "aquecimento"],
+    aliases: ["conexoes", "chips-whatsapp"],
+  },
+  {
+    id: "origem_leads",
+    label: "Rastreamento de Origens",
+    pages: ["leads", "inteligencia-comercial"],
+    aliases: ["origens", "rastreamento"],
+  },
+  {
+    id: "antiban_groq",
+    label: "Variações Antiban Groq",
+    pages: ["campanhas", "disparos"],
+    aliases: [],
+  },
+  {
+    id: "relatorios",
+    label: "Relatórios & Inteligência",
+    pages: ["relatorios", "inteligencia-comercial"],
+    aliases: ["relatorio"],
+  },
+];
+
+/** Paginas liberadas a QUALQUER tenant modular, independente do que contratou. */
+export const MODULAR_BASE_PAGES = ["dashboard", "leads", "banco-de-dados", "whatsapp", "onboarding-wizard"];
+
+/**
+ * Paginas concedidas pelos modulos contratados. Casa por id ou por alias, sempre
+ * normalizando (minusculas, sem prefixo mod_/modulo_) — que e o que a cascata de
+ * ifs fazia, agora num lugar so.
+ */
+export function pagesForContractedModules(modulosAvulsos = []) {
+  const contratados = (Array.isArray(modulosAvulsos) ? modulosAvulsos : [])
+    .map((item) => String(item ?? "").toLowerCase().replace(/^(mod_|modulo_)/, "").trim())
+    .filter(Boolean);
+
+  // "all"/"*" libera tudo do catalogo — comportamento que a cascata ja tinha.
+  const liberaTudo = contratados.includes("all") || contratados.includes("*");
+  const marcados = new Set(contratados);
+
+  const pages = [];
+  for (const modulo of MODULE_CATALOG) {
+    const casou =
+      liberaTudo ||
+      marcados.has(modulo.id) ||
+      modulo.aliases.some((alias) => marcados.has(alias));
+    if (casou) pages.push(...modulo.pages);
+  }
+  return Array.from(new Set(pages));
+}

@@ -3,7 +3,12 @@
 
 import { normalizeString } from "../textNormalize.js";
 import { getAuth } from "../services/firebase.js";
-import { deriveEffectivePermissions, PERMISSION_KEYS } from "./permissionsRegistry.js";
+import {
+  deriveEffectivePermissions,
+  PERMISSION_KEYS,
+  MODULAR_BASE_PAGES,
+  pagesForContractedModules,
+} from "./permissionsRegistry.js";
 
 export const MANAGED_CLAIM_KEYS = [
   "role",
@@ -575,69 +580,18 @@ export function deriveTenantInternalPages(tenant = {}) {
       ? rawModulos.split(",").map((s) => s.trim())
       : [];
 
-  const isModuleContracted = (key) => {
-    if (modulosAvulsos.includes("all") || modulosAvulsos.includes("*") || modulosAvulsos.includes(key)) return true;
-    const cleanKey = key.toLowerCase().replace(/^(mod_|modulo_)/, "").trim();
-    return modulosAvulsos.some((item) => {
-      const cleanItem = String(item).toLowerCase().replace(/^(mod_|modulo_)/, "").trim();
-      return cleanItem === cleanKey || cleanItem === key.toLowerCase().trim();
-    });
-  };
-
   if (rawTier.includes("modular") || rawTier.includes("avulso") || rawTier === "modular") {
-    const pages = ["dashboard", "leads", "banco-de-dados", "whatsapp", "onboarding-wizard"];
+    // Base universal + o que os modulos contratados liberam. Antes isto era uma
+    // cascata de ifs com os apelidos espalhados pelas condicoes; agora vem do
+    // MODULE_CATALOG, declarado uma vez em permissionsRegistry.js. Mesmo conjunto
+    // de apelidos, nenhum novo — so deixou de estar espalhado.
+    const pages = [
+      ...MODULAR_BASE_PAGES,
+      ...pagesForContractedModules(modulosAvulsos),
+    ];
 
-    if (
-      isModuleContracted("disparador_campanhas") ||
-      isModuleContracted("campanhas") ||
-      isModuleContracted("disparos") ||
-      isModuleContracted("planilhas")
-    ) {
-      pages.push("campanhas", "planilhas", "disparos");
-    }
-    if (
-      isModuleContracted("agente_inbound") ||
-      isModuleContracted("agente") ||
-      isModuleContracted("agente_rag") ||
-      isModuleContracted("agente-ia")
-    ) {
-      pages.push("agente", "chatbot-kanban", "chatbot-config", "inbound-agents");
-    }
-    if (isModuleContracted("agente_rag") || isModuleContracted("rag")) {
-      pages.push("chatbot-docs");
-      if (!pages.includes("agente")) pages.push("agente");
-    }
-    if (
-      isModuleContracted("followup") ||
-      isModuleContracted("followup_automations") ||
-      isModuleContracted("fila-de-followup")
-    ) {
-      pages.push("followup", "fila-de-followup", "followup-sugestoes");
-    }
-    if (isModuleContracted("followup_automations")) {
-      pages.push("followup-empresas", "followup-campanhas", "followup-analytics");
-    }
-    if (
-      isModuleContracted("multiplos_chips") ||
-      isModuleContracted("conexoes") ||
-      isModuleContracted("chips-whatsapp")
-    ) {
-      pages.push("conexoes", "aquecimento");
-    }
-    if (
-      isModuleContracted("origem_leads") ||
-      isModuleContracted("origens") ||
-      isModuleContracted("rastreamento")
-    ) {
-      pages.push("inteligencia-comercial");
-    }
-    if (isModuleContracted("relatorios") || isModuleContracted("relatorio")) {
-      pages.push("relatorios");
-    }
-    if (isModuleContracted("comercial-vexo") || isModuleContracted("apresentacao")) {
-      pages.push("apresentacao");
-    }
-
+    // "conversas" e o nome do modulo sdr_broadcast; a pagina interna e "whatsapp",
+    // que ja esta na base. O filtro por INTERNAL_PAGE_KEYS descarta o resto.
     return Array.from(new Set(pages.filter((p) => INTERNAL_PAGE_KEYS.includes(p))));
   }
 
