@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Database, KeyRound, Link2, Plus, SlidersHorizontal, Wand2 } from "lucide-react";
 import { ZodError } from "zod";
 import { ErrorMessage } from "@/components/ErrorMessage";
@@ -26,6 +27,7 @@ interface CreateTenantDialogProps {
 
 export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps) {
   const createTenant = useCreateLeadClient();
+  const queryClient = useQueryClient();
   const { hasPermission, isAdminUser } = useAuth();
   const [name, setName] = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -106,6 +108,10 @@ export function CreateTenantDialog({ onTenantCreated }: CreateTenantDialogProps)
       });
 
       onTenantCreated(createdTenant);
+
+      await queryClient.invalidateQueries({ queryKey: ["lead-clients"] });
+      await queryClient.refetchQueries({ queryKey: ["lead-clients"] });
+      window.dispatchEvent(new Event("vexo-brand-change"));
 
       toast({
         title: "Tenant criado",

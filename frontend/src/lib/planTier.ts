@@ -140,69 +140,120 @@ export function hasFeatureUnlocked(client: any, featureKey: string): boolean {
   ]);
   if (UNIVERSAL_BASE_FEATURES.has(featureKey)) return true;
 
-  const modulosAvulsos =
+  const rawModulos =
     client.modulos_avulsos ||
-    client.n8n_settings?.modulos_avulsos ||
     client.modulosAvulsos ||
+    client.n8n_settings?.modulos_avulsos ||
     client.n8n_settings?.modulosAvulsos ||
+    client.n8nSettings?.modulos_avulsos ||
+    client.n8nSettings?.modulosAvulsos ||
     [];
 
-  const isModuleInList = (list: any[], key: string) => {
-    if (!Array.isArray(list)) return false;
-    if (list.includes("all")) return true;
+  const modulosAvulsos: string[] = Array.isArray(rawModulos)
+    ? rawModulos
+    : typeof rawModulos === "string"
+    ? rawModulos.split(",").map((s: string) => s.trim())
+    : [];
+
+  const isModuleInList = (list: string[], key: string) => {
+    if (!Array.isArray(list) || list.length === 0) return false;
+    if (list.includes("all") || list.includes("*")) return true;
     if (list.includes(key)) return true;
-    const cleanKey = key.toLowerCase().replace(/^mod_/, "");
-    return list.some(
-      (item: string) =>
-        String(item).toLowerCase().trim() === key.toLowerCase().trim() ||
-        String(item).toLowerCase().replace(/^mod_/, "").trim() === cleanKey
-    );
+    const cleanTarget = key.toLowerCase().replace(/^(mod_|modulo_)/, "").trim();
+    return list.some((item: string) => {
+      const cleanItem = String(item).toLowerCase().replace(/^(mod_|modulo_)/, "").trim();
+      return cleanItem === cleanTarget || cleanItem === key.toLowerCase().trim();
+    });
   };
 
   // Se o plano é Modular/Avulso, APENAS os módulos contratados em modulos_avulsos estão liberados
   if (tier === "modular") {
     if (isModuleInList(modulosAvulsos, featureKey)) return true;
 
-    // Resolução de sinônimos / telas agregadas
-    if (["campanhas", "planilhas", "disparos", "disparador_campanhas"].includes(featureKey)) {
-      return isModuleInList(modulosAvulsos, "disparador_campanhas") || isModuleInList(modulosAvulsos, "campanhas");
+    // Normalização completa de sinônimos / aliases bidirecionais
+    const k = featureKey.toLowerCase().trim();
+
+    // 1. Disparos & Campanhas
+    if (["campanhas", "planilhas", "disparos", "disparador", "disparador_campanhas"].includes(k)) {
+      return (
+        isModuleInList(modulosAvulsos, "disparador_campanhas") ||
+        isModuleInList(modulosAvulsos, "campanhas") ||
+        isModuleInList(modulosAvulsos, "disparos") ||
+        isModuleInList(modulosAvulsos, "planilhas")
+      );
     }
-    if (["agente", "agente_inbound", "chatbot", "chatbot-kanban", "inbound-agents"].includes(featureKey)) {
+
+    // 2. Agente IA (Inbound ou RAG)
+    if (["agente", "agente-ia", "agente_inbound", "inbound", "chatbot", "chatbot-kanban", "inbound-agents"].includes(k)) {
       return (
         isModuleInList(modulosAvulsos, "agente_inbound") ||
         isModuleInList(modulosAvulsos, "agente") ||
-        isModuleInList(modulosAvulsos, "agente_rag")
+        isModuleInList(modulosAvulsos, "agente-ia") ||
+        isModuleInList(modulosAvulsos, "agente_rag") ||
+        isModuleInList(modulosAvulsos, "rag")
       );
     }
-    if (["agente_rag", "rag", "chatbot-docs"].includes(featureKey)) {
-      return isModuleInList(modulosAvulsos, "agente_rag");
+
+    // 3. Base RAG específica
+    if (["agente_rag", "rag", "chatbot-docs"].includes(k)) {
+      return isModuleInList(modulosAvulsos, "agente_rag") || isModuleInList(modulosAvulsos, "rag");
     }
-    if (["followup", "fila-de-followup"].includes(featureKey)) {
+
+    // 4. Follow-up & Cadências
+    if (["followup", "fila-de-followup"].includes(k)) {
       return (
         isModuleInList(modulosAvulsos, "followup") ||
-        isModuleInList(modulosAvulsos, "followup_automations")
+        isModuleInList(modulosAvulsos, "followup_automations") ||
+        isModuleInList(modulosAvulsos, "fila-de-followup")
       );
     }
-    if (["followup_automations"].includes(featureKey)) {
-      return isModuleInList(modulosAvulsos, "followup_automations");
+
+    // 5. Automações de Follow-up específicas
+    if (["followup_automations", "automacoes_followup"].includes(k)) {
+      return (
+        isModuleInList(modulosAvulsos, "followup_automations") ||
+        isModuleInList(modulosAvulsos, "automacoes_followup")
+      );
     }
-    if (["sdr_broadcast"].includes(featureKey)) {
-      return isModuleInList(modulosAvulsos, "sdr_broadcast");
+
+    // 6. SDR Broadcast
+    if (["sdr_broadcast", "sdr", "broadcast"].includes(k)) {
+      return isModuleInList(modulosAvulsos, "sdr_broadcast") || isModuleInList(modulosAvulsos, "sdr");
     }
-    if (["conexoes", "multiplos_chips", "chips", "chips-whatsapp", "aquecimento"].includes(featureKey)) {
-      return isModuleInList(modulosAvulsos, "multiplos_chips") || isModuleInList(modulosAvulsos, "conexoes");
+
+    // 7. Chips WhatsApp & Conexões
+    if (["conexoes", "multiplos_chips", "chips", "chips-whatsapp", "aquecimento"].includes(k)) {
+      return (
+        isModuleInList(modulosAvulsos, "multiplos_chips") ||
+        isModuleInList(modulosAvulsos, "conexoes") ||
+        isModuleInList(modulosAvulsos, "chips-whatsapp") ||
+        isModuleInList(modulosAvulsos, "chips")
+      );
     }
-    if (["origem_leads"].includes(featureKey)) {
-      return isModuleInList(modulosAvulsos, "origem_leads");
+
+    // 8. Origem de Leads
+    if (["origem_leads", "origens", "rastreamento", "origem"].includes(k)) {
+      return (
+        isModuleInList(modulosAvulsos, "origem_leads") ||
+        isModuleInList(modulosAvulsos, "origens") ||
+        isModuleInList(modulosAvulsos, "rastreamento") ||
+        isModuleInList(modulosAvulsos, "origem")
+      );
     }
-    if (["antiban_groq"].includes(featureKey)) {
-      return isModuleInList(modulosAvulsos, "antiban_groq");
+
+    // 9. Antiban Groq
+    if (["antiban_groq", "antiban", "groq"].includes(k)) {
+      return isModuleInList(modulosAvulsos, "antiban_groq") || isModuleInList(modulosAvulsos, "antiban");
     }
-    if (["relatorios"].includes(featureKey)) {
-      return isModuleInList(modulosAvulsos, "relatorios");
+
+    // 10. Relatórios
+    if (["relatorios", "relatorio"].includes(k)) {
+      return isModuleInList(modulosAvulsos, "relatorios") || isModuleInList(modulosAvulsos, "relatorio");
     }
-    if (["comercial-vexo", "apresentacao"].includes(featureKey)) {
-      return isModuleInList(modulosAvulsos, "comercial-vexo");
+
+    // 11. Comercial Vexo
+    if (["comercial-vexo", "apresentacao"].includes(k)) {
+      return isModuleInList(modulosAvulsos, "comercial-vexo") || isModuleInList(modulosAvulsos, "apresentacao");
     }
 
     return false;

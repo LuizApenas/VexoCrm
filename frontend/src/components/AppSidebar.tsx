@@ -110,6 +110,13 @@ export function AppSidebar() {
     setIsCustomizerOpen(false);
   };
 
+  const [, setRefreshKey] = useState(0);
+  useEffect(() => {
+    const handleRefresh = () => setRefreshKey((prev) => prev + 1);
+    window.addEventListener("vexo-brand-change", handleRefresh);
+    return () => window.removeEventListener("vexo-brand-change", handleRefresh);
+  }, []);
+
   const allowedTabs = crmClient?.selectedClient?.n8n_settings?.allowed_tabs;
   const planTier = resolveTenantPlan(crmClient?.selectedClient);
   const inheritedPages = getInheritedPlanPages(planTier, crmClient?.selectedClient);
@@ -118,7 +125,18 @@ export function AppSidebar() {
     if (!crmClient?.selectedClient) return true;
     if (planTier !== "modular") return true;
 
-    // Em plano modular, validar se a ferramenta específica está contratada para o tenant selecionado
+    // Ferramentas base universais (Dashboard, Leads, Banco de Dados, Conversas)
+    if (
+      item.key === "dashboard" ||
+      item.key === "leads" ||
+      item.key === "banco-de-dados" ||
+      item.key === "conversas" ||
+      item.key === "whatsapp"
+    ) {
+      return true;
+    }
+
+    // Em plano modular, validar estritamente se a ferramenta foi contratada para o tenant selecionado
     if (item.key === "campanhas" || item.page === "planilhas") {
       return hasFeatureUnlocked(crmClient.selectedClient, "disparador_campanhas");
     }
@@ -128,7 +146,7 @@ export function AppSidebar() {
         hasFeatureUnlocked(crmClient.selectedClient, "followup_automations")
       );
     }
-    if (item.key === "agente-ia" || item.page === "agente") {
+    if (item.key === "agente-ia" || item.key === "agente" || item.page === "agente") {
       return (
         hasFeatureUnlocked(crmClient.selectedClient, "agente_inbound") ||
         hasFeatureUnlocked(crmClient.selectedClient, "agente") ||
@@ -147,7 +165,7 @@ export function AppSidebar() {
     if (item.key === "comercial-vexo" || item.page === "apresentacao") {
       return hasFeatureUnlocked(crmClient.selectedClient, "comercial-vexo");
     }
-    return true;
+    return false;
   };
 
   const filterItems = (items: typeof OPERACAO_ITEMS) => {

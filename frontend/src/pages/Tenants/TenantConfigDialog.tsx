@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   Database,
@@ -75,6 +76,7 @@ export function TenantConfigDialog({
   const deleteTenant = useDeleteLeadClient();
   const updateN8nSettings = useUpdateLeadClientN8nSettings();
   const verifyTenantTable = useVerifyLeadClientTable();
+  const queryClient = useQueryClient();
   const [tenantPendingDelete, setTenantPendingDelete] = useState<string | null>(null);
 
   const [n8nDrafts, setN8nDrafts] = useState<
@@ -194,6 +196,10 @@ export function TenantConfigDialog({
           degustacaoDiasInput: draft.degustacaoDiasInput,
         },
       }));
+
+      await queryClient.invalidateQueries({ queryKey: ["lead-clients"] });
+      await queryClient.refetchQueries({ queryKey: ["lead-clients"] });
+      window.dispatchEvent(new Event("vexo-brand-change"));
 
       toast({
         title: "Configurações da empresa atualizadas",

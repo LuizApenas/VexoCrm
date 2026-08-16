@@ -119,4 +119,34 @@ describe("planTier resolver", () => {
     expect(hasFeatureUnlocked(modularTenant, "origem_leads")).toBe(false);
     expect(hasFeatureUnlocked(modularTenant, "relatorios")).toBe(false);
   });
+
+  it("recognizes all aliases across modulos_avulsos in n8n_settings or root", () => {
+    const tenantWithN8nModulos = {
+      plan_tier: "modular",
+      n8n_settings: {
+        modulos_avulsos: ["disparador_campanhas", "multiplos_chips", "origem_leads"],
+      },
+    };
+    // Aliases for disparador_campanhas
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "disparador_campanhas")).toBe(true);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "campanhas")).toBe(true);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "planilhas")).toBe(true);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "disparos")).toBe(true);
+
+    // Aliases for multiplos_chips
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "multiplos_chips")).toBe(true);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "chips-whatsapp")).toBe(true);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "conexoes")).toBe(true);
+
+    // Aliases for origem_leads
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "origem_leads")).toBe(true);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "origens")).toBe(true);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "rastreamento")).toBe(true);
+
+    // Non-contracted aliases
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "followup")).toBe(false);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "fila-de-followup")).toBe(false);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "agente")).toBe(false);
+    expect(hasFeatureUnlocked(tenantWithN8nModulos, "agente-ia")).toBe(false);
+  });
 });
