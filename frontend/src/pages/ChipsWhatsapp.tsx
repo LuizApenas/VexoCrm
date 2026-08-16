@@ -17,9 +17,7 @@ export default function ChipsWhatsapp() {
   const crmClient = useOptionalCrmClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const isChipsUnlocked =
-    hasFeatureUnlocked(crmClient?.selectedClient, "multiplos_chips") ||
-    hasFeatureUnlocked(crmClient?.selectedClient, "conexoes");
+  const isChipsUnlocked = hasFeatureUnlocked(crmClient?.selectedClient, "multiplos_chips");
 
   const hasConexoes = canAccessInternalPage("conexoes");
   const hasAquecimento = canAccessInternalPage("aquecimento");

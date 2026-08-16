@@ -21,6 +21,9 @@ export default function AgenteIA() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isRagUnlocked = hasFeatureUnlocked(selectedClient, "agente_rag");
+  const isAgenteUnlocked =
+    hasFeatureUnlocked(selectedClient, "agente_inbound") ||
+    hasFeatureUnlocked(selectedClient, "agente_rag");
 
   const hasAgente = isInternalUser;
   const hasSettings = isInternalUser;
@@ -43,6 +46,27 @@ export default function AgenteIA() {
       <PageShell title="Agente IA" subtitle="Gerencie triagem, prompts, assistentes e monitoramento em tempo real">
         <div className="p-8 text-center text-muted-foreground">
           Você não possui permissão para acessar o ecossistema do Agente IA.
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (!isAgenteUnlocked) {
+    return (
+      <PageShell title="Agente IA" subtitle="Gerencie triagem, prompts, assistentes e monitoramento em tempo real">
+        <div className="max-w-2xl mx-auto py-8">
+          <UpsellCard
+            title="Agente IA & Atendimento Automatizado"
+            subtitle="Módulo Não Contratado no Plano Modular"
+            description="Automatize o primeiro atendimento dos seus leads, faça triagem inteligente, configure múltiplos assistentes com IA e ative a base de conhecimento RAG para responder com base nos seus próprios documentos."
+            moduleName="Agente IA"
+            benefits={[
+              "Chatbot com Inteligência Artificial para atendimento 24/7",
+              "Triagem e qualificação de leads com classificação automática",
+              "Kanban visual de conversas e transição para atendente humano",
+              "Suporte a upload de documentos e base RAG integrada",
+            ]}
+          />
         </div>
       </PageShell>
     );

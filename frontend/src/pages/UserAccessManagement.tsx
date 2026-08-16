@@ -786,7 +786,7 @@ function transitionDraft<T extends AccessDraft>(draft: T): T {
   return normalized;
 }
 
-function buildPayload(draft: AccessDraft) {
+function buildPayload(draft: AccessDraft, clientPlan?: string) {
   const normalized = normalizeDraft(draft);
 
   // Objetivo 1b: a matriz granular é a fonte de verdade quando preenchida. As páginas/views
@@ -806,6 +806,8 @@ function buildPayload(draft: AccessDraft) {
     allowedViews: normalized.allowedViews,
     internalPages: normalized.internalPages,
     permissions,
+    plan_tier: clientPlan === "modular" ? "modular" : undefined,
+    planTier: clientPlan === "modular" ? "modular" : undefined,
     disabled: normalized.disabled,
   };
 }
@@ -1494,11 +1496,13 @@ function UserPlanAndSecurityControls({
   draft,
   disabled,
   isAdminUser,
+  tenantPlan,
   onChange,
 }: {
   draft: AccessDraft;
   disabled: boolean;
   isAdminUser?: boolean;
+  tenantPlan?: string;
   onChange: (patch: Partial<AccessDraft>) => void;
 }) {
   const isAdvanced =
@@ -1617,6 +1621,81 @@ function UserPlanAndSecurityControls({
       : draft.internalPages.filter((p) => p !== "usuarios");
     onChange({ permissions: nextPerms, internalPages: nextPages });
   };
+
+  if (tenantPlan === "modular") {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              Plano de Funcionalidades
+            </label>
+            <Badge variant="outline" className="font-semibold text-[10px] border-sky-500/30 text-sky-700 dark:text-sky-300">
+              🧩 Plano Modular (Herdado)
+            </Badge>
+          </div>
+
+          <div className="rounded-xl border border-sky-500 bg-sky-500/10 p-4 text-left">
+            <div className="flex items-center justify-between">
+              <p className="font-bold text-sm text-foreground">🧩 Plano Modular (Herdado da Empresa)</p>
+              <CheckCircle2 className="w-4 h-4 text-sky-600" />
+            </div>
+            <p className="text-xs text-muted-foreground leading-4 mt-1.5">
+              O usuário herda estritamente as ferramentas avulsas contratadas por esta empresa.
+            </p>
+          </div>
+        </div>
+
+        {/* Restrições Opcionais de Segurança */}
+        <div className="space-y-3 pt-4 border-t border-border/40">
+          <div className="space-y-0.5">
+            <h5 className="text-xs font-bold text-foreground uppercase tracking-wider">
+              Restrições Opcionais de Segurança
+            </h5>
+            <p className="text-xs text-muted-foreground">
+              Ajuste permissões sensíveis de dados sem precisar alterar a base de ferramentas do plano.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/5 hover:bg-muted/10 transition-colors cursor-pointer">
+              <div className="space-y-0.5">
+                <span className="text-xs font-semibold text-foreground">Permitir Exportação de Leads</span>
+                <p className="text-[11px] text-muted-foreground">
+                  Habilita botões de download e exportação de relatórios em Excel/CSV
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                disabled={disabled}
+                checked={allowLeadsExport}
+                onChange={(e) => toggleLeadsExport(e.target.checked)}
+                className="rounded border-border text-primary focus:ring-primary size-4"
+              />
+            </label>
+
+            {isAdminUser && (
+              <label className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/5 hover:bg-muted/10 transition-colors cursor-pointer">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-foreground">Gerenciamento de Equipe</span>
+                  <p className="text-[11px] text-muted-foreground">
+                    Permite ao usuário convidar, editar e gerenciar outros membros da equipe
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  disabled={disabled}
+                  checked={allowUsersManage}
+                  onChange={(e) => toggleUsersManage(e.target.checked)}
+                  className="rounded border-border text-primary focus:ring-primary size-4"
+                />
+              </label>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -1902,6 +1981,11 @@ function AccessGovernance({ draft, accessProfiles, clients, selectedClientId, ed
           <UserPlanAndSecurityControls
             draft={normalized}
             disabled={matrixDisabled}
+            isAdminUser={isAdminUser}
+            tenantPlan={resolveTenantPlan(
+              clients.find((c) => c.id === normalized.clientIds[0]) ||
+                (selectedClientId ? clients.find((c) => c.id === selectedClientId) : undefined)
+            )}
             onChange={applyPatch}
           />
         </div>
@@ -2296,7 +2380,11 @@ export default function UserAccessManagement() {
         throw new Error("Usuario nao autenticado.");
       }
 
-      const payload = buildPayload(preparedDraft);
+      const targetClient =
+        clients.find((c) => c.id === preparedDraft.clientIds[0]) ||
+        (selectedClientId ? clients.find((c) => c.id === selectedClientId) : undefined);
+      const targetPlan = resolveTenantPlan(targetClient);
+      const payload = buildPayload(preparedDraft, targetPlan);
 
       const res = await fetchApi(`/api/admin/users/${encodeURIComponent(user.uid)}/access`, {
         method: "PATCH",
@@ -2364,8 +2452,13 @@ export default function UserAccessManagement() {
         throw new Error("Usuario nao autenticado.");
       }
 
+      const targetClient =
+        clients.find((c) => c.id === preparedDraft.clientIds[0]) ||
+        (selectedClientId ? clients.find((c) => c.id === selectedClientId) : undefined);
+      const targetPlan = resolveTenantPlan(targetClient);
+
       const payload = {
-        ...buildPayload(preparedDraft),
+        ...buildPayload(preparedDraft, targetPlan),
         email: preparedDraft.email.trim().toLowerCase(),
         password: preparedDraft.password,
         displayName: preparedDraft.displayName.trim() || undefined,
@@ -2645,63 +2738,95 @@ export default function UserAccessManagement() {
                       ))}
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Plano de Funcionalidades</label>
-                      {!isAdminUser && (
-                        <Badge variant="outline" className="text-[10px] font-semibold">
-                          {activeTenantPlan === "avancado" ? "🟣 Plano Avançado (Herdado)" : "🟢 Plano Essencial (Herdado)"}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        disabled={!isAdminUser}
-                        onClick={() => {
-                          if (!isAdminUser) return;
-                          updateCreateDraft({
-                            accessPreset: "commercial",
-                          });
-                        }}
-                        className={cn(
-                          "rounded-xl border p-3 text-left transition-colors",
-                          createDraft.accessPreset !== "admin"
-                            ? "border-emerald-500 bg-emerald-500/10 shadow-sm"
-                            : "border-border/60 bg-muted/5 hover:bg-muted/10",
-                          !isAdminUser && "opacity-80 cursor-not-allowed"
+                  {(() => {
+                    const selectedCreateClient =
+                      clients.find((c) => c.id === createDraft.clientIds[0]) ||
+                      (selectedClientId ? clients.find((c) => c.id === selectedClientId) : undefined);
+                    const resolvedCreateTenantPlan = resolveTenantPlan(selectedCreateClient);
+
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                            Plano de Funcionalidades
+                          </label>
+                          {!isAdminUser && (
+                            <Badge variant="outline" className="text-[10px] font-semibold">
+                              {resolvedCreateTenantPlan === "modular"
+                                ? "🧩 Plano Modular (Herdado)"
+                                : resolvedCreateTenantPlan === "avancado"
+                                  ? "🟣 Plano Avançado (Herdado)"
+                                  : "🟢 Plano Essencial (Herdado)"}
+                            </Badge>
+                          )}
+                        </div>
+
+                        {resolvedCreateTenantPlan === "modular" ? (
+                          <div className="rounded-xl border border-sky-500 bg-sky-500/10 p-4 text-left">
+                            <div className="flex items-center justify-between">
+                              <p className="font-bold text-sm text-foreground">🧩 Plano Modular (Herdado da Empresa)</p>
+                              <CheckCircle2 className="w-4 h-4 text-sky-600" />
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-4 mt-1.5">
+                              O usuário herda estritamente as ferramentas avulsas contratadas por esta empresa.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              disabled={!isAdminUser}
+                              onClick={() => {
+                                if (!isAdminUser) return;
+                                updateCreateDraft({
+                                  accessPreset: "commercial",
+                                });
+                              }}
+                              className={cn(
+                                "rounded-xl border p-3 text-left transition-colors",
+                                createDraft.accessPreset !== "admin"
+                                  ? "border-emerald-500 bg-emerald-500/10 shadow-sm"
+                                  : "border-border/60 bg-muted/5 hover:bg-muted/10",
+                                !isAdminUser && "opacity-80 cursor-not-allowed"
+                              )}
+                            >
+                              <p className="font-bold text-xs text-foreground">🟢 Plano Essencial — Base</p>
+                              <p className="text-[10px] text-muted-foreground leading-3 mt-1">
+                                Dashboard, Leads, Conversas, Disparos, IA Inbound, Follow-up
+                              </p>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!isAdminUser}
+                              onClick={() => {
+                                if (!isAdminUser) return;
+                                updateCreateDraft({
+                                  accessPreset: "admin",
+                                });
+                              }}
+                              className={cn(
+                                "rounded-xl border p-3 text-left transition-colors",
+                                createDraft.accessPreset === "admin"
+                                  ? "border-purple-500 bg-purple-500/10 shadow-sm"
+                                  : "border-border/60 bg-muted/5 hover:bg-muted/10",
+                                !isAdminUser && "opacity-80 cursor-not-allowed"
+                              )}
+                            >
+                              <p className="font-bold text-xs text-foreground">🟣 Plano Avançado — Completo</p>
+                              <p className="text-[10px] text-muted-foreground leading-3 mt-1">
+                                Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips
+                              </p>
+                            </button>
+                          </div>
                         )}
-                      >
-                        <p className="font-bold text-xs text-foreground">🟢 Plano Essencial — Base</p>
-                        <p className="text-[10px] text-muted-foreground leading-3 mt-1">Dashboard, Leads, Conversas, Disparos, IA Inbound, Follow-up</p>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!isAdminUser}
-                        onClick={() => {
-                          if (!isAdminUser) return;
-                          updateCreateDraft({
-                            accessPreset: "admin",
-                          });
-                        }}
-                        className={cn(
-                          "rounded-xl border p-3 text-left transition-colors",
-                          createDraft.accessPreset === "admin"
-                            ? "border-purple-500 bg-purple-500/10 shadow-sm"
-                            : "border-border/60 bg-muted/5 hover:bg-muted/10",
-                          !isAdminUser && "opacity-80 cursor-not-allowed"
+                        {!isAdminUser && resolvedCreateTenantPlan !== "modular" && (
+                          <p className="text-[11px] text-muted-foreground italic">
+                            O plano de recursos é herdado da empresa contratante. Apenas o Master Admin pode alterar o plano.
+                          </p>
                         )}
-                      >
-                        <p className="font-bold text-xs text-foreground">🟣 Plano Avançado — Completo</p>
-                        <p className="text-[10px] text-muted-foreground leading-3 mt-1">Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips</p>
-                      </button>
-                    </div>
-                    {!isAdminUser && (
-                      <p className="text-[11px] text-muted-foreground italic">
-                        O plano de recursos é herdado da empresa contratante. Apenas o Master Admin pode alterar o plano.
-                      </p>
-                    )}
-                  </div>
+                      </div>
+                    );
+                  })()}
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Empresa / Tenant</label>
                     <Select
@@ -2759,6 +2884,11 @@ export default function UserAccessManagement() {
                   <UserPlanAndSecurityControls
                     draft={createDraft}
                     disabled={!canEditUsers}
+                    isAdminUser={isAdminUser}
+                    tenantPlan={resolveTenantPlan(
+                      clients.find((c) => c.id === createDraft.clientIds[0]) ||
+                        (selectedClientId ? clients.find((c) => c.id === selectedClientId) : undefined)
+                    )}
                     onChange={(patch) => updateCreateDraft(patch)}
                   />
                 </TabsContent>
@@ -3232,6 +3362,10 @@ export default function UserAccessManagement() {
                                       draft={selectedDraft}
                                       disabled={!selectedEditable}
                                       isAdminUser={isAdminUser}
+                                      tenantPlan={resolveTenantPlan(
+                                        clients.find((c) => c.id === selectedDraft.clientIds[0]) ||
+                                          (selectedClientId ? clients.find((c) => c.id === selectedClientId) : undefined)
+                                      )}
                                       onChange={(patch) => updateDraft(selectedUser.uid, patch)}
                                     />
                                   </TabsContent>
