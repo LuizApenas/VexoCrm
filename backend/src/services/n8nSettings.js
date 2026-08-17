@@ -77,6 +77,8 @@ export function maskN8nSettings(row) {
     plan_tier: row.plan_tier || "essencial",
     modulos_avulsos: Array.isArray(row.modulos_avulsos) ? row.modulos_avulsos : [],
     degustacao_expira_em: row.degustacao_expira_em || null,
+    // Override do limite de chips deste tenant. NULL = usa a regra do plano.
+    chip_limit: row.chip_limit === null || row.chip_limit === undefined ? null : Number(row.chip_limit),
     // Preserva a lista de instâncias já mascarada por maskEvolutionInstance (server.js:1717).
     // Sem isso a whitelist cortava o campo e a UI mostrava "0 instâncias".
     evolution_instances: Array.isArray(row.evolution_instances) ? row.evolution_instances : [],
@@ -102,7 +104,7 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, degustacao_expira_em, updated_at, updated_by_uid, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, chip_limit, degustacao_expira_em, updated_at, updated_by_uid, updated_by_email"
     )
     .eq("client_id", clientId)
     .maybeSingle();
@@ -146,7 +148,7 @@ export async function getLeadClientN8nSettingsMap(clientIds) {
       // Como maskN8nSettings faz `Array.isArray(row.chatbot_instances) ? ... : []`, a
       // coluna ausente virava [] e a tela do Agente IA relia "Todos sem agente inbound"
       // a cada visita — a marcacao de chip era gravada e depois lida como vazia.
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, degustacao_expira_em, updated_at, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, chip_limit, degustacao_expira_em, updated_at, updated_by_email"
     )
     .in("client_id", clientIds);
 

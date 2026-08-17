@@ -5,7 +5,9 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { isPathAllowedForClient, getInheritedPlanPages } from "@/lib/access";
-import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
+import { resolveTenantPlan } from "@/lib/planTier";
+import { isModuleLocked } from "@/lib/moduleAccess";
+import { useChipLimits } from "@/hooks/useChipLimits";
 import { 
   OPERACAO_ITEMS, 
   INTELIGENCIA_ITEMS, 
@@ -117,30 +119,17 @@ export function AppSidebar() {
     return () => window.removeEventListener("vexo-brand-change", handleRefresh);
   }, []);
 
+  const chipLimits = useChipLimits();
   const allowedTabs = crmClient?.selectedClient?.n8n_settings?.allowed_tabs;
   const planTier = resolveTenantPlan(crmClient?.selectedClient);
   const inheritedPages = getInheritedPlanPages(planTier, crmClient?.selectedClient);
 
-  const isSidebarItemModularlyLocked = (item: (typeof OPERACAO_ITEMS)[number]): boolean => {
-    if (!crmClient?.selectedClient) return false;
-    if (planTier !== "modular") return false;
-
-    // Ferramentas base universais (Dashboard, Leads, Conversas).
-    // Banco de Dados saiu daqui: virou módulo vendável avulso.
-    if (
-      item.key === "dashboard" ||
-      item.key === "leads" ||
-      item.key === "conversas" ||
-      item.key === "whatsapp" ||
-      item.key === "admin" ||
-      item.key === "onboarding" ||
-      item.key === "equipe-usuarios"
-    ) {
-      return false;
-    }
-
-    return !hasFeatureUnlocked(crmClient.selectedClient, item.key || item.page);
-  };
+  // Uma implementação só, compartilhada com as telas: lib/moduleAccess.
+  // Antes esta função tinha lista própria de páginas universais e um
+  // curto-circuito que só avaliava tenant modular; era a segunda implementação
+  // da mesma regra, e discordava da tela (menu sem cadeado, tela bloqueada).
+  const isSidebarItemModularlyLocked = (item: (typeof OPERACAO_ITEMS)[number]): boolean =>
+    isModuleLocked(crmClient?.selectedClient, item.key || item.page, chipLimits);
 
   const filterItems = (items: typeof OPERACAO_ITEMS) => {
     return items

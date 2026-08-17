@@ -18,6 +18,7 @@ import { createLeadMessaging } from "../shared/leadMessaging.js";
 import { syncEvolutionInstanceChatsAndMessages } from "../../services/evolution.js";
 import { whatsappSessionManager } from "../../whatsapp.js";
 import { propagateTenantPermissions } from "../../access/claims.js";
+import { makeChipLimitGuard } from "../../access/chipLimitGate.js";
 
 // Trava de backend contra o martelo em /instance/fetchInstances da Evolution (incidente
 // 15/06). Cache curto + dedupe de chamadas concorrentes: N requisições na janela viram
@@ -53,6 +54,12 @@ export function registerIntegrationsRoutes(app, deps) {
     upsertLeadClientEvolutionInstance,
     upsertLeadClientN8nSettings,
   } = deps;
+
+  // Limite de chips por plano, recusado no backend. Frontend escondendo botao ja
+  // se provou insuficiente neste sistema.
+  const requireChipQuota = makeChipLimitGuard((tenantId) =>
+    getLeadClientEvolutionInstances(tenantId)
+  );
 
   const { maskSecretPresence } = createLeadMessaging({
     supabase,
@@ -868,6 +875,7 @@ export function registerIntegrationsRoutes(app, deps) {
     "/api/lead-clients/:tenantId/evolution-instances",
     requireFirebaseAuth,
     requireAnyInternalPageAccess(["conexoes", "empresas"]),
+    requireChipQuota,
     async (req, res) => {
       if (!ensureDb(res)) return;
 
@@ -897,6 +905,7 @@ export function registerIntegrationsRoutes(app, deps) {
     "/api/lead-clients/:tenantId/evolution-instances/provision",
     requireFirebaseAuth,
     requireAnyInternalPageAccess(["conexoes", "empresas"]),
+    requireChipQuota,
     async (req, res) => {
       if (!ensureDb(res)) return;
 

@@ -98,6 +98,14 @@ async function isAlreadyApplied(pool, filename) {
     "20260730000000_create_vexo_lead_intelligence.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leads' AND column_name='extracted_from_wa') AS ok`,
     "20260730150000_add_chatbot_llm_model_to_n8n_settings.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='chatbot_llm_model') AS ok`,
     "20260812160000_add_recontact_message_to_n8n_settings.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='recontact_message') AS ok`,
+    // Sentinela checa a coluna QUE ESTA MIGRATION CRIA (chip_limit) e a tabela que
+    // ela garante (system_settings) — nao uma coluna vizinha. Sentinela que testa
+    // menos do que a migration faz deixa o baseline de migrate.js:143-149 marca-la
+    // como aplicada SEM executar; foi assim que a 20260730000000 nunca rodou.
+    "20260817160000_add_chip_limit_to_n8n_settings.sql": `SELECT (
+      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='chip_limit')
+      AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='system_settings')
+    ) AS ok`,
   };
 
   const query = checks[filename];

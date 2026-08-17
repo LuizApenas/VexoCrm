@@ -1,6 +1,7 @@
 // backend/src/domains/superadmin/routes.js
 import pg from "pg";
 import { requireFirebaseAuth } from "../../access/middlewares.js";
+import { normalizeChipLimits } from "../../access/chipLimit.js";
 
 const { Pool } = pg;
 
@@ -207,6 +208,7 @@ export function registerSuperAdminRoutes(app, deps) {
 
   // GET /api/system/settings -> Obter configurações globais do sistema
   app.get("/api/system/settings", requireFirebaseAuth, async (req, res) => {
+    let chipLimitsBruto = null;
     try {
       const { data } = await supabase.from("system_settings").select("key, value");
       if (data && Array.isArray(data) && data.length > 0) {
@@ -214,12 +216,18 @@ export function registerSuperAdminRoutes(app, deps) {
           if (row.key === "upsell_whatsapp") {
             inMemorySettings.upsellWhatsappNumber = row.value;
           }
+          if (row.key === "chip_limits") {
+            chipLimitsBruto = typeof row.value === "string" ? JSON.parse(row.value) : row.value;
+          }
         });
       }
     } catch (e) {
       // Ignora erro e usa fallback em memória
     }
-    res.json(inMemorySettings);
+    // Limite de chips por plano. Menu e tela de Chips leem daqui pela mesma
+    // funcao de normalizacao do backend, para nao inventarem numero proprio.
+    // Ausencia cai em CHIP_LIMIT_DEFAULTS — nunca em bloqueio.
+    res.json({ ...inMemorySettings, chipLimits: normalizeChipLimits(chipLimitsBruto) });
   });
 
   // POST /api/system/settings -> Atualizar configurações globais do sistema (SuperAdmin)
