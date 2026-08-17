@@ -369,10 +369,23 @@ export const MODULE_CATALOG = [
     pages: ["relatorios", "inteligencia-comercial"],
     aliases: ["relatorio"],
   },
+  // Banco de Dados saiu da base universal e virou vendavel avulso. Id igual a
+  // chave de pagina de proposito: uma chave canonica so, zero apelido novo.
+  // Independente do Disparador — contratar um nao libera o outro.
+  {
+    id: "banco-de-dados",
+    label: "Banco de Dados Inteligente",
+    pages: ["banco-de-dados"],
+    aliases: [],
+  },
 ];
 
 /** Paginas liberadas a QUALQUER tenant modular, independente do que contratou. */
-export const MODULAR_BASE_PAGES = ["dashboard", "leads", "banco-de-dados", "whatsapp", "onboarding-wizard"];
+// Base universal do plano modular: o que todo tenant enxerga sem contratar nada.
+// "banco-de-dados" saiu daqui e virou modulo vendavel (ver MODULE_CATALOG).
+// "onboarding-wizard" fica: e o Treinamento Vexo, que orienta o proprio uso do
+// sistema — tirar deixaria o cliente sem manual.
+export const MODULAR_BASE_PAGES = ["dashboard", "leads", "whatsapp", "onboarding-wizard"];
 
 /**
  * Paginas concedidas pelos modulos contratados. Casa por id ou por alias, sempre

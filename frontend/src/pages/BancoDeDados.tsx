@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
 import { PageShell } from "@/components/PageShell";
+import { UpsellCard } from "@/components/UpsellCard";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1119,6 +1120,31 @@ export default function BancoDeDados() {
         return <span className="inline-flex items-center gap-1 text-xs font-normal text-slate-400"><Snowflake className="w-3.5 h-3.5" /> Frio</span>;
     }
   };
+
+  // Gate DEPOIS de todos os hooks — nunca antes. Gate acima dos hooks foi o que
+  // deixou /crm/relatorios em tela branca com React error #300 (ver
+  // src/test/upsellHookOrder.test.tsx).
+  const isBancoUnlocked = hasFeatureUnlocked(crmClient?.selectedClient, "banco-de-dados");
+  if (!isBancoUnlocked) {
+    return (
+      <PageShell title="Banco de Dados" subtitle="Sua base de leads própria, organizada por procedência e relacionamento">
+        <div className="max-w-2xl mx-auto py-8">
+          <UpsellCard
+            title="Banco de Dados Inteligente"
+            subtitle="Módulo Não Contratado no Plano Modular"
+            description="Centralize sua base de leads: importe planilhas, extraia contatos do WhatsApp e trabalhe a carteira inteira em um lugar só."
+            moduleName="Banco de Dados Inteligente"
+            benefits={[
+              "Importação de planilhas com detecção automática de colunas",
+              "Extração de contatos direto das conversas do WhatsApp",
+              "Separação por procedência e estado de relacionamento",
+              "Edição em massa, etiquetas e exportação completa",
+            ]}
+          />
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell>

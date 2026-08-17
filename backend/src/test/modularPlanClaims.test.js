@@ -34,8 +34,9 @@ describe("Modular Plan Claims & Gating", () => {
     // Base universal
     expect(pages).toContain("dashboard");
     expect(pages).toContain("leads");
-    expect(pages).toContain("banco-de-dados");
     expect(pages).toContain("whatsapp");
+    // banco-de-dados saiu da base: virou modulo vendavel avulso.
+    expect(pages).not.toContain("banco-de-dados");
     expect(pages).toContain("onboarding-wizard");
 
     // Contracted module pages
@@ -98,8 +99,9 @@ describe("Modular Plan Claims & Gating", () => {
     // Universal base
     expect(pages).toContain("dashboard");
     expect(pages).toContain("leads");
-    expect(pages).toContain("banco-de-dados");
     expect(pages).toContain("whatsapp");
+    // banco-de-dados saiu da base: virou modulo vendavel avulso.
+    expect(pages).not.toContain("banco-de-dados");
 
     // Contracted modules
     expect(pages).toContain("chatbot-docs");

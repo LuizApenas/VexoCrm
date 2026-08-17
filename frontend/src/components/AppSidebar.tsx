@@ -125,11 +125,11 @@ export function AppSidebar() {
     if (!crmClient?.selectedClient) return false;
     if (planTier !== "modular") return false;
 
-    // Ferramentas base universais (Dashboard, Leads, Banco de Dados, Conversas)
+    // Ferramentas base universais (Dashboard, Leads, Conversas).
+    // Banco de Dados saiu daqui: virou módulo vendável avulso.
     if (
       item.key === "dashboard" ||
       item.key === "leads" ||
-      item.key === "banco-de-dados" ||
       item.key === "conversas" ||
       item.key === "whatsapp" ||
       item.key === "admin" ||

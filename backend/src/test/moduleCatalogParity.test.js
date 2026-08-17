@@ -98,9 +98,14 @@ describe("resolucao por id e por apelido", () => {
 });
 
 describe("base universal do plano modular", () => {
-  it("inclui as quatro paginas que todo tenant modular ve", () => {
-    for (const base of ["dashboard", "leads", "banco-de-dados", "whatsapp"]) {
+  it("inclui as paginas que todo tenant modular ve", () => {
+    for (const base of ["dashboard", "leads", "whatsapp"]) {
       expect(MODULAR_BASE_PAGES).toContain(base);
     }
+  });
+
+  it("banco-de-dados NAO esta na base: virou modulo vendavel", () => {
+    expect(MODULAR_BASE_PAGES).not.toContain("banco-de-dados");
+    expect(MODULE_CATALOG.some((m) => m.id === "banco-de-dados")).toBe(true);
   });
 });

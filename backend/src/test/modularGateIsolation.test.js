@@ -89,9 +89,12 @@ describe("tenant modular com so disparador_campanhas", () => {
 
   it("mantem a base universal do plano modular", async () => {
     const access = await applyModularPlanGate(usuarioDoTenant(TENANT));
-    for (const base of ["dashboard", "leads", "banco-de-dados", "whatsapp"]) {
+    for (const base of ["dashboard", "leads", "whatsapp"]) {
       expect(passouNoGuard(access, base).passou, `${base} deveria continuar liberada`).toBe(true);
     }
+    // banco-de-dados saiu da base universal e virou modulo vendavel: este tenant
+    // so contratou disparador_campanhas, entao nao tem.
+    expect(passouNoGuard(access, "banco-de-dados").passou).toBe(false);
   });
 
   it("barra tambem agente, conexoes e relatorios nao contratados", async () => {

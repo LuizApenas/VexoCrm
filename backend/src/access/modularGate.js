@@ -17,6 +17,7 @@
 
 import { deriveTenantInternalPages } from "./claims.js";
 import { getLeadClientN8nSettings } from "../services/n8nSettings.js";
+import { sendError } from "../services/httpInfra.js";
 
 const TTL_MS = 60_000;
 const cache = new Map();
@@ -97,4 +98,47 @@ export async function applyModularPlanGate(accessProfile) {
   }
 
   return { ...accessProfile, internalPages: depois, planTier: "modular" };
+}
+
+/**
+ * Exige que a pagina venha de um modulo CONTRATADO — mas so para tenant modular.
+ *
+ * Nao da para usar requireInternalPageAccess aqui: ele cobra a chave da claim, e
+ * claim de usuario antigo nao tem "banco-de-dados" (a chave so entrou em
+ * INTERNAL_PAGE_KEYS em a3fae32, e claim so e reescrita quando o acesso do
+ * usuario e salvo). Cobrar a chave hoje derrubaria usuario de tenant pagante que
+ * usa a tela todo dia.
+ *
+ * Entao o criterio e o unico que ja e verdade agora: para tenant modular,
+ * applyModularPlanGate acabou de reduzir internalPages ao que o plano concede —
+ * se a pagina nao sobreviveu ali, o modulo nao foi contratado. Para tenant
+ * essencial e avancado o middleware nao faz nada, porque modulos_avulsos nunca
+ * governou esses planos.
+ */
+export function requireContractedModulePage(page) {
+  return (req, res, next) => {
+    const access = req.authAccess;
+
+    if (access?.isAdmin || access?.role === "superadmin") {
+      next();
+      return;
+    }
+
+    // planTier so vale "modular" quando applyModularPlanGate agiu de fato.
+    if (access?.planTier !== "modular") {
+      next();
+      return;
+    }
+
+    if (Array.isArray(access.internalPages) && access.internalPages.includes(page)) {
+      next();
+      return;
+    }
+
+    console.warn("[modular-gate] modulo nao contratado", {
+      page,
+      clientId: access?.clientId,
+    });
+    sendError(res, 403, "FORBIDDEN", `Módulo não contratado no plano modular: ${page}`);
+  };
 }

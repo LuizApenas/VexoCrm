@@ -60,6 +60,7 @@ export const AVAILABLE_CUSTOM_MODULES: readonly CustomModuleDefinition[] = [
   { id: "origem_leads", featureKey: "origem_leads", label: "Rastreamento de Origens", desc: "Atribuição precisa do canal de aquisição (Instagram/Google/TikTok)", pages: ["leads", "inteligencia-comercial"] },
   { id: "antiban_groq", featureKey: "antiban_groq", label: "Variações Antiban Groq", desc: "Reescrita dinâmica de mensagens em tempo real para evitar bloqueios", pages: ["campanhas", "disparos"] },
   { id: "relatorios", featureKey: "relatorios", label: "Relatórios & Inteligência", desc: "Métricas avançadas de disparos e performance operacional", pages: ["relatorios", "inteligencia-comercial"] },
+  { id: "banco-de-dados", featureKey: "banco-de-dados", label: "Banco de Dados Inteligente", desc: "Base de leads própria: importação, extração do WhatsApp, exportação e edição em massa", pages: ["banco-de-dados"] },
 ] as const;
 
 export const AVAILABLE_MODULAR_FEATURES = AVAILABLE_CUSTOM_MODULES;
@@ -133,12 +134,13 @@ export function hasFeatureUnlocked(client: any, featureKey: string): boolean {
   const tier = resolveTenantPlan(client);
   if (tier === "avancado") return true;
 
-  // Recursos base universais que sempre estão liberados para todo cliente
+  // Recursos base universais que sempre estão liberados para todo cliente.
+  // "banco_dados"/"banco-de-dados" saíram daqui: viraram módulo vendável avulso.
+  // Todo tenant que já enxergava o Banco continua enxergando porque a migration
+  // 20260817120000 gravou o módulo como contratado para ele.
   const UNIVERSAL_BASE_FEATURES = new Set([
     "dashboard",
     "leads",
-    "banco_dados",
-    "banco-de-dados",
     "conversas",
     "inbox",
     "whatsapp",

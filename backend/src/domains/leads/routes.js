@@ -13,6 +13,7 @@ import {
   ensureLeadIntelligenceColumns,
 } from "../../lead-client-tables.js";
 import { hasAccessPermission } from "../../accessGuards.js";
+import { requireContractedModulePage } from "../../access/modularGate.js";
 import { upsertLeadByPhone } from "../../services/leadUpsert.js";
 import { summarizeChatWithAI } from "./chatInsight.js";
 import {
@@ -197,6 +198,12 @@ function detectImportColumns(rows) {
 }
 
 export function registerLeadsRoutes(app, deps) {
+  // Banco de Dados virou modulo vendavel avulso. As rotas EXCLUSIVAS da tela
+  // (importacao, extracao do WhatsApp, exportacao, criacao e edicao em massa)
+  // passam a exigir o modulo contratado. GET /api/leads fica de fora: e a mesma
+  // rota que serve a tela Leads, que continua na base universal.
+  const requireBancoDeDados = requireContractedModulePage("banco-de-dados");
+
   const {
     buildDispatchLeads,
     buildImportPreview,
@@ -894,7 +901,7 @@ export function registerLeadsRoutes(app, deps) {
   });
 
   // Extração automática de contatos e mensagens via WhatsApp (Evolution API)
-  app.post("/api/leads/extract-wa-contacts", requireFirebaseAuth, async (req, res) => {
+  app.post("/api/leads/extract-wa-contacts", requireFirebaseAuth, requireBancoDeDados, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.body?.clientId || req.query?.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
@@ -1207,7 +1214,7 @@ export function registerLeadsRoutes(app, deps) {
   });
 
   // Importação simplificada via CSV / Excel com Suporte a Tags de Origem
-  app.post("/api/leads/import-csv", requireFirebaseAuth, async (req, res) => {
+  app.post("/api/leads/import-csv", requireFirebaseAuth, requireBancoDeDados, async (req, res) => {
     if (!ensureDb(res)) return;
 
     const requestedClientId = normalizeString(req.body?.clientId);
@@ -1283,7 +1290,7 @@ export function registerLeadsRoutes(app, deps) {
   });
 
   // Exportação filtrada para CSV
-  app.get("/api/leads/export", requireFirebaseAuth, async (req, res) => {
+  app.get("/api/leads/export", requireFirebaseAuth, requireBancoDeDados, async (req, res) => {
     if (!ensureDb(res)) return;
 
     const requestedClientId = normalizeString(req.query.clientId);
@@ -1333,7 +1340,7 @@ export function registerLeadsRoutes(app, deps) {
   });
 
   // Criar lead manual
-  app.post("/api/leads/create", requireFirebaseAuth, async (req, res) => {
+  app.post("/api/leads/create", requireFirebaseAuth, requireBancoDeDados, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.body?.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
@@ -1416,7 +1423,7 @@ export function registerLeadsRoutes(app, deps) {
   });
 
   // Atualização em lote de leads
-  app.post("/api/leads/bulk-update", requireFirebaseAuth, async (req, res) => {
+  app.post("/api/leads/bulk-update", requireFirebaseAuth, requireBancoDeDados, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.body?.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
@@ -1469,7 +1476,7 @@ export function registerLeadsRoutes(app, deps) {
   });
 
   // Exclusão em lote de leads
-  app.post("/api/leads/bulk-delete", requireFirebaseAuth, async (req, res) => {
+  app.post("/api/leads/bulk-delete", requireFirebaseAuth, requireBancoDeDados, async (req, res) => {
     if (!ensureDb(res)) return;
     const requestedClientId = normalizeString(req.body?.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
