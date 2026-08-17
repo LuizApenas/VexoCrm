@@ -66,27 +66,6 @@ export default function Relatorios() {
   const { data, isLoading, error } = useEvolutionUsageReport(activeClientId || null, REPORT_DAYS);
   const items = data?.items ?? [];
 
-  if (!isRelatoriosUnlocked) {
-    return (
-      <PageShell title="Relatórios & Métricas" subtitle="Acompanhe o desempenho de envios e respostas">
-        <div className="max-w-2xl mx-auto py-8">
-          <UpsellCard
-            title="Relatórios & Métricas Avançadas"
-            subtitle="Módulo Não Contratado no Plano Modular"
-            description="Tenha visibilidade total do volume de disparos, taxas de conversão por chip e performance operacional."
-            moduleName="Relatórios Comerciais"
-            benefits={[
-              "Gráficos diários de envios e respostas",
-              "Relatório de saúde e volume por chip",
-              "Exportação completa de dados para auditoria",
-              "Taxas de conversão consolidadas por período",
-            ]}
-          />
-        </div>
-      </PageShell>
-    );
-  }
-
   const tenantInstances = useMemo(() => {
     return activeTenant?.n8n_settings?.evolution_instances ?? [];
   }, [activeTenant]);
@@ -173,6 +152,38 @@ export default function Relatorios() {
         borderRadius: 16,
         boxShadow: "0 20px 50px rgba(15,23,42,0.12)",
       };
+
+  // O gate fica AQUI, depois de todos os hooks, e nunca antes.
+  //
+  // Estava logo acima dos cinco useMemo. Na primeira renderizacao a lista de
+  // tenants ainda nao chegou, activeTenant e undefined, hasFeatureUnlocked
+  // devolve true e os cinco rodam. Quando a lista chega e o modulo nao esta
+  // contratado, o return antecipado deixava de chamar os cinco: React ve menos
+  // hooks do que na renderizacao anterior e derruba a tela inteira com o erro
+  // "Minified React error #300". Tela branca so no caminho BLOQUEADO, que e o
+  // que ninguem testa.
+  //
+  // Hooks executam sempre; o gate decide apenas o que o JSX devolve.
+  if (!isRelatoriosUnlocked) {
+    return (
+      <PageShell title="Relatórios & Métricas" subtitle="Acompanhe o desempenho de envios e respostas">
+        <div className="max-w-2xl mx-auto py-8">
+          <UpsellCard
+            title="Relatórios & Métricas Avançadas"
+            subtitle="Módulo Não Contratado no Plano Modular"
+            description="Tenha visibilidade total do volume de disparos, taxas de conversão por chip e performance operacional."
+            moduleName="Relatórios Comerciais"
+            benefits={[
+              "Gráficos diários de envios e respostas",
+              "Relatório de saúde e volume por chip",
+              "Exportação completa de dados para auditoria",
+              "Taxas de conversão consolidadas por período",
+            ]}
+          />
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell
