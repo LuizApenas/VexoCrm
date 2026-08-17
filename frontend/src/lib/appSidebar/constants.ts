@@ -58,9 +58,10 @@ export const CANAIS_ITEMS: SidebarItem[] = [
 ];
 
 // ━━ MÓDULOS ━━
-export const MODULE_ITEMS: SidebarItem[] = [
-  { key: "comercial-vexo", label: "Comercial Vexo", url: "/crm/comercial-vexo", icon: Sparkles, page: "apresentacao" },
-];
+// Comercial Vexo saiu daqui: não é módulo vendável, é ferramenta interna do dono
+// (propostas, contratos e briefings da própria Vexo). Foi para ADMIN_ITEMS, junto
+// de Master Control e Administração. Ver commit "comercial vexo vira admin".
+export const MODULE_ITEMS: SidebarItem[] = [];
 
 // ━━ MÓDULOS DE TERCEIROS (Restritos por Tenant/Admin) ━━
 export const GERACAO_DIGITAL_ITEMS: SidebarItem[] = [
@@ -80,6 +81,7 @@ export const AJUDA_ITEMS: SidebarItem[] = [
 export const ADMIN_ITEMS: SidebarItem[] = [
   { key: "superadmin", label: "Master Control", url: "/crm/superadmin", icon: Crown, page: "empresas" },
   { key: "admin", label: "Administração", url: "/crm/admin", icon: ShieldCheck, page: "empresas" },
+  { key: "comercial-vexo", label: "Comercial Vexo", url: "/crm/comercial-vexo", icon: Sparkles, page: "apresentacao" },
 ];
 
 export const COLOR_PRESETS = {

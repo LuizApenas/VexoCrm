@@ -261,10 +261,11 @@ export function hasFeatureUnlocked(client: any, featureKey: string): boolean {
       return isModuleInList(modulosAvulsos, "relatorios") || isModuleInList(modulosAvulsos, "relatorio");
     }
 
-    // 11. Comercial Vexo
-    if (["comercial-vexo", "apresentacao"].includes(k)) {
-      return isModuleInList(modulosAvulsos, "comercial-vexo") || isModuleInList(modulosAvulsos, "apresentacao");
-    }
+    // Comercial Vexo saiu daqui de propósito: não é módulo vendável, é
+    // ferramenta interna do dono. Tratá-lo como contratável fazia a tela
+    // aparecer com cadeado e sugerir upsell de algo que ninguém compra —
+    // e o cadeado era só cosmético, a rota respondia. Agora ele é
+    // requiredAdmin no App.tsx e admin-only no backend.
 
     return false;
   }

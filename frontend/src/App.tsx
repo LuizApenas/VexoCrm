@@ -307,7 +307,10 @@ const App = () => (
               <Route
                 path="comercial-vexo"
                 element={
-                  <ProtectedRoute allowedRoles={["internal"]}>
+                  /* Ferramenta interna do dono, igual a Master Control e Administração:
+                     requiredAdmin, não módulo contratável. O backend recusa também —
+                     ver access/vexoCommercialGate.js. */
+                  <ProtectedRoute allowedRoles={["internal"]} requiredAdmin>
                     <ComercialVexo />
                   </ProtectedRoute>
                 }

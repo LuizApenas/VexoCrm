@@ -6,6 +6,10 @@ import { processEvolutionMessageToSlack } from "../geracaoDigital/slackMirrorIn.
 import { processSlackMessageToEvolution } from "../geracaoDigital/slackMirrorOut.js";
 import { extractBriefingFields } from "./geracaoDigital/briefingExtract.js";
 import { transcribeBriefingAudio } from "./geracaoDigital/briefingTranscribe.js";
+import {
+  requireVexoCommercialAccess,
+  makeVexoCommercialRowGuard,
+} from "../access/vexoCommercialGate.js";
 
 // Recorrência: dois vocabulários para a mesma ideia. O catálogo (gd_products)
 // grava "pontual"; o wizard grava "unico". Comparar por string solta fazia todo
@@ -33,6 +37,10 @@ const somaRecorrente = (items) =>
   temPacote(items) ? soma(items, isLinhaDePacote) : soma(items, isCobrancaMensal);
 
 export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, requireInternalPageAccess) {
+  // Rotas por :id nao trazem owner_company na requisicao — o dono esta na linha.
+  const guardPropostaVexo = makeVexoCommercialRowGuard(pool, "gd_proposals");
+  const guardBriefingVexo = makeVexoCommercialRowGuard(pool, "gd_implementation_briefings");
+
   // Inicialização defensiva de todas as tabelas e seeds de Geração Digital no PostgreSQL
   async function ensureGdTablesAndSeeds(dbPool) {
   // Falha de DDL no boot NAO pode morrer calada. Cada ALTER tinha `.catch(() => {})`,
@@ -1809,7 +1817,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   });
 
   // POST /api/gd/proposals
-  app.post("/api/gd/proposals", requireFirebaseAuth, async (req, res) => {
+  app.post("/api/gd/proposals", requireFirebaseAuth, requireVexoCommercialAccess, async (req, res) => {
     try {
       const {
         client_id,
@@ -2039,7 +2047,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   });
 
   // GET /api/gd/proposals
-  app.get("/api/gd/proposals", requireFirebaseAuth, async (req, res) => {
+  app.get("/api/gd/proposals", requireFirebaseAuth, requireVexoCommercialAccess, async (req, res) => {
     try {
       const ownerCompany = req.query.owner_company || req.query.ownerCompany || (req.query.isVexo === "1" || req.query.isVexo === "true" ? "vexo" : null);
 
@@ -2114,7 +2122,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   });
 
   // GET /api/gd/proposals/:id
-  app.get("/api/gd/proposals/:id", requireFirebaseAuth, async (req, res) => {
+  app.get("/api/gd/proposals/:id", requireFirebaseAuth, guardPropostaVexo, async (req, res) => {
     try {
       const { id } = req.params;
       const { client_id } = req.query;
@@ -2162,7 +2170,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   });
 
   // PUT /api/gd/proposals/:id
-  app.put("/api/gd/proposals/:id", requireFirebaseAuth, async (req, res) => {
+  app.put("/api/gd/proposals/:id", requireFirebaseAuth, requireVexoCommercialAccess, guardPropostaVexo, async (req, res) => {
     try {
       const { id } = req.params;
       const {
@@ -2319,7 +2327,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   });
 
   // DELETE /api/gd/proposals/:id
-  app.delete("/api/gd/proposals/:id", requireFirebaseAuth, async (req, res) => {
+  app.delete("/api/gd/proposals/:id", requireFirebaseAuth, guardPropostaVexo, async (req, res) => {
     try {
       const { id } = req.params;
       const { client_id } = req.query;
@@ -3096,7 +3104,7 @@ Condições: ${condicoes}`;
   // ─── BRIEFING DE IMPLANTAÇÃO (ONBOARDING TÉCNICO) ──────────────────────────
 
   // GET /api/gd/implementation-briefings
-  app.get("/api/gd/implementation-briefings", requireFirebaseAuth, async (req, res) => {
+  app.get("/api/gd/implementation-briefings", requireFirebaseAuth, requireVexoCommercialAccess, async (req, res) => {
     try {
       const { tenant_id } = req.query;
       const ownerCompany = req.query.owner_company || req.query.ownerCompany || (req.query.isVexo === "1" || req.query.isVexo === "true" ? "vexo" : null);
@@ -3128,7 +3136,7 @@ Condições: ${condicoes}`;
   });
 
   // GET /api/gd/implementation-briefings/:id
-  app.get("/api/gd/implementation-briefings/:id", requireFirebaseAuth, async (req, res) => {
+  app.get("/api/gd/implementation-briefings/:id", requireFirebaseAuth, guardBriefingVexo, async (req, res) => {
     try {
       const { id } = req.params;
       const { rows } = await pool.query(
@@ -3146,7 +3154,7 @@ Condições: ${condicoes}`;
   });
 
   // POST /api/gd/implementation-briefings
-  app.post("/api/gd/implementation-briefings", requireFirebaseAuth, async (req, res) => {
+  app.post("/api/gd/implementation-briefings", requireFirebaseAuth, requireVexoCommercialAccess, async (req, res) => {
     try {
       const {
         tenant_id,
@@ -3209,7 +3217,7 @@ Condições: ${condicoes}`;
   });
 
   // PUT /api/gd/implementation-briefings/:id
-  app.put("/api/gd/implementation-briefings/:id", requireFirebaseAuth, async (req, res) => {
+  app.put("/api/gd/implementation-briefings/:id", requireFirebaseAuth, requireVexoCommercialAccess, guardBriefingVexo, async (req, res) => {
     try {
       const { id } = req.params;
       const {
