@@ -86,5 +86,5 @@ async function fixUserPermissions(email) {
   }
 }
 
-const email = process.argv[2] || 'luizz.felipe.santos17@gmail.com';
+const email = process.argv[2] || 'conradofl@gmail.com';
 fixUserPermissions(email);
