@@ -37,6 +37,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -103,7 +104,45 @@ export default function Dashboard({
   const selectedClient = crmClient?.selectedClient || null;
   const resolvedClientName = fixedClientName || selectedClient?.name || effectiveClientId;
 
-  const [periodDays, setPeriodDays] = useState(14);
+  // ── Filtro de Data Avançado ──────────────────────────────────────────────────
+  const [periodPreset, setPeriodPreset] = useState<string>("30");
+  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customEndDate, setCustomEndDate] = useState<string>("");
+
+  const { periodDays, periodLabel } = useMemo(() => {
+    const now = new Date();
+    if (periodPreset === "7") return { periodDays: 7, periodLabel: "Últimos 7 dias" };
+    if (periodPreset === "14") return { periodDays: 14, periodLabel: "Últimos 14 dias" };
+    if (periodPreset === "30") return { periodDays: 30, periodLabel: "Últimos 30 dias" };
+    if (periodPreset === "90") return { periodDays: 90, periodLabel: "Últimos 90 dias" };
+    if (periodPreset === "this_month") {
+      const days = Math.max(1, now.getDate());
+      const monthName = now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+      return { periodDays: days, periodLabel: `Este Mês (${monthName})` };
+    }
+    if (periodPreset === "last_month") {
+      const lastMonthDate = new Date(now.getFullYear(), now.getMonth(), 0);
+      const days = lastMonthDate.getDate();
+      const monthName = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+      return { periodDays: days, periodLabel: `Mês Anterior (${monthName})` };
+    }
+    if (periodPreset === "custom") {
+      if (customStartDate && customEndDate) {
+        const start = new Date(customStartDate + "T00:00:00");
+        const end = new Date(customEndDate + "T23:59:59");
+        const diffMs = Math.max(0, end.getTime() - start.getTime());
+        const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+        const formatBr = (d: string) => d.split("-").reverse().join("/");
+        return {
+          periodDays: days,
+          periodLabel: `${formatBr(customStartDate)} a ${formatBr(customEndDate)} (${days} dias)`,
+        };
+      }
+      return { periodDays: 30, periodLabel: "Personalizado" };
+    }
+    return { periodDays: 30, periodLabel: "Últimos 30 dias" };
+  }, [periodPreset, customStartDate, customEndDate]);
+
   const { data, isLoading, error } = useDashboard(effectiveClientId);
   const usage = useEvolutionUsageReport(effectiveClientId || null, periodDays * 2);
   const { data: campaigns = [] } = useCampanhas(effectiveClientId || undefined);
@@ -143,15 +182,14 @@ export default function Dashboard({
     return map;
   }, [data]);
 
-  const { sentCurrent, sentDelta, currentSeries } = useMemo(() => {
+  const { sentCurrent, currentSeries } = useMemo(() => {
     const withReplies = sentByDay.map((r) => ({ ...r, respostas: repliesByDay.get(r.dia) ?? undefined }));
     if (withReplies.length === 0) {
-      return { sentCurrent: null as number | null, sentDelta: null as number | null, currentSeries: [] as typeof withReplies };
+      return { sentCurrent: null as number | null, currentSeries: [] as typeof withReplies };
     }
     const half = withReplies.slice(-periodDays);
-    const prev = withReplies.slice(0, Math.max(0, withReplies.length - periodDays));
     const sum = (arr: typeof withReplies) => arr.reduce((s, r) => s + r.enviados, 0);
-    return { sentCurrent: sum(half), sentDelta: pctDelta(sum(half), sum(prev)), currentSeries: half };
+    return { sentCurrent: sum(half), currentSeries: half };
   }, [sentByDay, repliesByDay, periodDays]);
 
   const hasUsage = (usage.data?.items?.length ?? 0) > 0;
@@ -214,6 +252,7 @@ export default function Dashboard({
     const wb = XLSX.utils.book_new();
     const kpis = [
       ["Métrica", "Valor"],
+      ["Período", periodLabel],
       ["Mensagens enviadas (período)", cell(sentCurrent)],
       ["Taxa de resposta (%)", cell(summary?.responseRate)],
       ["Leads quentes", cell(summary?.hotLeads)],
@@ -251,7 +290,7 @@ export default function Dashboard({
       spacing="space-y-6"
       headerRight={
         headerRight ?? (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="print:hidden flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleExportPdf}>
               <FileText className="mr-1 h-4 w-4" /> Exportar PDF
             </Button>
@@ -264,14 +303,29 @@ export default function Dashboard({
     >
       <ErrorMessage message={error ? (error as Error).message : null} variant="banner" />
 
+      {/* ── CABEÇALHO EXECUTIVO EXCLUSIVO PARA IMPRESSÃO (PDF) ── */}
+      <div className="hidden print:flex justify-between items-center border-b border-slate-300 pb-4 mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Relatório Executivo de Vendas</h1>
+          <p className="text-xs text-slate-500">Vexo OS · {resolvedClientName}</p>
+        </div>
+        <div className="text-right text-xs text-slate-500">
+          <p className="font-semibold text-slate-700">Período: {periodLabel}</p>
+          <p>
+            Emitido em: {new Date().toLocaleDateString("pt-BR")} às{" "}
+            {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
           Carregando central de comando...
         </div>
       ) : (
         <>
-          {/* ── BLOCO A: Barra Superior de Atalhos Rápidos (Ações do Dia) ── */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-card border border-border/80 shadow-xs">
+          {/* ── BLOCO A: Barra Superior de Atalhos Rápidos & Seletor de Período ── */}
+          <div className="print:hidden flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3 rounded-2xl bg-card border border-border/80 shadow-xs">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider pl-1 mr-1">
                 Ações Rápidas:
@@ -314,10 +368,11 @@ export default function Dashboard({
               </Button>
             </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-auto">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-              <Select value={String(periodDays)} onValueChange={(val) => setPeriodDays(Number(val))}>
-                <SelectTrigger className="h-8 w-[130px] text-xs rounded-xl border-border bg-background">
+            {/* Seletor de Período com Intervalo Customizado */}
+            <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <Select value={periodPreset} onValueChange={setPeriodPreset}>
+                <SelectTrigger className="h-8 w-[150px] text-xs rounded-xl border-border bg-background">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -325,44 +380,67 @@ export default function Dashboard({
                   <SelectItem value="14">Últimos 14 dias</SelectItem>
                   <SelectItem value="30">Últimos 30 dias</SelectItem>
                   <SelectItem value="90">Últimos 90 dias</SelectItem>
+                  <SelectItem value="this_month">Este Mês</SelectItem>
+                  <SelectItem value="last_month">Mês Anterior</SelectItem>
+                  <SelectItem value="custom">Personalizado...</SelectItem>
                 </SelectContent>
               </Select>
+
+              {periodPreset === "custom" && (
+                <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-2 duration-200">
+                  <Input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="h-8 w-[130px] text-xs rounded-xl bg-background border-border"
+                    title="Data Inicial"
+                  />
+                  <span className="text-xs text-muted-foreground">até</span>
+                  <Input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="h-8 w-[130px] text-xs rounded-xl bg-background border-border"
+                    title="Data Final"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
           {/* ── BLOCO B: Radar do Dia (Hero Cards Clicáveis) ── */}
-          <section className="space-y-3">
+          <section className="space-y-3 print:space-y-2 print:break-inside-avoid">
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground print:text-slate-900">
                 Radar do Dia · Oportunidades & Alertas
               </h2>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 print:gap-3">
               {/* 1. Oportunidades Quentes */}
               <button
                 type="button"
                 onClick={() => navigate("/crm/whatsapp")}
-                className="group flex flex-col justify-between rounded-2xl border border-red-500/20 bg-red-500/[0.04] p-4 text-left transition-all hover:border-red-500/50 hover:bg-red-500/[0.08] hover:shadow-md"
+                className="group flex flex-col justify-between rounded-2xl border border-red-500/20 bg-red-500/[0.04] p-4 text-left transition-all hover:border-red-500/50 hover:bg-red-500/[0.08] hover:shadow-md print:border-slate-300 print:bg-white print:shadow-none"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 group-hover:scale-110 transition-transform">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 group-hover:scale-110 transition-transform print:bg-slate-100 print:text-red-600">
                       <Flame className="h-4 w-4" />
                     </span>
-                    <Badge variant="outline" className="border-red-500/30 text-red-700 dark:text-red-300 text-[10px] font-semibold">
+                    <Badge variant="outline" className="border-red-500/30 text-red-700 dark:text-red-300 text-[10px] font-semibold print:border-slate-300 print:text-slate-800">
                       Pronto p/ Fechar
                     </Badge>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground">Oportunidades Quentes</p>
-                    <p className="text-2xl font-extrabold text-foreground tracking-tight">
+                    <p className="text-xs font-semibold text-muted-foreground print:text-slate-600">Oportunidades Quentes</p>
+                    <p className="text-2xl font-extrabold text-foreground tracking-tight print:text-slate-900">
                       {formatMetric(summary?.hotLeads)}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between border-t border-red-500/15 pt-2.5 text-xs font-medium text-red-600 dark:text-red-400">
+                <div className="print:hidden mt-3 flex items-center justify-between border-t border-red-500/15 pt-2.5 text-xs font-medium text-red-600 dark:text-red-400">
                   <span>Ver conversas</span>
                   <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
                 </div>
@@ -372,51 +450,51 @@ export default function Dashboard({
               <button
                 type="button"
                 onClick={() => navigate("/crm/whatsapp")}
-                className="group flex flex-col justify-between rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.04] p-4 text-left transition-all hover:border-indigo-500/50 hover:bg-indigo-500/[0.08] hover:shadow-md"
+                className="group flex flex-col justify-between rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.04] p-4 text-left transition-all hover:border-indigo-500/50 hover:bg-indigo-500/[0.08] hover:shadow-md print:border-slate-300 print:bg-white print:shadow-none"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform print:bg-slate-100 print:text-indigo-600">
                       <MessageSquare className="h-4 w-4" />
                     </span>
-                    <Badge variant="outline" className="border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-semibold">
+                    <Badge variant="outline" className="border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-semibold print:border-slate-300 print:text-slate-800">
                       {formatMetric(summary?.responseRate, "pct")} resposta
                     </Badge>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground">Atendimentos em Andamento</p>
-                    <p className="text-2xl font-extrabold text-foreground tracking-tight">
+                    <p className="text-xs font-semibold text-muted-foreground print:text-slate-600">Atendimentos em Andamento</p>
+                    <p className="text-2xl font-extrabold text-foreground tracking-tight print:text-slate-900">
                       {formatMetric(sentCurrent)}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between border-t border-indigo-500/15 pt-2.5 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                <div className="print:hidden mt-3 flex items-center justify-between border-t border-indigo-500/15 pt-2.5 text-xs font-medium text-indigo-600 dark:text-indigo-400">
                   <span>Abrir WhatsApp</span>
                   <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
                 </div>
               </button>
 
-              {/* 3. Leads Parados (+3 dias) — com CTA direto de Resgate */}
-              <div className="flex flex-col justify-between rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4 text-left transition-all hover:border-amber-500/60 hover:shadow-md">
+              {/* 3. Leads Parados (+3 dias) — com CTA de Resgate */}
+              <div className="flex flex-col justify-between rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4 text-left transition-all hover:border-amber-500/60 hover:shadow-md print:border-slate-300 print:bg-white print:shadow-none">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 print:bg-slate-100 print:text-amber-600">
                       <AlertCircle className="h-4 w-4" />
                     </span>
-                    <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 text-[10px] font-bold">
-                      +3 dias sem contato
+                    <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 text-[10px] font-bold print:border-slate-300 print:text-slate-800">
+                      +3 dias s/ contato
                     </Badge>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground">Leads Parados</p>
-                    <p className="text-2xl font-extrabold text-foreground tracking-tight">
+                    <p className="text-xs font-semibold text-muted-foreground print:text-slate-600">Leads Parados</p>
+                    <p className="text-2xl font-extrabold text-foreground tracking-tight print:text-slate-900">
                       {formatMetric(summary?.noContact3d)}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-3 border-t border-amber-500/20 pt-2.5">
+                <div className="print:hidden mt-3 border-t border-amber-500/20 pt-2.5">
                   <Button
                     size="sm"
                     onClick={() => navigate("/crm/followup")}
@@ -432,27 +510,27 @@ export default function Dashboard({
               <button
                 type="button"
                 onClick={() => navigate("/crm/chips-whatsapp")}
-                className="group flex flex-col justify-between rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4 text-left transition-all hover:border-emerald-500/50 hover:bg-emerald-500/[0.08] hover:shadow-md"
+                className="group flex flex-col justify-between rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4 text-left transition-all hover:border-emerald-500/50 hover:bg-emerald-500/[0.08] hover:shadow-md print:border-slate-300 print:bg-white print:shadow-none"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform print:bg-slate-100 print:text-emerald-600">
                       <Smartphone className="h-4 w-4" />
                     </span>
-                    <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold gap-1 print:border-slate-300 print:text-slate-800">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse print:hidden" />
                       {totalChips > 0 ? "Operacional" : "Sem chip"}
                     </Badge>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground">Canais WhatsApp Conectados</p>
-                    <p className="text-2xl font-extrabold text-foreground tracking-tight">
+                    <p className="text-xs font-semibold text-muted-foreground print:text-slate-600">Canais Conectados</p>
+                    <p className="text-2xl font-extrabold text-foreground tracking-tight print:text-slate-900">
                       {totalChips} {totalChips === 1 ? "chip ativo" : "chips ativos"}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between border-t border-emerald-500/15 pt-2.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                <div className="print:hidden mt-3 flex items-center justify-between border-t border-emerald-500/15 pt-2.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                   <span>Gerenciar chips</span>
                   <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
                 </div>
@@ -461,19 +539,19 @@ export default function Dashboard({
           </section>
 
           {/* ── BLOCO C: Pipeline Vivo de Vendas (Funil 100% Clicável) ── */}
-          <section className="space-y-3">
+          <section className="space-y-3 print:space-y-2 print:break-inside-avoid">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground print:text-slate-900">
                   Pipeline Vivo de Vendas
                 </h2>
-                <p className="text-xs text-muted-foreground">
+                <p className="print:hidden text-xs text-muted-foreground">
                   Clique em qualquer etapa para acessar diretamente os contatos e conversas correspondentes.
                 </p>
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 print:gap-3">
               {funnelSteps.map((step, i) => {
                 const IconComponent = step.icon;
                 const prev = i > 0 ? funnelSteps[i - 1] : null;
@@ -488,31 +566,31 @@ export default function Dashboard({
                     type="button"
                     onClick={() => navigate(step.href)}
                     className={cn(
-                      "group relative flex flex-col justify-between rounded-2xl border p-4 text-left transition-all hover:scale-[1.02] hover:shadow-md cursor-pointer",
+                      "group relative flex flex-col justify-between rounded-2xl border p-4 text-left transition-all hover:scale-[1.02] hover:shadow-md cursor-pointer print:border-slate-300 print:bg-white print:shadow-none",
                       step.bgClass
                     )}
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className={cn("flex h-8 w-8 items-center justify-center rounded-xl bg-background/80 shadow-xs", step.colorClass)}>
+                        <span className={cn("flex h-8 w-8 items-center justify-center rounded-xl bg-background/80 shadow-xs print:bg-slate-100", step.colorClass)}>
                           <IconComponent className="h-4 w-4" />
                         </span>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground print:text-slate-500">
                           {step.hint}
                         </span>
                       </div>
 
                       <div>
-                        <p className="text-xs font-bold text-foreground">{step.stage}</p>
-                        <p className="text-2xl font-extrabold text-foreground tracking-tight mt-0.5">
+                        <p className="text-xs font-bold text-foreground print:text-slate-900">{step.stage}</p>
+                        <p className="text-2xl font-extrabold text-foreground tracking-tight mt-0.5 print:text-slate-900">
                           {formatMetric(step.value)}
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between border-t border-border/40 pt-2 text-[11px] text-muted-foreground">
+                    <div className="mt-3 flex items-center justify-between border-t border-border/40 pt-2 text-[11px] text-muted-foreground print:text-slate-500">
                       <span>{drop != null ? `↓ ${drop}% da etapa anterior` : "Etapa inicial"}</span>
-                      <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1 text-foreground" />
+                      <ArrowRight className="print:hidden h-3 w-3 transition-transform group-hover:translate-x-1 text-foreground" />
                     </div>
                   </button>
                 );
@@ -521,15 +599,15 @@ export default function Dashboard({
           </section>
 
           {/* ── BLOCO D: Gráficos de Engajamento & Desempenho ── */}
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2 print:grid-cols-2 print:gap-3 print:break-inside-avoid">
             {/* Enviados vs Respostas por Dia */}
-            <Card className="rounded-2xl border border-border/80 shadow-xs">
+            <Card className="rounded-2xl border border-border/80 shadow-xs print:border-slate-300 print:bg-white print:shadow-none">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <CardTitle className="text-sm font-bold flex items-center gap-2 print:text-slate-900">
                   <TrendingUp className="h-4 w-4 text-indigo-500" />
                   Disparos vs Respostas por Dia
                 </CardTitle>
-                <CardDescription className="text-xs">
+                <CardDescription className="text-xs print:text-slate-500">
                   Volume diário de mensagens disparadas e respostas capturadas no período.
                 </CardDescription>
               </CardHeader>
@@ -553,13 +631,13 @@ export default function Dashboard({
             </Card>
 
             {/* Composição por Temperatura */}
-            <Card className="rounded-2xl border border-border/80 shadow-xs">
+            <Card className="rounded-2xl border border-border/80 shadow-xs print:border-slate-300 print:bg-white print:shadow-none">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <CardTitle className="text-sm font-bold flex items-center gap-2 print:text-slate-900">
                   <Flame className="h-4 w-4 text-red-500" />
                   Composição da Base por Temperatura
                 </CardTitle>
-                <CardDescription className="text-xs">
+                <CardDescription className="text-xs print:text-slate-500">
                   Distribuição de leads entre Quente, Morno, Frio e Sem sinal.
                 </CardDescription>
               </CardHeader>
@@ -584,31 +662,31 @@ export default function Dashboard({
           </div>
 
           {/* ── Desempenho por Campanha ── */}
-          <section className="space-y-3">
+          <section className="space-y-3 print:space-y-2 print:break-inside-avoid">
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground print:text-slate-900">
                 Desempenho por Campanha
               </h2>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate("/crm/campanhas")}
-                className="text-xs text-primary hover:text-primary gap-1"
+                className="print:hidden text-xs text-primary hover:text-primary gap-1"
               >
                 <span>Ver todas as campanhas</span>
                 <ArrowRight className="h-3 w-3" />
               </Button>
             </div>
 
-            <Card className="rounded-2xl border border-border/80 shadow-xs overflow-hidden">
+            <Card className="rounded-2xl border border-border/80 shadow-xs overflow-hidden print:border-slate-300 print:bg-white print:shadow-none">
               <CardContent className="p-0">
                 {campaigns.length === 0 ? (
                   <EmptyState title="Nenhuma campanha ativa" description="Crie sua primeira campanha de disparos para visualizar métricas aqui." />
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm print:text-xs">
                       <thead>
-                        <tr className="border-b border-border/70 text-left text-xs uppercase tracking-wide text-muted-foreground bg-muted/20">
+                        <tr className="border-b border-border/70 text-left text-xs uppercase tracking-wide text-muted-foreground bg-muted/20 print:bg-slate-100 print:text-slate-700">
                           <th className="px-4 py-3">Campanha</th>
                           <th className="px-4 py-3">Status</th>
                           <th className="px-4 py-3 text-right">Enviados</th>
@@ -616,22 +694,22 @@ export default function Dashboard({
                           <th className="px-4 py-3 text-right">Conversão</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-border/40">
+                      <tbody className="divide-y divide-border/40 print:divide-slate-200">
                         {campaigns.map((c) => (
                           <tr
                             key={c.id}
                             onClick={() => navigate("/crm/campanhas")}
-                            className="hover:bg-muted/30 transition-colors cursor-pointer"
+                            className="hover:bg-muted/30 transition-colors cursor-pointer print:text-slate-900"
                           >
-                            <td className="px-4 py-3 font-semibold text-foreground flex items-center gap-2">
-                              <Rocket className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                            <td className="px-4 py-3 font-semibold text-foreground print:text-slate-900 flex items-center gap-2">
+                              <Rocket className="print:hidden h-3.5 w-3.5 text-indigo-500 shrink-0" />
                               <span className="truncate hover:underline">{c.name}</span>
                             </td>
                             <td className="px-4 py-3">
                               <Badge
                                 variant="outline"
                                 className={cn(
-                                  "text-[10px] font-semibold",
+                                  "text-[10px] font-semibold print:border-slate-300 print:text-slate-800",
                                   c.status === "active"
                                     ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                                     : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
@@ -640,9 +718,9 @@ export default function Dashboard({
                                 {c.status === "active" ? "Ativa" : c.status === "paused" ? "Pausada" : c.status}
                               </Badge>
                             </td>
-                            <td className="px-4 py-3 text-right text-muted-foreground font-mono">{formatMetric(c.sent)}</td>
-                            <td className="px-4 py-3 text-right text-muted-foreground font-mono">{formatMetric(c.replies)}</td>
-                            <td className="px-4 py-3 text-right text-muted-foreground font-mono font-medium">{formatMetric(c.conversionRate, "pct")}</td>
+                            <td className="px-4 py-3 text-right text-muted-foreground print:text-slate-700 font-mono">{formatMetric(c.sent)}</td>
+                            <td className="px-4 py-3 text-right text-muted-foreground print:text-slate-700 font-mono">{formatMetric(c.replies)}</td>
+                            <td className="px-4 py-3 text-right text-muted-foreground print:text-slate-700 font-mono font-medium">{formatMetric(c.conversionRate, "pct")}</td>
                           </tr>
                         ))}
                       </tbody>
