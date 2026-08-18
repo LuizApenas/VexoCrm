@@ -50,16 +50,26 @@ import { EMPTY_COMPANY_FORM } from "@/lib/followup/constants";
 
 function CompanyForm({
   initial,
+  tenantName,
+  connectedInstances,
   onSave,
   onCancel,
   isLoading,
 }: {
   initial: typeof EMPTY_COMPANY_FORM;
+  tenantName?: string;
+  connectedInstances: Array<{ id?: string; name: string; is_default?: boolean }>;
   onSave: (v: typeof EMPTY_COMPANY_FORM) => void;
   onCancel: () => void;
   isLoading: boolean;
 }) {
-  const [form, setForm] = useState(initial);
+  const [form, setForm] = useState(() => ({
+    ...initial,
+    name: initial.name || tenantName || "",
+    evolution_instance: initial.evolution_instance || (connectedInstances[0]?.name ?? ""),
+    webhook_url: initial.webhook_url || "https://api.vexoia.com/webhooks/followup",
+  }));
+
   const set = (k: keyof typeof form, v: unknown) =>
     setForm((f) => ({ ...f, [k]: v }));
 
@@ -71,37 +81,57 @@ function CompanyForm({
           <Input
             value={form.name}
             onChange={(e) => set("name", e.target.value)}
-            placeholder="Empresa XYZ"
+            placeholder="Nome da empresa"
             className="h-8 text-sm"
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">Instância Evolution API *</Label>
-          <Input
-            value={form.evolution_instance}
-            onChange={(e) => set("evolution_instance", e.target.value)}
-            placeholder="minha-instancia"
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Webhook URL (respostas)</Label>
-          <Input
-            value={form.webhook_url}
-            onChange={(e) => set("webhook_url", e.target.value)}
-            placeholder="https://seu-crm.com/webhook"
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Secret Calendly (opcional)</Label>
-          <Input
-            value={form.calendly_webhook_secret}
-            onChange={(e) => set("calendly_webhook_secret", e.target.value)}
-            placeholder="secret_..."
-          />
+          <Label className="text-xs">Chip de WhatsApp Conectado *</Label>
+          {connectedInstances.length > 0 ? (
+            <Select
+              value={form.evolution_instance}
+              onValueChange={(v) => set("evolution_instance", v)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Selecione o chip de disparo" />
+              </SelectTrigger>
+              <SelectContent>
+                {connectedInstances.map((inst) => (
+                  <SelectItem key={inst.id || inst.name} value={inst.name} className="text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      <span>{inst.name}</span>
+                      {inst.is_default && (
+                        <Badge variant="secondary" className="text-[9px] px-1 py-0">
+                          Padrão
+                        </Badge>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={form.evolution_instance}
+              onChange={(e) => set("evolution_instance", e.target.value)}
+              placeholder="Instância WhatsApp"
+              className="h-8 text-sm"
+            />
+          )}
         </div>
       </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">Secret Calendly (opcional para pausa automática)</Label>
+        <Input
+          value={form.calendly_webhook_secret}
+          onChange={(e) => set("calendly_webhook_secret", e.target.value)}
+          placeholder="secret_..."
+          className="h-8 text-sm"
+        />
+      </div>
+
       <div className="space-y-3">
         <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 border-b pb-1">Horários de Disparo</h4>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -162,52 +192,6 @@ function CompanyForm({
         </div>
       </div>
 
-      <div className="space-y-3">
-        <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 border-b pb-1">Motor de Varredura & Reabordagem</h4>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500">Varredura do Motor (horas)</Label>
-            <Input
-              type="number"
-              className="h-8 text-xs bg-white dark:bg-slate-900"
-              value={form.engine_scan_interval_hours}
-              onChange={(e) => set("engine_scan_interval_hours", Number(e.target.value))}
-            />
-            <span className="text-[9px] text-slate-400">De quanto em quanto tempo o motor analisa os leads.</span>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500">Sem Contato Inicial (horas)</Label>
-            <Input
-              type="number"
-              className="h-8 text-xs bg-white dark:bg-slate-900"
-              value={form.never_contacted_delay_hours}
-              onChange={(e) => set("never_contacted_delay_hours", Number(e.target.value))}
-            />
-            <span className="text-[9px] text-slate-400">Tempo mínimo de espera antes do primeiro follow-up.</span>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500">Sem Resposta de Campanhas (horas)</Label>
-            <Input
-              type="number"
-              className="h-8 text-xs bg-white dark:bg-slate-900"
-              value={form.no_reply_delay_hours}
-              onChange={(e) => set("no_reply_delay_hours", Number(e.target.value))}
-            />
-            <span className="text-[9px] text-slate-400">Tempo sem resposta para disparar nova cobrança.</span>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500">Inatividade de Leads LivPub (meses)</Label>
-            <Input
-              type="number"
-              className="h-8 text-xs bg-white dark:bg-slate-900"
-              value={form.livpub_inactive_delay_months}
-              onChange={(e) => set("livpub_inactive_delay_months", Number(e.target.value))}
-            />
-            <span className="text-[9px] text-slate-400">Tempo sem visitas para considerar lead inativo.</span>
-          </div>
-        </div>
-      </div>
-
       <div className="flex items-center justify-between border-t border-slate-100 dark:border-white/5 pt-3">
         <div className="flex flex-col">
           <Label htmlFor="panel-access" className="text-sm cursor-pointer">
@@ -233,11 +217,16 @@ function CompanyForm({
 }
 
 export function ConfigTab() {
-  const { selectedClientId } = useOptionalCrmClient();
+  const { selectedClientId, selectedClient: selectedCrmClient } = useOptionalCrmClient();
   const { data: companies = [], isLoading } = useFupCompanies(selectedClientId);
   const createMut = useCreateFupCompany();
   const updateMut = useUpdateFupCompany();
   const archiveMut = useArchiveFupCompany();
+
+  // Instâncias conectadas no tenant ativo
+  const connectedInstances = (selectedCrmClient?.n8n_settings?.evolution_instances || []).filter(
+    (i: any) => i.active !== false
+  );
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<FupCompany | null>(null);
@@ -391,7 +380,7 @@ export function ConfigTab() {
                 ? {
                     name: editing.name,
                     evolution_instance: editing.evolution_instance,
-                    webhook_url: editing.webhook_url || "",
+                    webhook_url: editing.webhook_url || "https://api.vexoia.com/webhooks/followup",
                     calendly_webhook_secret: editing.calendly_webhook_secret || "",
                     panel_access: editing.panel_access,
                     auto_pause_on_reply: editing.auto_pause_on_reply || false,
@@ -404,8 +393,15 @@ export function ConfigTab() {
                     no_reply_delay_hours: editing.no_reply_delay_hours ?? 48,
                     livpub_inactive_delay_months: editing.livpub_inactive_delay_months ?? 6,
                   }
-                : EMPTY_COMPANY_FORM
+                : {
+                    ...EMPTY_COMPANY_FORM,
+                    name: selectedCrmClient?.name || "",
+                    evolution_instance: connectedInstances[0]?.name || "",
+                    webhook_url: "https://api.vexoia.com/webhooks/followup",
+                  }
             }
+            tenantName={selectedCrmClient?.name}
+            connectedInstances={connectedInstances}
             onSave={handleSave}
             onCancel={() => setDialogOpen(false)}
             isLoading={createMut.isPending || updateMut.isPending}

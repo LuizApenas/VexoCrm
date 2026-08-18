@@ -60,6 +60,13 @@ export default function CadenceEditor({ companyId }: { companyId: string }) {
   const [selectedId, setSelectedId] = useState<string>("");
   const [newCadenceName, setNewCadenceName] = useState("");
 
+  // Auto-seleciona a primeira cadência ao carregar para o editor abrir pronto para uso
+  useEffect(() => {
+    if (cadences.length > 0 && (!selectedId || !cadences.some((c) => c.id === selectedId))) {
+      setSelectedId(cadences[0].id);
+    }
+  }, [cadences, selectedId]);
+
   const crmClient = useOptionalCrmClient();
   const selectedCrmClient = crmClient?.selectedClient;
   const isUnlimitedCadences = hasFeatureUnlocked(selectedCrmClient, "unlimited_cadences");

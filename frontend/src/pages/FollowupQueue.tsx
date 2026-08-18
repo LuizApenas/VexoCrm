@@ -1,14 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Smartphone, Send, Zap, BarChart3, Settings, ChevronDown } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Smartphone, Send, Zap, BarChart3, Settings, ChevronDown, CheckCircle2 } from "lucide-react";
 
 import { PageShell } from "@/components/PageShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
-import { useFupCompanies } from "@/hooks/useFollowupAdmin";
+import { useFupCompanies, useCreateFupCompany, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
 import { FollowUpJourneys } from "@/components/followup/FollowUpJourneys";
 import CadenceEditor from "@/components/followup/CadenceEditor";
 import { AnalyticsTab } from "@/pages/FollowupQueue/AnalyticsTab";
@@ -105,7 +108,54 @@ export default function FollowupDashboard() {
   };
 
   const { data: companies = [], isLoading: loadingCompanies } = useFupCompanies(tenantId);
+  const createCompany = useCreateFupCompany();
+  const updateCompany = useUpdateFupCompany();
   const [companyId, setCompanyId] = useState("");
+  const [isAutoCreating, setIsAutoCreating] = useState(false);
+
+  // Instâncias Evolution conectadas do tenant ativo
+  const connectedInstances = (selectedCrmClient?.n8n_settings?.evolution_instances || []).filter(
+    (i: any) => i.active !== false
+  );
+
+  // Auto-criação / auto-sincronização transparente da empresa de follow-up caso o tenant tenha chip conectado
+  useEffect(() => {
+    if (
+      !loadingCompanies &&
+      companies.length === 0 &&
+      connectedInstances.length > 0 &&
+      tenantId &&
+      !isAutoCreating
+    ) {
+      setIsAutoCreating(true);
+      createCompany
+        .mutateAsync({
+          name: selectedCrmClient?.name || connectedInstances[0].name,
+          evolution_instance: connectedInstances[0].name,
+          evolution_instances: connectedInstances.map((i: any) => i.name),
+          tenant_id: tenantId,
+          webhook_url: "https://api.vexoia.com/webhooks/followup",
+          panel_access: true,
+          auto_pause_on_reply: true,
+          auto_pause_on_calendly: false,
+          sending_window_start: "08:00",
+          sending_window_end: "18:00",
+          sending_days: "1,2,3,4,5",
+          engine_scan_interval_hours: 6,
+          never_contacted_delay_hours: 2,
+          no_reply_delay_hours: 48,
+          livpub_inactive_delay_months: 6,
+        })
+        .then((created) => {
+          setCompanyId(created.id);
+          setIsAutoCreating(false);
+        })
+        .catch((err) => {
+          console.error("[followup] Auto-provisionamento da empresa falhou:", err);
+          setIsAutoCreating(false);
+        });
+    }
+  }, [loadingCompanies, companies.length, connectedInstances.length, tenantId, isAutoCreating]);
 
   // Seleciona o número do tenant automaticamente assim que carrega.
   useEffect(() => {
@@ -114,8 +164,29 @@ export default function FollowupDashboard() {
     }
   }, [companies, companyId]);
 
-  const activeCompany = companies.find((c) => c.id === companyId) || null;
-  const hasCompany = companies.length > 0;
+  const activeCompany = companies.find((c) => c.id === companyId) || companies[0] || null;
+  const hasCompany = companies.length > 0 || connectedInstances.length > 0;
+
+  // Instância ativa atual
+  const activeInstanceName =
+    activeCompany?.evolution_instance ||
+    (connectedInstances.length > 0 ? connectedInstances[0].name : "");
+
+  const handleSelectInstance = (instanceName: string) => {
+    const matchedCompany = companies.find(
+      (c) =>
+        c.evolution_instance === instanceName ||
+        (Array.isArray(c.evolution_instances) && c.evolution_instances.includes(instanceName))
+    );
+    if (matchedCompany) {
+      setCompanyId(matchedCompany.id);
+    } else if (activeCompany) {
+      updateCompany.mutate({
+        id: activeCompany.id,
+        evolution_instance: instanceName,
+      });
+    }
+  };
 
   const isFollowupUnlocked =
     hasFeatureUnlocked(selectedCrmClient, "followup") ||
@@ -159,34 +230,67 @@ export default function FollowupDashboard() {
         step={1}
         icon={<Smartphone className="h-4 w-4" />}
         title="Número de WhatsApp"
-        subtitle="O número por onde as mensagens de follow-up saem. É exclusivo desta empresa."
+        subtitle="O canal conectado por onde as mensagens de follow-up são disparadas automaticamente."
       >
-        {loadingCompanies ? (
-          <p className="text-xs text-muted-foreground">Carregando…</p>
-        ) : !hasCompany ? (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-800 dark:text-amber-300">
-            Nenhum número configurado ainda. Abra <strong>Configurações da empresa</strong> (mais abaixo) e
-            cadastre o número de WhatsApp deste cliente para começar.
+        {loadingCompanies || isAutoCreating ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="h-2 w-2 rounded-full bg-indigo-500 animate-ping" />
+            Sincronizando canais de WhatsApp conectados...
           </div>
-        ) : companies.length === 1 ? (
-          <div className="flex items-center gap-2 text-sm">
-            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            <span className="font-semibold text-foreground">{activeCompany?.name}</span>
-            <span className="text-muted-foreground">— número ativo deste tenant</span>
+        ) : connectedInstances.length === 0 ? (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-4 text-amber-900 dark:text-amber-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="font-semibold text-sm">Nenhum WhatsApp conectado</p>
+                <p className="text-xs text-muted-foreground">
+                  Para ativar o envio de follow-up, conecte um número de WhatsApp em Canais & Chips.
+                </p>
+              </div>
+              <Button asChild size="sm" variant="default" className="shrink-0">
+                <Link to="/crm/chips-whatsapp">Conectar WhatsApp</Link>
+              </Button>
+            </div>
+          </div>
+        ) : connectedInstances.length === 1 ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge
+              variant="outline"
+              className="gap-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 text-sm font-semibold rounded-lg"
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              {connectedInstances[0].name}
+            </Badge>
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+              Canal ativo vinculado automaticamente para disparos de follow-up
+            </span>
           </div>
         ) : (
-          <div className="flex items-center gap-2 max-w-sm">
-            <Label className="text-xs font-semibold shrink-0">Número:</Label>
-            <Select value={companyId} onValueChange={setCompanyId}>
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue placeholder="Selecionar" />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 max-w-lg">
+            <Label className="text-xs font-semibold shrink-0">Canal de Disparo:</Label>
+            <Select value={activeInstanceName} onValueChange={handleSelectInstance}>
+              <SelectTrigger className="h-9 text-sm rounded-lg bg-background border-border/80">
+                <SelectValue placeholder="Selecione o chip de disparo" />
               </SelectTrigger>
               <SelectContent>
-                {companies.map((c) => (
-                  <SelectItem key={c.id} value={c.id} className="text-sm">{c.name}</SelectItem>
+                {connectedInstances.map((inst: any) => (
+                  <SelectItem key={inst.id || inst.name} value={inst.name} className="text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      <span className="font-medium">{inst.name}</span>
+                      {inst.is_default && (
+                        <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1.5">
+                          Padrão
+                        </Badge>
+                      )}
+                    </div>
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <span className="text-[11px] text-muted-foreground">
+              ({connectedInstances.length} chips disponíveis)
+            </span>
           </div>
         )}
       </StepSection>
