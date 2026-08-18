@@ -132,7 +132,7 @@ export default function Dashboard({
       map.set(row.dia, (map.get(row.dia) ?? 0) + (row.enviados ?? 0));
     }
     return Array.from(map, ([dia, enviados]) => ({ dia, enviados })).sort((a, b) =>
-      a.dia.localeCompare(dia)
+      a.dia.localeCompare(b.dia)
     );
   }, [usage.data]);
 
