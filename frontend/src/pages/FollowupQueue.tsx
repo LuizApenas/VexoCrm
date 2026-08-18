@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Smartphone, Send, Zap, BarChart3, Settings, ChevronDown, CheckCircle2 } from "lucide-react";
+import { Smartphone, Send, Zap, ChevronDown, CheckCircle2 } from "lucide-react";
 
 import { PageShell } from "@/components/PageShell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,8 +14,6 @@ import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useFupCompanies, useCreateFupCompany, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
 import { FollowUpJourneys } from "@/components/followup/FollowUpJourneys";
 import CadenceEditor from "@/components/followup/CadenceEditor";
-import { AnalyticsTab } from "@/pages/FollowupQueue/AnalyticsTab";
-import { ConfigTab } from "@/pages/FollowupQueue/ConfigTab";
 import { UpsellCard } from "@/components/UpsellCard";
 import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 
@@ -339,32 +337,6 @@ export default function FollowupDashboard() {
               <FollowUpJourneys companyId={companyId} />
             </UpsellCard>
           )}
-        </StepSection>
-      )}
-
-      {/* Passo 4 — Fila & Métricas */}
-      {isSectionAllowed("metrics") && hasCompany && (
-        <StepSection
-          step={4}
-          icon={<BarChart3 className="h-4 w-4" />}
-          title="Fila & Métricas"
-          subtitle="Acompanhe os envios agendados e o resultado das cadências."
-          collapsible
-        >
-          <AnalyticsTab companyId={companyId} />
-        </StepSection>
-      )}
-
-      {/* Configurações da empresa (avançado) — inclui criar/editar o número de WhatsApp */}
-      {isSectionAllowed("config") && (
-        <StepSection
-          icon={<Settings className="h-4 w-4" />}
-          title="Configurações da empresa (avançado)"
-          subtitle="Cadastrar/editar o número de WhatsApp, horários de envio, motor de reabordagem e integração Calendly."
-          collapsible
-          defaultOpen={!hasCompany}
-        >
-          <ConfigTab />
         </StepSection>
       )}
     </PageShell>
