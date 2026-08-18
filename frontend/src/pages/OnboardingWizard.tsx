@@ -8,7 +8,6 @@ import {
   ListChecks,
   Bot,
   BarChart3,
-  LineChart,
   Briefcase,
   Sparkles,
   ShieldCheck,
@@ -517,38 +516,6 @@ const ACADEMY_MODULES: AcademyModule[] = [
     tips: [
       "Compare períodos: número solto não diz nada, tendência sim.",
       "Alta taxa de falha em disparo geralmente é base suja — volte ao Banco de Dados e limpe.",
-    ],
-  },
-  {
-    value: "inteligencia",
-    label: "Inteligência Comercial",
-    icon: LineChart,
-    permissions: ["reports.commercial"],
-    title: "Inteligência Comercial & Distribuição",
-    summary:
-      "Inteligência ativa sobre a eficiência da venda: tempo de resposta (SLA) e distribuição automática de leads entre vendedores.",
-    goal: "Objetivo de vendas: leads quentes atendidos rápido e divididos com justiça, sem lead esquecido.",
-    ctaHref: "/crm/inteligencia-comercial",
-    ctaLabel: "Abrir Int. Comercial",
-    sections: [
-      {
-        title: "Controle de SLA (tempo de resposta)",
-        steps: [
-          "Meça quanto tempo o vendedor leva para responder após a IA passar o bastão.",
-          "Cobrança de SLA baixo (< 5 min) puxa a taxa de fechamento para cima.",
-        ],
-      },
-      {
-        title: "Roteamento Round-Robin (roleta comercial)",
-        steps: [
-          "Defina as regras de distribuição automática de leads qualificados entre os vendedores.",
-          "Garante divisão justa e ordenada, sem disputa nem lead esquecido.",
-        ],
-      },
-    ],
-    tips: [
-      "Round-robin só funciona se todos os vendedores estiverem cadastrados e ativos.",
-      "Acompanhe o SLA por vendedor: gargalo quase sempre é uma pessoa, não o sistema.",
     ],
   },
   {
