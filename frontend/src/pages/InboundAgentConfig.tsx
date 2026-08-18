@@ -675,20 +675,6 @@ export default function InboundAgentConfig() {
                     <Plus className="mr-2 h-4 w-4" /> Adicionar Dado para Coleta
                   </Button>
                 </div>
-
-                <div className="my-6 border-t border-slate-200 dark:border-slate-800" />
-
-                <div className="space-y-3 max-w-xl">
-                  <Label className="text-base font-semibold">Webhook de Finalização (Agenda/Integração)</Label>
-                  <p className="text-sm text-slate-500">
-                    Quando o robô coletar todas as informações SPIN obrigatórias, ele enviará um POST com os dados para esta URL.
-                  </p>
-                  <Input
-                    placeholder="https://sua-url.com/webhook"
-                    value={inboundWebhookUrl}
-                    onChange={(e) => setInboundWebhookUrl(e.target.value)}
-                  />
-                </div>
               </CardContent>
             </Card>
           </TabsContent>
