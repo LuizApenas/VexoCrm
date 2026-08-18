@@ -99,7 +99,7 @@ export default function InboundAgentConfig() {
   const activeCompany = companies.find((c) => c.id === companyId);
 
   const [inboundEnabled, setInboundEnabled] = useState(false);
-  const [inboundModel, setInboundModel] = useState("gpt-4o");
+  const [inboundModel, setInboundModel] = useState("llama-3.3-70b-versatile");
   const [inboundPrompt, setInboundPrompt] = useState("");
   const [sdrPhone, setSdrPhone] = useState("");
   const [sdrTransferEnabled, setSdrTransferEnabled] = useState(false);
@@ -133,7 +133,7 @@ export default function InboundAgentConfig() {
   useEffect(() => {
     if (activeCompany) {
       setInboundEnabled(activeCompany.inbound_enabled ?? false);
-      setInboundModel(activeCompany.inbound_model ?? "gpt-4o");
+      setInboundModel(activeCompany.inbound_model ?? "llama-3.3-70b-versatile");
       setInboundPrompt(activeCompany.inbound_prompt ?? "");
       setSdrPhone(activeCompany.sdr_whatsapp_number ?? "");
       setSdrTransferEnabled(activeCompany.sdr_transfer_enabled ?? false);
