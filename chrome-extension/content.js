@@ -337,9 +337,260 @@
     }
   }
 
-  // Injeta o botão flutuante se não existir
+  // Controle do Auto-Scout em Massa
+  let isBulkMining = false;
+  let bulkCancelRequested = false;
+
+  function showBulkProgress(current, total, savedCount) {
+    let progressModal = document.getElementById("vexo-bulk-progress");
+    if (!progressModal) {
+      progressModal = document.createElement("div");
+      progressModal.id = "vexo-bulk-progress";
+      document.body.appendChild(progressModal);
+    }
+
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+
+    progressModal.innerHTML = `
+      <div class="vexo-progress-header">
+        <div class="vexo-progress-title">
+          <span class="vexo-scout-icon">⚡</span> Vexo Auto-Scout em Massa
+        </div>
+        <button type="button" class="vexo-progress-cancel-btn" id="vexo-cancel-bulk-btn">
+          ⏹️ Parar
+        </button>
+      </div>
+      <div class="vexo-progress-track">
+        <div class="vexo-progress-fill" style="width: ${pct}%;"></div>
+      </div>
+      <div class="vexo-progress-status">
+        <span>Minerando conversa ${current} de ${total}...</span>
+        <span class="vexo-progress-counter">${savedCount} lead(s) salvos</span>
+      </div>
+    `;
+
+    const cancelBtn = document.getElementById("vexo-cancel-bulk-btn");
+    if (cancelBtn) {
+      cancelBtn.onclick = () => {
+        bulkCancelRequested = true;
+        cancelBtn.textContent = "Cancelando...";
+        cancelBtn.disabled = true;
+      };
+    }
+  }
+
+  function hideBulkProgress() {
+    const progressModal = document.getElementById("vexo-bulk-progress");
+    if (progressModal) progressModal.remove();
+  }
+
+  async function handleBulkMining(btn) {
+    if (isBulkMining || isExtracting) return;
+
+    const { vexoApiUrl, vexoClientId, vexoAuthToken } = await chrome.storage.sync.get([
+      "vexoApiUrl",
+      "vexoClientId",
+      "vexoAuthToken",
+    ]);
+
+    const apiUrl = (vexoApiUrl || "https://crm.vexoia.com").replace(/\/+$/, "");
+
+    if (!vexoClientId || !vexoAuthToken) {
+      showToast({
+        title: "Configuração Pendente",
+        message: "Abra o ícone do Vexo Scout no Chrome e configure seu ID de Cliente e Token.",
+        isError: true,
+      });
+      return;
+    }
+
+    // Busca itens da lista lateral de conversas
+    let chatItems = [];
+    if (isInstagram) {
+      chatItems = Array.from(
+        document.querySelectorAll(
+          'div[role="list"] a[href*="/direct/t/"], div[role="tablist"] a, div[role="grid"] div[role="row"] a, a[href*="/direct/t/"]'
+        )
+      );
+    } else if (isFacebook || isMessenger) {
+      chatItems = Array.from(
+        document.querySelectorAll(
+          'div[role="navigation"] a[href*="/messages/t/"], div[data-scope="messages_table"] div[role="row"], div[role="grid"] a'
+        )
+      );
+    } else if (isLinkedIn) {
+      chatItems = Array.from(
+        document.querySelectorAll(
+          '.msg-conversations-container__conversations-list li, .msg-conversation-listitem__link, .msg-conversation-card'
+        )
+      );
+    } else if (isTikTok) {
+      chatItems = Array.from(
+        document.querySelectorAll('[data-e2e="chat-list-item"]')
+      );
+    }
+
+    // Remove links duplicados de mesma conversa
+    const seenHrefs = new Set();
+    chatItems = chatItems.filter((item) => {
+      const href = item.getAttribute("href") || item.innerText;
+      if (!href || seenHrefs.has(href)) return false;
+      seenHrefs.add(href);
+      return true;
+    });
+
+    if (chatItems.length === 0) {
+      showToast({
+        title: "Lista de Chats Não Encontrada",
+        message: "Abra a tela de mensagens com a lista de conversas visível para usar o Auto-Scout.",
+        isError: true,
+      });
+      return;
+    }
+
+    // Limita a até 20 conversas recentes por lote
+    const itemsToProcess = chatItems.slice(0, 20);
+    const total = itemsToProcess.length;
+
+    isBulkMining = true;
+    bulkCancelRequested = false;
+    btn.classList.add("vexo-loading");
+    btn.innerHTML = `<div class="vexo-spinner"></div> Auto-Scout Rodando...`;
+
+    let totalSavedLeads = 0;
+    const defaultOrigin = isInstagram
+      ? "Instagram Direct"
+      : isFacebook || isMessenger
+      ? "Facebook Messenger"
+      : isTikTok
+      ? "TikTok"
+      : "LinkedIn";
+
+    const channelTag = isInstagram
+      ? "Instagram Direct (Vexo Scout)"
+      : isFacebook || isMessenger
+      ? "Facebook Messenger (Vexo Scout)"
+      : isTikTok
+      ? "TikTok (Vexo Scout)"
+      : "LinkedIn (Vexo Scout)";
+
+    showBulkProgress(1, total, 0);
+
+    try {
+      for (let i = 0; i < total; i++) {
+        if (bulkCancelRequested) {
+          break;
+        }
+
+        const item = itemsToProcess[i];
+        showBulkProgress(i + 1, total, totalSavedLeads);
+
+        // Clica na conversa para abrir
+        try {
+          item.scrollIntoView({ behavior: "smooth", block: "center" });
+          item.click();
+        } catch (e) {
+          const clickTarget = item.querySelector("a, div") || item;
+          clickTarget.click();
+        }
+
+        // Aguarda carregamento do diálogo
+        await new Promise((r) => setTimeout(r, 1300));
+
+        if (bulkCancelRequested) break;
+
+        const rawText = extractConversationText();
+        if (rawText && rawText.length >= 15) {
+          try {
+            const extractResponse = await new Promise((resolve) => {
+              chrome.runtime.sendMessage(
+                {
+                  action: "VEXO_AI_EXTRACT",
+                  payload: {
+                    apiUrl,
+                    authToken: vexoAuthToken,
+                    clientId: vexoClientId,
+                    rawText,
+                    defaultOrigin,
+                  },
+                },
+                resolve
+              );
+            });
+
+            const leads = Array.isArray(extractResponse?.data?.leads) ? extractResponse.data.leads : [];
+
+            if (leads.length > 0) {
+              const rowsToSave = leads.map((lead) => ({
+                nome: lead.nome,
+                telefone: lead.telefone || "",
+                phone: lead.telefone || "",
+                email: lead.email || "",
+                stage: lead.temperatura === "Quente" ? "open_budget" : lead.temperatura === "Frio" ? "cold" : "inquiry",
+                temperature: lead.temperatura === "Quente" ? "hot" : lead.temperatura === "Frio" ? "cold" : "warm",
+                tags: [
+                  channelTag,
+                  lead.origem,
+                  lead.interesse ? `Interesse: ${lead.interesse}` : "",
+                ].filter(Boolean),
+              }));
+
+              const saveResponse = await new Promise((resolve) => {
+                chrome.runtime.sendMessage(
+                  {
+                    action: "VEXO_SAVE_LEADS",
+                    payload: {
+                      apiUrl,
+                      authToken: vexoAuthToken,
+                      clientId: vexoClientId,
+                      rows: rowsToSave,
+                      importTags: [channelTag],
+                    },
+                  },
+                  resolve
+                );
+              });
+
+              if (saveResponse && saveResponse.ok) {
+                totalSavedLeads += leads.length;
+                showBulkProgress(i + 1, total, totalSavedLeads);
+              }
+            }
+          } catch (itemErr) {
+            console.warn(`[Vexo Scout Bulk] Erro ao minerar conversa ${i + 1}:`, itemErr);
+          }
+        }
+
+        // Pequeno intervalo antes da próxima
+        await new Promise((r) => setTimeout(r, 600));
+      }
+
+      hideBulkProgress();
+
+      showToast({
+        title: "Varredura Concluída!",
+        message: `🎉 Auto-Scout finalizado! ${totalSavedLeads} contatos qualificados e salvos no Banco de Dados.`,
+        crmUrl: `${apiUrl}/crm/banco-de-dados`,
+      });
+    } catch (bulkErr) {
+      console.error("[Vexo Scout] Erro no Auto-Scout:", bulkErr);
+      hideBulkProgress();
+      showToast({
+        title: "Auto-Scout Interrompido",
+        message: bulkErr.message || "Ocorreu um erro durante a varredura em massa.",
+        isError: true,
+      });
+    } finally {
+      isBulkMining = false;
+      bulkCancelRequested = false;
+      btn.classList.remove("vexo-loading");
+      btn.innerHTML = `🤖 Minerar Todas as Conversas`;
+    }
+  }
+
+  // Injeta a barra flutuante de ferramentas se não existir
   function injectFloatingButton() {
-    if (document.getElementById(BUTTON_ID)) return;
+    if (document.getElementById("vexo-scout-toolbar")) return;
 
     // Apenas injeta se estiver em uma página de mensagens/chat
     const isDirectChat =
@@ -365,13 +616,26 @@
 
     if (!isDirectChat) return;
 
-    const btn = document.createElement("button");
-    btn.id = BUTTON_ID;
-    btn.innerHTML = `<span class="vexo-scout-icon">⚡</span> Minerar com Vexo OS`;
-    btn.title = "Extrair dados deste contato e salvar no Banco de Dados do Vexo OS";
+    const toolbar = document.createElement("div");
+    toolbar.id = "vexo-scout-toolbar";
 
-    btn.addEventListener("click", () => handleScoutMining(btn));
-    document.body.appendChild(btn);
+    // Botão 1: Auto-Scout em Massa
+    const btnBulk = document.createElement("button");
+    btnBulk.id = "vexo-bulk-scout-btn";
+    btnBulk.innerHTML = `🤖 Minerar Todas as Conversas`;
+    btnBulk.title = "Percorrer automaticamente todas as conversas da lista e minerar os contatos";
+    btnBulk.addEventListener("click", () => handleBulkMining(btnBulk));
+
+    // Botão 2: Minerar Esta Conversa
+    const btnSingle = document.createElement("button");
+    btnSingle.id = BUTTON_ID;
+    btnSingle.innerHTML = `<span class="vexo-scout-icon">⚡</span> Minerar com Vexo OS`;
+    btnSingle.title = "Extrair dados desta conversa e salvar no Banco de Dados do Vexo OS";
+    btnSingle.addEventListener("click", () => handleScoutMining(btnSingle));
+
+    toolbar.appendChild(btnBulk);
+    toolbar.appendChild(btnSingle);
+    document.body.appendChild(toolbar);
   }
 
   // Observer para SPA navigation e mudanças no DOM
