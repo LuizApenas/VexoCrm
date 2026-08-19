@@ -1244,13 +1244,13 @@ export function registerLeadsRoutes(app, deps) {
         const name = normalizeString(row.nome || row.name || row.cliente || row.contato || formattedPhone || "Lead");
 
         if (!formattedPhone) {
-          // Se veio com tag de Direct/Social ou nome válido, gera chave única de lead social
+          // Se veio com tag de Direct/Social ou nome válido, gera número E.164 com prefixo 5500 (13 dígitos exatos: 5500 + 9 dígitos)
           const isSocialLead =
-            importTagsArray.some((t) => /instagram|facebook|linkedin|tiktok|scout/i.test(t)) ||
-            (Array.isArray(row.tags) && row.tags.some((t) => /instagram|facebook|linkedin|tiktok|scout/i.test(t)));
+            importTagsArray.some((t) => /instagram|facebook|linkedin|tiktok|scout|direct/i.test(t)) ||
+            (Array.isArray(row.tags) && row.tags.some((t) => /instagram|facebook|linkedin|tiktok|scout|direct/i.test(t)));
           if (isSocialLead && name) {
-            const cleanSlug = name.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
-            formattedPhone = `social_${cleanSlug || "lead"}_${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
+            const randomSuffix = Math.floor(100000000 + Math.random() * 900000000);
+            formattedPhone = `5500${randomSuffix}`;
           } else {
             continue;
           }

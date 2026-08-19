@@ -404,31 +404,46 @@
       return;
     }
 
-    // Busca itens da lista lateral de conversas com filtro estrito anti-stories
+    // Busca itens da lista lateral de conversas com seletor infalível
     let chatItems = [];
     if (isInstagram) {
-      // Busca exclusivamente links e containers de conversas no Direct
+      // Procura todos os elementos clicáveis na coluna lateral esquerda do Direct
       const candidates = Array.from(
         document.querySelectorAll(
-          'a[href*="/direct/t/"], div[role="list"] a, div[role="listitem"] a, div[role="row"] a, div[role="tablist"] a'
+          'div[role="list"] > div, div[role="listitem"], div[role="row"], div[tabindex="0"], a[href*="/direct/t/"]'
         )
       );
-      const seenHrefs = new Set();
+      const seen = new Set();
       chatItems = candidates.filter((el) => {
-        const href = el.getAttribute("href") || "";
-        // Ignora Stories, Reels, Explore e links fora do direct
-        if (
-          href.includes("/stories/") ||
-          href.includes("/reel/") ||
-          href.includes("/explore/") ||
-          !href.includes("/direct/t/")
-        ) {
-          return false;
-        }
-        if (seenHrefs.has(href)) return false;
-        seenHrefs.add(href);
+        const rect = el.getBoundingClientRect();
+        const text = el.innerText?.trim() || "";
+        // Elemento deve estar na coluna esquerda (left < 45% da tela) e ter altura de card de conversa
+        const isLeftSidebar =
+          rect.left < window.innerWidth * 0.45 && rect.width > 90 && rect.height >= 45 && rect.top > 80;
+        const isNotControl =
+          !text.includes("Pesquisar") &&
+          !text.includes("Sua nota") &&
+          !text.includes("Mensagens") &&
+          !text.includes("Pedidos");
+        if (!isLeftSidebar || !isNotControl || !text) return false;
+        const firstLine = text.split("\n")[0].trim().slice(0, 20);
+        if (seen.has(firstLine)) return false;
+        seen.add(firstLine);
         return true;
       });
+
+      // Se não encontrou por bounding box, tenta fallback direto por links /direct/t/
+      if (chatItems.length === 0) {
+        const linkCandidates = Array.from(document.querySelectorAll('a[href*="/direct/t/"]'));
+        const seenHrefs = new Set();
+        chatItems = linkCandidates.filter((el) => {
+          const href = el.getAttribute("href") || "";
+          if (href.includes("/stories/") || href.includes("/reel/") || !href.includes("/direct/t/")) return false;
+          if (seenHrefs.has(href)) return false;
+          seenHrefs.add(href);
+          return true;
+        });
+      }
     } else if (isFacebook || isMessenger) {
       // No Facebook, orienta se não estiver na tela de mensagens
       if (isFacebook && !window.location.pathname.includes("/messages")) {
@@ -530,13 +545,17 @@
         const item = itemsToProcess[i];
         showBulkProgress(i + 1, total, totalSavedLeads);
 
-        // Clica na conversa para abrir
+        // Clica na conversa para abrir e dispara eventos reais de mouse
         try {
-          item.scrollIntoView({ behavior: "smooth", block: "center" });
+          item.scrollIntoView({ block: "nearest", behavior: "smooth" });
           item.click();
+          item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+          item.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
         } catch (e) {
           const clickTarget = item.querySelector("a, div") || item;
           clickTarget.click();
+          clickTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+          clickTarget.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
         }
 
         // Aguarda carregamento do diálogo
