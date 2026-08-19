@@ -165,19 +165,47 @@ export async function callLlmChatCompletion({
   // Default: Groq
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("GROQ_API_KEY não configurada no servidor (Easypanel)");
-  const body = { model, messages, temperature, max_tokens };
-  if (response_format) body.response_format = response_format;
-  const res = await fetch(`${GROQ_BASE}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
+
+  const fallbackGroqModels = [
+    model,
+    process.env.GROQ_CAMPAIGN_AI_MODEL,
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-8b-8192",
+    "gemma2-9b-it",
+  ].filter(Boolean);
+
+  const modelsToTry = Array.from(new Set(fallbackGroqModels));
+  let lastError = null;
+
+  for (const m of modelsToTry) {
+    const body = { model: m, messages, temperature, max_tokens };
+    if (response_format) body.response_format = response_format;
+    const res = await fetch(`${GROQ_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content || "";
+    }
+
     const err = await res.text();
-    throw new Error(`Groq HTTP ${res.status}: ${err.slice(0, 200)}`);
+    lastError = new Error(`Groq HTTP ${res.status}: ${err.slice(0, 200)}`);
+
+    // Se o modelo não existir ou não tiver acesso (404/model_not_found), tenta o próximo modelo da lista
+    if (res.status === 404 || err.includes("model_not_found") || err.includes("does not exist")) {
+      console.warn(`[chatbot-ai-engine] Groq modelo "${m}" indisponível (404/model_not_found), tentando fallback...`);
+      continue;
+    }
+
+    // Para outros erros (ex: 401 não autorizado), falha imediatamente
+    throw lastError;
   }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || "";
+
+  throw lastError || new Error("Falha ao consultar a Groq com os modelos disponíveis");
 }
 
 
