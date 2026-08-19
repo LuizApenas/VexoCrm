@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Vexo Scout — Mineração Inteligente de Leads",
+  "version": "1.0.0",
+  "description": "Extraia contatos e conversas do Instagram Direct e LinkedIn com 1 clique para o Vexo OS.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://*.instagram.com/*",
+    "https://*.linkedin.com/*",
+    "https://crm.vexoia.com/*",
+    "http://localhost:*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Vexo Scout",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.instagram.com/direct/*",
+        "https://*.instagram.com/your_activity/*",
+        "https://*.linkedin.com/messaging/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
