@@ -1,15 +1,7 @@
 // backend/src/domains/leads/aiExtractRoutes.js
 // Endpoint de extração semântica e inteligente de contatos/conversas com Groq (Llama 3.3 70B Versatile).
 
-import Groq from "groq-sdk";
-
-let _groq = null;
-function getGroq() {
-  if (!_groq) {
-    _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  }
-  return _groq;
-}
+import { callLlmChatCompletion } from "../../chatbot-ai-engine.js";
 
 export function registerAiExtractRoutes(app, deps) {
   const {
@@ -76,10 +68,10 @@ Texto para análise:
 ${rawText}
 """`;
 
-        const groq = getGroq();
-        const completion = await groq.chat.completions.create({
+        const rawContent = await callLlmChatCompletion({
           model: "llama-3.3-70b-versatile",
           temperature: 0.1,
+          max_tokens: 1500,
           response_format: { type: "json_object" },
           messages: [
             {
@@ -94,20 +86,22 @@ ${rawText}
           ],
         });
 
-        const rawContent = completion.choices?.[0]?.message?.content || "{}";
         let parsed = {};
         try {
           parsed = JSON.parse(rawContent);
-        } catch {
-          const match = rawContent.match(/\{[\s\S]*\}/);
+        } catch (parseError) {
+          console.warn("[ai-extract] JSON parse fallback:", parseError);
+          const match = String(rawContent || "").match(/\{[\s\S]*\}/);
           if (match) {
-            parsed = JSON.parse(match[0]);
-          } else {
-            throw new Error("A IA não retornou um JSON válido.");
+            try {
+              parsed = JSON.parse(match[0]);
+            } catch {
+              parsed = {};
+            }
           }
         }
 
-        const rawLeads = Array.isArray(parsed.leads) ? parsed.leads : [];
+        const rawLeads = Array.isArray(parsed?.leads) ? parsed.leads : [];
         const leads = rawLeads.map((item) => {
           let cleanPhone = null;
           if (item.telefone) {
