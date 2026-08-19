@@ -31,6 +31,7 @@ import {
   Lock,
   Target,
   Puzzle,
+  Bot,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
@@ -43,6 +44,9 @@ import { UpsellCard } from "@/components/UpsellCard";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -257,6 +261,23 @@ export default function BancoDeDados() {
   });
   const [isUploadingImport, setIsUploadingImport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // AI Importer State (Instagram Direct / Chat / Texto)
+  const [isAIImportModalOpen, setIsAIImportModalOpen] = useState(false);
+  const [aiRawText, setAiRawText] = useState("");
+  const [aiDefaultOrigin, setAiDefaultOrigin] = useState("Instagram Direct");
+  const [aiStep, setAiStep] = useState<1 | 2>(1);
+  const [aiExtractedLeads, setAiExtractedLeads] = useState<{
+    nome: string;
+    telefone: string | null;
+    email: string | null;
+    origem: string;
+    interesse: string;
+    temperatura: "Quente" | "Morno" | "Frio";
+    valor_estimado: number | null;
+  }[]>([]);
+  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+  const [isAiSaving, setIsAiSaving] = useState(false);
 
   // Create Manual Lead State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -532,6 +553,99 @@ export default function BancoDeDados() {
       toast.error("Erro na importação da planilha", { description: err.message });
     } finally {
       setIsUploadingImport(false);
+    }
+  };
+
+  // Extração e Análise Semântica de Conversas com IA
+  const handleAnalyzeWithAI = async () => {
+    if (!aiRawText.trim()) {
+      toast.error("Por favor, cole o texto ou conversa para análise.");
+      return;
+    }
+
+    setIsAiAnalyzing(true);
+    try {
+      const token = await getIdToken();
+      const res = await fetch(`${API_BASE_URL}/api/leads/ai-extract`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          clientId,
+          rawText: aiRawText.trim(),
+          defaultOrigin: aiDefaultOrigin,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error?.message || data?.message || "Falha na análise com IA.");
+      }
+
+      if (!Array.isArray(data.leads) || data.leads.length === 0) {
+        toast.warning("Nenhum contato identificado no texto. Verifique se o texto contém nomes e contatos.");
+        return;
+      }
+
+      setAiExtractedLeads(data.leads);
+      setAiStep(2);
+      toast.success(`${data.leads.length} contato(s) identificado(s) pela IA!`);
+    } catch (err: any) {
+      toast.error("Erro ao analisar texto com IA", { description: err.message });
+    } finally {
+      setIsAiAnalyzing(false);
+    }
+  };
+
+  const handleSaveAiLeads = async () => {
+    if (aiExtractedLeads.length === 0) {
+      toast.error("Nenhum contato para salvar.");
+      return;
+    }
+
+    setIsAiSaving(true);
+    try {
+      const token = await getIdToken();
+      const rowsToSave = aiExtractedLeads.map((lead) => ({
+        nome: lead.nome,
+        telefone: lead.telefone || "",
+        phone: lead.telefone || "",
+        email: lead.email || "",
+        stage: lead.temperatura === "Quente" ? "open_budget" : lead.temperatura === "Frio" ? "cold" : "inquiry",
+        temperature: lead.temperatura === "Quente" ? "hot" : lead.temperatura === "Frio" ? "cold" : "warm",
+        tags: [lead.origem, lead.interesse ? `Interesse: ${lead.interesse}` : ""].filter(Boolean),
+      }));
+
+      const res = await fetch(`${API_BASE_URL}/api/leads/import-csv`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          clientId,
+          rows: rowsToSave,
+          importTags: ["IA Direct/Chat"],
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.message || "Erro ao salvar contatos.");
+      }
+
+      toast.success(`${rowsToSave.length} contato(s) salvos no Banco de Dados com sucesso!`);
+      setIsAIImportModalOpen(false);
+      setAiRawText("");
+      setAiExtractedLeads([]);
+      setAiStep(1);
+      fetchLeads();
+    } catch (err: any) {
+      toast.error("Falha ao salvar contatos", { description: err.message });
+    } finally {
+      setIsAiSaving(false);
     }
   };
 
@@ -1174,6 +1288,19 @@ export default function BancoDeDados() {
             >
               <MessageCircle className="w-3.5 h-3.5" />
               Extrair do WhatsApp (QR Code)
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAiStep(1);
+                setIsAIImportModalOpen(true);
+              }}
+              className="gap-1.5 text-xs rounded-xl border-purple-500/30 bg-purple-500/5 text-purple-700 dark:text-purple-300 hover:bg-purple-500/15 font-semibold"
+            >
+              <Bot className="w-3.5 h-3.5 text-purple-500" />
+              Importar com IA (Instagram / Chat / Texto)
             </Button>
 
             <Button
@@ -2066,6 +2193,220 @@ export default function BancoDeDados() {
               Processar e Importar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Importador Inteligente de Conversas por I.A. */}
+      <Dialog open={isAIImportModalOpen} onOpenChange={setIsAIImportModalOpen}>
+        <DialogContent className={cn("transition-all", aiStep === 1 ? "sm:max-w-xl" : "sm:max-w-3xl max-h-[90vh] flex flex-col")}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <Bot className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              Importador Inteligente com IA
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {aiStep === 1
+                ? "Cole conversas do Direct, WhatsApp, E-mail ou LinkedIn. A IA extrai nomes, telefones, interesses e qualificação automaticamente."
+                : "Revise e edite os contatos encontrados antes de salvar no Banco de Dados."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {aiStep === 1 ? (
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Origem Padrão dos Contatos</Label>
+                <Select value={aiDefaultOrigin} onValueChange={setAiDefaultOrigin}>
+                  <SelectTrigger className="h-9 text-xs rounded-xl">
+                    <SelectValue placeholder="Selecione a origem..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Instagram Direct">📸 Instagram Direct</SelectItem>
+                    <SelectItem value="LinkedIn">💼 LinkedIn</SelectItem>
+                    <SelectItem value="Facebook Messenger">💬 Facebook Messenger</SelectItem>
+                    <SelectItem value="TikTok">🎵 TikTok</SelectItem>
+                    <SelectItem value="E-mail">✉️ E-mail</SelectItem>
+                    <SelectItem value="WhatsApp Export">📱 WhatsApp Export</SelectItem>
+                    <SelectItem value="Outro Canal">🌐 Outro Canal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Texto ou Diálogo do Chat</Label>
+                <Textarea
+                  value={aiRawText}
+                  onChange={(e) => setAiRawText(e.target.value)}
+                  placeholder={"Cole aqui o texto ou conversa do Direct/E-mail... Ex:\nJoão Silva: vi o anúncio no Insta, meu zap é (34) 99999-9999, quanto custa o serviço?"}
+                  rows={8}
+                  className="text-xs resize-none rounded-xl bg-background font-mono leading-relaxed"
+                />
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button variant="outline" size="sm" onClick={() => setIsAIImportModalOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleAnalyzeWithAI}
+                  disabled={!aiRawText.trim() || isAiAnalyzing}
+                  className="bg-purple-600 hover:bg-purple-700 text-white gap-2 text-xs font-semibold shadow-xs"
+                >
+                  {isAiAnalyzing ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Analisando com IA...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Analisar com IA
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2 flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Badge variant="outline" className="bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30">
+                    {aiExtractedLeads.length} contato(s) encontrado(s)
+                  </Badge>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setAiStep(1)}
+                  className="text-xs text-muted-foreground hover:text-foreground h-7"
+                >
+                  ← Voltar / Novo Texto
+                </Button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto border border-border/80 rounded-xl max-h-[380px]">
+                <Table>
+                  <TableHeader className="bg-muted/40 sticky top-0 z-10">
+                    <TableRow>
+                      <TableHead className="text-[11px] font-bold">Nome</TableHead>
+                      <TableHead className="text-[11px] font-bold">Telefone</TableHead>
+                      <TableHead className="text-[11px] font-bold">Origem</TableHead>
+                      <TableHead className="text-[11px] font-bold">Interesse</TableHead>
+                      <TableHead className="text-[11px] font-bold">Temperatura</TableHead>
+                      <TableHead className="w-8"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {aiExtractedLeads.map((lead, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="p-2">
+                          <Input
+                            value={lead.nome}
+                            onChange={(e) => {
+                              const updated = [...aiExtractedLeads];
+                              updated[idx].nome = e.target.value;
+                              setAiExtractedLeads(updated);
+                            }}
+                            className="h-7 text-xs"
+                          />
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Input
+                            value={lead.telefone || ""}
+                            onChange={(e) => {
+                              const updated = [...aiExtractedLeads];
+                              updated[idx].telefone = e.target.value;
+                              setAiExtractedLeads(updated);
+                            }}
+                            placeholder="DDD + Número"
+                            className="h-7 text-xs font-mono"
+                          />
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Input
+                            value={lead.origem}
+                            onChange={(e) => {
+                              const updated = [...aiExtractedLeads];
+                              updated[idx].origem = e.target.value;
+                              setAiExtractedLeads(updated);
+                            }}
+                            className="h-7 text-xs"
+                          />
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Input
+                            value={lead.interesse}
+                            onChange={(e) => {
+                              const updated = [...aiExtractedLeads];
+                              updated[idx].interesse = e.target.value;
+                              setAiExtractedLeads(updated);
+                            }}
+                            className="h-7 text-xs"
+                          />
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Select
+                            value={lead.temperatura}
+                            onValueChange={(val: "Quente" | "Morno" | "Frio") => {
+                              const updated = [...aiExtractedLeads];
+                              updated[idx].temperatura = val;
+                              setAiExtractedLeads(updated);
+                            }}
+                          >
+                            <SelectTrigger className="h-7 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Quente">🔥 Quente</SelectItem>
+                              <SelectItem value="Morno">☀️ Morno</SelectItem>
+                              <SelectItem value="Frio">❄️ Frio</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="p-2 text-center">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setAiExtractedLeads((prev) => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="h-7 w-7 text-muted-foreground hover:text-red-500"
+                            title="Remover este contato"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button variant="outline" size="sm" onClick={() => setAiStep(1)}>
+                  Voltar
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSaveAiLeads}
+                  disabled={aiExtractedLeads.length === 0 || isAiSaving}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 text-xs font-semibold shadow-xs"
+                >
+                  {isAiSaving ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Salvando Contatos...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="w-3.5 h-3.5" />
+                      Salvar Contatos no Banco de Dados
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

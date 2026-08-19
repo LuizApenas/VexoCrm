@@ -10,6 +10,7 @@ import { registerEventosRoutes } from "./eventos/routes.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { registerVexoSalesRoutes } from "./vexoSales/routes.js";
 import { registerLeadsRoutes } from "./leads/routes.js";
+import { registerAiExtractRoutes } from "./leads/aiExtractRoutes.js";
 import { registerInsightsRoutes } from "./insights/routes.js";
 import { registerIntegrationsRoutes } from "./integrations/routes.js";
 import { registerChatbotRoutes } from "./chatbot/routes.js";
@@ -38,6 +39,7 @@ export function registerAllDomainRoutes(app) {
   registerSuperAdminRoutes(app, routeDeps);
   registerInsightsRoutes(app, routeDeps);
   registerLeadsRoutes(app, routeDeps);
+  registerAiExtractRoutes(app, routeDeps);
   registerIntegrationsRoutes(app, routeDeps);
   registerAuthRoutes(app, routeDeps);
   registerVexoSalesRoutes(app, routeDeps);
