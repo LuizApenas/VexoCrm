@@ -1,15 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Vexo Scout — Mineração Inteligente de Leads",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Extraia contatos e conversas do Instagram Direct e LinkedIn com 1 clique para o Vexo OS.",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
     "https://*.instagram.com/*",
     "https://*.linkedin.com/*",
+    "https://*.facebook.com/*",
+    "https://*.tiktok.com/*",
     "https://crm.vexoia.com/*",
     "http://localhost:*"
   ],

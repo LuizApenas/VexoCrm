@@ -227,11 +227,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!active) return;
 
         claimMustChangePassword = tokenResult?.claims?.must_change_password === true;
-        setAccessProfile(buildAccessProfile(user, tokenResult?.claims));
+        const profile = buildAccessProfile(user, tokenResult?.claims);
+        setAccessProfile(profile);
+        if (profile?.clientId && typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem("crm_selected_client_id", profile.clientId);
+            window.localStorage.setItem("vexo_client_id", profile.clientId);
+          } catch {}
+        }
       } catch (error) {
         console.error("Failed to read Firebase custom claims:", error);
         if (!active) return;
-        setAccessProfile(buildAccessProfile(user));
+        const profile = buildAccessProfile(user);
+        setAccessProfile(profile);
+        if (profile?.clientId && typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem("crm_selected_client_id", profile.clientId);
+            window.localStorage.setItem("vexo_client_id", profile.clientId);
+          } catch {}
+        }
       }
 
       // Objetivo 4: a flag must_change_password vinda do backend é a fonte de verdade
