@@ -1395,7 +1395,13 @@ export default function BancoDeDados() {
 
         {/* Header Métrico (Cards KPIs) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-          <Card className="bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800">
+          <Card
+            onClick={() => setActiveTab("all")}
+            className={cn(
+              "bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800 cursor-pointer hover:border-blue-500/50 hover:shadow-md transition-all",
+              activeTab === "all" && "border-blue-500/60 bg-blue-500/[0.04]"
+            )}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
               <CardTitle className="text-xs font-semibold text-muted-foreground">
                 Total de Leads na Base
@@ -1408,7 +1414,13 @@ export default function BancoDeDados() {
             </CardContent>
           </Card>
 
-          <Card className="bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800">
+          <Card
+            onClick={() => setActiveTab("buyer")}
+            className={cn(
+              "bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800 cursor-pointer hover:border-emerald-500/50 hover:shadow-md transition-all",
+              activeTab === "buyer" && "border-emerald-500/60 bg-emerald-500/[0.04]"
+            )}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
               <CardTitle className="text-xs font-semibold text-muted-foreground">
                 Compradores (Clientes 🟢)
@@ -1423,7 +1435,13 @@ export default function BancoDeDados() {
             </CardContent>
           </Card>
 
-          <Card className="bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800">
+          <Card
+            onClick={() => setActiveTab("open_budget")}
+            className={cn(
+              "bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800 cursor-pointer hover:border-amber-500/50 hover:shadow-md transition-all",
+              activeTab === "open_budget" && "border-amber-500/60 bg-amber-500/[0.04]"
+            )}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
               <CardTitle className="text-xs font-semibold text-muted-foreground">
                 Orçamentos Abertos 🟡
