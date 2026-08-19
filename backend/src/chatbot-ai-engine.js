@@ -164,15 +164,26 @@ export async function callLlmChatCompletion({
 
   // Default: Groq
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("GROQ_API_KEY não configurada no servidor (Easypanel)");
+  if (!apiKey) {
+    // Se não tiver chave da Groq, tenta OpenAI ou Gemini se existirem
+    if (process.env.OPENAI_API_KEY) {
+      return callLlmChatCompletion({ model: "gpt-4o-mini", messages, temperature, max_tokens, response_format });
+    }
+    if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
+      return callLlmChatCompletion({ model: "gemini-2.0-flash", messages, temperature, max_tokens, response_format });
+    }
+    throw new Error("GROQ_API_KEY não configurada no servidor (Easypanel)");
+  }
 
   const fallbackGroqModels = [
     model,
     process.env.GROQ_CAMPAIGN_AI_MODEL,
-    "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
-    "llama3-8b-8192",
+    "llama-3.3-70b-versatile",
     "gemma2-9b-it",
+    "deepseek-r1-distill-llama-70b",
+    "qwen-2.5-32b",
+    "openai/gpt-oss-20b",
   ].filter(Boolean);
 
   const modelsToTry = Array.from(new Set(fallbackGroqModels));
@@ -195,14 +206,33 @@ export async function callLlmChatCompletion({
     const err = await res.text();
     lastError = new Error(`Groq HTTP ${res.status}: ${err.slice(0, 200)}`);
 
-    // Se o modelo não existir ou não tiver acesso (404/model_not_found), tenta o próximo modelo da lista
-    if (res.status === 404 || err.includes("model_not_found") || err.includes("does not exist")) {
-      console.warn(`[chatbot-ai-engine] Groq modelo "${m}" indisponível (404/model_not_found), tentando fallback...`);
+    // Se o modelo não existir, for depreciado ou não tiver acesso (404 / 400 decommissioned), tenta o próximo modelo da lista
+    if (
+      res.status === 404 ||
+      res.status === 400 ||
+      err.includes("model_not_found") ||
+      err.includes("does not exist") ||
+      err.includes("decommissioned") ||
+      err.includes("not supported") ||
+      err.includes("deprecated") ||
+      err.includes("invalid_request_error")
+    ) {
+      console.warn(`[chatbot-ai-engine] Groq modelo "${m}" indisponível (${res.status}), tentando próximo modelo...`);
       continue;
     }
 
     // Para outros erros (ex: 401 não autorizado), falha imediatamente
     throw lastError;
+  }
+
+  // Fallback cruzado se todos os modelos da Groq falharem
+  if (process.env.OPENAI_API_KEY) {
+    console.warn("[chatbot-ai-engine] Tentando fallback para OpenAI (gpt-4o-mini)...");
+    return callLlmChatCompletion({ model: "gpt-4o-mini", messages, temperature, max_tokens, response_format });
+  }
+  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
+    console.warn("[chatbot-ai-engine] Tentando fallback para Gemini (gemini-2.0-flash)...");
+    return callLlmChatCompletion({ model: "gemini-2.0-flash", messages, temperature, max_tokens, response_format });
   }
 
   throw lastError || new Error("Falha ao consultar a Groq com os modelos disponíveis");

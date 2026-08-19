@@ -27,12 +27,12 @@ export function registerAiExtractRoutes(app, deps) {
           });
         }
 
-        if (!process.env.GROQ_API_KEY) {
+        if (!process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) {
           return res.status(503).json({
             success: false,
             error: {
               code: "GROQ_DISABLED",
-              message: "Groq não configurado no servidor.",
+              message: "Provedor de IA não configurado no servidor.",
             },
           });
         }
@@ -69,7 +69,7 @@ ${rawText}
 """`;
 
         const rawContent = await callLlmChatCompletion({
-          model: "llama-3.3-70b-versatile",
+          model: process.env.GROQ_CAMPAIGN_AI_MODEL || "llama-3.1-8b-instant",
           temperature: 0.1,
           max_tokens: 1500,
           response_format: { type: "json_object" },
