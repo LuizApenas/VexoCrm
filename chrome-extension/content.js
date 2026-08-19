@@ -181,26 +181,31 @@
       // 1. Extração Semântica com IA
       btn.innerHTML = `<div class="vexo-spinner"></div> Extraindo com IA...`;
 
-      const extractRes = await fetch(`${apiUrl}/api/leads/ai-extract`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${vexoAuthToken}`,
-        },
-        body: JSON.stringify({
-          clientId: vexoClientId,
-          rawText,
-          defaultOrigin,
-        }),
+      const extractResponse = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {
+            action: "VEXO_AI_EXTRACT",
+            payload: {
+              apiUrl,
+              authToken: vexoAuthToken,
+              clientId: vexoClientId,
+              rawText,
+              defaultOrigin,
+            },
+          },
+          resolve
+        );
       });
 
-      const extractData = await extractRes.json();
-
-      if (!extractRes.ok || !extractData.success) {
-        throw new Error(extractData?.error?.message || extractData?.message || "Erro na análise com IA.");
+      if (!extractResponse || !extractResponse.ok || !extractResponse.data?.success) {
+        const errMsg =
+          extractResponse?.data?.error?.message ||
+          extractResponse?.error ||
+          "Erro na análise com IA.";
+        throw new Error(errMsg);
       }
 
-      const leads = Array.isArray(extractData.leads) ? extractData.leads : [];
+      const leads = Array.isArray(extractResponse.data.leads) ? extractResponse.data.leads : [];
 
       if (leads.length === 0) {
         showToast({
@@ -228,23 +233,25 @@
         ].filter(Boolean),
       }));
 
-      const saveRes = await fetch(`${apiUrl}/api/leads/import-csv`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${vexoAuthToken}`,
-        },
-        body: JSON.stringify({
-          clientId: vexoClientId,
-          rows: rowsToSave,
-          importTags: [isInstagram ? "Instagram Direct (Vexo Scout)" : "LinkedIn (Vexo Scout)"],
-        }),
+      const saveResponse = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {
+            action: "VEXO_SAVE_LEADS",
+            payload: {
+              apiUrl,
+              authToken: vexoAuthToken,
+              clientId: vexoClientId,
+              rows: rowsToSave,
+              importTags: [isInstagram ? "Instagram Direct (Vexo Scout)" : "LinkedIn (Vexo Scout)"],
+            },
+          },
+          resolve
+        );
       });
 
-      const saveData = await saveRes.json();
-
-      if (!saveRes.ok) {
-        throw new Error(saveData?.message || "Erro ao salvar contatos no Banco de Dados.");
+      if (!saveResponse || !saveResponse.ok) {
+        const errMsg = saveResponse?.data?.message || saveResponse?.error || "Erro ao salvar contatos.";
+        throw new Error(errMsg);
       }
 
       const mainLead = leads[0];

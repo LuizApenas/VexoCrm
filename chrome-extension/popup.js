@@ -223,30 +223,34 @@ async function testConnection() {
   btnTest.textContent = "⏳ Testando...";
 
   try {
-    const response = await fetch(`${apiUrl}/api/leads/ai-extract`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        clientId,
-        rawText: "Teste de conexão Vexo Scout: Contato Teste, Tel: 5534999999999",
-        defaultOrigin: "Vexo Scout Test",
-      }),
+    const res = await new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        {
+          action: "VEXO_AI_EXTRACT",
+          payload: {
+            apiUrl,
+            authToken,
+            clientId,
+            rawText: "Teste de conexão Vexo Scout: Contato Teste, Tel: 5534999999999",
+            defaultOrigin: "Vexo Scout Test",
+          },
+        },
+        resolve
+      );
     });
 
-    const data = await response.json();
-
-    if (response.ok && data.success) {
+    if (res && res.ok && res.data?.success) {
       updateStatus(true, `Conectado ao Vexo OS (${clientId})`);
       showMessage("Conexão validada com sucesso!", "success");
-    } else if (response.status === 401 || response.status === 403) {
+    } else if (res?.status === 401 || res?.status === 403) {
       updateStatus(false, "Token inválido ou expirado");
       showMessage("Token de autenticação não autorizado (401/403).", "error");
     } else {
       updateStatus(false, "Erro na resposta da API");
-      showMessage(data?.error?.message || data?.message || "Erro ao conectar com a API.", "error");
+      showMessage(
+        res?.data?.error?.message || res?.data?.message || res?.error || "Erro ao conectar com a API.",
+        "error"
+      );
     }
   } catch (err) {
     updateStatus(false, "Falha de rede");

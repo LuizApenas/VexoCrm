@@ -17,6 +17,9 @@
     "https://crm.vexoia.com/*",
     "http://localhost:*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "Vexo Scout",
