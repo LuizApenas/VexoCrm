@@ -37,16 +37,19 @@ export function registerAiExtractRoutes(app, deps) {
           });
         }
 
-        const prompt = `Você é um extrator de contatos comerciais de alta precisão. Analise o texto abaixo (que pode conter diálogos de Instagram Direct, LinkedIn, E-mail ou WhatsApp) e extraia TODOS os contatos/leads identificáveis.
+        const prompt = `Você é um extrator de contatos comerciais de alta precisão.
+Analise o texto abaixo (que contém diálogos de Instagram Direct, LinkedIn, E-mail ou WhatsApp) e extraia TODOS os contatos/leads identificáveis.
 
 Para cada contato encontrado, retorne um objeto JSON com:
-- "nome": string (Nome da pessoa ou perfil, ou "Não informado")
-- "telefone": string (Apenas os dígitos com DDD do Brasil ex: 5534999999999, ou null se não houver telefone)
+- "nome": string (Nome da pessoa ou @username do perfil, ex: "Eliés Sousa" ou "@eliessousa")
+- "telefone": string ou null (Apenas dígitos com DDD ex: 5534999999999, ou null se não houver telefone no texto)
 - "email": string ou null
 - "origem": string (ex: "${defaultOrigin || "Instagram Direct"}")
-- "interesse": string (resumo do produto, dor ou serviço procurado)
+- "interesse": string (resumo do assunto ou produto. Se for conversa informal/direct, coloque "Interação no Direct")
 - "temperatura": "Quente" | "Morno" | "Frio"
 - "valor_estimado": number ou null
+
+MESMO QUE NÃO HAJA NÚMERO DE TELEFONE, retorne o contato com o Nome/Perfil identificado.
 
 Retorne ESTRITAMENTE um JSON no formato:
 {
@@ -54,10 +57,10 @@ Retorne ESTRITAMENTE um JSON no formato:
     {
       "nome": "...",
       "telefone": "55...",
-      "email": "...",
-      "origem": "...",
-      "interesse": "...",
-      "temperatura": "Quente",
+      "email": null,
+      "origem": "Instagram Direct",
+      "interesse": "Interação no Direct",
+      "temperatura": "Frio",
       "valor_estimado": null
     }
   ]

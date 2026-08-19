@@ -73,16 +73,21 @@
     const messages = [];
 
     if (isInstagram) {
-      // Nome no topo da conversa do Direct
-      const headerEl =
-        document.querySelector('header h2') ||
-        document.querySelector('div[role="main"] header span') ||
+      // Busca nome e @username no topo da conversa
+      const headerTitleEl =
         document.querySelector('header span[dir="auto"]') ||
+        document.querySelector('header h2') ||
+        document.querySelector('header span') ||
+        document.querySelector('div[role="main"] header span') ||
         document.querySelector('div[role="grid"] header');
 
-      if (headerEl && headerEl.textContent.trim()) {
-        contactName = headerEl.textContent.trim();
+      if (headerTitleEl && headerTitleEl.textContent.trim()) {
+        contactName = headerTitleEl.textContent.trim();
       }
+
+      // Tenta capturar thread da URL
+      const urlMatch = window.location.pathname.match(/\/direct\/t\/([^\/]+)/);
+      const directThread = urlMatch ? urlMatch[1] : "";
 
       // Bolhas de mensagens do Direct
       const bubbleElements = document.querySelectorAll(
