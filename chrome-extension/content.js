@@ -6,9 +6,12 @@
   const TOAST_ID = "vexo-scout-toast";
   let isExtracting = false;
 
-  // Detecta se a página atual é Instagram ou LinkedIn
+  // Detecta qual rede social/canal está ativo
   const isInstagram = window.location.hostname.includes("instagram.com");
+  const isFacebook = window.location.hostname.includes("facebook.com");
+  const isMessenger = window.location.hostname.includes("messenger.com");
   const isLinkedIn = window.location.hostname.includes("linkedin.com");
+  const isTikTok = window.location.hostname.includes("tiktok.com");
 
   function showToast({ title, message, leadInfo = null, isError = false, crmUrl = null }) {
     const existing = document.getElementById(TOAST_ID);
@@ -85,10 +88,6 @@
         contactName = headerTitleEl.textContent.trim();
       }
 
-      // Tenta capturar thread da URL
-      const urlMatch = window.location.pathname.match(/\/direct\/t\/([^\/]+)/);
-      const directThread = urlMatch ? urlMatch[1] : "";
-
       // Bolhas de mensagens do Direct
       const bubbleElements = document.querySelectorAll(
         'div[role="row"] div[dir="auto"], div[role="main"] div[dir="auto"], div[class*="x1lliihq"]'
@@ -97,7 +96,6 @@
       bubbleElements.forEach((el) => {
         const text = el.textContent.trim();
         if (text && text.length > 1 && !messages.includes(text)) {
-          // Ignora mensagens de status e timestamps
           if (
             !text.includes("Active") &&
             !text.includes("Visto") &&
@@ -106,6 +104,29 @@
           ) {
             messages.push(text);
           }
+        }
+      });
+    } else if (isFacebook || isMessenger) {
+      // Nome no Facebook Messenger
+      const headerEl =
+        document.querySelector('div[role="main"] h2') ||
+        document.querySelector('header h1') ||
+        document.querySelector('div[aria-label="Detalhes da conversa"] h1') ||
+        document.querySelector('div[role="main"] header span');
+
+      if (headerEl && headerEl.textContent.trim()) {
+        contactName = headerEl.textContent.trim();
+      }
+
+      // Mensagens no Messenger
+      const bubbleElements = document.querySelectorAll(
+        'div[role="main"] div[dir="auto"], div[data-scope="messages_table"] div[dir="auto"], div[class*="x1lliihq"]'
+      );
+
+      bubbleElements.forEach((el) => {
+        const text = el.textContent.trim();
+        if (text && text.length > 1 && !messages.includes(text)) {
+          messages.push(text);
         }
       });
     } else if (isLinkedIn) {
@@ -122,6 +143,28 @@
       // Mensagens no LinkedIn
       const bubbleElements = document.querySelectorAll(
         ".msg-s-event-listitem__body, .msg-s-message-group__item, .msg-s-message-list p"
+      );
+
+      bubbleElements.forEach((el) => {
+        const text = el.textContent.trim();
+        if (text && !messages.includes(text)) {
+          messages.push(text);
+        }
+      });
+    } else if (isTikTok) {
+      // Nome no TikTok
+      const headerEl =
+        document.querySelector('[data-e2e="chat-user-name"]') ||
+        document.querySelector("header h1") ||
+        document.querySelector("header h2");
+
+      if (headerEl && headerEl.textContent.trim()) {
+        contactName = headerEl.textContent.trim();
+      }
+
+      // Mensagens no TikTok
+      const bubbleElements = document.querySelectorAll(
+        '[data-e2e="chat-message-text"], div[class*="DivMessageText"]'
       );
 
       bubbleElements.forEach((el) => {
@@ -181,7 +224,21 @@
         return;
       }
 
-      const defaultOrigin = isInstagram ? "Instagram Direct" : "LinkedIn";
+      const defaultOrigin = isInstagram
+        ? "Instagram Direct"
+        : isFacebook || isMessenger
+        ? "Facebook Messenger"
+        : isTikTok
+        ? "TikTok"
+        : "LinkedIn";
+
+      const channelTag = isInstagram
+        ? "Instagram Direct (Vexo Scout)"
+        : isFacebook || isMessenger
+        ? "Facebook Messenger (Vexo Scout)"
+        : isTikTok
+        ? "TikTok (Vexo Scout)"
+        : "LinkedIn (Vexo Scout)";
 
       // 1. Extração Semântica com IA
       btn.innerHTML = `<div class="vexo-spinner"></div> Extraindo com IA...`;
@@ -232,7 +289,7 @@
         stage: lead.temperatura === "Quente" ? "open_budget" : lead.temperatura === "Frio" ? "cold" : "inquiry",
         temperature: lead.temperatura === "Quente" ? "hot" : lead.temperatura === "Frio" ? "cold" : "warm",
         tags: [
-          isInstagram ? "Instagram Direct (Vexo Scout)" : "LinkedIn (Vexo Scout)",
+          channelTag,
           lead.origem,
           lead.interesse ? `Interesse: ${lead.interesse}` : "",
         ].filter(Boolean),
@@ -247,7 +304,7 @@
               authToken: vexoAuthToken,
               clientId: vexoClientId,
               rows: rowsToSave,
-              importTags: [isInstagram ? "Instagram Direct (Vexo Scout)" : "LinkedIn (Vexo Scout)"],
+              importTags: [channelTag],
             },
           },
           resolve
@@ -291,9 +348,19 @@
         window.location.pathname.includes("/your_activity") ||
         Boolean(document.querySelector('div[role="main"] div[dir="auto"], header h2, div[role="grid"]'))
       )) ||
+      ((isFacebook || isMessenger) && (
+        window.location.pathname.includes("/messages") ||
+        window.location.pathname.includes("/t/") ||
+        window.location.hostname.includes("messenger.com") ||
+        Boolean(document.querySelector('div[role="main"], div[data-scope="messages_table"], div[aria-label="Mensagens"]'))
+      )) ||
       (isLinkedIn && (
         window.location.pathname.includes("/messaging") ||
         Boolean(document.querySelector(".msg-s-message-list, .msg-conversation-header"))
+      )) ||
+      (isTikTok && (
+        window.location.pathname.includes("/messages") ||
+        Boolean(document.querySelector('[data-e2e="chat-user-name"]'))
       ));
 
     if (!isDirectChat) return;

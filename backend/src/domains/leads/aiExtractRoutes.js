@@ -72,15 +72,14 @@ ${rawText}
 """`;
 
         const rawContent = await callLlmChatCompletion({
-          model: process.env.GROQ_CAMPAIGN_AI_MODEL || "llama-3.1-8b-instant",
+          model: "llama-3.3-70b-versatile",
           temperature: 0.1,
-          max_tokens: 1500,
-          response_format: { type: "json_object" },
+          max_tokens: 1200,
           messages: [
             {
               role: "system",
               content:
-                "Você é um extrator de contatos comerciais que responde ESTRITAMENTE com um objeto JSON válido contendo a chave 'leads'.",
+                "Você é um assistente que responde APENAS com um objeto JSON contendo a propriedade 'leads'.",
             },
             {
               role: "user",

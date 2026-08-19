@@ -13,6 +13,7 @@
     "https://*.instagram.com/*",
     "https://*.linkedin.com/*",
     "https://*.facebook.com/*",
+    "https://*.messenger.com/*",
     "https://*.tiktok.com/*",
     "https://crm.vexoia.com/*",
     "http://localhost/*",
@@ -34,7 +35,10 @@
     {
       "matches": [
         "https://*.instagram.com/*",
-        "https://*.linkedin.com/*"
+        "https://*.facebook.com/*",
+        "https://*.messenger.com/*",
+        "https://*.linkedin.com/*",
+        "https://*.tiktok.com/*"
       ],
       "js": ["content.js"],
       "css": ["content.css"],

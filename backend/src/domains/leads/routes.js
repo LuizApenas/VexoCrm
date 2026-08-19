@@ -1240,10 +1240,22 @@ export function registerLeadsRoutes(app, deps) {
 
       for (const row of rows) {
         const rawPhone = row.telefone || row.phone || row.celular || row.whatsapp || row.numero || "";
-        const formattedPhone = sanitizePhoneE164(rawPhone);
-        if (!formattedPhone) continue;
+        let formattedPhone = sanitizePhoneE164(rawPhone);
+        const name = normalizeString(row.nome || row.name || row.cliente || row.contato || formattedPhone || "Lead");
 
-        const name = normalizeString(row.nome || row.name || row.cliente || row.contato || formattedPhone);
+        if (!formattedPhone) {
+          // Se veio com tag de Direct/Social ou nome válido, gera chave única de lead social
+          const isSocialLead =
+            importTagsArray.some((t) => /instagram|facebook|linkedin|tiktok|scout/i.test(t)) ||
+            (Array.isArray(row.tags) && row.tags.some((t) => /instagram|facebook|linkedin|tiktok|scout/i.test(t)));
+          if (isSocialLead && name) {
+            const cleanSlug = name.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
+            formattedPhone = `social_${cleanSlug || "lead"}_${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
+          } else {
+            continue;
+          }
+        }
+
         const stageInput = normalizeString(row.stage || row.estagio || row.etapa)?.toLowerCase();
         const validStage = ['buyer', 'open_budget', 'inquiry', 'cold', 'lost'].includes(stageInput) ? stageInput : 'cold';
         
