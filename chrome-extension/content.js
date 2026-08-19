@@ -404,45 +404,90 @@
       return;
     }
 
-    // Busca itens da lista lateral de conversas
+    // Busca itens da lista lateral de conversas com filtro estrito anti-stories
     let chatItems = [];
     if (isInstagram) {
-      chatItems = Array.from(
+      // Busca exclusivamente links e containers de conversas no Direct
+      const candidates = Array.from(
         document.querySelectorAll(
-          'div[role="list"] a[href*="/direct/t/"], div[role="tablist"] a, div[role="grid"] div[role="row"] a, a[href*="/direct/t/"]'
+          'a[href*="/direct/t/"], div[role="list"] a, div[role="listitem"] a, div[role="row"] a, div[role="tablist"] a'
         )
       );
+      const seenHrefs = new Set();
+      chatItems = candidates.filter((el) => {
+        const href = el.getAttribute("href") || "";
+        // Ignora Stories, Reels, Explore e links fora do direct
+        if (
+          href.includes("/stories/") ||
+          href.includes("/reel/") ||
+          href.includes("/explore/") ||
+          !href.includes("/direct/t/")
+        ) {
+          return false;
+        }
+        if (seenHrefs.has(href)) return false;
+        seenHrefs.add(href);
+        return true;
+      });
     } else if (isFacebook || isMessenger) {
-      chatItems = Array.from(
+      // No Facebook, orienta se não estiver na tela de mensagens
+      if (isFacebook && !window.location.pathname.includes("/messages")) {
+        showToast({
+          title: "Abra o Messenger",
+          message: "Abra o Messenger (facebook.com/messages) para minerar conversas em lote.",
+          isError: true,
+        });
+        return;
+      }
+
+      // Busca estritamente links de conversas do Messenger
+      const candidates = Array.from(
         document.querySelectorAll(
-          'div[role="navigation"] a[href*="/messages/t/"], div[data-scope="messages_table"] div[role="row"], div[role="grid"] a'
+          'a[href*="/messages/t/"], div[role="navigation"] a[href*="/messages/"], div[data-scope="messages_table"] a, div[role="grid"] a'
         )
       );
+      const seenHrefs = new Set();
+      chatItems = candidates.filter((el) => {
+        const href = el.getAttribute("href") || "";
+        // Filtro anti-stories e anti-feed rigoroso
+        if (
+          href.includes("/stories/") ||
+          href.includes("/reel/") ||
+          href.includes("/watch/") ||
+          href.includes("story_tray") ||
+          (!href.includes("/messages/") && !href.includes("/messages/t/"))
+        ) {
+          return false;
+        }
+        if (seenHrefs.has(href)) return false;
+        seenHrefs.add(href);
+        return true;
+      });
     } else if (isLinkedIn) {
-      chatItems = Array.from(
+      const candidates = Array.from(
         document.querySelectorAll(
-          '.msg-conversations-container__conversations-list li, .msg-conversation-listitem__link, .msg-conversation-card'
+          '.msg-conversations-container__conversations-list li a, .msg-conversation-listitem__link, .msg-conversation-card'
         )
       );
+      const seenHrefs = new Set();
+      chatItems = candidates.filter((el) => {
+        const href = el.getAttribute("href") || el.innerText;
+        if (!href || seenHrefs.has(href)) return false;
+        seenHrefs.add(href);
+        return true;
+      });
     } else if (isTikTok) {
       chatItems = Array.from(
         document.querySelectorAll('[data-e2e="chat-list-item"]')
       );
     }
 
-    // Remove links duplicados de mesma conversa
-    const seenHrefs = new Set();
-    chatItems = chatItems.filter((item) => {
-      const href = item.getAttribute("href") || item.innerText;
-      if (!href || seenHrefs.has(href)) return false;
-      seenHrefs.add(href);
-      return true;
-    });
-
     if (chatItems.length === 0) {
       showToast({
         title: "Lista de Chats Não Encontrada",
-        message: "Abra a tela de mensagens com a lista de conversas visível para usar o Auto-Scout.",
+        message: isInstagram
+          ? "Abra o Direct (instagram.com/direct) com a lista de conversas visível."
+          : "Abra a tela de mensagens com a lista de conversas visível para usar o Auto-Scout.",
         isError: true,
       });
       return;
