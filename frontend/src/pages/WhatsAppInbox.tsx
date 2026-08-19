@@ -43,6 +43,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { cn } from "@/lib/utils";
@@ -279,7 +280,7 @@ export default function WhatsAppInbox({
 
     const normalMessages = rawMessages.map((m): TimelineItem => ({ ...m, isInternalNote: false }));
     return [...normalMessages, ...notesForChat].sort(
-      (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
+      (a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0)
     );
   }, [rawMessages, internalNotes, selectedChatId]);
 
@@ -550,49 +551,31 @@ export default function WhatsAppInbox({
                 />
               </div>
 
-              {/* Chips de Instância */}
-              {evolutionInstances.length > 1 && (
-                <div className="flex flex-wrap items-center gap-1 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInstanceNames([])}
-                    className={cn(
-                      "rounded-lg px-2 py-0.5 text-[10px] font-semibold transition-colors",
-                      selectedInstanceNames.length === 0
-                        ? "bg-emerald-500 text-white"
-                        : "border border-border/70 bg-background text-muted-foreground hover:bg-muted"
-                    )}
-                  >
-                    Todos os Chips
-                  </button>
-                  {evolutionInstances.map((inst) => {
-                    const urlName = inst.dispatch_webhook_url
-                      ? inst.dispatch_webhook_url.split("/").filter(Boolean).pop() ?? inst.name
-                      : inst.name;
-                    const checked = selectedInstanceNames.includes(urlName);
-                    return (
-                      <button
-                        key={urlName}
-                        type="button"
-                        onClick={() =>
-                          setSelectedInstanceNames((cur) =>
-                            cur.includes(urlName) ? cur.filter((n) => n !== urlName) : [...cur, urlName]
-                          )
-                        }
-                        className={cn(
-                          "rounded-lg px-2 py-0.5 text-[10px] font-semibold transition-colors",
-                          checked
-                            ? "bg-emerald-500 text-white"
-                            : "border border-border/70 bg-background text-muted-foreground hover:bg-muted"
-                        )}
-                      >
-                        {checked ? "✓ " : ""}
-                        {inst.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              {/* Seletor Dropdown de Chips */}
+              <div className="flex items-center gap-2 pt-1 pb-1">
+                <Smartphone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <Select
+                  value={selectedInstanceNames[0] || "all"}
+                  onValueChange={(val) => setSelectedInstanceNames(val === "all" ? [] : [val])}
+                >
+                  <SelectTrigger className="h-7 text-xs rounded-lg border-border/80 bg-background w-full">
+                    <SelectValue placeholder="Todos os chips conectados" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">📱 Todos os chips conectados</SelectItem>
+                    {evolutionInstances.map((inst) => {
+                      const urlName = inst.dispatch_webhook_url
+                        ? inst.dispatch_webhook_url.split("/").filter(Boolean).pop() ?? inst.name
+                        : inst.name;
+                      return (
+                        <SelectItem key={urlName} value={urlName}>
+                          🟢 {inst.name}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Lista Scrollável de Chats */}
@@ -1017,7 +1000,10 @@ export default function WhatsAppInbox({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => navigate("/crm/leads")}
+                  onClick={() => {
+                    const rawPhone = selectedChat?.id ? String(selectedChat.id).replace(/\D/g, "") : "";
+                    navigate(rawPhone ? `/crm/propostas-gd?phone=${rawPhone}` : "/crm/propostas-gd");
+                  }}
                   className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-indigo-500/30 bg-indigo-500/5 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/15"
                 >
                   <FileText className="mr-2 h-3.5 w-3.5 text-indigo-500" />
