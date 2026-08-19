@@ -1428,6 +1428,10 @@ export function registerChatbotRoutes(app, deps) {
               number: phone,
               text: aiResponse.mensagem,
               message: aiResponse.mensagem,
+              options: {
+                delay: 2500,
+                presence: "composing",
+              },
             }),
           });
 

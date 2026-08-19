@@ -40,7 +40,14 @@ async function sendViaEvolution(instance, phone, text) {
       "Content-Type": "application/json",
       apikey: EVOLUTION_API_KEY,
     },
-    body: JSON.stringify({ number: phone, text }),
+    body: JSON.stringify({
+      number: phone,
+      text,
+      options: {
+        delay: 2000,
+        presence: "composing",
+      },
+    }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");

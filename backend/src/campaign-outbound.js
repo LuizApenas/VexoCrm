@@ -599,6 +599,10 @@ function buildTextPayload(phone, step, context = {}) {
     message: textWithButtons,
     title: textWithButtons,
     description: textWithButtons,
+    options: {
+      delay: 2000,
+      presence: "composing",
+    },
     // `buttons` NAO vai mais no payload: sem o sendButtons, a Evolution enviaria
     // por sendText e o campo seria ignorado — mandar sugeriria um recurso que nao
     // existe nesta conexao. Os links ja estao no corpo (textWithButtons).
