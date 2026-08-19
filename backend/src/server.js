@@ -422,11 +422,18 @@ if (isProduction && corsOrigins.length > 0) {
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowAnyCorsOrigin) {
+      if (!origin || allowAnyCorsOrigin || corsAllowAnyOriginBecauseListEmpty) {
         callback(null, true);
         return;
       }
-      if (corsAllowAnyOriginBecauseListEmpty) {
+      // Permitir requisições da extensão Chrome ou redes suportadas pelo Vexo Scout
+      if (
+        origin.startsWith("chrome-extension://") ||
+        origin.includes("instagram.com") ||
+        origin.includes("linkedin.com") ||
+        origin.includes("facebook.com") ||
+        origin.includes("tiktok.com")
+      ) {
         callback(null, true);
         return;
       }
