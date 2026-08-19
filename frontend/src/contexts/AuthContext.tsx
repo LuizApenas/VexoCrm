@@ -218,21 +218,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAccessProfile(null);
         setMustChangePassword(false);
         setLoading(false);
+        if (typeof window !== "undefined") {
+          try {
+            window.localStorage.removeItem("vexo_auth_token");
+          } catch {}
+        }
         return;
       }
 
       let claimMustChangePassword = false;
       try {
+        const token = await user.getIdToken();
         const tokenResult = await getCurrentIdTokenResult();
         if (!active) return;
 
         claimMustChangePassword = tokenResult?.claims?.must_change_password === true;
         const profile = buildAccessProfile(user, tokenResult?.claims);
         setAccessProfile(profile);
-        if (profile?.clientId && typeof window !== "undefined") {
+        if (typeof window !== "undefined") {
           try {
-            window.localStorage.setItem("crm_selected_client_id", profile.clientId);
-            window.localStorage.setItem("vexo_client_id", profile.clientId);
+            if (token) window.localStorage.setItem("vexo_auth_token", token);
+            if (profile?.clientId) {
+              window.localStorage.setItem("crm_selected_client_id", profile.clientId);
+              window.localStorage.setItem("vexo_client_id", profile.clientId);
+            }
           } catch {}
         }
       } catch (error) {
@@ -240,10 +249,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!active) return;
         const profile = buildAccessProfile(user);
         setAccessProfile(profile);
-        if (profile?.clientId && typeof window !== "undefined") {
+        if (typeof window !== "undefined") {
           try {
-            window.localStorage.setItem("crm_selected_client_id", profile.clientId);
-            window.localStorage.setItem("vexo_client_id", profile.clientId);
+            const token = await user.getIdToken().catch(() => null);
+            if (token) window.localStorage.setItem("vexo_auth_token", token);
+            if (profile?.clientId) {
+              window.localStorage.setItem("crm_selected_client_id", profile.clientId);
+              window.localStorage.setItem("vexo_client_id", profile.clientId);
+            }
           } catch {}
         }
       }

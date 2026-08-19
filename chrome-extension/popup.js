@@ -59,14 +59,25 @@ async function handleAutoSync() {
 
   try {
     // Procura abas abertas do CRM
-    const tabs = await chrome.tabs.query({
+    let tabs = await chrome.tabs.query({
       url: [
-        "https://crm.vexoia.com/*",
-        "https://*.vercel.app/*",
-        "http://localhost:*/*",
-        "http://127.0.0.1:*/*",
+        "*://crm.vexoia.com/*",
+        "*://*.vexoia.com/*",
+        "*://*.vercel.app/*",
+        "*://localhost/*",
+        "*://localhost:*/*",
+        "*://127.0.0.1/*",
+        "*://127.0.0.1:*/*",
       ],
     });
+
+    if (!tabs || tabs.length === 0) {
+      // Fallback: busca em todas as abas abertas na janela atual
+      const allTabs = await chrome.tabs.query({});
+      tabs = (allTabs || []).filter(
+        (t) => t.url && (t.url.includes("vexoia.com") || t.url.includes("localhost") || t.url.includes("vercel.app"))
+      );
+    }
 
     if (!tabs || tabs.length === 0) {
       showMessage("Abra o Vexo OS no Chrome antes de conectar.", "error");
@@ -75,28 +86,82 @@ async function handleAutoSync() {
 
     const targetTab = tabs[0];
 
-    // Executa script na aba do Vexo OS para capturar a sessão
+    // Executa script na aba do Vexo OS para capturar a sessão (IndexedDB + localStorage)
     const [execResult] = await chrome.scripting.executeScript({
       target: { tabId: targetTab.id },
-      func: () => {
+      func: async () => {
         let token = null;
+        let clientId = null;
+
+        // 1. Tenta ler direto do localStorage
         try {
-          // Busca nas chaves locais do Firebase Auth
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.startsWith("firebase:authUser")) {
-              const val = JSON.parse(localStorage.getItem(key) || "{}");
-              token = val?.stsTokenManager?.accessToken || null;
-              break;
+          token = localStorage.getItem("vexo_auth_token") || null;
+          clientId =
+            localStorage.getItem("crm_selected_client_id") ||
+            localStorage.getItem("vexo_client_id") ||
+            localStorage.getItem("vexo.crm.selected-client") ||
+            null;
+
+          if (!token) {
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && (key.startsWith("firebase:authUser") || key.includes("authUser") || key.includes("firebase"))) {
+                try {
+                  const val = JSON.parse(localStorage.getItem(key) || "{}");
+                  if (val?.stsTokenManager?.accessToken) {
+                    token = val.stsTokenManager.accessToken;
+                    break;
+                  }
+                  if (val?.accessToken) {
+                    token = val.accessToken;
+                    break;
+                  }
+                } catch (e) {}
+              }
             }
           }
         } catch (e) {}
 
-        const clientId =
-          localStorage.getItem("crm_selected_client_id") ||
-          localStorage.getItem("vexo_client_id") ||
-          localStorage.getItem("vexo.crm.selected-client") ||
-          "geracao-digital";
+        // 2. Tenta ler do IndexedDB (Padrão do Firebase Web SDK modular v9/v10)
+        if (!token && typeof indexedDB !== "undefined") {
+          try {
+            token = await new Promise((resolve) => {
+              const req = indexedDB.open("firebaseLocalStorageDb");
+              req.onerror = () => resolve(null);
+              req.onsuccess = (event) => {
+                try {
+                  const db = event.target.result;
+                  if (!db.objectStoreNames.contains("firebaseLocalStorage")) {
+                    return resolve(null);
+                  }
+                  const tx = db.transaction("firebaseLocalStorage", "readonly");
+                  const store = tx.objectStore("firebaseLocalStorage");
+                  const getAllReq = store.getAll();
+                  getAllReq.onsuccess = () => {
+                    const records = getAllReq.result || [];
+                    for (const rec of records) {
+                      const val = rec?.value || rec;
+                      if (val?.stsTokenManager?.accessToken) {
+                        return resolve(val.stsTokenManager.accessToken);
+                      }
+                      if (val?.accessToken) {
+                        return resolve(val.accessToken);
+                      }
+                    }
+                    resolve(null);
+                  };
+                  getAllReq.onerror = () => resolve(null);
+                } catch (err) {
+                  resolve(null);
+                }
+              };
+            });
+          } catch (e) {}
+        }
+
+        if (!clientId) {
+          clientId = "geracao-digital";
+        }
 
         return {
           token,
