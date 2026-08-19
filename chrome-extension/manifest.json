@@ -29,13 +29,12 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.instagram.com/direct/*",
-        "https://*.instagram.com/your_activity/*",
-        "https://*.linkedin.com/messaging/*"
+        "https://*.instagram.com/*",
+        "https://*.linkedin.com/*"
       ],
       "js": ["content.js"],
       "css": ["content.css"],
-      "run_at": "document_idle"
+      "run_at": "document_end"
     }
   ],
   "icons": {

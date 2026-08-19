@@ -274,8 +274,15 @@
 
     // Apenas injeta se estiver em uma página de mensagens/chat
     const isDirectChat =
-      (isInstagram && (window.location.pathname.includes("/direct/") || window.location.pathname.includes("/your_activity/"))) ||
-      (isLinkedIn && window.location.pathname.includes("/messaging/"));
+      (isInstagram && (
+        window.location.pathname.includes("/direct") ||
+        window.location.pathname.includes("/your_activity") ||
+        Boolean(document.querySelector('div[role="main"] div[dir="auto"], header h2, div[role="grid"]'))
+      )) ||
+      (isLinkedIn && (
+        window.location.pathname.includes("/messaging") ||
+        Boolean(document.querySelector(".msg-s-message-list, .msg-conversation-header"))
+      ));
 
     if (!isDirectChat) return;
 

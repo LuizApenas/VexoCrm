@@ -221,6 +221,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (typeof window !== "undefined") {
           try {
             window.localStorage.removeItem("vexo_auth_token");
+            (window as any).__VEXO_GET_FRESH_TOKEN__ = async () => null;
+            (window as any).__VEXO_CLIENT_ID__ = null;
           } catch {}
         }
         return;
@@ -242,6 +244,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               window.localStorage.setItem("crm_selected_client_id", profile.clientId);
               window.localStorage.setItem("vexo_client_id", profile.clientId);
             }
+            (window as any).__VEXO_GET_FRESH_TOKEN__ = async () => {
+              if (user) {
+                return await user.getIdToken(true);
+              }
+              return null;
+            };
+            (window as any).__VEXO_CLIENT_ID__ = profile?.clientId || "geracao-digital";
           } catch {}
         }
       } catch (error) {
@@ -257,6 +266,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               window.localStorage.setItem("crm_selected_client_id", profile.clientId);
               window.localStorage.setItem("vexo_client_id", profile.clientId);
             }
+            (window as any).__VEXO_GET_FRESH_TOKEN__ = async () => {
+              if (user) {
+                return await user.getIdToken(true);
+              }
+              return null;
+            };
+            (window as any).__VEXO_CLIENT_ID__ = profile?.clientId || "geracao-digital";
           } catch {}
         }
       }

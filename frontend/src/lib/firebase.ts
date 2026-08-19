@@ -34,6 +34,9 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
 
 const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth: Auth = getAuth(app);
+if (typeof window !== "undefined") {
+  (window as any).__FIREBASE_AUTH__ = auth;
+}
 
 export async function loginWithEmail(email: string, password: string): Promise<User> {
   const userCredential = await signInWithEmailAndPassword(auth, email, password);

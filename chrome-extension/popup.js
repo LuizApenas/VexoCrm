@@ -86,23 +86,65 @@ async function handleAutoSync() {
 
     const targetTab = tabs[0];
 
-    // Executa script na aba do Vexo OS para capturar a sessão (IndexedDB + localStorage)
+    // Executa script na aba do Vexo OS para capturar a sessão
     const [execResult] = await chrome.scripting.executeScript({
       target: { tabId: targetTab.id },
       func: async () => {
         let token = null;
-        let clientId = null;
 
-        // 1. Tenta ler direto do localStorage
-        try {
-          token = localStorage.getItem("vexo_auth_token") || null;
-          clientId =
-            localStorage.getItem("crm_selected_client_id") ||
-            localStorage.getItem("vexo_client_id") ||
-            localStorage.getItem("vexo.crm.selected-client") ||
-            null;
+        // 1. Tenta gerar token fresco direto do Firebase Auth SDK da página
+        if (typeof window.__VEXO_GET_FRESH_TOKEN__ === "function") {
+          try {
+            token = await window.__VEXO_GET_FRESH_TOKEN__();
+          } catch (e) {}
+        }
 
-          if (!token) {
+        // 2. Fallback: Firebase Auth instance global
+        if (!token && window.__FIREBASE_AUTH__?.currentUser) {
+          try {
+            token = await window.__FIREBASE_AUTH__.currentUser.getIdToken(true);
+          } catch (e) {}
+        }
+
+        // 3. Fallback: localStorage vexo_auth_token
+        if (!token) {
+          try {
+            token = localStorage.getItem("vexo_auth_token") || null;
+          } catch (e) {}
+        }
+
+        // 4. Fallback: IndexedDB (Padrão do Firebase Web SDK modular v9/v10)
+        if (!token && typeof indexedDB !== "undefined") {
+          try {
+            token = await new Promise((resolve) => {
+              const req = indexedDB.open("firebaseLocalStorageDb");
+              req.onerror = () => resolve(null);
+              req.onsuccess = (e) => {
+                try {
+                  const db = e.target.result;
+                  if (!db.objectStoreNames.contains("firebaseLocalStorage")) return resolve(null);
+                  const tx = db.transaction("firebaseLocalStorage", "readonly");
+                  const getAll = tx.objectStore("firebaseLocalStorage").getAll();
+                  getAll.onsuccess = () => {
+                    const recs = getAll.result || [];
+                    for (const r of recs) {
+                      const v = r?.value || r;
+                      if (v?.stsTokenManager?.accessToken) return resolve(v.stsTokenManager.accessToken);
+                    }
+                    resolve(null);
+                  };
+                  getAll.onerror = () => resolve(null);
+                } catch {
+                  resolve(null);
+                }
+              };
+            });
+          } catch (e) {}
+        }
+
+        // 5. Fallback: scan em todas as chaves do localStorage
+        if (!token) {
+          try {
             for (let i = 0; i < localStorage.length; i++) {
               const key = localStorage.key(i);
               if (key && (key.startsWith("firebase:authUser") || key.includes("authUser") || key.includes("firebase"))) {
@@ -119,49 +161,15 @@ async function handleAutoSync() {
                 } catch (e) {}
               }
             }
-          }
-        } catch (e) {}
-
-        // 2. Tenta ler do IndexedDB (Padrão do Firebase Web SDK modular v9/v10)
-        if (!token && typeof indexedDB !== "undefined") {
-          try {
-            token = await new Promise((resolve) => {
-              const req = indexedDB.open("firebaseLocalStorageDb");
-              req.onerror = () => resolve(null);
-              req.onsuccess = (event) => {
-                try {
-                  const db = event.target.result;
-                  if (!db.objectStoreNames.contains("firebaseLocalStorage")) {
-                    return resolve(null);
-                  }
-                  const tx = db.transaction("firebaseLocalStorage", "readonly");
-                  const store = tx.objectStore("firebaseLocalStorage");
-                  const getAllReq = store.getAll();
-                  getAllReq.onsuccess = () => {
-                    const records = getAllReq.result || [];
-                    for (const rec of records) {
-                      const val = rec?.value || rec;
-                      if (val?.stsTokenManager?.accessToken) {
-                        return resolve(val.stsTokenManager.accessToken);
-                      }
-                      if (val?.accessToken) {
-                        return resolve(val.accessToken);
-                      }
-                    }
-                    resolve(null);
-                  };
-                  getAllReq.onerror = () => resolve(null);
-                } catch (err) {
-                  resolve(null);
-                }
-              };
-            });
           } catch (e) {}
         }
 
-        if (!clientId) {
-          clientId = "geracao-digital";
-        }
+        const clientId =
+          localStorage.getItem("crm_selected_client_id") ||
+          localStorage.getItem("vexo_client_id") ||
+          localStorage.getItem("vexo.crm.selected-client") ||
+          window.__VEXO_CLIENT_ID__ ||
+          "geracao-digital";
 
         return {
           token,
