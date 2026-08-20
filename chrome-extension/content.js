@@ -438,14 +438,23 @@
     } else if (isFacebook || isMessenger) {
       const candidates = Array.from(
         document.querySelectorAll(
-          'div[role="grid"] div[role="row"], div[data-scope="messages_table"] div[role="row"], a[href*="/messages/t/"], div[role="navigation"] div[role="button"]'
+          'a[href*="/messages/e2ee/t/"], a[href*="/messages/t/"], a[href*="/messages/"], div[data-scope="messages_table"] div[role="row"], div[role="grid"] div[role="row"], div[role="navigation"] div[role="button"]'
         )
       );
       const seen = new Set();
       return candidates.filter((el) => {
+        const href = el.getAttribute("href") || "";
+        if (
+          href.includes("/stories/") ||
+          href.includes("/reel/") ||
+          href.includes("/watch/") ||
+          href.includes("story_tray")
+        ) {
+          return false;
+        }
         const rect = el.getBoundingClientRect();
         const text = el.innerText?.trim() || "";
-        const isSidebar = rect.left < window.innerWidth * 0.45 && rect.width > 180 && rect.height >= 40;
+        const isSidebar = rect.left < window.innerWidth * 0.45 && rect.width > 160 && rect.height >= 40;
         if (!isSidebar || !text) return false;
         const firstLine = text.split("\n")[0].trim().slice(0, 25);
         if (seen.has(firstLine)) return false;

@@ -167,6 +167,12 @@ export const MARKETING_CHANNELS = [
 
 export function getLeadSource(lead?: LeadIntelligenceItem | null): string {
   if (!lead) return "Não informado";
+  if (Array.isArray(lead.tags)) {
+    if (lead.tags.some((t) => /instagram/i.test(t))) return "Instagram Direct";
+    if (lead.tags.some((t) => /facebook|messenger/i.test(t))) return "Facebook Messenger";
+    if (lead.tags.some((t) => /tiktok/i.test(t))) return "TikTok";
+    if (lead.tags.some((t) => /linkedin/i.test(t))) return "LinkedIn";
+  }
   return lead.lead_source || lead.dados?.origem_marketing || lead.dados?.origem || lead.origem || "Não informado";
 }
 
@@ -174,7 +180,7 @@ export function getLeadMarketingChannelId(lead?: LeadIntelligenceItem | null): s
   const s = (getLeadSource(lead) || "").toLowerCase().trim();
   if (s.includes("insta")) return "instagram";
   if (s.includes("goog") || s.includes("gads") || s.includes("pesquisa")) return "google";
-  if (s.includes("face") || s.includes("fb")) return "facebook";
+  if (s.includes("face") || s.includes("fb") || s.includes("messenger")) return "facebook";
   if (s.includes("tik") || s.includes("tt")) return "tiktok";
   if (s.includes("indic") || s.includes("amig") || s.includes("recomenda") || s.includes("referral")) return "indicacao";
   return "whatsapp_outros";

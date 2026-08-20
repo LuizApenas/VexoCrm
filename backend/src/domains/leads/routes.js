@@ -1271,14 +1271,28 @@ export function registerLeadsRoutes(app, deps) {
 
         const combinedTags = Array.from(new Set([...parsedRowTags, ...importTagsArray]));
 
+        const originTag =
+          importTagsArray.find((t) => /instagram|facebook|linkedin|tiktok|direct|messenger/i.test(t)) ||
+          (Array.isArray(row.tags) && row.tags.find((t) => /instagram|facebook|linkedin|tiktok|direct|messenger/i.test(t))) ||
+          row.origem ||
+          row.lead_source ||
+          "Instagram Direct";
+
         parsedLeads.push({
           client_id: clientId,
           telefone: formattedPhone,
           phone: formattedPhone,
           nome: name,
+          lead_source: originTag,
           stage: validStage,
           temperature: validTemp,
-          tags: combinedTags.length > 0 ? combinedTags : ["Importado"],
+          tags: combinedTags.length > 0 ? combinedTags : [originTag],
+          dados: {
+            origem: originTag,
+            origem_marketing: originTag,
+            resumo_chat: row.interesse || row.resumo_chat || "Interação no Direct",
+          },
+          raw_chat_summary: row.interesse || row.resumo_chat || "Interação no Direct",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
