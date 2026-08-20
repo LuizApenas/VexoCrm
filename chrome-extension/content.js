@@ -70,141 +70,65 @@
     }, 7000);
   }
 
-  // Extrai mensagens e contexto da conversa ativa
-  function extractConversationText() {
-    let contactName = "Contato";
-    const messages = [];
+  // Extrai mensagens e contexto da conversa ativa com estratégia híbrida
+  function extractConversationFromActiveView(contactNameFallback) {
+    let contactName = contactNameFallback || "Contato Social";
 
-    const isNoise = (text) =>
-      !text ||
-      text.length <= 1 ||
-      text.includes("Online há") ||
-      text.includes("Criptografia de ponta a ponta") ||
-      text.includes("End-to-end encryption") ||
-      text.includes("Restore messages") ||
-      text.includes("Restaurar mensagens") ||
-      text.includes("Usar PIN") ||
-      text.includes("Use PIN") ||
-      text.includes("Visto") ||
-      text.includes("Seen") ||
-      text.match(/^\d{1,2}:\d{2}$/);
+    // 1. Tenta enriquecer o nome com o cabeçalho ativo
+    const headerEl =
+      document.querySelector('div[role="main"] h2, div[role="main"] h1, header h2, header h1, div[role="dialog"] h2') ||
+      document.querySelector('div[role="main"] header span, header span[dir="auto"], div[aria-label="Detalhes da conversa"] h1');
 
-    if (isInstagram) {
-      // Busca nome e @username no topo da conversa
-      const headerTitleEl =
-        document.querySelector('header span[dir="auto"]') ||
-        document.querySelector('header h2') ||
-        document.querySelector('header span') ||
-        document.querySelector('div[role="main"] header span') ||
-        document.querySelector('div[role="grid"] header');
-
-      if (headerTitleEl && headerTitleEl.textContent.trim()) {
-        contactName = headerTitleEl.textContent.trim();
+    if (headerEl && headerEl.innerText?.trim() && headerEl.innerText.trim().length > 1) {
+      const cleanHeaderName = headerEl.innerText.trim().split("\n")[0];
+      if (!cleanHeaderName.includes("Direct") && !cleanHeaderName.includes("Mensagens") && !cleanHeaderName.includes("Chat")) {
+        contactName = cleanHeaderName;
       }
-
-      // Bolhas de mensagens do Direct
-      const bubbleElements = document.querySelectorAll(
-        'div[role="row"] div[dir="auto"], div[role="main"] div[dir="auto"], div[class*="x1lliihq"]'
-      );
-
-      bubbleElements.forEach((el) => {
-        const text = el.textContent.trim();
-        if (text && !isNoise(text) && !messages.includes(text)) {
-          messages.push(text);
-        }
-      });
-    } else if (isFacebook || isMessenger) {
-      // 1. Verifica se há uma janela de chat flutuante aberta (comum no feed do Facebook)
-      const dialogEl = document.querySelector('div[role="dialog"]');
-      if (dialogEl) {
-        const headerTitle = dialogEl.querySelector('h2, span[dir="auto"], strong');
-        if (headerTitle) contactName = headerTitle.innerText?.trim() || contactName;
-        const bubbles = dialogEl.querySelectorAll('div[dir="auto"], div[data-testid="message_container"], div[class*="x1lliihq"]');
-        bubbles.forEach((b) => {
-          const t = b.innerText?.trim();
-          if (t && !isNoise(t) && !messages.includes(t)) {
-            messages.push(t);
-          }
-        });
-      } else {
-        // 2. Tela de mensagens (facebook.com/messages ou messenger.com)
-        const headerEl =
-          document.querySelector('div[role="main"] h2') ||
-          document.querySelector('header h1') ||
-          document.querySelector('div[aria-label="Detalhes da conversa"] h1') ||
-          document.querySelector('div[role="main"] header span');
-
-        if (headerEl && headerEl.textContent.trim()) {
-          contactName = headerEl.textContent.trim();
-        }
-
-        const bubbleElements = document.querySelectorAll(
-          'div[role="main"] div[dir="auto"], div[data-scope="messages_table"] div[dir="auto"], div[class*="x1lliihq"]'
-        );
-
-        bubbleElements.forEach((el) => {
-          const text = el.textContent.trim();
-          if (text && !isNoise(text) && !messages.includes(text)) {
-            messages.push(text);
-          }
-        });
-      }
-    } else if (isLinkedIn) {
-      // Nome no LinkedIn Messaging
-      const headerEl =
-        document.querySelector(".msg-entity-lockup__entity-title") ||
-        document.querySelector(".artdeco-entity-lockup__title") ||
-        document.querySelector(".msg-conversation-header h2");
-
-      if (headerEl && headerEl.textContent.trim()) {
-        contactName = headerEl.textContent.trim();
-      }
-
-      // Mensagens no LinkedIn
-      const bubbleElements = document.querySelectorAll(
-        ".msg-s-event-listitem__body, .msg-s-message-group__item, .msg-s-message-list p"
-      );
-
-      bubbleElements.forEach((el) => {
-        const text = el.textContent.trim();
-        if (text && !messages.includes(text)) {
-          messages.push(text);
-        }
-      });
-    } else if (isTikTok) {
-      // Nome no TikTok
-      const headerEl =
-        document.querySelector('[data-e2e="chat-user-name"]') ||
-        document.querySelector("header h1") ||
-        document.querySelector("header h2");
-
-      if (headerEl && headerEl.textContent.trim()) {
-        contactName = headerEl.textContent.trim();
-      }
-
-      // Mensagens no TikTok
-      const bubbleElements = document.querySelectorAll(
-        '[data-e2e="chat-message-text"], div[class*="DivMessageText"]'
-      );
-
-      bubbleElements.forEach((el) => {
-        const text = el.textContent.trim();
-        if (text && !messages.includes(text)) {
-          messages.push(text);
-        }
-      });
     }
+
+    // 2. Extrai todas as mensagens da área de chat (metade direita da tela ou diálogo)
+    const bubbles = Array.from(
+      document.querySelectorAll(
+        'div[dir="auto"], div[data-testid="message_container"], div[role="row"] div[dir="auto"], div[class*="x1lliihq"]'
+      )
+    ).filter((el) => {
+      const rect = el.getBoundingClientRect();
+      const text = el.innerText?.trim() || "";
+
+      const isRightPane = rect.left > window.innerWidth * 0.35 && rect.width > 20 && rect.height > 15;
+      const isInsideDialog = Boolean(el.closest('div[role="dialog"]'));
+      const isSystem =
+        text.includes("Online há") ||
+        text.includes("Criptografia") ||
+        text.includes("End-to-end") ||
+        text.includes("Restore messages") ||
+        text.includes("Restaurar mensagens") ||
+        text.includes("Usar PIN") ||
+        text.includes("Use PIN") ||
+        text.includes("Visto") ||
+        text.includes("Seen") ||
+        text.match(/^\d{1,2}:\d{2}$/);
+
+      return (isRightPane || isInsideDialog) && !isSystem && text.length > 0;
+    });
+
+    const messages = [];
+    bubbles.forEach((b) => {
+      const t = b.innerText?.trim();
+      if (t && !messages.includes(t)) messages.push(t);
+    });
 
     if (messages.length === 0) {
-      // Fallback: extrai todo o texto visível da área principal
-      const mainContainer = document.querySelector('div[role="main"]') || document.querySelector("main");
+      const mainContainer = document.querySelector('div[role="main"], div[role="dialog"], main');
       if (mainContainer) {
-        const fullText = mainContainer.innerText.slice(-4000);
-        return `Contato: ${contactName}\n\nDiálogo:\n${fullText}`;
+        messages.push(mainContainer.innerText.slice(-2500));
       }
     }
 
-    return `Contato: ${contactName}\n\nDiálogo:\n${messages.join("\n")}`;
+    return {
+      contactName,
+      dialogText: `Contato: ${contactName}\n\nDiálogo:\n${messages.join("\n")}`,
+    };
   }
 
   // Ação ao clicar no botão "Minerar com Vexo OS"
@@ -233,9 +157,9 @@
         return;
       }
 
-      const rawText = extractConversationText();
+      const { contactName, dialogText } = extractConversationFromActiveView("Contato");
 
-      if (!rawText || rawText.length < 15) {
+      if (!dialogText || dialogText.length < 15) {
         showToast({
           title: "Conversa Vazia",
           message: "Abra uma conversa com mensagens ativas para minerar.",
@@ -271,8 +195,9 @@
               apiUrl,
               authToken: vexoAuthToken,
               clientId: vexoClientId,
-              rawText,
+              rawText: dialogText,
               defaultOrigin,
+              defaultContactName: contactName,
             },
           },
           resolve
@@ -302,7 +227,7 @@
       btn.innerHTML = `<div class="vexo-spinner"></div> Salvando Lead...`;
 
       const rowsToSave = leads.map((lead) => ({
-        nome: lead.nome,
+        nome: lead.nome || contactName,
         telefone: lead.telefone || "",
         phone: lead.telefone || "",
         email: lead.email || "",
@@ -310,7 +235,7 @@
         temperature: lead.temperatura === "Quente" ? "hot" : lead.temperatura === "Frio" ? "cold" : "warm",
         tags: [
           channelTag,
-          lead.origem,
+          lead.origem || defaultOrigin,
           lead.interesse ? `Interesse: ${lead.interesse}` : "",
         ].filter(Boolean),
       }));
@@ -585,6 +510,11 @@
           const chatKey = item.getAttribute("href") || item.innerText?.split("\n")[0].trim() || `chat_${processedChatsCount}`;
           processedChatKeys.add(chatKey);
 
+          // Extrai nome direto do card lateral antes de clicar
+          const rawCardText = item.innerText?.trim() || "";
+          const cardLines = rawCardText.split("\n").map((l) => l.trim()).filter(Boolean);
+          const contactNameFromCard = cardLines[0] || "Contato Social";
+
           // Verifica se já foi minerado anteriormente pelo cache
           if (minedChatIds.includes(chatKey)) {
             processedChatsCount++;
@@ -595,86 +525,105 @@
           processedChatsCount++;
           showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
 
-          // Clica na conversa para abrir e dispara eventos reais de mouse
-          try {
-            item.scrollIntoView({ block: "nearest", behavior: "smooth" });
-            item.click();
-            item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-            item.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-          } catch (e) {
-            const clickTarget = item.querySelector("a, div") || item;
-            clickTarget.click();
-            clickTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-            clickTarget.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+          // Dispara sequência completa de clique para frameworks React / SPA
+          const targetElement = item.querySelector("a, div[role='button'], div[role='row']") || item;
+          targetElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          const eventSequence = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
+          eventSequence.forEach((evtName) => {
+            targetElement.dispatchEvent(
+              new MouseEvent(evtName, {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+              })
+            );
+          });
+
+          // Se for um link <a> com href direto, navega
+          const href = targetElement.getAttribute("href") || item.getAttribute("href");
+          if (href && href.startsWith("/")) {
+            try {
+              targetElement.click();
+            } catch (_) {}
           }
 
-          // Aguarda carregamento do diálogo
-          await new Promise((r) => setTimeout(r, 1400));
+          // Aguarda 1.6s para renderização do chat
+          await new Promise((r) => setTimeout(r, 1600));
 
           if (bulkCancelRequested) break;
 
-          const rawText = extractConversationText();
-          if (rawText && rawText.length >= 10) {
-            try {
-              const extractResponse = await new Promise((resolve) => {
-                chrome.runtime.sendMessage(
-                  {
-                    action: "VEXO_AI_EXTRACT",
-                    payload: {
-                      apiUrl,
-                      authToken: vexoAuthToken,
-                      clientId: vexoClientId,
-                      rawText,
-                      defaultOrigin,
-                    },
+          // Extrai o diálogo com o nome capturado do card
+          const { contactName, dialogText } = extractConversationFromActiveView(contactNameFromCard);
+
+          try {
+            const extractResponse = await new Promise((resolve) => {
+              chrome.runtime.sendMessage(
+                {
+                  action: "VEXO_AI_EXTRACT",
+                  payload: {
+                    apiUrl,
+                    authToken: vexoAuthToken,
+                    clientId: vexoClientId,
+                    rawText: dialogText,
+                    defaultOrigin,
+                    defaultContactName: contactName,
                   },
-                  resolve
-                );
-              });
+                },
+                resolve
+              );
+            });
 
-              const leads = Array.isArray(extractResponse?.data?.leads) ? extractResponse.data.leads : [];
-
-              if (leads.length > 0) {
-                const rowsToSave = leads.map((lead) => ({
-                  nome: lead.nome,
-                  telefone: lead.telefone || "",
-                  phone: lead.telefone || "",
-                  email: lead.email || "",
-                  stage: lead.temperatura === "Quente" ? "open_budget" : lead.temperatura === "Frio" ? "cold" : "inquiry",
-                  temperature: lead.temperatura === "Quente" ? "hot" : lead.temperatura === "Frio" ? "cold" : "warm",
-                  tags: [
-                    channelTag,
-                    lead.origem,
-                    lead.interesse ? `Interesse: ${lead.interesse}` : "",
-                  ].filter(Boolean),
-                }));
-
-                const saveResponse = await new Promise((resolve) => {
-                  chrome.runtime.sendMessage(
+            const extractedLeads =
+              Array.isArray(extractResponse?.data?.leads) && extractResponse.data.leads.length > 0
+                ? extractResponse.data.leads
+                : [
                     {
-                      action: "VEXO_SAVE_LEADS",
-                      payload: {
-                        apiUrl,
-                        authToken: vexoAuthToken,
-                        clientId: vexoClientId,
-                        rows: rowsToSave,
-                        importTags: [channelTag],
-                      },
+                      nome: contactName,
+                      telefone: null,
+                      origem: defaultOrigin,
+                      interesse: "Interação no Direct",
+                      temperatura: "Frio",
                     },
-                    resolve
-                  );
-                });
+                  ];
 
-                if (saveResponse && saveResponse.ok) {
-                  totalSavedLeads += leads.length;
-                  minedChatIds.push(chatKey);
-                  await chrome.storage.local.set({ minedChatIds: minedChatIds.slice(-500) });
-                  showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
-                }
-              }
-            } catch (itemErr) {
-              console.warn(`[Vexo Scout Bulk] Erro ao minerar conversa:`, itemErr);
+            const rowsToSave = extractedLeads.map((lead) => ({
+              nome: lead.nome || contactName,
+              telefone: lead.telefone || "",
+              phone: lead.telefone || "",
+              email: lead.email || "",
+              stage: lead.temperatura === "Quente" ? "open_budget" : lead.temperatura === "Frio" ? "cold" : "inquiry",
+              temperature: lead.temperatura === "Quente" ? "hot" : lead.temperatura === "Frio" ? "cold" : "warm",
+              tags: [
+                channelTag,
+                lead.origem || defaultOrigin,
+                lead.interesse ? `Interesse: ${lead.interesse}` : "",
+              ].filter(Boolean),
+            }));
+
+            const saveResponse = await new Promise((resolve) => {
+              chrome.runtime.sendMessage(
+                {
+                  action: "VEXO_SAVE_LEADS",
+                  payload: {
+                    apiUrl,
+                    authToken: vexoAuthToken,
+                    clientId: vexoClientId,
+                    rows: rowsToSave,
+                    importTags: [channelTag],
+                  },
+                },
+                resolve
+              );
+            });
+
+            if (saveResponse && saveResponse.ok) {
+              totalSavedLeads += extractedLeads.length;
+              minedChatIds.push(chatKey);
+              await chrome.storage.local.set({ minedChatIds: minedChatIds.slice(-500) });
+              showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
             }
+          } catch (itemErr) {
+            console.warn(`[Vexo Scout Bulk] Erro ao minerar conversa:`, itemErr);
           }
 
           // Pequeno intervalo suave antes da próxima
