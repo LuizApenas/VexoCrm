@@ -107,28 +107,41 @@
         }
       });
     } else if (isFacebook || isMessenger) {
-      // Nome no Facebook Messenger
-      const headerEl =
-        document.querySelector('div[role="main"] h2') ||
-        document.querySelector('header h1') ||
-        document.querySelector('div[aria-label="Detalhes da conversa"] h1') ||
-        document.querySelector('div[role="main"] header span');
+      // 1. Verifica se há uma janela de chat flutuante aberta (comum no feed do Facebook)
+      const dialogEl = document.querySelector('div[role="dialog"]');
+      if (dialogEl) {
+        const headerTitle = dialogEl.querySelector('h2, span[dir="auto"], strong');
+        if (headerTitle) contactName = headerTitle.innerText?.trim() || contactName;
+        const bubbles = dialogEl.querySelectorAll('div[dir="auto"], div[data-testid="message_container"], div[class*="x1lliihq"]');
+        bubbles.forEach((b) => {
+          const t = b.innerText?.trim();
+          if (t && t.length > 1 && !messages.includes(t) && !t.includes("Online há") && !t.match(/^\d{1,2}:\d{2}$/)) {
+            messages.push(t);
+          }
+        });
+      } else {
+        // 2. Tela de mensagens (facebook.com/messages ou messenger.com)
+        const headerEl =
+          document.querySelector('div[role="main"] h2') ||
+          document.querySelector('header h1') ||
+          document.querySelector('div[aria-label="Detalhes da conversa"] h1') ||
+          document.querySelector('div[role="main"] header span');
 
-      if (headerEl && headerEl.textContent.trim()) {
-        contactName = headerEl.textContent.trim();
-      }
-
-      // Mensagens no Messenger
-      const bubbleElements = document.querySelectorAll(
-        'div[role="main"] div[dir="auto"], div[data-scope="messages_table"] div[dir="auto"], div[class*="x1lliihq"]'
-      );
-
-      bubbleElements.forEach((el) => {
-        const text = el.textContent.trim();
-        if (text && text.length > 1 && !messages.includes(text)) {
-          messages.push(text);
+        if (headerEl && headerEl.textContent.trim()) {
+          contactName = headerEl.textContent.trim();
         }
-      });
+
+        const bubbleElements = document.querySelectorAll(
+          'div[role="main"] div[dir="auto"], div[data-scope="messages_table"] div[dir="auto"], div[class*="x1lliihq"]'
+        );
+
+        bubbleElements.forEach((el) => {
+          const text = el.textContent.trim();
+          if (text && text.length > 1 && !messages.includes(text)) {
+            messages.push(text);
+          }
+        });
+      }
     } else if (isLinkedIn) {
       // Nome no LinkedIn Messaging
       const headerEl =
@@ -407,7 +420,13 @@
     // Busca itens da lista lateral de conversas com seletor infalível
     let chatItems = [];
     if (isInstagram) {
-      // Procura todos os elementos clicáveis na coluna lateral esquerda do Direct
+      // 1. Encontra a posição vertical do título "Mensagens" na barra lateral
+      const mensagensHeader = Array.from(
+        document.querySelectorAll("span, div, h4, h2")
+      ).find((el) => el.innerText?.trim() === "Mensagens");
+      const minY = mensagensHeader ? mensagensHeader.getBoundingClientRect().bottom + 5 : 240;
+
+      // 2. Busca elementos clicáveis na coluna lateral esquerda
       const candidates = Array.from(
         document.querySelectorAll(
           'div[role="list"] > div, div[role="listitem"], div[role="row"], div[tabindex="0"], a[href*="/direct/t/"]'
@@ -417,65 +436,37 @@
       chatItems = candidates.filter((el) => {
         const rect = el.getBoundingClientRect();
         const text = el.innerText?.trim() || "";
-        // Elemento deve estar na coluna esquerda (left < 45% da tela) e ter altura de card de conversa
+        // Deve estar na coluna esquerda, abaixo do título Mensagens e ter largura de card (> 200px)
+        const isBelowNotes = rect.top >= minY;
         const isLeftSidebar =
-          rect.left < window.innerWidth * 0.45 && rect.width > 90 && rect.height >= 45 && rect.top > 80;
+          rect.left < window.innerWidth * 0.45 && rect.width > 200 && rect.height >= 45;
         const isNotControl =
           !text.includes("Pesquisar") &&
           !text.includes("Sua nota") &&
-          !text.includes("Mensagens") &&
-          !text.includes("Pedidos");
-        if (!isLeftSidebar || !isNotControl || !text) return false;
-        const firstLine = text.split("\n")[0].trim().slice(0, 20);
+          !text.includes("Pedidos") &&
+          !text.includes("Compartilhe o que");
+        if (!isBelowNotes || !isLeftSidebar || !isNotControl || !text) return false;
+        const firstLine = text.split("\n")[0].trim().slice(0, 25);
         if (seen.has(firstLine)) return false;
         seen.add(firstLine);
         return true;
       });
-
-      // Se não encontrou por bounding box, tenta fallback direto por links /direct/t/
-      if (chatItems.length === 0) {
-        const linkCandidates = Array.from(document.querySelectorAll('a[href*="/direct/t/"]'));
-        const seenHrefs = new Set();
-        chatItems = linkCandidates.filter((el) => {
-          const href = el.getAttribute("href") || "";
-          if (href.includes("/stories/") || href.includes("/reel/") || !href.includes("/direct/t/")) return false;
-          if (seenHrefs.has(href)) return false;
-          seenHrefs.add(href);
-          return true;
-        });
-      }
     } else if (isFacebook || isMessenger) {
-      // No Facebook, orienta se não estiver na tela de mensagens
-      if (isFacebook && !window.location.pathname.includes("/messages")) {
-        showToast({
-          title: "Abra o Messenger",
-          message: "Abra o Messenger (facebook.com/messages) para minerar conversas em lote.",
-          isError: true,
-        });
-        return;
-      }
-
-      // Busca estritamente links de conversas do Messenger
+      // No Facebook, busca chats na tela de mensagens facebook.com/messages
       const candidates = Array.from(
         document.querySelectorAll(
-          'a[href*="/messages/t/"], div[role="navigation"] a[href*="/messages/"], div[data-scope="messages_table"] a, div[role="grid"] a'
+          'div[role="grid"] div[role="row"], div[data-scope="messages_table"] div[role="row"], a[href*="/messages/t/"], div[role="navigation"] div[role="button"]'
         )
       );
-      const seenHrefs = new Set();
+      const seen = new Set();
       chatItems = candidates.filter((el) => {
-        const href = el.getAttribute("href") || "";
-        // Filtro anti-stories e anti-feed rigoroso
-        if (
-          href.includes("/stories/") ||
-          href.includes("/reel/") ||
-          href.includes("/watch/") ||
-          href.includes("story_tray") ||
-          (!href.includes("/messages/") && !href.includes("/messages/t/"))
-        ) {
-          return false;
-        }
-        if (seenHrefs.has(href)) return false;
-        seenHrefs.add(href);
+        const rect = el.getBoundingClientRect();
+        const text = el.innerText?.trim() || "";
+        const isSidebar = rect.left < window.innerWidth * 0.45 && rect.width > 180 && rect.height >= 40;
+        if (!isSidebar || !text) return false;
+        const firstLine = text.split("\n")[0].trim().slice(0, 25);
+        if (seen.has(firstLine)) return false;
+        seen.add(firstLine);
         return true;
       });
     } else if (isLinkedIn) {
