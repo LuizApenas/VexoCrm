@@ -15,7 +15,7 @@ export function registerAiExtractRoutes(app, deps) {
     requireAppViewAccess("leads"),
     async (req, res) => {
       try {
-        const { rawText, defaultOrigin } = req.body || {};
+        const { rawText, defaultOrigin, defaultContactName } = req.body || {};
 
         if (!rawText || typeof rawText !== "string" || !rawText.trim()) {
           return res.status(400).json({
@@ -25,6 +25,13 @@ export function registerAiExtractRoutes(app, deps) {
               message: "O texto ou diálogo para análise é obrigatório.",
             },
           });
+        }
+
+        // Extrai fallback do nome do cabeçalho se houver "Contato: Nome"
+        let fallbackName = defaultContactName ? String(defaultContactName).trim() : "";
+        if (!fallbackName) {
+          const matchName = rawText.match(/Contato:\s*([^\n\r]+)/i);
+          if (matchName) fallbackName = matchName[1].trim();
         }
 
         if (!process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) {
@@ -37,28 +44,27 @@ export function registerAiExtractRoutes(app, deps) {
           });
         }
 
-        const prompt = `Você é um extrator de contatos comerciais de alta precisão.
-Analise o texto abaixo (que contém diálogos de Instagram Direct, LinkedIn, E-mail ou WhatsApp) e extraia TODOS os contatos/leads identificáveis.
-
-Para cada contato encontrado, retorne um objeto JSON com:
-- "nome": string (Nome da pessoa ou @username do perfil, ex: "Eliés Sousa" ou "@eliessousa")
-- "telefone": string ou null (Apenas dígitos com DDD ex: 5534999999999, ou null se não houver telefone no texto)
-- "email": string ou null
-- "origem": string (ex: "${defaultOrigin || "Instagram Direct"}")
-- "interesse": string (resumo do assunto ou produto. Se for conversa informal/direct, coloque "Interação no Direct")
-- "temperatura": "Quente" | "Morno" | "Frio"
-- "valor_estimado": number ou null
+        const prompt = `Você é um extrator de contatos comerciais de altíssima precisão.
+Analise o diálogo abaixo e extraia SEMPRE o contato identificado pelo nome/perfil.
+Regras de Extração Obrigatórias:
+1. "nome": Nome da pessoa no cabeçalho ou @username (ex: "${fallbackName || "Lead Social"}"). NUNCA deixe vazio se houver contato.
+2. "telefone": Dígitos com DDD se houver no texto, ou null se não houver.
+3. "email": E-mail se houver, ou null.
+4. "origem": "${defaultOrigin || "Instagram Direct"}".
+5. "interesse": Resumo conciso do assunto da conversa (ex: "Conversa sobre vídeos", "Interesse em proposta", "Interação informal").
+6. "temperatura": "Quente" se pediu preço/zap, "Morno" se demonstrou interesse, "Frio" se foi apenas conversa amigável/meme.
+7. "valor_estimado": number ou null.
 
 MESMO QUE NÃO HAJA NÚMERO DE TELEFONE, retorne o contato com o Nome/Perfil identificado.
 
-Retorne ESTRITAMENTE um JSON no formato:
+Responda ESTRITAMENTE com o seguinte JSON:
 {
   "leads": [
     {
-      "nome": "...",
-      "telefone": "55...",
+      "nome": "${fallbackName || "Contato"}",
+      "telefone": null,
       "email": null,
-      "origem": "Instagram Direct",
+      "origem": "${defaultOrigin || "Instagram Direct"}",
       "interesse": "Interação no Direct",
       "temperatura": "Frio",
       "valor_estimado": null
@@ -66,7 +72,7 @@ Retorne ESTRITAMENTE um JSON no formato:
   ]
 }
 
-Texto para análise:
+Texto:
 """
 ${rawText}
 """`;
@@ -104,7 +110,7 @@ ${rawText}
         }
 
         const rawLeads = Array.isArray(parsed?.leads) ? parsed.leads : [];
-        const leads = rawLeads.map((item) => {
+        let leads = rawLeads.map((item) => {
           let cleanPhone = null;
           if (item.telefone) {
             const digits = String(item.telefone).replace(/\D/g, "");
@@ -114,11 +120,11 @@ ${rawText}
           }
 
           return {
-            nome: String(item.nome || "Não informado").trim(),
+            nome: String(item.nome || fallbackName || "Contato Social").trim(),
             telefone: cleanPhone,
             email: item.email ? String(item.email).trim() : null,
             origem: String(item.origem || defaultOrigin || "Instagram Direct").trim(),
-            interesse: String(item.interesse || "Geral").trim(),
+            interesse: String(item.interesse || "Interação no Direct").trim(),
             temperatura: ["Quente", "Morno", "Frio"].includes(item.temperatura)
               ? item.temperatura
               : "Morno",
@@ -126,6 +132,19 @@ ${rawText}
               typeof item.valor_estimado === "number" ? item.valor_estimado : null,
           };
         });
+
+        // Garantia Universal: Nunca deixa a lista de leads vazia se houver texto
+        if (leads.length === 0 && rawText.length >= 10) {
+          leads.push({
+            nome: fallbackName || "Contato Social",
+            telefone: null,
+            email: null,
+            origem: String(defaultOrigin || "Instagram Direct").trim(),
+            interesse: "Interação no Direct",
+            temperatura: "Frio",
+            valor_estimado: null,
+          });
+        }
 
         return res.json({
           success: true,

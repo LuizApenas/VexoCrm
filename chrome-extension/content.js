@@ -75,6 +75,20 @@
     let contactName = "Contato";
     const messages = [];
 
+    const isNoise = (text) =>
+      !text ||
+      text.length <= 1 ||
+      text.includes("Online há") ||
+      text.includes("Criptografia de ponta a ponta") ||
+      text.includes("End-to-end encryption") ||
+      text.includes("Restore messages") ||
+      text.includes("Restaurar mensagens") ||
+      text.includes("Usar PIN") ||
+      text.includes("Use PIN") ||
+      text.includes("Visto") ||
+      text.includes("Seen") ||
+      text.match(/^\d{1,2}:\d{2}$/);
+
     if (isInstagram) {
       // Busca nome e @username no topo da conversa
       const headerTitleEl =
@@ -95,15 +109,8 @@
 
       bubbleElements.forEach((el) => {
         const text = el.textContent.trim();
-        if (text && text.length > 1 && !messages.includes(text)) {
-          if (
-            !text.includes("Active") &&
-            !text.includes("Visto") &&
-            !text.includes("Seen") &&
-            !text.match(/^\d{1,2}:\d{2}$/)
-          ) {
-            messages.push(text);
-          }
+        if (text && !isNoise(text) && !messages.includes(text)) {
+          messages.push(text);
         }
       });
     } else if (isFacebook || isMessenger) {
@@ -115,7 +122,7 @@
         const bubbles = dialogEl.querySelectorAll('div[dir="auto"], div[data-testid="message_container"], div[class*="x1lliihq"]');
         bubbles.forEach((b) => {
           const t = b.innerText?.trim();
-          if (t && t.length > 1 && !messages.includes(t) && !t.includes("Online há") && !t.match(/^\d{1,2}:\d{2}$/)) {
+          if (t && !isNoise(t) && !messages.includes(t)) {
             messages.push(t);
           }
         });
@@ -137,7 +144,7 @@
 
         bubbleElements.forEach((el) => {
           const text = el.textContent.trim();
-          if (text && text.length > 1 && !messages.includes(text)) {
+          if (text && !isNoise(text) && !messages.includes(text)) {
             messages.push(text);
           }
         });
@@ -362,7 +369,7 @@
       document.body.appendChild(progressModal);
     }
 
-    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
 
     progressModal.innerHTML = `
       <div class="vexo-progress-header">
@@ -377,7 +384,7 @@
         <div class="vexo-progress-fill" style="width: ${pct}%;"></div>
       </div>
       <div class="vexo-progress-status">
-        <span>Minerando conversa ${current} de ${total}...</span>
+        <span>Processando conversa ${current} de ${total}...</span>
         <span class="vexo-progress-counter">${savedCount} lead(s) salvos</span>
       </div>
     `;
@@ -395,6 +402,73 @@
   function hideBulkProgress() {
     const progressModal = document.getElementById("vexo-bulk-progress");
     if (progressModal) progressModal.remove();
+  }
+
+  // Busca candidatos visíveis na barra lateral
+  function getVisibleChatCandidates() {
+    if (isInstagram) {
+      const mensagensHeader = Array.from(
+        document.querySelectorAll("span, div, h4, h2")
+      ).find((el) => el.innerText?.trim() === "Mensagens");
+      const minY = mensagensHeader ? mensagensHeader.getBoundingClientRect().bottom + 5 : 240;
+
+      const candidates = Array.from(
+        document.querySelectorAll(
+          'div[role="list"] > div, div[role="listitem"], div[role="row"], div[tabindex="0"], a[href*="/direct/t/"]'
+        )
+      );
+      const seen = new Set();
+      return candidates.filter((el) => {
+        const rect = el.getBoundingClientRect();
+        const text = el.innerText?.trim() || "";
+        const isBelowNotes = rect.top >= minY;
+        const isLeftSidebar =
+          rect.left < window.innerWidth * 0.45 && rect.width > 200 && rect.height >= 45;
+        const isNotControl =
+          !text.includes("Pesquisar") &&
+          !text.includes("Sua nota") &&
+          !text.includes("Pedidos") &&
+          !text.includes("Compartilhe o que");
+        if (!isBelowNotes || !isLeftSidebar || !isNotControl || !text) return false;
+        const firstLine = text.split("\n")[0].trim().slice(0, 25);
+        if (seen.has(firstLine)) return false;
+        seen.add(firstLine);
+        return true;
+      });
+    } else if (isFacebook || isMessenger) {
+      const candidates = Array.from(
+        document.querySelectorAll(
+          'div[role="grid"] div[role="row"], div[data-scope="messages_table"] div[role="row"], a[href*="/messages/t/"], div[role="navigation"] div[role="button"]'
+        )
+      );
+      const seen = new Set();
+      return candidates.filter((el) => {
+        const rect = el.getBoundingClientRect();
+        const text = el.innerText?.trim() || "";
+        const isSidebar = rect.left < window.innerWidth * 0.45 && rect.width > 180 && rect.height >= 40;
+        if (!isSidebar || !text) return false;
+        const firstLine = text.split("\n")[0].trim().slice(0, 25);
+        if (seen.has(firstLine)) return false;
+        seen.add(firstLine);
+        return true;
+      });
+    } else if (isLinkedIn) {
+      const candidates = Array.from(
+        document.querySelectorAll(
+          '.msg-conversations-container__conversations-list li a, .msg-conversation-listitem__link, .msg-conversation-card'
+        )
+      );
+      const seenHrefs = new Set();
+      return candidates.filter((el) => {
+        const href = el.getAttribute("href") || el.innerText;
+        if (!href || seenHrefs.has(href)) return false;
+        seenHrefs.add(href);
+        return true;
+      });
+    } else if (isTikTok) {
+      return Array.from(document.querySelectorAll('[data-e2e="chat-list-item"]'));
+    }
+    return [];
   }
 
   async function handleBulkMining(btn) {
@@ -417,78 +491,13 @@
       return;
     }
 
-    // Busca itens da lista lateral de conversas com seletor infalível
-    let chatItems = [];
-    if (isInstagram) {
-      // 1. Encontra a posição vertical do título "Mensagens" na barra lateral
-      const mensagensHeader = Array.from(
-        document.querySelectorAll("span, div, h4, h2")
-      ).find((el) => el.innerText?.trim() === "Mensagens");
-      const minY = mensagensHeader ? mensagensHeader.getBoundingClientRect().bottom + 5 : 240;
+    // Carrega cache de conversas já mineradas
+    const storageData = await chrome.storage.local.get("minedChatIds");
+    let minedChatIds = Array.isArray(storageData?.minedChatIds) ? storageData.minedChatIds : [];
 
-      // 2. Busca elementos clicáveis na coluna lateral esquerda
-      const candidates = Array.from(
-        document.querySelectorAll(
-          'div[role="list"] > div, div[role="listitem"], div[role="row"], div[tabindex="0"], a[href*="/direct/t/"]'
-        )
-      );
-      const seen = new Set();
-      chatItems = candidates.filter((el) => {
-        const rect = el.getBoundingClientRect();
-        const text = el.innerText?.trim() || "";
-        // Deve estar na coluna esquerda, abaixo do título Mensagens e ter largura de card (> 200px)
-        const isBelowNotes = rect.top >= minY;
-        const isLeftSidebar =
-          rect.left < window.innerWidth * 0.45 && rect.width > 200 && rect.height >= 45;
-        const isNotControl =
-          !text.includes("Pesquisar") &&
-          !text.includes("Sua nota") &&
-          !text.includes("Pedidos") &&
-          !text.includes("Compartilhe o que");
-        if (!isBelowNotes || !isLeftSidebar || !isNotControl || !text) return false;
-        const firstLine = text.split("\n")[0].trim().slice(0, 25);
-        if (seen.has(firstLine)) return false;
-        seen.add(firstLine);
-        return true;
-      });
-    } else if (isFacebook || isMessenger) {
-      // No Facebook, busca chats na tela de mensagens facebook.com/messages
-      const candidates = Array.from(
-        document.querySelectorAll(
-          'div[role="grid"] div[role="row"], div[data-scope="messages_table"] div[role="row"], a[href*="/messages/t/"], div[role="navigation"] div[role="button"]'
-        )
-      );
-      const seen = new Set();
-      chatItems = candidates.filter((el) => {
-        const rect = el.getBoundingClientRect();
-        const text = el.innerText?.trim() || "";
-        const isSidebar = rect.left < window.innerWidth * 0.45 && rect.width > 180 && rect.height >= 40;
-        if (!isSidebar || !text) return false;
-        const firstLine = text.split("\n")[0].trim().slice(0, 25);
-        if (seen.has(firstLine)) return false;
-        seen.add(firstLine);
-        return true;
-      });
-    } else if (isLinkedIn) {
-      const candidates = Array.from(
-        document.querySelectorAll(
-          '.msg-conversations-container__conversations-list li a, .msg-conversation-listitem__link, .msg-conversation-card'
-        )
-      );
-      const seenHrefs = new Set();
-      chatItems = candidates.filter((el) => {
-        const href = el.getAttribute("href") || el.innerText;
-        if (!href || seenHrefs.has(href)) return false;
-        seenHrefs.add(href);
-        return true;
-      });
-    } else if (isTikTok) {
-      chatItems = Array.from(
-        document.querySelectorAll('[data-e2e="chat-list-item"]')
-      );
-    }
+    let initialCandidates = getVisibleChatCandidates();
 
-    if (chatItems.length === 0) {
+    if (initialCandidates.length === 0) {
       showToast({
         title: "Lista de Chats Não Encontrada",
         message: isInstagram
@@ -499,16 +508,16 @@
       return;
     }
 
-    // Limita a até 20 conversas recentes por lote
-    const itemsToProcess = chatItems.slice(0, 20);
-    const total = itemsToProcess.length;
-
+    const TARGET_MAX_CHATS = 35; // Lote de mineração contínua
     isBulkMining = true;
     bulkCancelRequested = false;
     btn.classList.add("vexo-loading");
     btn.innerHTML = `<div class="vexo-spinner"></div> Auto-Scout Rodando...`;
 
     let totalSavedLeads = 0;
+    let processedChatsCount = 0;
+    const processedChatKeys = new Set();
+
     const defaultOrigin = isInstagram
       ? "Instagram Direct"
       : isFacebook || isMessenger
@@ -525,106 +534,150 @@
       ? "TikTok (Vexo Scout)"
       : "LinkedIn (Vexo Scout)";
 
-    showBulkProgress(1, total, 0);
+    showBulkProgress(1, TARGET_MAX_CHATS, 0);
 
     try {
-      for (let i = 0; i < total; i++) {
-        if (bulkCancelRequested) {
-          break;
-        }
+      let consecutiveEmptyScrolls = 0;
 
-        const item = itemsToProcess[i];
-        showBulkProgress(i + 1, total, totalSavedLeads);
-
-        // Clica na conversa para abrir e dispara eventos reais de mouse
-        try {
-          item.scrollIntoView({ block: "nearest", behavior: "smooth" });
-          item.click();
-          item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-          item.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-        } catch (e) {
-          const clickTarget = item.querySelector("a, div") || item;
-          clickTarget.click();
-          clickTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-          clickTarget.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-        }
-
-        // Aguarda carregamento do diálogo
-        await new Promise((r) => setTimeout(r, 1300));
-
+      while (processedChatsCount < TARGET_MAX_CHATS && consecutiveEmptyScrolls < 3) {
         if (bulkCancelRequested) break;
 
-        const rawText = extractConversationText();
-        if (rawText && rawText.length >= 15) {
+        const currentCandidates = getVisibleChatCandidates();
+        const unhandledCandidates = currentCandidates.filter((item) => {
+          const key = item.getAttribute("href") || item.innerText?.split("\n")[0].trim();
+          return key && !processedChatKeys.has(key);
+        });
+
+        if (unhandledCandidates.length === 0) {
+          // Rola a barra lateral para carregar novas conversas do feed infinito
+          const sidebarContainer =
+            document.querySelector('div[role="navigation"]') ||
+            document.querySelector('div[role="grid"]') ||
+            document.querySelector('div[role="list"]') ||
+            document.querySelector('div[aria-label="Chats"]') ||
+            document.querySelector('div[aria-label="Conversas"]') ||
+            document.querySelector('div[aria-label="Direct"]');
+
+          if (sidebarContainer) {
+            sidebarContainer.scrollBy({ top: 400, behavior: "smooth" });
+            await new Promise((r) => setTimeout(r, 1200));
+            consecutiveEmptyScrolls++;
+            continue;
+          } else {
+            break;
+          }
+        }
+
+        consecutiveEmptyScrolls = 0;
+
+        for (const item of unhandledCandidates) {
+          if (bulkCancelRequested || processedChatsCount >= TARGET_MAX_CHATS) break;
+
+          const chatKey = item.getAttribute("href") || item.innerText?.split("\n")[0].trim() || `chat_${processedChatsCount}`;
+          processedChatKeys.add(chatKey);
+
+          // Verifica se já foi minerado anteriormente pelo cache
+          if (minedChatIds.includes(chatKey)) {
+            processedChatsCount++;
+            showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
+            continue;
+          }
+
+          processedChatsCount++;
+          showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
+
+          // Clica na conversa para abrir e dispara eventos reais de mouse
           try {
-            const extractResponse = await new Promise((resolve) => {
-              chrome.runtime.sendMessage(
-                {
-                  action: "VEXO_AI_EXTRACT",
-                  payload: {
-                    apiUrl,
-                    authToken: vexoAuthToken,
-                    clientId: vexoClientId,
-                    rawText,
-                    defaultOrigin,
-                  },
-                },
-                resolve
-              );
-            });
+            item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            item.click();
+            item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            item.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+          } catch (e) {
+            const clickTarget = item.querySelector("a, div") || item;
+            clickTarget.click();
+            clickTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            clickTarget.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+          }
 
-            const leads = Array.isArray(extractResponse?.data?.leads) ? extractResponse.data.leads : [];
+          // Aguarda carregamento do diálogo
+          await new Promise((r) => setTimeout(r, 1400));
 
-            if (leads.length > 0) {
-              const rowsToSave = leads.map((lead) => ({
-                nome: lead.nome,
-                telefone: lead.telefone || "",
-                phone: lead.telefone || "",
-                email: lead.email || "",
-                stage: lead.temperatura === "Quente" ? "open_budget" : lead.temperatura === "Frio" ? "cold" : "inquiry",
-                temperature: lead.temperatura === "Quente" ? "hot" : lead.temperatura === "Frio" ? "cold" : "warm",
-                tags: [
-                  channelTag,
-                  lead.origem,
-                  lead.interesse ? `Interesse: ${lead.interesse}` : "",
-                ].filter(Boolean),
-              }));
+          if (bulkCancelRequested) break;
 
-              const saveResponse = await new Promise((resolve) => {
+          const rawText = extractConversationText();
+          if (rawText && rawText.length >= 10) {
+            try {
+              const extractResponse = await new Promise((resolve) => {
                 chrome.runtime.sendMessage(
                   {
-                    action: "VEXO_SAVE_LEADS",
+                    action: "VEXO_AI_EXTRACT",
                     payload: {
                       apiUrl,
                       authToken: vexoAuthToken,
                       clientId: vexoClientId,
-                      rows: rowsToSave,
-                      importTags: [channelTag],
+                      rawText,
+                      defaultOrigin,
                     },
                   },
                   resolve
                 );
               });
 
-              if (saveResponse && saveResponse.ok) {
-                totalSavedLeads += leads.length;
-                showBulkProgress(i + 1, total, totalSavedLeads);
-              }
-            }
-          } catch (itemErr) {
-            console.warn(`[Vexo Scout Bulk] Erro ao minerar conversa ${i + 1}:`, itemErr);
-          }
-        }
+              const leads = Array.isArray(extractResponse?.data?.leads) ? extractResponse.data.leads : [];
 
-        // Pequeno intervalo antes da próxima
-        await new Promise((r) => setTimeout(r, 600));
+              if (leads.length > 0) {
+                const rowsToSave = leads.map((lead) => ({
+                  nome: lead.nome,
+                  telefone: lead.telefone || "",
+                  phone: lead.telefone || "",
+                  email: lead.email || "",
+                  stage: lead.temperatura === "Quente" ? "open_budget" : lead.temperatura === "Frio" ? "cold" : "inquiry",
+                  temperature: lead.temperatura === "Quente" ? "hot" : lead.temperatura === "Frio" ? "cold" : "warm",
+                  tags: [
+                    channelTag,
+                    lead.origem,
+                    lead.interesse ? `Interesse: ${lead.interesse}` : "",
+                  ].filter(Boolean),
+                }));
+
+                const saveResponse = await new Promise((resolve) => {
+                  chrome.runtime.sendMessage(
+                    {
+                      action: "VEXO_SAVE_LEADS",
+                      payload: {
+                        apiUrl,
+                        authToken: vexoAuthToken,
+                        clientId: vexoClientId,
+                        rows: rowsToSave,
+                        importTags: [channelTag],
+                      },
+                    },
+                    resolve
+                  );
+                });
+
+                if (saveResponse && saveResponse.ok) {
+                  totalSavedLeads += leads.length;
+                  minedChatIds.push(chatKey);
+                  await chrome.storage.local.set({ minedChatIds: minedChatIds.slice(-500) });
+                  showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
+                }
+              }
+            } catch (itemErr) {
+              console.warn(`[Vexo Scout Bulk] Erro ao minerar conversa:`, itemErr);
+            }
+          }
+
+          // Pequeno intervalo suave antes da próxima
+          await new Promise((r) => setTimeout(r, 600));
+        }
       }
 
       hideBulkProgress();
 
       showToast({
         title: "Varredura Concluída!",
-        message: `🎉 Auto-Scout finalizado! ${totalSavedLeads} contatos qualificados e salvos no Banco de Dados.`,
+        message: `🎉 Auto-Scout finalizado! ${totalSavedLeads} contato(s) qualificado(s) e salvo(s) no Banco de Dados.`,
         crmUrl: `${apiUrl}/crm/banco-de-dados`,
       });
     } catch (bulkErr) {
