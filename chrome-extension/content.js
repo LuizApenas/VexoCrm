@@ -70,11 +70,11 @@
     }, 7000);
   }
 
-  // Extrai mensagens e contexto da conversa ativa com estratégia híbrida
-  function extractConversationFromActiveView(contactNameFallback) {
-    let contactName = contactNameFallback || "Contato Social";
+  // Extrai mensagens e contexto da conversa ativa com leitura de texto nativo
+  function extractConversationFromActiveView(contactNameFromCard) {
+    // 1. Nome do contato: usa o nome capturado com segurança do card lateral
+    let contactName = contactNameFromCard || "Contato Social";
 
-    // 1. Tenta enriquecer o nome com o cabeçalho ativo
     const headerEl =
       document.querySelector('div[role="main"] h2, div[role="main"] h1, header h2, header h1, div[role="dialog"] h2') ||
       document.querySelector('div[role="main"] header span, header span[dir="auto"], div[aria-label="Detalhes da conversa"] h1');
@@ -86,48 +86,21 @@
       }
     }
 
-    // 2. Extrai todas as mensagens da área de chat (metade direita da tela ou diálogo)
-    const bubbles = Array.from(
-      document.querySelectorAll(
-        'div[dir="auto"], div[data-testid="message_container"], div[role="row"] div[dir="auto"], div[class*="x1lliihq"]'
-      )
-    ).filter((el) => {
-      const rect = el.getBoundingClientRect();
-      const text = el.innerText?.trim() || "";
+    // 2. Extrai o texto completo da área de mensagens da direita
+    const mainPane =
+      document.querySelector('div[role="main"]') ||
+      document.querySelector('section[role="region"]') ||
+      document.querySelector('div[role="dialog"]') ||
+      document.querySelector('main') ||
+      document.body;
 
-      const isRightPane = rect.left > window.innerWidth * 0.35 && rect.width > 20 && rect.height > 15;
-      const isInsideDialog = Boolean(el.closest('div[role="dialog"]'));
-      const isSystem =
-        text.includes("Online há") ||
-        text.includes("Criptografia") ||
-        text.includes("End-to-end") ||
-        text.includes("Restore messages") ||
-        text.includes("Restaurar mensagens") ||
-        text.includes("Usar PIN") ||
-        text.includes("Use PIN") ||
-        text.includes("Visto") ||
-        text.includes("Seen") ||
-        text.match(/^\d{1,2}:\d{2}$/);
-
-      return (isRightPane || isInsideDialog) && !isSystem && text.length > 0;
-    });
-
-    const messages = [];
-    bubbles.forEach((b) => {
-      const t = b.innerText?.trim();
-      if (t && !messages.includes(t)) messages.push(t);
-    });
-
-    if (messages.length === 0) {
-      const mainContainer = document.querySelector('div[role="main"], div[role="dialog"], main');
-      if (mainContainer) {
-        messages.push(mainContainer.innerText.slice(-2500));
-      }
-    }
+    const rawText = mainPane ? (mainPane.innerText || "") : "";
+    // Pega as últimas 3.000 letras do diálogo (tamanho ideal para IA)
+    const dialogSnippet = rawText.length > 3000 ? rawText.slice(-3000) : rawText;
 
     return {
       contactName,
-      dialogText: `Contato: ${contactName}\n\nDiálogo:\n${messages.join("\n")}`,
+      dialogText: `Contato: ${contactName}\n\nDiálogo:\n${dialogSnippet || "Interação no Direct"}`,
     };
   }
 
@@ -510,10 +483,10 @@
           const chatKey = item.getAttribute("href") || item.innerText?.split("\n")[0].trim() || `chat_${processedChatsCount}`;
           processedChatKeys.add(chatKey);
 
-          // Extrai nome direto do card lateral antes de clicar
-          const rawCardText = item.innerText?.trim() || "";
-          const cardLines = rawCardText.split("\n").map((l) => l.trim()).filter(Boolean);
-          const contactNameFromCard = cardLines[0] || "Contato Social";
+          // 1. Extrai o nome do contato diretamente do card lateral antes do clique
+          const cardText = item.innerText?.trim() || "";
+          const cardLines = cardText.split("\n").map((l) => l.trim()).filter(Boolean);
+          const contactName = cardLines[0] || "Contato Social";
 
           // Verifica se já foi minerado anteriormente pelo cache
           if (minedChatIds.includes(chatKey)) {
@@ -525,36 +498,24 @@
           processedChatsCount++;
           showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
 
-          // Dispara sequência completa de clique para frameworks React / SPA
-          const targetElement = item.querySelector("a, div[role='button'], div[role='row']") || item;
-          targetElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
-          const eventSequence = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
-          eventSequence.forEach((evtName) => {
-            targetElement.dispatchEvent(
-              new MouseEvent(evtName, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-              })
-            );
+          // 2. Dispara a navegação para o chat
+          const clickTarget = item.querySelector("a, div[role='button']") || item;
+          clickTarget.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          ["pointerdown", "mousedown", "pointerup", "mouseup", "click"].forEach((evt) => {
+            clickTarget.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
           });
-
-          // Se for um link <a> com href direto, navega
-          const href = targetElement.getAttribute("href") || item.getAttribute("href");
-          if (href && href.startsWith("/")) {
-            try {
-              targetElement.click();
-            } catch (_) {}
+          if (clickTarget.tagName === "A" && clickTarget.href) {
+            try { clickTarget.click(); } catch (_) {}
           }
 
-          // Aguarda 1.6s para renderização do chat
-          await new Promise((r) => setTimeout(r, 1600));
-
+          // 3. Aguarda 1.5s para carregar a conversa
+          await new Promise((r) => setTimeout(r, 1500));
           if (bulkCancelRequested) break;
 
-          // Extrai o diálogo com o nome capturado do card
-          const { contactName, dialogText } = extractConversationFromActiveView(contactNameFromCard);
+          // 4. Captura o texto real do chat
+          const { dialogText } = extractConversationFromActiveView(contactName);
 
+          // 5. Envia para IA
           try {
             const extractResponse = await new Promise((resolve) => {
               chrome.runtime.sendMessage(
@@ -600,6 +561,7 @@
               ].filter(Boolean),
             }));
 
+            // 6. Salva no Banco de Dados
             const saveResponse = await new Promise((resolve) => {
               chrome.runtime.sendMessage(
                 {
@@ -616,12 +578,11 @@
               );
             });
 
-            if (saveResponse && saveResponse.ok) {
-              totalSavedLeads += extractedLeads.length;
-              minedChatIds.push(chatKey);
-              await chrome.storage.local.set({ minedChatIds: minedChatIds.slice(-500) });
-              showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
-            }
+            // 7. Incrementa o contador e registra no cache
+            totalSavedLeads += extractedLeads.length;
+            minedChatIds.push(chatKey);
+            await chrome.storage.local.set({ minedChatIds: minedChatIds.slice(-500) });
+            showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
           } catch (itemErr) {
             console.warn(`[Vexo Scout Bulk] Erro ao minerar conversa:`, itemErr);
           }
