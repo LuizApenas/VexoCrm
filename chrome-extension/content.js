@@ -229,8 +229,12 @@
         );
       });
 
-      if (!saveResponse || !saveResponse.ok) {
-        const errMsg = saveResponse?.data?.message || saveResponse?.error || "Erro ao salvar contatos.";
+      if (!saveResponse || !saveResponse.ok || !saveResponse.data?.success) {
+        const errMsg =
+          saveResponse?.data?.error?.message ||
+          saveResponse?.data?.message ||
+          saveResponse?.error ||
+          "Erro ao salvar contatos.";
         throw new Error(errMsg);
       }
 
@@ -579,10 +583,14 @@
             });
 
             // 7. Incrementa o contador e registra no cache
-            totalSavedLeads += extractedLeads.length;
-            minedChatIds.push(chatKey);
-            await chrome.storage.local.set({ minedChatIds: minedChatIds.slice(-500) });
-            showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
+            if (saveResponse && saveResponse.ok && saveResponse.data?.success) {
+              totalSavedLeads += extractedLeads.length;
+              minedChatIds.push(chatKey);
+              await chrome.storage.local.set({ minedChatIds: minedChatIds.slice(-500) });
+              showBulkProgress(processedChatsCount, TARGET_MAX_CHATS, totalSavedLeads);
+            } else {
+              console.warn(`[Vexo Scout] Falha ao salvar conversa ${contactName}:`, saveResponse?.data?.error || saveResponse?.error);
+            }
           } catch (itemErr) {
             console.warn(`[Vexo Scout Bulk] Erro ao minerar conversa:`, itemErr);
           }

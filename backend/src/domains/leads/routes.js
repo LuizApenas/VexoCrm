@@ -1241,19 +1241,12 @@ export function registerLeadsRoutes(app, deps) {
       for (const row of rows) {
         const rawPhone = row.telefone || row.phone || row.celular || row.whatsapp || row.numero || "";
         let formattedPhone = sanitizePhoneE164(rawPhone);
-        const name = normalizeString(row.nome || row.name || row.cliente || row.contato || formattedPhone || "Lead");
+        const name = normalizeString(row.nome || row.name || row.cliente || row.contato || formattedPhone || "Lead Social");
 
         if (!formattedPhone) {
-          // Se veio com tag de Direct/Social ou nome válido, gera número E.164 com prefixo 5500 (13 dígitos exatos: 5500 + 9 dígitos)
-          const isSocialLead =
-            importTagsArray.some((t) => /instagram|facebook|linkedin|tiktok|scout|direct/i.test(t)) ||
-            (Array.isArray(row.tags) && row.tags.some((t) => /instagram|facebook|linkedin|tiktok|scout|direct/i.test(t)));
-          if (isSocialLead && name) {
-            const randomSuffix = Math.floor(100000000 + Math.random() * 900000000);
-            formattedPhone = `5500${randomSuffix}`;
-          } else {
-            continue;
-          }
+          // Gera número E.164 com prefixo 5500 (13 dígitos exatos: 5500 + 9 dígitos)
+          const randomSuffix = Math.floor(100000000 + Math.random() * 900000000);
+          formattedPhone = `5500${randomSuffix}`;
         }
 
         const stageInput = normalizeString(row.stage || row.estagio || row.etapa)?.toLowerCase();
@@ -1264,48 +1257,62 @@ export function registerLeadsRoutes(app, deps) {
 
         const rowTags = row.tags || row.tag || [];
         const parsedRowTags = Array.isArray(rowTags)
-          ? rowTags.map(t => String(t).trim())
+          ? rowTags.map((t) => String(t).trim())
           : typeof rowTags === "string"
-            ? rowTags.split(",").map(t => t.trim()).filter(Boolean)
-            : [];
-
-        const combinedTags = Array.from(new Set([...parsedRowTags, ...importTagsArray]));
+          ? rowTags.split(",").map((t) => t.trim()).filter(Boolean)
+          : [];
 
         const originTag =
           importTagsArray.find((t) => /instagram|facebook|linkedin|tiktok|direct|messenger/i.test(t)) ||
-          (Array.isArray(row.tags) && row.tags.find((t) => /instagram|facebook|linkedin|tiktok|direct|messenger/i.test(t))) ||
+          parsedRowTags.find((t) => /instagram|facebook|linkedin|tiktok|direct|messenger/i.test(t)) ||
           row.origem ||
-          row.lead_source ||
           "Instagram Direct";
+
+        const combinedTags = Array.from(new Set([...parsedRowTags, ...importTagsArray, originTag]));
 
         parsedLeads.push({
           client_id: clientId,
           telefone: formattedPhone,
           phone: formattedPhone,
           nome: name,
-          lead_source: originTag,
           stage: validStage,
           temperature: validTemp,
-          tags: combinedTags.length > 0 ? combinedTags : [originTag],
+          tags: combinedTags,
           dados: {
             origem: originTag,
             origem_marketing: originTag,
+            lead_source: originTag,
             resumo_chat: row.interesse || row.resumo_chat || "Interação no Direct",
           },
-          raw_chat_summary: row.interesse || row.resumo_chat || "Interação no Direct",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
       }
 
       if (parsedLeads.length > 0) {
-        const { data, error } = await supabase
-          .from("leads")
-          .upsert(parsedLeads, { onConflict: "client_id,telefone" })
-          .select("id");
+        try {
+          const { data, error } = await supabase
+            .from("leads")
+            .upsert(parsedLeads, { onConflict: "client_id,telefone" })
+            .select("id");
 
-        if (error) throw error;
-        importedCount = data?.length || parsedLeads.length;
+          if (error) {
+            console.warn("[leads-import-csv] Falha no upsert com telefone, tentando fallback:", error.message);
+            // Fallback: tenta upsert sem 'telefone' caso a constraint seja apenas 'client_id,phone'
+            const { data: fbData, error: fbError } = await supabase
+              .from("leads")
+              .upsert(parsedLeads, { onConflict: "client_id,phone" })
+              .select("id");
+
+            if (fbError) throw fbError;
+            importedCount = fbData?.length || parsedLeads.length;
+          } else {
+            importedCount = data?.length || parsedLeads.length;
+          }
+        } catch (dbErr) {
+          console.error("[leads-import-csv] Erro fatal no Supabase:", dbErr);
+          throw dbErr;
+        }
       }
 
       res.json({ success: true, importedCount, totalRows: rows.length });
