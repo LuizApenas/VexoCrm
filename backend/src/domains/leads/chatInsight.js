@@ -1,40 +1,34 @@
-// Análise inteligente da conversa do WhatsApp para o Banco de Dados.
+// backend/src/domains/leads/chatInsight.js
+// Análise inteligente da conversa do WhatsApp para o Banco de Dados e WhatsApp Inbox.
 //
-// Antes o "Resumo Semântico da IA" era só `messages.slice(0,3).join(" | ")` —
-// copiava a primeira frase da conversa e não dizia nada útil. Aqui a conversa é
-// lida por um modelo e devolve: pontos-chave, diagnóstico do lead e a próxima
-// ação recomendada (follow-up ou campanha), que é o que o operador precisa para
-// decidir a abordagem.
-//
-// Se a IA não estiver configurada ou falhar, o chamador usa o resumo heurístico
-// como fallback — a extração nunca quebra por causa disto.
+// Lê o histórico da conversa e devolve: pontos-chave (📌), diagnóstico do lead (🔎)
+// e a próxima ação recomendada (➡️) para o operador.
+
+import { callLlmChatCompletion } from "../../chatbot-ai-engine.js";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-const DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b";
+const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
 
 function getModel() {
-  const raw = String(process.env.GROQ_CAMPAIGN_AI_MODEL || "").trim();
-  // Env quebrada (ex.: "llama 3.3 70b/llama 3.1 8b/mixtral") derruba a chamada com
-  // model_not_found; nesses casos cai no padrão.
-  if (!raw || raw.includes(" ") || raw.split("/").length > 2) return DEFAULT_GROQ_MODEL;
+  const raw = String(process.env.GROQ_CAMPAIGN_AI_MODEL || process.env.GROQ_MODEL || "").trim();
+  if (!raw || raw.includes(" ") || raw.includes("gpt-oss")) return DEFAULT_GROQ_MODEL;
   return raw;
 }
 
-const PROMPT = `Você analisa conversas de WhatsApp de uma agência para qualificar leads.
+const PROMPT = `Você analisa conversas de WhatsApp para qualificar leads comerciais.
 
-Receba a conversa e devolva JSON com EXATAMENTE estas chaves:
+Receba o histórico de mensagens e devolva JSON com EXATAMENTE estas chaves:
 {
-  "pontos_chave": "1 a 3 frases curtas com o que de fato foi tratado (assunto, necessidade, objeções, combinados). Sem repetir a mensagem literal.",
-  "diagnostico": "leitura do estágio do lead: qual o interesse real, o que trava a decisão e o nível de prontidão para compra.",
-  "proxima_acao": "a abordagem recomendada, concreta e acionável (o que dizer/oferecer e quando).",
+  "pontos_chave": "1 a 3 frases curtas com o que de fato foi tratado (assunto, necessidade, objeções, dúvidas, combinados). Sem repetir a mensagem literal.",
+  "diagnostico": "leitura do estágio do lead: qual o interesse real, o que trava a decisão e o nível de prontidão para avançar/comprar.",
+  "proxima_acao": "a abordagem recomendada, concreta e acionável para o consultor (o que dizer/oferecer e quando).",
   "canal_sugerido": "followup" | "campanha" | "contato_direto",
   "prioridade": "alta" | "media" | "baixa"
 }
 
 Regras:
-- Português do Brasil, linguagem comercial simples, sem jargão.
-- Baseie-se SÓ na conversa. Não invente fatos, valores ou combinados.
-- Se a conversa for irrelevante (spam, engano, mensagem automática), diga isso em pontos_chave e use prioridade "baixa".
+- Português do Brasil, linguagem comercial simples, direta e profissional.
+- Baseie-se SÓ nas mensagens. Se houver áudios ou conversa inicial curta, sintetize o contexto até o momento e oriente o consultor a ouvir/dar prosseguimento.
 - Responda SOMENTE o JSON, sem texto fora dele.`;
 
 /**
@@ -44,59 +38,110 @@ Regras:
  */
 export async function summarizeChatWithAI(messages, contactName) {
   const texts = (messages || []).map((m) => String(m || "").trim()).filter(Boolean);
-  if (!process.env.GROQ_API_KEY || texts.length === 0) return null;
+  if (texts.length === 0) return null;
 
-  // Conversa recortada: as últimas mensagens são as que importam para a decisão.
-  const conversa = texts.slice(-25).join("\n").slice(0, 6000);
+  // Conversa recortada: as últimas 30 mensagens
+  const conversa = texts.slice(-30).join("\n").slice(0, 8000);
 
+  // 1. Tenta via callLlmChatCompletion (suporta Groq, OpenAI, Gemini com retries automáticos)
   try {
-    const response = await fetch(GROQ_BASE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: getModel(),
-        temperature: 0.2,
-        max_tokens: 500,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: PROMPT },
-          { role: "user", content: `Contato: ${contactName || "desconhecido"}\n\nConversa:\n${conversa}` },
-        ],
-      }),
+    const rawResult = await callLlmChatCompletion({
+      model: getModel(),
+      temperature: 0.2,
+      max_tokens: 600,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: PROMPT },
+        { role: "user", content: `Contato: ${contactName || "desconhecido"}\n\nHistórico da Conversa:\n${conversa}` },
+      ],
     });
 
-    if (!response.ok) {
-      const body = await response.text();
-      console.warn("[chat-insight] Groq HTTP", response.status, body.slice(0, 200));
-      return null;
+    if (rawResult) {
+      let parsed = null;
+      try {
+        parsed = typeof rawResult === "object" ? rawResult : JSON.parse(rawResult);
+      } catch (_) {
+        const match = String(rawResult).match(/\{[\s\S]*\}/);
+        if (match) {
+          try {
+            parsed = JSON.parse(match[0]);
+          } catch (_) {}
+        }
+      }
+
+      const pontos = String(parsed?.pontos_chave || "").trim();
+      const diag = String(parsed?.diagnostico || "").trim();
+      const acao = String(parsed?.proxima_acao || "").trim();
+
+      if (pontos || diag || acao) {
+        const summary = [
+          pontos && `📌 ${pontos}`,
+          diag && `🔎 ${diag}`,
+          acao && `➡️ ${acao}`,
+        ].filter(Boolean).join("\n\n");
+
+        return {
+          summary: summary.slice(0, 1200),
+          canalSugerido: parsed?.canal_sugerido ? String(parsed.canal_sugerido) : null,
+          prioridade: parsed?.prioridade ? String(parsed.prioridade) : null,
+        };
+      }
     }
-
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) return null;
-
-    const parsed = JSON.parse(content);
-    const pontos = String(parsed?.pontos_chave || "").trim();
-    const diag = String(parsed?.diagnostico || "").trim();
-    const acao = String(parsed?.proxima_acao || "").trim();
-    if (!pontos && !diag && !acao) return null;
-
-    const summary = [
-      pontos && `📌 ${pontos}`,
-      diag && `🔎 ${diag}`,
-      acao && `➡️ ${acao}`,
-    ].filter(Boolean).join("\n");
-
-    return {
-      summary: summary.slice(0, 1200),
-      canalSugerido: parsed?.canal_sugerido ? String(parsed.canal_sugerido) : null,
-      prioridade: parsed?.prioridade ? String(parsed.prioridade) : null,
-    };
   } catch (err) {
-    console.warn("[chat-insight] falhou:", err?.message || err);
-    return null;
+    console.warn("[chat-insight] callLlmChatCompletion falhou, tentando fallback direto:", err?.message || err);
   }
+
+  // 2. Fallback direto para Groq API com modelos canônicos
+  if (process.env.GROQ_API_KEY) {
+    const modelsToTry = [getModel(), "llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+    for (const m of Array.from(new Set(modelsToTry))) {
+      try {
+        const response = await fetch(GROQ_BASE_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: m,
+            temperature: 0.2,
+            max_tokens: 500,
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: PROMPT },
+              { role: "user", content: `Contato: ${contactName || "desconhecido"}\n\nHistórico da Conversa:\n${conversa}` },
+            ],
+          }),
+        });
+
+        if (!response.ok) continue;
+
+        const data = await response.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (!content) continue;
+
+        const parsed = JSON.parse(content);
+        const pontos = String(parsed?.pontos_chave || "").trim();
+        const diag = String(parsed?.diagnostico || "").trim();
+        const acao = String(parsed?.proxima_acao || "").trim();
+        if (!pontos && !diag && !acao) continue;
+
+        const summary = [
+          pontos && `📌 ${pontos}`,
+          diag && `🔎 ${diag}`,
+          acao && `➡️ ${acao}`,
+        ].filter(Boolean).join("\n\n");
+
+        return {
+          summary: summary.slice(0, 1200),
+          canalSugerido: parsed?.canal_sugerido ? String(parsed.canal_sugerido) : null,
+          prioridade: parsed?.prioridade ? String(parsed.prioridade) : null,
+        };
+      } catch (e) {
+        console.warn(`[chat-insight] groq fallback (${m}) falhou:`, e?.message || e);
+      }
+    }
+  }
+
+  return null;
 }

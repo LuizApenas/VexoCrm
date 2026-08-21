@@ -440,7 +440,19 @@ export default function WhatsAppInbox({
     try {
       setIsSummarizing(true);
       const token = await getIdToken();
-      const messagesPayload = combinedTimeline.map((m) => m.body).filter(Boolean);
+      const messagesPayload = combinedTimeline
+        .map((m) => {
+          const sender = m.isInternalNote
+            ? `[Nota Interna - ${m.author || "Equipe"}]`
+            : m.fromMe
+            ? "Empresa/Consultor"
+            : selectedChat?.name || matchedLead?.nome || "Lead";
+          const body = (m.body || "").trim();
+          if (!body) return null;
+          return `${sender}: ${body}`;
+        })
+        .filter(Boolean);
+
       const res = await fetchApi(`/api/whatsapp/chats/${encodeURIComponent(selectedChatId)}/summarize`, {
         method: "POST",
         headers: {

@@ -511,14 +511,54 @@ export function registerChatbotRoutes(app, deps) {
       const { messages, contactName, clientId: requestedClientId } = req.body || {};
       const clientId = resolveAuthorizedClientId(req, res, requestedClientId) || requestedClientId;
 
-      const messageTexts = Array.isArray(messages)
+      let messageTexts = Array.isArray(messages)
         ? messages.map((m) => (typeof m === "string" ? m : m?.body || "")).filter(Boolean)
         : [];
+
+      const cleanPhone = String(chatId).replace(/\D/g, "");
+
+      // Se o payload não tiver mensagens ou tiver poucas, busca as mensagens reais do banco
+      if (messageTexts.length < 2 && cleanPhone && clientId && pgDatabasePool) {
+        const phoneVariants = [cleanPhone, `+${cleanPhone}`, `${cleanPhone}@s.whatsapp.net`];
+        const dbMsgs = await pgDatabasePool
+          .query(
+            `SELECT direction, message_text, sender_type, delivered_at
+             FROM public.lead_messages
+             WHERE client_id = $1 AND (phone = ANY($2) OR remote_jid = ANY($2))
+             ORDER BY delivered_at ASC
+             LIMIT 50`,
+            [clientId, phoneVariants]
+          )
+          .catch(() => ({ rows: [] }));
+
+        if (Array.isArray(dbMsgs?.rows) && dbMsgs.rows.length > 0) {
+          const dbTexts = dbMsgs.rows
+            .map((r) => {
+              const who = r.direction === "outbound" ? "Empresa/Consultor" : (contactName || "Lead");
+              const txt = (r.message_text || "").trim();
+              return txt ? `${who}: ${txt}` : null;
+            })
+            .filter(Boolean);
+          if (dbTexts.length > messageTexts.length) {
+            messageTexts = dbTexts;
+          }
+        }
+      }
+
+      console.log(`[summarize-chat] Resumindo chat ${chatId} (${messageTexts.length} msgs) para client ${clientId}`);
       const insight = await summarizeChatWithAI(messageTexts, contactName || "Contato");
-      const summaryText = insight?.summary || "Conversa em andamento sem objeções registradas.";
+
+      let summaryText = insight?.summary;
+      if (!summaryText) {
+        if (messageTexts.length > 0) {
+          const lastMsg = messageTexts[messageTexts.length - 1];
+          summaryText = `📌 Atendimento em andamento com ${contactName || "o lead"}.\n🔎 Última interação: "${lastMsg.slice(0, 100)}".\n➡️ Dar continuidade ao contato comercial e qualificar o interesse.`;
+        } else {
+          summaryText = "Conversa recente iniciada. Aguardando troca de mensagens para síntese comercial detalhada.";
+        }
+      }
 
       // Atualiza no banco de dados se houver lead vinculado
-      const cleanPhone = String(chatId).replace(/\D/g, "");
       if (cleanPhone && clientId && pgDatabasePool) {
         await pgDatabasePool
           .query(
