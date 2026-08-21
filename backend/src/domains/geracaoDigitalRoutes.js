@@ -3249,11 +3249,29 @@ Condições: ${condicoes}`;
         const mensalidade = meses ? Math.round((val / meses) * 100) / 100 : val;
         const valorTabela = Number(selectedPkg.valor_tabela || 0);
 
+        // VP do período e mensal:
+        // No gd_packages, valor_vp é o TOTAL do período (ex: R$ 15.600 em 6 meses, R$ 28.800 em 12 meses)
+        let vpPeriodo = Number(selectedPkg.valor_vp || 0) > 0 ? Number(selectedPkg.valor_vp) : null;
+        let vpMensal = meses && vpPeriodo ? Math.round((vpPeriodo / meses) * 100) / 100 : vpPeriodo;
+
+        // Se o pacote não tinha valor_vp diretamente gravado, mas a proposta já possuía uma taxa/percentual de VP:
+        if (!vpMensal && Number(proposal.valor_vp || 0) > 0) {
+          const oldPkgItem = Array.isArray(proposal.itens) ? proposal.itens.find(i => i.descricao?.startsWith("Pacote:")) : null;
+          const oldMensal = oldPkgItem ? Number(oldPkgItem.valor || 0) : Number(proposal.valor_total || 0);
+          if (oldMensal > 0) {
+            // Percentual de VP anterior aplicado sobre a nova mensalidade
+            const vpPct = Number(proposal.valor_vp) / oldMensal;
+            vpMensal = Math.round(mensalidade * vpPct * 100) / 100;
+            vpPeriodo = meses ? Math.round(vpMensal * meses * 100) / 100 : vpMensal;
+          }
+        }
+
         finalItems.push({
           product_id: null,
           descricao: `Pacote: ${selectedPkg.nome} (${selectedPkg.periodo === "unico" ? "Setup" : "Recorrência"})`,
           categoria: selectedPkg.tipo || "gd",
           valor: mensalidade,
+          valor_vp: vpPeriodo,
           recorrencia: meses ? "mensal" : "unico",
           periodo: selectedPkg.periodo,
           meses,
@@ -3294,17 +3312,33 @@ Condições: ${condicoes}`;
       const periodoDoPacote = selectedPkg && selectedPkg.periodo && selectedPkg.periodo !== "unico"
         ? selectedPkg.periodo
         : (selectedPkg ? "mensal" : null);
-      // VP (permuta) acompanha o pacote escolhido — cada pacote tem seu próprio
-      // valor em VP. Ao trocar de plano, o valor em dinheiro passa a descontar
-      // o VP do NOVO pacote (antes ficava preso ao VP do pacote anterior).
-      const vpDoPacote = selectedPkg && Number(selectedPkg.valor_vp || 0) > 0
-        ? Number(selectedPkg.valor_vp)
-        : null;
+
+      // Coluna valor_vp da proposta guarda o VP MENSAL (a página pública
+      // divide a mensalidade por ele e calcula o VP do período).
+      let vpMensalParaSalvar = null;
+      if (selectedPkg) {
+        const val = Number(selectedPkg.valor || 0);
+        const PERIOD_MONTHS = { mensal: 1, trimestral: 3, semestral: 6, anual: 12 };
+        const meses = selectedPkg.periodo === "unico" ? null : (PERIOD_MONTHS[selectedPkg.periodo] ?? 1);
+        const mensalidade = meses ? Math.round((val / meses) * 100) / 100 : val;
+        let vpPeriodo = Number(selectedPkg.valor_vp || 0) > 0 ? Number(selectedPkg.valor_vp) : null;
+        let vpM = meses && vpPeriodo ? Math.round((vpPeriodo / meses) * 100) / 100 : vpPeriodo;
+        if (!vpM && Number(proposal.valor_vp || 0) > 0) {
+          const oldPkgItem = Array.isArray(proposal.itens) ? proposal.itens.find(i => i.descricao?.startsWith("Pacote:")) : null;
+          const oldMensal = oldPkgItem ? Number(oldPkgItem.valor || 0) : Number(proposal.valor_total || 0);
+          if (oldMensal > 0) {
+            const vpPct = Number(proposal.valor_vp) / oldMensal;
+            vpM = Math.round(mensalidade * vpPct * 100) / 100;
+          }
+        }
+        vpMensalParaSalvar = vpM && vpM > 0 ? vpM : null;
+      }
+
       await pool.query(
         `UPDATE public.gd_proposals
          SET package_id = $1, itens = $2, valor_total = $3, periodo_plano = COALESCE($5, periodo_plano), valor_vp = $6
          WHERE id = $4`,
-        [package_id, JSON.stringify(finalItems), valorTotal, id, periodoDoPacote, vpDoPacote]
+        [package_id, JSON.stringify(finalItems), valorTotal, id, periodoDoPacote, vpMensalParaSalvar]
       );
 
       res.json({ success: true });

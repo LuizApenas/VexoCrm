@@ -849,9 +849,22 @@ export default function GeracaoDigitalPublicProposal() {
               <div className="pb-4 border-b border-white/10 space-y-1 transition-all duration-500 ease-in-out">
                 <span className="text-[11px] text-slate-400 font-mono font-bold uppercase tracking-widest block transition-colors duration-500">Mensalidade</span>
                 {(() => {
-                  const vpMensal = Number(proposal.valor_vp || 0);
+                  const selPkg = packages.find((p: any) => p.id === proposal.package_id);
+                  const selMeses = selPkg ? (selPkg.periodo === 'anual' ? 12 : selPkg.periodo === 'semestral' ? 6 : selPkg.periodo === 'trimestral' ? 3 : 1) : (calc.mesesPeriodo || 1);
+                  let vpMensal = 0;
+                  if (selPkg && Number(selPkg.valor_vp || 0) > 0) {
+                    vpMensal = Math.round((Number(selPkg.valor_vp) / selMeses) * 100) / 100;
+                  } else {
+                    const rawVp = Number(proposal.valor_vp || 0);
+                    if (rawVp >= mensalFinalVal && calc.mesesPeriodo > 1 && Math.round((rawVp / calc.mesesPeriodo) * 100) / 100 < mensalFinalVal) {
+                      vpMensal = Math.round((rawVp / calc.mesesPeriodo) * 100) / 100;
+                    } else {
+                      vpMensal = rawVp;
+                    }
+                  }
+
                   const temVp = vpMensal > 0 && vpMensal < mensalFinalVal;
-                  const dinheiroMensal = temVp ? mensalFinalVal - vpMensal : mensalFinalVal;
+                  const dinheiroMensal = temVp ? Math.round((mensalFinalVal - vpMensal) * 100) / 100 : mensalFinalVal;
 
                   const pkgItem = (proposal.items || []).find((i: any) => i.categoria === "gd" && (Number(i.valor || 0) > 0 || Number(i.valor_tabela || 0) > 0));
                   const valorTabelaPeriodo = pkgItem ? Number(pkgItem.valor_tabela || 0) : 0;
@@ -898,13 +911,22 @@ export default function GeracaoDigitalPublicProposal() {
                 )}
               </div>
               {calc.mesesPeriodo > 1 && (() => {
-                // O VP (permuta) é mensal; no período ele acumula. Mostrar quanto
-                // do compromisso total sai em dinheiro e quanto é abatido em VP
-                // evita o susto do número cheio.
-                const vpMensalC = Number(proposal.valor_vp || 0);
+                const selPkg = packages.find((p: any) => p.id === proposal.package_id);
+                const selMeses = selPkg ? (selPkg.periodo === 'anual' ? 12 : selPkg.periodo === 'semestral' ? 6 : selPkg.periodo === 'trimestral' ? 3 : 1) : (calc.mesesPeriodo || 1);
+                let vpMensalC = 0;
+                if (selPkg && Number(selPkg.valor_vp || 0) > 0) {
+                  vpMensalC = Math.round((Number(selPkg.valor_vp) / selMeses) * 100) / 100;
+                } else {
+                  const rawVp = Number(proposal.valor_vp || 0);
+                  if (rawVp >= mensalFinalVal && calc.mesesPeriodo > 1 && Math.round((rawVp / calc.mesesPeriodo) * 100) / 100 < mensalFinalVal) {
+                    vpMensalC = Math.round((rawVp / calc.mesesPeriodo) * 100) / 100;
+                  } else {
+                    vpMensalC = rawVp;
+                  }
+                }
                 const temVpC = vpMensalC > 0 && vpMensalC < mensalFinalVal;
-                const vpPeriodo = temVpC ? vpMensalC * calc.mesesPeriodo : 0;
-                const dinheiroPeriodo = calc.compromissoFinal - vpPeriodo;
+                const vpPeriodo = temVpC ? Math.round(vpMensalC * calc.mesesPeriodo * 100) / 100 : 0;
+                const dinheiroPeriodo = Math.round((calc.compromissoFinal - vpPeriodo) * 100) / 100;
                 return (
                   <div className="pb-4 border-b border-white/10 space-y-1 transition-all duration-500 ease-in-out">
                     <span className="text-[11px] text-slate-400 font-mono font-bold uppercase tracking-widest block transition-colors duration-500 font-semibold">Compromisso do Período</span>
@@ -931,17 +953,33 @@ export default function GeracaoDigitalPublicProposal() {
                   </div>
                 );
               })()}
-              {proposal.valor_vp !== null && Number(proposal.valor_vp) > 0 && (
-                <div className="pb-4 border-b border-white/10 space-y-1 animate-fade-in transition-all duration-500 ease-in-out">
-                  <span className="text-[11px] text-slate-400 font-mono font-bold uppercase tracking-widest block transition-colors duration-500">Permuta Comercial (VP)</span>
-                  <span className="text-purple-400 font-black text-3xl block transition-all duration-500 ease-in-out">
-                    R$ {Number(proposal.valor_vp).toLocaleString("pt-BR")}
-                  </span>
-                  <span className="text-[10px] text-purple-300 block font-light leading-snug">
-                    Acordo realizado via permuta comercial física ou de serviços.
-                  </span>
-                </div>
-              )}
+              {(() => {
+                const selPkg = packages.find((p: any) => p.id === proposal.package_id);
+                const selMeses = selPkg ? (selPkg.periodo === 'anual' ? 12 : selPkg.periodo === 'semestral' ? 6 : selPkg.periodo === 'trimestral' ? 3 : 1) : (calc.mesesPeriodo || 1);
+                let vpMensalDisp = 0;
+                if (selPkg && Number(selPkg.valor_vp || 0) > 0) {
+                  vpMensalDisp = Math.round((Number(selPkg.valor_vp) / selMeses) * 100) / 100;
+                } else {
+                  const rawVp = Number(proposal.valor_vp || 0);
+                  if (rawVp >= mensalFinalVal && calc.mesesPeriodo > 1 && Math.round((rawVp / calc.mesesPeriodo) * 100) / 100 < mensalFinalVal) {
+                    vpMensalDisp = Math.round((rawVp / calc.mesesPeriodo) * 100) / 100;
+                  } else {
+                    vpMensalDisp = rawVp;
+                  }
+                }
+                if (!vpMensalDisp || vpMensalDisp <= 0) return null;
+                return (
+                  <div className="pb-4 border-b border-white/10 space-y-1 animate-fade-in transition-all duration-500 ease-in-out">
+                    <span className="text-[11px] text-slate-400 font-mono font-bold uppercase tracking-widest block transition-colors duration-500">Permuta Comercial (VP)</span>
+                    <span className="text-purple-400 font-black text-3xl block transition-all duration-500 ease-in-out">
+                      R$ {vpMensalDisp.toLocaleString("pt-BR")}<span className="text-base font-bold text-slate-400">/mês</span>
+                    </span>
+                    <span className="text-[10px] text-purple-300 block font-light leading-snug">
+                      Acordo realizado via permuta comercial física ou de serviços.
+                    </span>
+                  </div>
+                );
+              })()}
 
               {proposal.periodo_plano && PERIODO_LABELS[proposal.periodo_plano] && (
                 <div className="flex justify-between items-center text-sm font-mono">
