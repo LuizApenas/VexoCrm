@@ -81,7 +81,7 @@ export default function GeracaoDigitalProposalPresentation() {
   }, [id, isAuthenticated, clientId, getIdToken]);
 
   const handleClosePresentation = () => {
-    const isVexo = isVexoProposal(proposal);
+    const isVexo = proposal?.owner_company === "vexo" || Boolean(proposal?.package_vexo_id);
     const targetUrl = isVexo
       ? `/crm/comercial-vexo?tab=propostas&proposta=${proposal?.id || id || ""}`
       : `/crm/propostas-gd?proposta=${proposal?.id || id || ""}`;

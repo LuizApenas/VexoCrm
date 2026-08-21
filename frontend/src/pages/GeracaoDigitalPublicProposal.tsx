@@ -85,21 +85,8 @@ interface Proposal {
 export function isVexoProposal(prop: Proposal | null | undefined): boolean {
   if (!prop) return false;
   if (prop.owner_company === "vexo") return true;
+  if (prop.owner_company === "geracao_digital" || prop.owner_company === "gd") return false;
   if (Boolean(prop.package_vexo_id)) return true;
-  if (Array.isArray(prop.itens)) {
-    const hasVexoItem = prop.itens.some((it: any) => {
-      const cat = String(it.categoria || "").toLowerCase();
-      const desc = String(it.descricao || "").toLowerCase();
-      return (
-        cat === "vexo" ||
-        desc.includes("vexo") ||
-        desc.includes("plano avançado") ||
-        desc.includes("plano avancado") ||
-        desc.includes("plano essencial")
-      );
-    });
-    if (hasVexoItem) return true;
-  }
   return false;
 }
 

@@ -2501,90 +2501,96 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
     const notes = (meetingNotes || proposal.meeting_notes || "").trim();
 
     const systemPrompt = `Você é um especialista em vendas consultivas B2B, pitch comercial e metodologia SPIN Selling.
-Sua missão é gerar exatamente 6 slides de apresentação comercial de alto impacto para a proposta de um cliente.
-Regra de ouro: Linguagem executiva e ANTI-JARGÃO. Nunca use termos técnicos como "n8n, webhook, bot, lead frio, typebot". Use termos comerciais elegantes como "Recepcionista Digital 24h, Sistema de Atração de Clientes, Atendimento Imediato, Recuperação Ativa de Vendas".
-Se houver anotações e dores reais da reunião com o cliente, use-as como fonte principal para personalizar os slides de diagnóstico, agitação e solução.
+Sua missão é ler as anotações estratégicas e briefing do cliente e sintetizar em exatamente 6 slides de apresentação comercial de alto impacto.
 
-Formato esperado: Retorne EXCLUSIVAMENTE um JSON array com os 6 slides seguindo exatamente esta estrutura:
-[
-  {
-    "id": 1,
-    "kind": "impact",
-    "eyebrow": "APRESENTAÇÃO EXCLUSIVA",
-    "title": "Título forte e provocativo para ${prospectName}",
-    "subtitle": "Subtítulo personalizado para o posicionamento de mercado",
-    "body": "Breve parágrafo de boas-vindas e propósito da reunião estratégica."
-  },
-  {
-    "id": 2,
-    "kind": "pain",
-    "eyebrow": "DIAGNÓSTICO & CENÁRIO ATUAL",
-    "title": "O gargalo oculto no crescimento da empresa",
-    "subtitle": "Onde o faturamento está escapando todos os dias",
-    "body": "Diagnóstico claro dos 3 maiores desafios operacionais e comerciais.",
-    "steps": [
-      "1. Clientes interessados que chegam e não recebem resposta imediata",
-      "2. Orçamentos enviados que esfriam sem acompanhamento ativo",
-      "3. Base de clientes inativa sem régua de recompra automática"
-    ]
-  },
-  {
-    "id": 3,
-    "kind": "implication",
-    "eyebrow": "O CUSTO DA INAÇÃO",
-    "title": "O impacto financeiro do vazamento de oportunidades",
-    "subtitle": "Quanto custa manter a operação no modelo manual",
-    "body": "A perda cumulativa de clientes que deixam de comprar mês a mês.",
-    "metric": {
-      "value": "R$ 45.000+",
-      "caption": "estimativa anual em oportunidades perdidas por falta de agilidade"
-    }
-  },
-  {
-    "id": 4,
-    "kind": "solution",
-    "eyebrow": "A ESTRATÉGIA DE CRESCIMENTO",
-    "title": "A Máquina de Vendas & Atendimento Impecável",
-    "subtitle": "Como vamos blindar o atendimento e acelerar as conversões",
-    "steps": [
-      "Atendimento instantâneo 24/7 sem deixar nenhum cliente esperando",
-      "Qualificação inteligente e direcionamento direto para consultores",
-      "Recuperação ativa de orçamentos e follow-up humanizado",
-      "Métricas em tempo real de conversão e velocidade de resposta"
-    ]
-  },
-  {
-    "id": 5,
-    "kind": "partnership",
-    "eyebrow": "ESCOPO & ENTREGÁVEIS",
-    "title": "O Plano de Ação Personalizado",
-    "subtitle": "Tudo o que está incluído na parceria",
-    "fronts": [
-      {
-        "label": "Geração Digital",
-        "tag": "Atração & Posicionamento",
-        "items": ["Campanhas de Alta Conversão", "Criativos Estratégicos", "Otimização de Público"]
-      },
-      {
-        "label": "Vexo Atendimento",
-        "tag": "Operação 24h & Fechamento",
-        "items": ["IA de Atendimento e Triagem", "Follow-up Ativo Inteligente", "Painel de Métricas"]
-      }
-    ]
-  },
-  {
-    "id": 6,
-    "kind": "close",
-    "eyebrow": "PROJEÇÃO & DECISÃO",
-    "title": "O Próximo Nível de Escala",
-    "subtitle": "Investimento estruturado com retorno rápido",
-    "metric": {
-      "value": "${total}",
-      "caption": "investimento para transformação completa do processo comercial"
+REGRAS OBRIGATÓRIAS:
+- NUNCA transcreva ou cole anotações brutas em um único slide.
+- Sintetize as dores em 3 tópicos curtos (máximo 15 palavras por tópico).
+- Distribua os pontos fortes entre Diagnóstico (Slide 2), Oportunidade/Nichos (Slide 3), Estratégia Comercial (Slide 4) e Cronograma (Slide 5).
+- Linguagem executiva e anti-jargão técnico. Nunca use termos como "n8n, webhook, bot, typebot". Use termos comerciais elegantes como "Recepcionista Digital 24h, Sistema de Atração de Clientes, Atendimento Imediato, Recuperação Ativa de Vendas".
+
+Retorne EXCLUSIVAMENTE um objeto JSON no formato:
+{
+  "slides": [
+    {
+      "id": 1,
+      "kind": "impact",
+      "eyebrow": "APRESENTAÇÃO EXCLUSIVA",
+      "title": "Título forte e provocativo para ${prospectName}",
+      "subtitle": "Subtítulo personalizado para o posicionamento de mercado",
+      "body": "Breve síntese executiva do propósito da parceria estratégica."
     },
-    "punch": "Vamos iniciar a implementação hoje e colher os primeiros resultados nos próximos 7 dias?"
-  }
-]`;
+    {
+      "id": 2,
+      "kind": "pain",
+      "eyebrow": "DIAGNÓSTICO & CENÁRIO ATUAL",
+      "title": "O gargalo oculto no crescimento da empresa",
+      "subtitle": "Onde o faturamento está escapando todos os dias",
+      "body": "Síntese clara e concisa dos maiores desafios diagnosticados.",
+      "steps": [
+        "Desafio 1 sintetizado (máximo 15 palavras)",
+        "Desafio 2 sintetizado (máximo 15 palavras)",
+        "Desafio 3 sintetizado (máximo 15 palavras)"
+      ]
+    },
+    {
+      "id": 3,
+      "kind": "implication",
+      "eyebrow": "O CUSTO DA INAÇÃO",
+      "title": "O impacto financeiro do vazamento de oportunidades",
+      "subtitle": "Quanto custa manter a operação no modelo manual",
+      "body": "A perda cumulativa de clientes que deixam de comprar mês a mês.",
+      "metric": {
+        "value": "R$ 45.000+",
+        "caption": "estimativa anual em oportunidades perdidas por falta de agilidade"
+      }
+    },
+    {
+      "id": 4,
+      "kind": "solution",
+      "eyebrow": "A ESTRATÉGIA DE CRESCIMENTO",
+      "title": "A Máquina de Vendas & Atendimento Impecável",
+      "subtitle": "Como vamos blindar o atendimento e acelerar as conversões",
+      "steps": [
+        "Atendimento instantâneo 24/7 sem deixar nenhum cliente esperando",
+        "Qualificação inteligente e direcionamento direto para consultores",
+        "Recuperação ativa de orçamentos e follow-up humanizado",
+        "Métricas em tempo real de conversão e velocidade de resposta"
+      ]
+    },
+    {
+      "id": 5,
+      "kind": "partnership",
+      "eyebrow": "CRONOGRAMA & ENTREGÁVEIS",
+      "title": "O Plano de Ação Personalizado",
+      "subtitle": "Tudo o que está incluído na parceria",
+      "fronts": [
+        {
+          "label": "Geração Digital",
+          "tag": "Atração & Posicionamento",
+          "items": ["Campanhas de Alta Conversão", "Criativos Estratégicos", "Otimização de Público"]
+        },
+        {
+          "label": "Vexo Atendimento",
+          "tag": "Operação 24h & Fechamento",
+          "items": ["IA de Atendimento e Triagem", "Follow-up Ativo Inteligente", "Painel de Métricas"]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "kind": "close",
+      "eyebrow": "PARCERIA & DECISÃO",
+      "title": "O Próximo Nível de Escala",
+      "subtitle": "Investimento estruturado com retorno rápido",
+      "metric": {
+        "value": "${total}",
+        "caption": "investimento para transformação completa do processo comercial"
+      },
+      "punch": "Vamos iniciar a implementação hoje e colher os primeiros resultados nos próximos 7 dias?"
+    }
+  ]
+}`;
 
     const userPrompt = `Cliente: ${prospectName}
 Segmento: ${segmentName || "Geral / B2B"}
@@ -2649,9 +2655,7 @@ Condições: ${condicoes}`;
         eyebrow: "DIAGNÓSTICO & CENÁRIO ATUAL",
         title: `Oportunidades de Otimização na ${prospectName}`,
         subtitle: "Os principais gargalos que impedem a escala máxima de faturamento",
-        body: notes
-          ? `Com base na nossa reunião: ${notes}`
-          : "Identificamos 3 áreas críticas onde clientes interessados acabam escapando da jornada de compra:",
+        body: "Identificamos oportunidades claras para distribuir melhor o movimento ao longo do dia e monetizar horários ociosos.",
         steps: [
           "Demora no primeiro contato: leads que esperam perdem o interesse em minutos.",
           "Orçamentos sem acompanhamento: até 60% das vendas são perdidas por falta de follow-up ativo.",
