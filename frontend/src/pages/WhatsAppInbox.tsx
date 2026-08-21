@@ -97,6 +97,57 @@ function formatTimestamp(timestamp: number | null, withDate = false) {
   });
 }
 
+function formatChatDate(timestamp: number | null): string {
+  if (!timestamp) return "";
+  const date = new Date(timestamp * 1000);
+  const now = new Date();
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+  const startOfWeekAgo = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000);
+
+  if (date >= startOfToday) {
+    return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  }
+  if (date >= startOfYesterday) {
+    return "Ontem";
+  }
+  if (date >= startOfWeekAgo) {
+    const weekday = date.toLocaleDateString("pt-BR", { weekday: "short" });
+    const clean = weekday.replace(".", "").trim();
+    return clean.charAt(0).toUpperCase() + clean.slice(1);
+  }
+
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  }
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+function formatDaySeparator(timestamp: number | null): string {
+  if (!timestamp) return "";
+  const date = new Date(timestamp * 1000);
+  const now = new Date();
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+
+  if (date >= startOfToday) {
+    return "Hoje";
+  }
+  if (date >= startOfYesterday) {
+    return "Ontem";
+  }
+
+  const raw = date.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  });
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
 function getPreview(chat: WhatsAppChat) {
   const body = chat.lastMessage?.body?.trim();
   if (!body) return "Sem mensagens recentes.";
@@ -374,6 +425,49 @@ export default function WhatsAppInbox({
     }
   };
 
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [liveSummary, setLiveSummary] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLiveSummary(null);
+  }, [selectedChatId]);
+
+  const handleSummarizeWithAI = async () => {
+    if (!selectedChatId || combinedTimeline.length === 0) {
+      toast.info("Não há mensagens suficientes para resumir.");
+      return;
+    }
+    try {
+      setIsSummarizing(true);
+      const token = await getIdToken();
+      const messagesPayload = combinedTimeline.map((m) => m.body).filter(Boolean);
+      const res = await fetchApi(`/api/whatsapp/chats/${encodeURIComponent(selectedChatId)}/summarize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          messages: messagesPayload,
+          contactName: selectedChat?.name || matchedLead?.nome || "Contato",
+          clientId,
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success && data?.summary) {
+        setLiveSummary(data.summary);
+        toast.success("Resumo gerado com sucesso pela IA!");
+      } else {
+        throw new Error(data?.error || "Falha ao gerar resumo.");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao processar resumo com IA.");
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
   useEffect(() => {
     if (!canLoadInbox) {
       setSelectedChatId(null);
@@ -626,7 +720,7 @@ export default function WhatsAppInbox({
                             {chat.name || phoneLabel}
                           </p>
                           <span className="shrink-0 text-[10px] text-muted-foreground">
-                            {formatTimestamp(chat.timestamp)}
+                            {formatChatDate(chat.timestamp)}
                           </span>
                         </div>
 
@@ -725,51 +819,61 @@ export default function WhatsAppInbox({
                   description="Nenhuma mensagem registrada no banco de dados para esta conversa."
                 />
               ) : (
-                combinedTimeline.map((item) => {
-                  if (item.isInternalNote) {
-                    return (
-                      <div
-                        key={item.id}
-                        className="mx-auto my-2 max-w-[85%] rounded-2xl border border-amber-400/40 bg-amber-500/10 p-3 text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200 shadow-xs"
-                      >
-                        <div className="flex items-center justify-between gap-2 mb-1.5 text-[11px] font-bold text-amber-800 dark:text-amber-300">
-                          <span className="flex items-center gap-1.5">
-                            <Lock className="h-3.5 w-3.5" />
-                            Nota Interna Privada · {item.author || "Equipe"}
-                          </span>
-                          <span className="text-[10px] font-normal text-amber-700/80 dark:text-amber-400">
-                            {formatTimestamp(item.timestamp, true)}
-                          </span>
-                        </div>
-                        <p className="whitespace-pre-wrap font-sans text-xs">{item.body}</p>
-                      </div>
-                    );
-                  }
+                combinedTimeline.map((item, idx) => {
+                  const prevItem = combinedTimeline[idx - 1];
+                  const currentDayStr = item.timestamp ? new Date(item.timestamp * 1000).toDateString() : null;
+                  const prevDayStr = prevItem?.timestamp ? new Date(prevItem.timestamp * 1000).toDateString() : null;
+                  const showDayDivider = Boolean(currentDayStr && currentDayStr !== prevDayStr);
 
                   return (
-                    <div
-                      key={item.id || `${item.timestamp}-${item.body}`}
-                      className={cn(
-                        "max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-xs leading-relaxed",
-                        item.fromMe
-                          ? "ml-auto rounded-br-xs bg-emerald-600 text-white"
-                          : "rounded-bl-xs border border-border/80 bg-background text-foreground"
+                    <div key={item.id || `${item.timestamp}-${item.body}-${idx}`} className="space-y-2">
+                      {showDayDivider && (
+                        <div className="my-3 flex items-center justify-center">
+                          <span className="rounded-full border border-border/70 bg-muted/80 px-3 py-0.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider shadow-xs backdrop-blur-xs">
+                            {formatDaySeparator(item.timestamp)}
+                          </span>
+                        </div>
                       )}
-                    >
-                      <MediaMessage
-                        messageId={item.id}
-                        hasMedia={item.hasMedia}
-                        fallbackBody={item.body}
-                        fromMe={item.fromMe}
-                      />
-                      <p
-                        className={cn(
-                          "mt-1 text-right text-[10px] font-mono",
-                          item.fromMe ? "text-emerald-100/85" : "text-muted-foreground"
-                        )}
-                      >
-                        {formatTimestamp(item.timestamp)} {item.fromMe ? "✓✓" : ""}
-                      </p>
+                      {item.isInternalNote ? (
+                        <div
+                          className="mx-auto my-2 max-w-[85%] rounded-2xl border border-amber-400/40 bg-amber-500/10 p-3 text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200 shadow-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                            <span className="flex items-center gap-1.5">
+                              <Lock className="h-3.5 w-3.5" />
+                              Nota Interna Privada · {item.author || "Equipe"}
+                            </span>
+                            <span className="text-[10px] font-normal text-amber-700/80 dark:text-amber-400">
+                              {formatTimestamp(item.timestamp, true)}
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-wrap font-sans text-xs">{item.body}</p>
+                        </div>
+                      ) : (
+                        <div
+                          className={cn(
+                            "max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-xs leading-relaxed",
+                            item.fromMe
+                              ? "ml-auto rounded-br-xs bg-emerald-600 text-white"
+                              : "rounded-bl-xs border border-border/80 bg-background text-foreground"
+                          )}
+                        >
+                          <MediaMessage
+                            messageId={item.id}
+                            hasMedia={item.hasMedia}
+                            fallbackBody={item.body}
+                            fromMe={item.fromMe}
+                          />
+                          <p
+                            className={cn(
+                              "mt-1 text-right text-[10px] font-mono",
+                              item.fromMe ? "text-emerald-100/85" : "text-muted-foreground"
+                            )}
+                          >
+                            {formatTimestamp(item.timestamp)} {item.fromMe ? "✓✓" : ""}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   );
                 })
@@ -939,27 +1043,51 @@ export default function WhatsAppInbox({
 
             {/* Resumo Coletado pela IA */}
             <div className="space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                Resumo Coletado pela IA
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                  Resumo Coletado pela IA
+                </span>
+                <button
+                  type="button"
+                  disabled={isSummarizing || !selectedChatId}
+                  onClick={handleSummarizeWithAI}
+                  className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSummarizing ? (
+                    <>
+                      <LoaderCircle className="h-3 w-3 animate-spin" />
+                      Analisando...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-3 w-3" />
+                      Atualizar com IA
+                    </>
+                  )}
+                </button>
+              </div>
               <div className="rounded-2xl border border-border/70 bg-muted/20 p-3 space-y-2 text-xs">
-                {matchedLead ? (
-                  <>
+                {liveSummary || matchedLead?.dados?.resumo_chat || matchedLead?.raw_chat_summary ? (
+                  <div className="space-y-1.5 whitespace-pre-line text-foreground leading-relaxed text-[11px]">
+                    {liveSummary || matchedLead?.dados?.resumo_chat || matchedLead?.raw_chat_summary}
+                  </div>
+                ) : matchedLead && (matchedLead.interesse || matchedLead.objetivo || matchedLead.cidade || matchedLead.credito) ? (
+                  <div className="space-y-1.5">
                     {matchedLead.interesse && (
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start justify-between gap-2 text-[11px]">
                         <span className="text-muted-foreground">Interesse:</span>
                         <span className="font-semibold text-foreground text-right">{matchedLead.interesse}</span>
                       </div>
                     )}
                     {matchedLead.objetivo && (
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start justify-between gap-2 text-[11px]">
                         <span className="text-muted-foreground">Objetivo:</span>
                         <span className="font-semibold text-foreground text-right">{matchedLead.objetivo}</span>
                       </div>
                     )}
                     {(matchedLead.cidade || matchedLead.estado) && (
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start justify-between gap-2 text-[11px]">
                         <span className="text-muted-foreground">Localização:</span>
                         <span className="font-semibold text-foreground text-right">
                           {[matchedLead.cidade, matchedLead.estado].filter(Boolean).join(" - ")}
@@ -967,7 +1095,7 @@ export default function WhatsAppInbox({
                       </div>
                     )}
                     {(matchedLead.credito || matchedLead.parcela || matchedLead.lance_entrada_fgts) && (
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start justify-between gap-2 text-[11px]">
                         <span className="text-muted-foreground">Orçamento / Entrada:</span>
                         <span className="font-semibold text-foreground text-right">
                           {[matchedLead.credito, matchedLead.parcela, matchedLead.lance_entrada_fgts]
@@ -976,16 +1104,23 @@ export default function WhatsAppInbox({
                         </span>
                       </div>
                     )}
-                    {!matchedLead.interesse && !matchedLead.objetivo && !matchedLead.cidade && (
-                      <p className="text-muted-foreground text-[11px]">
-                        Sem campos SPIN normalizados gravados para este contato.
-                      </p>
-                    )}
-                  </>
+                  </div>
                 ) : (
-                  <p className="text-muted-foreground text-[11px]">
-                    Nenhum lead com este número vinculado no Banco de Dados.
-                  </p>
+                  <div className="text-center py-2 space-y-2">
+                    <p className="text-muted-foreground text-[11px]">
+                      Nenhum resumo gerado para esta conversa ainda.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isSummarizing || !selectedChatId}
+                      onClick={handleSummarizeWithAI}
+                      className="h-7 text-[11px] rounded-lg border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 cursor-pointer"
+                    >
+                      <Sparkles className="mr-1.5 h-3 w-3 text-purple-500" />
+                      {isSummarizing ? "Gerando resumo..." : "Gerar Resumo com IA"}
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>

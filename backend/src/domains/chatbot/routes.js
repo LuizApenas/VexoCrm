@@ -10,6 +10,7 @@
 // invocação da factory para as rotas de campaigns que ficam lá) — sem duplicar a função.
 
 import { createLeadMessaging, isGroupJid } from "../shared/leadMessaging.js";
+import { summarizeChatWithAI } from "../leads/chatInsight.js";
 import { OutlierQualificationBot } from "../../hardcoded-chatbot-outlier.js";
 import { getChatMemory } from "../../hardcoded-chatbot.js";
 import {
@@ -502,6 +503,45 @@ export function registerChatbotRoutes(app, deps) {
       return;
     }
     res.json({ success: true, chatId });
+  });
+
+  app.post("/api/whatsapp/chats/:chatId/summarize", requireFirebaseAuth, async (req, res) => {
+    try {
+      const { chatId } = req.params;
+      const { messages, contactName, clientId: requestedClientId } = req.body || {};
+      const clientId = resolveAuthorizedClientId(req, res, requestedClientId) || requestedClientId;
+
+      const messageTexts = Array.isArray(messages)
+        ? messages.map((m) => (typeof m === "string" ? m : m?.body || "")).filter(Boolean)
+        : [];
+      const insight = await summarizeChatWithAI(messageTexts, contactName || "Contato");
+      const summaryText = insight?.summary || "Conversa em andamento sem objeções registradas.";
+
+      // Atualiza no banco de dados se houver lead vinculado
+      const cleanPhone = String(chatId).replace(/\D/g, "");
+      if (cleanPhone && clientId && pgDatabasePool) {
+        await pgDatabasePool
+          .query(
+            `UPDATE public.leads 
+             SET dados = jsonb_set(COALESCE(dados, '{}'::jsonb), '{resumo_chat}', to_jsonb($1::text)),
+                 raw_chat_summary = $1,
+                 updated_at = NOW()
+             WHERE client_id = $2 AND (telefone = $3 OR phone = $3 OR telefone = $4 OR phone = $4)`,
+            [summaryText, clientId, cleanPhone, `+${cleanPhone}`]
+          )
+          .catch((e) => console.warn("[summarize-chat] DB update warning:", e.message));
+      }
+
+      res.json({
+        success: true,
+        summary: summaryText,
+        priority: insight?.prioridade || "media",
+        suggestedChannel: insight?.canalSugerido || "followup",
+      });
+    } catch (error) {
+      console.error("[summarize-chat] Erro ao resumir conversa:", error);
+      res.status(500).json({ error: "Falha ao gerar resumo com IA." });
+    }
   });
 
   app.delete("/api/whatsapp/chats/clear", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
