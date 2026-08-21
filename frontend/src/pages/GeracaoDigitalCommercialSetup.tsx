@@ -57,7 +57,8 @@ const DEFAULT_SEGMENTS = [
   { id: "20", nome: "Hospitalidade", faturamento_min: 50000 },
   { id: "21", nome: "Food Service Premium", faturamento_min: 30000 },
   { id: "22", nome: "Delivery", faturamento_min: 25000 },
-  { id: "24", nome: "Óticas", faturamento_min: 25000 }
+  { id: "24", nome: "Óticas", faturamento_min: 25000 },
+  { id: "25", nome: "Cafeterias, Bistrôs & Cafés Especiais", faturamento_min: 15000 }
 ];
 
 const SEGMENT_MAPPING: Record<string, string> = {

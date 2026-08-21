@@ -1176,24 +1176,49 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   // GET /api/gd/segments
   app.get("/api/gd/segments", requireFirebaseAuth, async (req, res) => {
     try {
+      const clientId = req.query.client_id || "geracao-digital";
+      let tenantId = "geracao-digital";
+      try {
+        tenantId = await resolveTenantUuid(clientId);
+      } catch (_) {}
+
+      // Insere com tenant_id resolvido de forma resiliente
       await pool.query(`
-        INSERT INTO public.gd_segments (nome, faturamento_min, ativo)
-        VALUES ('Cafeterias, Bistrôs & Cafés Especiais', 15000, true)
-        ON CONFLICT (nome) DO NOTHING;
-      `).catch(async () => {
+        INSERT INTO public.gd_segments (tenant_id, nome, faturamento_min, ativo)
+        VALUES ($1, 'Cafeterias, Bistrôs & Cafés Especiais', 15000, true)
+        ON CONFLICT (tenant_id, nome) DO UPDATE SET ativo = true;
+      `, [tenantId]).catch(async () => {
         await pool.query(`
-          INSERT INTO public.gd_segments (nome, faturamento_min, ativo)
-          SELECT 'Cafeterias, Bistrôs & Cafés Especiais', 15000, true
+          INSERT INTO public.gd_segments (tenant_id, nome, faturamento_min, ativo)
+          SELECT $1, 'Cafeterias, Bistrôs & Cafés Especiais', 15000, true
           WHERE NOT EXISTS (
-            SELECT 1 FROM public.gd_segments WHERE nome = 'Cafeterias, Bistrôs & Cafés Especiais'
+            SELECT 1 FROM public.gd_segments WHERE nome ILIKE '%Cafeteria%' OR nome ILIKE '%Cafés Especiais%'
           );
-        `).catch(() => {});
+        `, [tenantId]).catch(() => {});
       });
 
       const result = await pool.query(
         "SELECT id, nome, faturamento_min, ativo FROM public.gd_segments WHERE ativo = true ORDER BY nome ASC"
       );
-      res.status(200).json({ success: true, data: result.rows });
+      let rows = Array.isArray(result?.rows) ? result.rows : [];
+      if (!rows.some((s) => String(s.nome).toLowerCase().includes("cafeteria") || String(s.nome).toLowerCase().includes("café"))) {
+        rows.push({
+          id: "cafeteria",
+          nome: "Cafeterias, Bistrôs & Cafés Especiais",
+          faturamento_min: 15000,
+          ativo: true,
+        });
+      }
+      if (!rows.some((s) => String(s.nome).toLowerCase().includes("turismo"))) {
+        rows.push({
+          id: "turismo",
+          nome: "Agências de Turismo & Viagens",
+          faturamento_min: 45000,
+          ativo: true,
+        });
+      }
+      rows.sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+      res.status(200).json({ success: true, data: rows });
     } catch (error) {
       console.error("[GeracaoDigital] Erro ao buscar segmentos:", error);
       res.status(500).json({ error: "Erro ao buscar segmentos." });
@@ -2804,6 +2829,10 @@ Condições: ${condicoes}`;
           if (segRes.rows.length > 0) {
             segmentName = segRes.rows[0].nome;
           }
+        } else if (prop.segment_id === "cafeteria") {
+          segmentName = "Cafeterias, Bistrôs & Cafés Especiais";
+        } else if (prop.segment_id === "turismo") {
+          segmentName = "Agências de Turismo & Viagens";
         } else {
           segmentName = prop.segment_id;
         }

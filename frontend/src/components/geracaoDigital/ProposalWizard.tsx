@@ -288,8 +288,12 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
                 {(() => {
                   const segs = [...segmentsList];
                   if (!segs.some(s => String(s.nome).toLowerCase().includes("turismo"))) {
-                    segs.unshift({ id: "turismo", nome: "Agências de Turismo & Viagens" });
+                    segs.push({ id: "turismo", nome: "Agências de Turismo & Viagens" });
                   }
+                  if (!segs.some(s => String(s.nome).toLowerCase().includes("cafeteria") || String(s.nome).toLowerCase().includes("café"))) {
+                    segs.push({ id: "cafeteria", nome: "Cafeterias, Bistrôs & Cafés Especiais" });
+                  }
+                  segs.sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
                   return segs.map((s: any) => (
                     <option key={s.id} value={s.id}>{s.nome}</option>
                   ));
@@ -448,6 +452,10 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
           const resolvedSegmentText =
             newSegmentId === "custom" || customSegmentName
               ? customSegmentName || "Personalizado"
+              : newSegmentId === "cafeteria"
+              ? "Cafeterias, Bistrôs & Cafés Especiais"
+              : newSegmentId === "turismo"
+              ? "Agências de Turismo & Viagens"
               : segmentsList.find((s) => s.id === newSegmentId)?.nome || "Geral / B2B";
 
           const gdItemsSelected = (plano?.gdIds || [])

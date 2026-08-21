@@ -1588,14 +1588,18 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                                 ✨ Outro Segmento (Personalizado com IA)...
                               </option>
                               {(() => {
-                                const allSegs = [...segmentsList];
-                                if (!allSegs.some(s => String(s.nome).toLowerCase().includes("turismo"))) {
-                                  allSegs.unshift({ id: "turismo", nome: "Agências de Turismo & Viagens" });
-                                }
-                                return allSegs.map((sg: any) => (
-                                  <option key={sg.id} value={sg.id}>{sg.nome}</option>
-                                ));
-                              })()}
+                                  const allSegs = [...segmentsList];
+                                  if (!allSegs.some(s => String(s.nome).toLowerCase().includes("turismo"))) {
+                                    allSegs.push({ id: "turismo", nome: "Agências de Turismo & Viagens" });
+                                  }
+                                  if (!allSegs.some(s => String(s.nome).toLowerCase().includes("cafeteria") || String(s.nome).toLowerCase().includes("café"))) {
+                                    allSegs.push({ id: "cafeteria", nome: "Cafeterias, Bistrôs & Cafés Especiais" });
+                                  }
+                                  allSegs.sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+                                  return allSegs.map((sg: any) => (
+                                    <option key={sg.id} value={sg.id}>{sg.nome}</option>
+                                  ));
+                                })()}
                             </select>
                             {editSegmentId === "custom" && (
                               <input
@@ -1772,9 +1776,13 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
           proposalId={selectedProposal.id}
           prospectName={selectedProposal.prospect_name}
           segmentName={
-            segmentsList.find((s) => s.id === selectedProposal.segment_id)?.nome ||
-            selectedProposal.segment_id ||
-            null
+            selectedProposal.segment_id === "cafeteria"
+              ? "Cafeterias, Bistrôs & Cafés Especiais"
+              : selectedProposal.segment_id === "turismo"
+              ? "Agências de Turismo & Viagens"
+              : segmentsList.find((s) => s.id === selectedProposal.segment_id)?.nome ||
+                selectedProposal.segment_id ||
+                null
           }
           initialNotes={selectedProposal.meeting_notes}
           onPitchGenerated={handlePitchGenerated}
@@ -1789,9 +1797,13 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
           proposalId={selectedProposal.id}
           proposalName={selectedProposal.prospect_name}
           segmentName={
-            segmentsList.find((s) => s.id === selectedProposal.segment_id)?.nome ||
-            selectedProposal.segment_id ||
-            null
+            selectedProposal.segment_id === "cafeteria"
+              ? "Cafeterias, Bistrôs & Cafés Especiais"
+              : selectedProposal.segment_id === "turismo"
+              ? "Agências de Turismo & Viagens"
+              : segmentsList.find((s) => s.id === selectedProposal.segment_id)?.nome ||
+                selectedProposal.segment_id ||
+                null
           }
           meetingNotes={selectedProposal.meeting_notes}
           initialSlides={selectedProposal.presentation_slides}
