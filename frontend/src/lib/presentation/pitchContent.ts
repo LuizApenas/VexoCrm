@@ -1502,6 +1502,7 @@ const GROUP_KEYWORDS: Record<string, string[]> = {
     "luderia", "jogos", "board", "bar", "boliche", "karaoke", "karaokê",
     "entreten", "food service", "delivery", "hospitalidade",
     "restaurante", "gastro", "lazer", "diversao", "diversão",
+    "cafeteria", "cafeterias", "café", "cafe", "cafés", "cafes", "bistrô", "bistro",
   ],
   turismo: [
     "turismo", "agencia de turismo", "agência de turismo", "viagem", "viagens", "pacote", "pacotes",

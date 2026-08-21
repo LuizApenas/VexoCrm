@@ -27,5 +27,6 @@ VALUES
   ('00000000-0000-0000-0000-000000000000', 'Turismo', 45000, true),
   ('00000000-0000-0000-0000-000000000000', 'Hospitalidade', 50000, true),
   ('00000000-0000-0000-0000-000000000000', 'Food Service Premium', 30000, true),
-  ('00000000-0000-0000-0000-000000000000', 'Delivery', 25000, true)
+  ('00000000-0000-0000-0000-000000000000', 'Delivery', 25000, true),
+  ('00000000-0000-0000-0000-000000000000', 'Cafeterias, Bistrôs & Cafés Especiais', 15000, true)
 ON CONFLICT (tenant_id, nome) DO NOTHING;

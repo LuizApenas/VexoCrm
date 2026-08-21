@@ -1176,6 +1176,20 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
   // GET /api/gd/segments
   app.get("/api/gd/segments", requireFirebaseAuth, async (req, res) => {
     try {
+      await pool.query(`
+        INSERT INTO public.gd_segments (nome, faturamento_min, ativo)
+        VALUES ('Cafeterias, Bistrôs & Cafés Especiais', 15000, true)
+        ON CONFLICT (nome) DO NOTHING;
+      `).catch(async () => {
+        await pool.query(`
+          INSERT INTO public.gd_segments (nome, faturamento_min, ativo)
+          SELECT 'Cafeterias, Bistrôs & Cafés Especiais', 15000, true
+          WHERE NOT EXISTS (
+            SELECT 1 FROM public.gd_segments WHERE nome = 'Cafeterias, Bistrôs & Cafés Especiais'
+          );
+        `).catch(() => {});
+      });
+
       const result = await pool.query(
         "SELECT id, nome, faturamento_min, ativo FROM public.gd_segments WHERE ativo = true ORDER BY nome ASC"
       );
@@ -2491,7 +2505,7 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
     const prospectName = proposal.prospect_name || "Cliente";
     const items = Array.isArray(proposal.itens) ? proposal.itens : [];
     const itemsText = items
-      .map((i) => `- ${i.descricao || "Item"}: R$ ${i.valor || 0} (${i.recorrencia || "mensal"})`)
+      .map((i) => `- ${i.descricao || i.nome || "Item"}: R$ ${i.valor || 0} (${i.recorrencia || "mensal"})`)
       .join("\n");
     const total = Number(proposal.valor_total || 0).toLocaleString("pt-BR", {
       style: "currency",
@@ -2499,6 +2513,33 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
     });
     const condicoes = proposal.condicoes || "Sem observações adicionais";
     const notes = (meetingNotes || proposal.meeting_notes || "").trim();
+
+    const allProposalItems = Array.isArray(proposal.itens) ? proposal.itens : [];
+    // Itens da Geração Digital (módulos avulsos e escopo da agência)
+    const gdItems = allProposalItems
+      .filter((it) => {
+        const cat = String(it.categoria || "").toLowerCase();
+        const desc = String(it.descricao || "").toLowerCase();
+        return cat === "gd" || (!desc.includes("plano") && !cat.includes("vexo"));
+      })
+      .map((it) => it.descricao || it.nome)
+      .filter(Boolean);
+    // Se houver pacote selecionado, inclui no topo
+    if (proposal.package_id || proposal.pacote_nome) {
+      gdItems.unshift(`Pacote: ${proposal.pacote_nome || proposal.package_id}`);
+    }
+    // Itens do Vexo Atendimento
+    const vexoItems = allProposalItems
+      .filter((it) => {
+        const cat = String(it.categoria || "").toLowerCase();
+        const desc = String(it.descricao || "").toLowerCase();
+        return cat === "vexo" || desc.includes("plano") || desc.includes("vexo") || desc.includes("chatbot");
+      })
+      .map((it) => it.descricao || it.nome)
+      .filter(Boolean);
+    if (vexoItems.length === 0) {
+      vexoItems.push("Plano Avançado Vexo OS", "Chatbot IA de Qualificação", "Jornadas de Follow-up");
+    }
 
     const systemPrompt = `Você é um especialista em vendas consultivas B2B, pitch comercial e metodologia SPIN Selling.
 Sua missão é ler as anotações estratégicas e briefing do cliente e sintetizar em exatamente 6 slides de apresentação comercial de alto impacto.
@@ -2561,19 +2602,19 @@ Retorne EXCLUSIVAMENTE um objeto JSON no formato:
     {
       "id": 5,
       "kind": "partnership",
-      "eyebrow": "CRONOGRAMA & ENTREGÁVEIS",
-      "title": "O Plano de Ação Personalizado",
-      "subtitle": "Tudo o que está incluído na parceria",
+      "eyebrow": "ESCOPO & ENTREGÁVEIS",
+      "title": "O Que Está Incluso no Seu Projeto",
+      "subtitle": "Estrutura completa para atração, atendimento e retenção",
       "fronts": [
         {
           "label": "Geração Digital",
           "tag": "Atração & Posicionamento",
-          "items": ["Campanhas de Alta Conversão", "Criativos Estratégicos", "Otimização de Público"]
+          "items": ${JSON.stringify(gdItems.length > 0 ? gdItems : ["Gestão de Redes Sociais", "Tráfego Pago", "Posicionamento"])}
         },
         {
           "label": "Vexo Atendimento",
-          "tag": "Operação 24h & Fechamento",
-          "items": ["IA de Atendimento e Triagem", "Follow-up Ativo Inteligente", "Painel de Métricas"]
+          "tag": "IA & Automação Comercial",
+          "items": ${JSON.stringify(vexoItems)}
         }
       ]
     },
@@ -2629,6 +2670,24 @@ Condições: ${condicoes}`;
             ? parsed
             : parsed.slides || parsed.presentation_slides || Object.values(parsed)[0];
           if (Array.isArray(slides) && slides.length > 0) {
+            const slide5 = slides.find((s) => s.kind === "partnership" || s.id === 5);
+            if (slide5) {
+              slide5.eyebrow = slide5.eyebrow || "ESCOPO & ENTREGÁVEIS";
+              slide5.title = slide5.title || "O Que Está Incluso no Seu Projeto";
+              slide5.subtitle = slide5.subtitle || "Estrutura completa para atração, atendimento e retenção";
+              slide5.fronts = [
+                {
+                  label: "Geração Digital",
+                  tag: "Atração & Posicionamento",
+                  items: gdItems.length > 0 ? gdItems : ["Gestão de Redes Sociais", "Tráfego Pago", "Posicionamento"],
+                },
+                {
+                  label: "Vexo Atendimento",
+                  tag: "IA & Automação Comercial",
+                  items: vexoItems,
+                },
+              ];
+            }
             return slides;
           }
         } else {
@@ -2697,22 +2756,12 @@ Condições: ${condicoes}`;
           {
             label: "Geração Digital",
             tag: "Atração & Posicionamento",
-            items: items
-              .filter((i) => i.categoria === "gd")
-              .map((i) => i.descricao)
-              .slice(0, 4)
-              .concat(["Gestão de Tráfego de Alta Conversão", "Alinhamento de Marca"])
-              .slice(0, 3),
+            items: gdItems.length > 0 ? gdItems : ["Gestão de Redes Sociais", "Tráfego Pago", "Posicionamento"],
           },
           {
             label: "Vexo Atendimento",
             tag: "IA & Automação Comercial",
-            items: items
-              .filter((i) => i.categoria === "vexo")
-              .map((i) => i.descricao)
-              .slice(0, 4)
-              .concat(["Chatbot IA de Qualificação", "Jornadas de Follow-up", "Métricas em Tempo Real"])
-              .slice(0, 3),
+            items: vexoItems,
           },
         ],
       },
