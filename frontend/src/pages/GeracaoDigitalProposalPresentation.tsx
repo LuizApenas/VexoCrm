@@ -3,18 +3,59 @@ import { useParams, useNavigate } from "react-router-dom";
 import { fetchApi } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { PresentationViewer } from "@/components/presentation/PresentationViewer";
+import { buildPitch } from "@/lib/presentation/pitchContent";
 import { isVexoProposal } from "./GeracaoDigitalPublicProposal";
 
+export function extractScopeFromProposal(prop: any): { gdItems: string[]; vexoItems: string[] } {
+  const allItems = Array.isArray(prop?.itens) ? prop.itens : [];
+
+  const gdItems: string[] = [];
+  const vexoItems: string[] = [];
+
+  // Se houver item de pacote GD no topo, inclui primeiro
+  const pkgGdItem = allItems.find((it: any) => {
+    const desc = String(it.descricao || it.nome || "").trim();
+    return desc.toLowerCase().startsWith("pacote:") && !desc.toLowerCase().includes("vexo");
+  });
+  if (pkgGdItem) {
+    gdItems.push(pkgGdItem.descricao || pkgGdItem.nome);
+  } else if (prop?.pacote_nome) {
+    gdItems.push(`Pacote: ${prop.pacote_nome}`);
+  }
+
+  allItems.forEach((it: any) => {
+    const desc = String(it.descricao || it.nome || "").trim();
+    const cat = String(it.categoria || "").toLowerCase();
+    if (!desc) return;
+
+    // Ignora o cabeçalho do pacote já adicionado
+    if (desc.toLowerCase().startsWith("pacote:") && !desc.toLowerCase().includes("vexo")) return;
+
+    const isVexo =
+      cat === "vexo" ||
+      desc.toLowerCase().includes("plano") ||
+      desc.toLowerCase().includes("vexo") ||
+      desc.toLowerCase().includes("chatbot");
+
+    if (isVexo) {
+      if (!vexoItems.includes(desc)) {
+        vexoItems.push(desc);
+      }
+    } else {
+      if (!gdItems.includes(desc)) {
+        gdItems.push(desc);
+      }
+    }
+  });
+
+  if (vexoItems.length === 0) {
+    vexoItems.push("Plano Avançado Vexo OS", "Chatbot IA de Qualificação", "Jornadas de Follow-up");
+  }
+
+  return { gdItems, vexoItems };
+}
+
 // Apresentação da proposta — ABRE DIRETO.
-//
-// Fase 3 da refatoração: apresentação e proposta são a MESMA coisa. Antes era
-// preciso ir para /crm/apresentacao-gd?proposalId=..., esperar a tela de setup
-// carregar e ainda clicar em "Iniciar Apresentação (Tela Cheia)". Agora a rota
-// carrega a proposta (nome + segmento + logo, que já vivem em gd_proposals) e
-// renderiza o viewer imediatamente, sem passo intermediário.
-//
-// O roteiro é resolvido pelo NOME do segmento (resolveSegmentGroup casa por
-// palavra-chave), então traduzimos o segment_id (UUID) para o nome.
 export default function GeracaoDigitalProposalPresentation() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -50,11 +91,6 @@ export default function GeracaoDigitalProposalPresentation() {
         const prop = propJson?.data || propJson;
         if (cancelled) return;
 
-        setProposal(prop);
-        setCompanyName(prop?.prospect_name || "Sua Empresa");
-        setLogoUrl(prop?.prospect_logo || null);
-        setCustomSlides(Array.isArray(prop?.presentation_slides) && prop.presentation_slides.length > 0 ? prop.presentation_slides : null);
-
         // segment_id -> nome do segmento (o roteiro é resolvido por nome).
         let nome: string | null = null;
         if (segRes.ok) {
@@ -69,6 +105,53 @@ export default function GeracaoDigitalProposalPresentation() {
         if (!nome && prop?.custom_segment_name) {
           nome = prop.custom_segment_name;
         }
+        if (prop?.segment_id === "cafeteria") {
+          nome = "Cafeterias, Bistrôs & Cafés Especiais";
+        } else if (prop?.segment_id === "turismo") {
+          nome = "Agências de Turismo & Viagens";
+        }
+
+        const { gdItems, vexoItems } = extractScopeFromProposal(prop);
+
+        let slidesToUse: any[] | null = Array.isArray(prop?.presentation_slides) && prop.presentation_slides.length > 0
+          ? JSON.parse(JSON.stringify(prop.presentation_slides))
+          : null;
+
+        if (!slidesToUse) {
+          const { slides: defaultSlides } = buildPitch({
+            companyName: prop?.prospect_name || "Sua Empresa",
+            segmentId: nome,
+          });
+          slidesToUse = JSON.parse(JSON.stringify(defaultSlides));
+        }
+
+        if (Array.isArray(slidesToUse) && slidesToUse.length > 0) {
+          slidesToUse = slidesToUse.map((s: any) => {
+            if (s.kind === "partnership" || s.id === 5) {
+              return {
+                ...s,
+                fronts: [
+                  {
+                    label: "Geração Digital",
+                    tag: "Atração & Posicionamento",
+                    items: gdItems.length > 0 ? gdItems : (s.fronts?.[0]?.items || ["Gestão de Redes Sociais", "Tráfego Pago", "Posicionamento"]),
+                  },
+                  {
+                    label: "Vexo Atendimento",
+                    tag: "IA & Automação Comercial",
+                    items: vexoItems.length > 0 ? vexoItems : (s.fronts?.[1]?.items || ["Plano Avançado Vexo OS", "Chatbot IA de Qualificação", "Jornadas de Follow-up"]),
+                  },
+                ],
+              };
+            }
+            return s;
+          });
+        }
+
+        setProposal(prop);
+        setCompanyName(prop?.prospect_name || "Sua Empresa");
+        setLogoUrl(prop?.prospect_logo || null);
+        setCustomSlides(slidesToUse);
         if (!cancelled) setSegmentName(nome);
       } catch (err: any) {
         if (!cancelled) setError(err?.message || "Erro ao abrir a apresentação.");

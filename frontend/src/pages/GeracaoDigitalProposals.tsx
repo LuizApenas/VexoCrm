@@ -865,6 +865,68 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
       // Nada de avulso com valor: um serviço está no plano ou não está na
       // proposta. Ver o efeito de montagem de itens acima.
 
+      let updatedSlides = Array.isArray(selectedProposal.presentation_slides) && selectedProposal.presentation_slides.length > 0
+        ? JSON.parse(JSON.stringify(selectedProposal.presentation_slides))
+        : null;
+
+      if (updatedSlides) {
+        const gdItems: string[] = [];
+        const pkgItem = finalItems.find((it: any) => {
+          const desc = String(it.descricao || it.nome || "").trim();
+          return desc.toLowerCase().startsWith("pacote:") && !desc.toLowerCase().includes("vexo");
+        });
+        if (pkgItem) {
+          gdItems.push(pkgItem.descricao || pkgItem.nome);
+        }
+
+        finalItems.forEach((it: any) => {
+          const desc = String(it.descricao || it.nome || "").trim();
+          const cat = String(it.categoria || "").toLowerCase();
+          if (!desc) return;
+          if (desc.toLowerCase().startsWith("pacote:") && !desc.toLowerCase().includes("vexo")) return;
+          const isVexo = cat === "vexo" || desc.toLowerCase().includes("plano") || desc.toLowerCase().includes("vexo") || desc.toLowerCase().includes("chatbot");
+          if (!isVexo) {
+            if (!gdItems.includes(desc)) gdItems.push(desc);
+          }
+        });
+
+        const vexoItems: string[] = [];
+        finalItems.forEach((it: any) => {
+          const desc = String(it.descricao || it.nome || "").trim();
+          const cat = String(it.categoria || "").toLowerCase();
+          if (!desc) return;
+          if (desc.toLowerCase().startsWith("pacote:") && !desc.toLowerCase().includes("vexo")) return;
+          const isVexo = cat === "vexo" || desc.toLowerCase().includes("plano") || desc.toLowerCase().includes("vexo") || desc.toLowerCase().includes("chatbot");
+          if (isVexo) {
+            if (!vexoItems.includes(desc)) vexoItems.push(desc);
+          }
+        });
+        if (vexoItems.length === 0) {
+          vexoItems.push("Plano Avançado Vexo OS", "Chatbot IA de Qualificação", "Jornadas de Follow-up");
+        }
+
+        updatedSlides = updatedSlides.map((s: any) => {
+          if (s.kind === "partnership" || s.id === 5) {
+            return {
+              ...s,
+              fronts: [
+                {
+                  label: "Geração Digital",
+                  tag: "Atração & Posicionamento",
+                  items: gdItems.length > 0 ? gdItems : ["Gestão de Redes Sociais", "Tráfego Pago", "Posicionamento"],
+                },
+                {
+                  label: "Vexo Atendimento",
+                  tag: "IA & Automação Comercial",
+                  items: vexoItems,
+                },
+              ],
+            };
+          }
+          return s;
+        });
+      }
+
       const body = {
         client_id: clientId,
         prospect_name: prospectName,
@@ -877,6 +939,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
         pacotes_ofertados: pacotesOfertados,
         package_vexo_id: editPackageVexoId || null,
         itens: finalItems,
+        presentation_slides: updatedSlides || undefined,
         condicoes,
         payment_link: paymentLink,
         cobrar_setup: cobrarSetup,
@@ -929,6 +992,9 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
           title: "Proposta Salva",
           description: "Os itens e condições foram atualizados e o faturamento recalculado."
         });
+        if (updatedSlides) {
+          setSelectedProposal(prev => prev ? { ...prev, presentation_slides: updatedSlides } : prev);
+        }
         loadProposals();
         // Recarrega o preview e volta para ele: salvar é o fim da edição.
         setPreviewNonce((n) => n + 1);

@@ -2277,6 +2277,65 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       const finalVexoPrice = vexo_price !== undefined ? Number(vexo_price || 0) : (vexi_price !== undefined ? Number(vexi_price || 0) : current.vexo_price);
       const finalOwnerCompany = req.body.owner_company || req.body.ownerCompany || (req.body.isVexo ? "vexo" : null);
 
+      let finalPresentationSlides = req.body.presentation_slides !== undefined ? req.body.presentation_slides : current.presentation_slides;
+      if (finalPresentationSlides) {
+        if (typeof finalPresentationSlides === "string") {
+          try { finalPresentationSlides = JSON.parse(finalPresentationSlides); } catch (_) {}
+        }
+        if (Array.isArray(finalPresentationSlides) && finalPresentationSlides.length > 0) {
+          const gdItems = finalItems
+            .filter((it) => {
+              const cat = String(it.categoria || "").toLowerCase();
+              const desc = String(it.descricao || it.nome || "").toLowerCase();
+              return (cat === "gd" || (!desc.includes("plano") && !cat.includes("vexo"))) && !desc.startsWith("pacote:");
+            })
+            .map((it) => it.descricao || it.nome)
+            .filter(Boolean);
+
+          const pkgItem = finalItems.find((it) => {
+            const desc = String(it.descricao || it.nome || "").toLowerCase();
+            return desc.startsWith("pacote:") && !desc.includes("vexo");
+          });
+          if (pkgItem) {
+            gdItems.unshift(pkgItem.descricao || pkgItem.nome);
+          }
+
+          const vexoItems = finalItems
+            .filter((it) => {
+              const cat = String(it.categoria || "").toLowerCase();
+              const desc = String(it.descricao || it.nome || "").toLowerCase();
+              return (cat === "vexo" || desc.includes("plano") || desc.includes("vexo") || desc.includes("chatbot")) && !desc.startsWith("pacote:");
+            })
+            .map((it) => it.descricao || it.nome)
+            .filter(Boolean);
+
+          if (vexoItems.length === 0) {
+            vexoItems.push("Plano Avançado Vexo OS", "Chatbot IA de Qualificação", "Jornadas de Follow-up");
+          }
+
+          finalPresentationSlides = finalPresentationSlides.map((s) => {
+            if (s.kind === "partnership" || s.id === 5) {
+              return {
+                ...s,
+                fronts: [
+                  {
+                    label: "Geração Digital",
+                    tag: "Atração & Posicionamento",
+                    items: gdItems.length > 0 ? gdItems : ["Gestão de Redes Sociais", "Tráfego Pago", "Posicionamento"],
+                  },
+                  {
+                    label: "Vexo Atendimento",
+                    tag: "IA & Automação Comercial",
+                    items: vexoItems,
+                  },
+                ],
+              };
+            }
+            return s;
+          });
+        }
+      }
+
       const podeSegLogo = await proposalHasSegmentLogo();
       const segLogoSet = podeSegLogo
         ? ",\n             segment_id = COALESCE($23, segment_id),\n             prospect_logo = COALESCE($24, prospect_logo)"
@@ -2311,7 +2370,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
              vexi_price = $29,
              vexo_plan = $28,
              vexo_price = $29,
-             owner_company = COALESCE($30, owner_company)${segLogoSet}
+             owner_company = COALESCE($30, owner_company),
+             presentation_slides = COALESCE($31, presentation_slides)${segLogoSet}
          WHERE id = $19 AND tenant_id = $20 RETURNING *`,
         [
           prospect_name,
@@ -2343,7 +2403,8 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
           finalDescontoMensalPct,
           finalVexoPlan,
           finalVexoPrice,
-          finalOwnerCompany || null
+          finalOwnerCompany || null,
+          finalPresentationSlides ? JSON.stringify(finalPresentationSlides) : null
         ]
       );
 

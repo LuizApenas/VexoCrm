@@ -364,9 +364,9 @@ function SlideBody({
                   {front.tag}
                 </span>
               </div>
-              <ul className="mt-4 space-y-2.5">
+              <ul className="mt-4 space-y-2 max-h-[48vh] overflow-y-auto pr-1.5">
                 {front.items.map((it, j) => (
-                  <li key={j} className="flex items-start gap-2.5 text-sm text-white/80 sm:text-[15px]">
+                  <li key={j} className="flex items-start gap-2.5 text-xs text-white/85 sm:text-[14px]">
                     <span
                       className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
                       style={{ background: accent }}
