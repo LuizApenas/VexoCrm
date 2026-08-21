@@ -296,63 +296,60 @@ export async function resolveInboundDispatchSettings({ clientId, instanceName = 
 
 export async function resolveCampaignDispatchSettings(clientId, campaign = {}) {
   const analyticsMeta = normalizeCampaignAnalyticsMeta(campaign.analytics_meta || {});
-  const selectedEvolutionInstanceId = normalizeString(analyticsMeta.dispatchOptions?.evolutionInstanceId);
+  let selectedEvolutionInstanceId = normalizeString(analyticsMeta.dispatchOptions?.evolutionInstanceId);
+  const instances = await getLeadClientEvolutionInstances(clientId);
+  const activeInstances = Array.isArray(instances) ? instances.filter((i) => i.active !== false) : [];
 
+  // Se o usuário selecionou uma instância específica
   if (selectedEvolutionInstanceId) {
-    const instances = await getLeadClientEvolutionInstances(clientId);
     const selectedInstance = instances.find((instance) => instance.id === selectedEvolutionInstanceId) || null;
-
-    if (!selectedInstance) {
+    if (selectedInstance && selectedInstance.active !== false && selectedInstance.dispatch_webhook_url) {
       return {
-        webhookUrl: null,
-        webhookToken: null,
-        source: "evolution_instance_not_found",
-        schemaAvailable: true,
-        selectedEvolutionInstanceId,
-        usingCachedCampaignSettings: false,
-        tenantSettingsSource: "evolution_instance_not_found",
-      };
-    }
-
-    if (selectedInstance.active === false) {
-      return {
-        webhookUrl: null,
-        webhookToken: null,
-        source: "evolution_instance_inactive",
+        webhookUrl: normalizeString(selectedInstance.dispatch_webhook_url),
+        webhookToken: normalizeString(selectedInstance.dispatch_webhook_token) || null,
+        source: "campaign_evolution_instance",
         schemaAvailable: true,
         selectedEvolutionInstanceId,
         selectedEvolutionInstanceName: selectedInstance.name || "Evolution",
         usingCachedCampaignSettings: false,
-        tenantSettingsSource: "evolution_instance_inactive",
+        tenantSettingsSource: "campaign_evolution_instance",
       };
     }
-
-    return {
-      webhookUrl: normalizeString(selectedInstance.dispatch_webhook_url),
-      webhookToken: normalizeString(selectedInstance.dispatch_webhook_token) || null,
-      source: "campaign_evolution_instance",
-      schemaAvailable: true,
-      selectedEvolutionInstanceId,
-      selectedEvolutionInstanceName: selectedInstance.name || "Evolution",
-      usingCachedCampaignSettings: false,
-      tenantSettingsSource: "campaign_evolution_instance",
-    };
   }
 
+  // Se há pelo menos uma instância ativa para esta empresa, usa automaticamente
+  if (activeInstances.length > 0) {
+    const primaryInstance = activeInstances[0];
+    if (primaryInstance.dispatch_webhook_url) {
+      return {
+        webhookUrl: normalizeString(primaryInstance.dispatch_webhook_url),
+        webhookToken: normalizeString(primaryInstance.dispatch_webhook_token) || null,
+        source: "auto_primary_evolution_instance",
+        schemaAvailable: true,
+        selectedEvolutionInstanceId: primaryInstance.id,
+        selectedEvolutionInstanceName: primaryInstance.name || "WhatsApp Principal",
+        usingCachedCampaignSettings: false,
+        tenantSettingsSource: "auto_primary_evolution_instance",
+      };
+    }
+  }
+
+  // Fallback tenant n8n / env / padrão do sistema
   const tenantDispatch = await resolveDispatchWebhookSettings(clientId);
   const tenantWebhookUrl = normalizeString(tenantDispatch.webhookUrl);
   const tenantWebhookToken = normalizeString(tenantDispatch.webhookToken) || null;
   const cachedWebhookUrl = normalizeString(campaign.webhook_url);
   const cachedWebhookToken = normalizeString(campaign.webhook_token) || null;
-  const webhookUrl = tenantWebhookUrl || cachedWebhookUrl;
-  const webhookToken = tenantWebhookUrl ? tenantWebhookToken : tenantWebhookToken || cachedWebhookToken;
+  const globalDefaultUrl = process.env.DISPATCH_WEBHOOK_URL || process.env.EVOLUTION_API_URL || "https://evolution.vexoia.com";
+  const webhookUrl = tenantWebhookUrl || cachedWebhookUrl || globalDefaultUrl;
+  const webhookToken = tenantWebhookUrl ? tenantWebhookToken : (cachedWebhookToken || process.env.EVOLUTION_API_KEY || null);
 
   return {
     ...tenantDispatch,
     webhookUrl,
     webhookToken,
-    source: tenantWebhookUrl ? tenantDispatch.source : cachedWebhookUrl ? "campaign_cache" : tenantDispatch.source,
+    source: tenantWebhookUrl ? tenantDispatch.source : (cachedWebhookUrl ? "campaign_cache" : "system_default"),
     usingCachedCampaignSettings: !tenantWebhookUrl && !!cachedWebhookUrl,
-    tenantSettingsSource: tenantDispatch.source,
+    tenantSettingsSource: tenantDispatch.source || "system_default",
   };
 }

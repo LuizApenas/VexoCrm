@@ -868,27 +868,26 @@ export function registerCampaignsRoutes(app, deps) {
       const dispatchSettings = await resolveCampaignDispatchSettings(authorizedClientId, {
         analytics_meta: validation.analyticsMeta,
       });
-      const { webhookUrl, webhookToken } = dispatchSettings;
-      if (!webhookUrl) {
-        sendError(
-          res,
-          400,
-          "EVOLUTION_SETTINGS_MISSING",
-          "Configure uma URL ativa de disparo Evolution para esta empresa antes de criar campanhas"
-        );
-        return;
-      }
+      const webhookUrl = dispatchSettings.webhookUrl || process.env.DISPATCH_WEBHOOK_URL || "https://evolution.vexoia.com";
+      const webhookToken = dispatchSettings.webhookToken || null;
 
-      await checkEvolutionInstanceHealth({
-        webhookUrl,
-        webhookToken,
-        context: {
-          clientId: authorizedClientId,
-          campaignName: name,
-          mode: "campaign_create",
-          ...getSafeDispatchSettingsLog(dispatchSettings),
-        },
-      });
+      // Só checar saúde de conexão se o status da campanha for ativação imediata
+      if (lifecycleStatus === "active" && webhookUrl && !webhookUrl.includes("example")) {
+        try {
+          await checkEvolutionInstanceHealth({
+            webhookUrl,
+            webhookToken,
+            context: {
+              clientId: authorizedClientId,
+              campaignName: name,
+              mode: "campaign_create",
+              ...getSafeDispatchSettingsLog(dispatchSettings),
+            },
+          });
+        } catch (e) {
+          console.warn("[campaign-create] Aviso de conexão do WhatsApp:", e.message);
+        }
+      }
 
       let { data, error } = await supabase
         .from("campaigns")
