@@ -158,7 +158,26 @@ export const BENCHMARKS = {
     comissaoDireta: 0.05,          // venda própria
     comissaoParceria: 0.025,       // dividida com outro corretor — usada no cálculo por ser a pior hipótese
   },
+  cafeteria: {
+    ticketMedio: 38,
+    pedidosOciososDia: 18,
+    diasMes: 26,
+    mesasTravadasDia: 8,
+    perdaPorMesaTravada: 55,
+  },
 } as const;
+
+// Estimativa de perda de faturamento em cafeterias e bistrôs:
+// (1) Horários ociosos (manhãs iniciais e noites desaproveitadas);
+// (2) Baixo turnover em pico (mesas travadas por horas com 1 consumo mínimo).
+export function estimateCafeteriaLoss() {
+  const b = BENCHMARKS.cafeteria;
+  const ociosidadeMensal = b.pedidosOciososDia * b.ticketMedio * b.diasMes;
+  const turnoverMensal = b.mesasTravadasDia * b.perdaPorMesaTravada * b.diasMes;
+  const mensal = ociosidadeMensal + turnoverMensal;
+  const anual = mensal * 12;
+  return { ociosidadeMensal, turnoverMensal, mensal, anual };
+}
 
 // Ocupação diluída ao mudar para um ponto maior: o público é o mesmo, o salão
 // não. Números da própria casa — sem benchmark inventado.
@@ -1388,11 +1407,142 @@ export const SEGMENT_GROUPS: Record<string, SegmentGroup> = {
       ];
     },
   },
+
+  cafeteria: {
+    id: "cafeteria",
+    label: "Cafeterias, Bistrôs & Cafés Especiais",
+    focus: "Novos grupos de clientes, ocupação de manhãs/noites, recorrência e turnover de mesas em horário de pico.",
+    accent: "#d97706",
+    buildSlides: ({ companyName }) => {
+      const nome = companyName?.trim() || "sua cafeteria";
+      const { mensal, anual } = estimateCafeteriaLoss();
+      return [
+        {
+          id: 1,
+          kind: "impact",
+          eyebrow: "APRESENTAÇÃO ESTRATÉGICA",
+          title: "Salão Cheio e Rentável o Dia Todo.",
+          subtitle: `Como a ${nome} atrai novos grupos de clientes, preenche a ociosidade das manhãs e noites, destrava a recorrência e otimiza o giro de mesas no pico.`,
+        },
+        {
+          id: 2,
+          kind: "pain",
+          eyebrow: "O DIAGNÓSTICO ATUAL",
+          title: "Mesas travadas no pico e ociosidade nas manhãs e noites.",
+          body:
+            `Hoje a ${nome} enfrenta os 3 gargalos clássicos do setor: (1) Ociosidade em horários estratégicos — manhãs iniciais e noites subutilizadas; ` +
+            `(2) Mesas ocupadas por muito tempo nos horários de pico por pessoas com consumo mínimo que travam o giro do salão; e ` +
+            `(3) Falta de captação ativa de novos grupos (corporativo, takeaway, encontros) e ausência de um programa de recorrência para fazê-los voltar toda semana.`,
+          compare: {
+            before: {
+              img: "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=900&q=70",
+              label: "Hoje: mesas travadas e horários ociosos",
+            },
+            after: {
+              img: "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=900&q=70",
+              label: "Com GD + Vexo: giro acelerado e novos públicos",
+            },
+          },
+        },
+        {
+          id: 3,
+          kind: "implication",
+          eyebrow: "A IMPLICAÇÃO & OPORTUNIDADE",
+          title: "O faturamento que hoje escapa do salão.",
+          body:
+            `Manter mesas travadas em horários de pico enquanto manhãs e noites ficam abaixo da capacidade máxima gera uma perda cumulativa invisível. ` +
+            `Preencher as janelas ociosas com novos grupos e aumentar o turnover de mesas no pico destrava receita imediata sem precisar aumentar os custos fixos.`,
+          metric: {
+            value: `${milhar(anual)}/ano`,
+            caption: "em receita estimada recuperável com preenchimento de horários ociosos e otimização do giro de mesas",
+          },
+        },
+        {
+          id: 4,
+          kind: "solution",
+          eyebrow: "A ESTRATÉGIA COMERCIAL",
+          title: "Atração de Novos Públicos, Giro & Recorrência.",
+          steps: [
+            "Atração de Novos Grupos: Campanhas focadas em público corporativo para reuniões rápidas, 'Grab & Go' matinal e encontros sociais.",
+            "Preenchimento de Manhãs & Noites: Ações sazonais com combos de café da manhã rápido e carta especial noturna (drinques de café, vinhos e tábuas).",
+            "Turnover Inteligente no Pico: Cardápio digital ágil no WhatsApp e pedidos expressos que aceleram o giro de mesas sem gerar atrito.",
+            "Clube de Recorrência & Fidelidade: Programa digital no WhatsApp que recompensa frequência e reativa clientes semanalmente no piloto automático.",
+          ],
+        },
+        {
+          id: 5,
+          kind: "partnership",
+          eyebrow: "A PARCERIA COMPLETA",
+          title: "Duas forças, um só resultado.",
+          subtitle: `A Geração Digital atrai novos públicos e posiciona a marca. A Vexo cuida do atendimento, agilidade de pedidos e recorrência no piloto automático. Juntas, multiplicam o faturamento da ${nome}.`,
+          fronts: [
+            {
+              label: "Geração Digital",
+              tag: "Atração & Posicionamento",
+              items: [
+                "Sistema de Atração de Clientes para novos grupos (corporativo, takeaway e social)",
+                "Campanhas sazonais para preenchimento de manhãs e noites",
+                "Posicionamento visual sofisticado que valoriza cafés especiais e gastronomia",
+                "Presença no Google Maps e redes sociais para atrair quem busca na região",
+                "Divulgação de eventos temáticos, lançamentos de grãos e degustações",
+              ],
+            },
+            {
+              label: "Vexo OS",
+              tag: "Atendimento, Giro & Recorrência",
+              items: [
+                "Recepcionista Digital 24h no WhatsApp para tirar dúvidas e enviar cardápio",
+                "Cardápio e pedidos expressos para agilizar o turnover de mesas nos horários de pico",
+                "Clube de Fidelidade & Passaporte do Café no WhatsApp para compras recorrentes",
+                "Campanhas automáticas de reativação semanal para trazer clientes de volta",
+              ],
+            },
+          ],
+        },
+        {
+          id: 6,
+          kind: "vision",
+          eyebrow: "VISÃO DE FUTURO",
+          title: "Salão Rentável em Todos os Turnos.",
+          body:
+            `Imagine a ${nome} com fluxo constante: manhãs movimentadas com takeaway e reuniões ágeis, pico da tarde com giro rápido e alto consumo por mesa, ` +
+            `e noites acolhedoras com novos grupos fidelizados voltando toda semana no piloto automático.`,
+        },
+        {
+          id: 7,
+          kind: "close",
+          eyebrow: "A DECISÃO",
+          title: "O próximo nível de faturamento.",
+          body: `Quanto a ${nome} deixa de faturar a cada mês operando com mesas travadas no pico e horários ociosos de manhã e à noite?`,
+          metric: {
+            value: "100%",
+            caption: "dos turnos e públicos do dia com estratégia comercial ativa",
+          },
+          punch: "A oportunidade já existe na sua região. Vamos estruturar a atração, o giro de mesas e a recorrência da sua casa a partir de hoje?",
+        },
+      ];
+    },
+  },
 };
 
 // Mapeamento de segment_id específico -> grupo. Adicione novos ids aqui conforme
 // a base crescer; o default cai em entretenimento_local.
 const SEGMENT_ID_TO_GROUP: Record<string, string> = {
+  // Cafeterias, Bistrôs & Cafés Especiais
+  cafeteria: "cafeteria",
+  cafeterias: "cafeteria",
+  cafes_especiais: "cafeteria",
+  "cafés especiais": "cafeteria",
+  cafeterias_bistros: "cafeteria",
+  "cafeterias, bistrôs & cafés especiais": "cafeteria",
+  "cafeterias, bistrôs e cafés especiais": "cafeteria",
+  bistro: "cafeteria",
+  bistrô: "cafeteria",
+  bistros: "cafeteria",
+  bistrôs: "cafeteria",
+  cafe: "cafeteria",
+  café: "cafeteria",
+  cafeeiro: "cafeteria",
   // Entretenimento local
   luderia: "entretenimento_local",
   bar: "entretenimento_local",
@@ -1462,6 +1612,11 @@ export const DEFAULT_GROUP_ID = "entretenimento_local";
 // do app é um UUID, então resolvemos pelo texto: "Clínicas de Saúde",
 // "Odontologia", "Food Service", etc.).
 const GROUP_KEYWORDS: Record<string, string[]> = {
+  cafeteria: [
+    "cafeteria", "cafeterias", "café", "cafe", "cafés", "cafes",
+    "bistrô", "bistro", "bistrôs", "bistros", "cafés especiais",
+    "cafes especiais", "coffee", "coffee shop", "torrefação", "cafeeiro",
+  ],
   suplementos: [
     "suplemento", "suplementos", "whey", "creatina", "nutricao", "nutrição",
     "nutri esportiva", "academia", "fitness", "hipertrofia", "proteina", "proteína",
@@ -1502,7 +1657,6 @@ const GROUP_KEYWORDS: Record<string, string[]> = {
     "luderia", "jogos", "board", "bar", "boliche", "karaoke", "karaokê",
     "entreten", "food service", "delivery", "hospitalidade",
     "restaurante", "gastro", "lazer", "diversao", "diversão",
-    "cafeteria", "cafeterias", "café", "cafe", "cafés", "cafes", "bistrô", "bistro",
   ],
   turismo: [
     "turismo", "agencia de turismo", "agência de turismo", "viagem", "viagens", "pacote", "pacotes",

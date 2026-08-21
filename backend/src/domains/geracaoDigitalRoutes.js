@@ -2627,9 +2627,32 @@ export function registerGeracaoDigitalRoutes(app, pool, requireFirebaseAuth, req
       vexoItems.push("Plano Avançado Vexo OS", "Chatbot IA de Qualificação", "Jornadas de Follow-up");
     }
 
+    const isCafeteria =
+      /cafeteria|bistr[oô]|caf[eé]|cafeeiro/i.test(String(segmentName || "")) ||
+      /cafeteria|bistr[oô]|caf[eé]|cafeeiro/i.test(String(proposal.prospect_name || "")) ||
+      /cafeteria|bistr[oô]|caf[eé]|cafeeiro/i.test(String(notes || ""));
+
+    const cafeteriaPromptDirectives = isCafeteria
+      ? `
+DIRETRIZES ESTRATÉGICAS ESPECÍFICAS DESTE SEGMENTO (CAFETERIAS / BISTRÔS / CAFÉS ESPECIAIS):
+1. OPORTUNIDADES DE DIFERENTES GRUPOS DE PESSOAS:
+   - Destaque que a cafeteria precisa atender e atrair novos grupos:
+     a) Corporativo / Reuniões rápidas de negócios / Profissionais;
+     b) Takeaway / 'Grab & Go' matinal rápido de pessoas a caminho do trabalho;
+     c) Encontros sociais / Casais / Grupos de amigos no café da tarde e finais de semana;
+     d) Amantes e apreciadores de cafés especiais e métodos filtrados.
+2. PREENCHIMENTO DA SAZONALIDADE & HORÁRIOS OCIOSOS:
+   - Foque explicitamente na ocupação das MANHÃS INICIAIS (combos rápidos café + panificação) e das NOITES (happy hour de cafeteria, drinques autorais com café, vinhos leves, tábuas de queijos/frios e ambiente acolhedor).
+3. MOTOR DE RECORRÊNCIA & FIDELIZAÇÃO:
+   - Proponha Clube de Assinaturas, Passaporte do Café e Cartão Fidelidade digital no WhatsApp com reativação semanal no piloto automático para aumentar a frequência de visitas.
+4. TURNOVER DE MESAS EM HORÁRIOS DE PICO:
+   - Aborde a solução para o problema de mesas ocupadas por muito tempo com um único consumo mínimo sem gerar faturamento proporcional. Apresente cardápio digital interativo e pedidos expressos que aceleram o giro de mesas no almoço/pico da tarde sem atrito.
+`
+      : "";
+
     const systemPrompt = `Você é um especialista em vendas consultivas B2B, pitch comercial e metodologia SPIN Selling.
 Sua missão é ler as anotações estratégicas e briefing do cliente e sintetizar em exatamente 6 slides de apresentação comercial de alto impacto.
-
+${cafeteriaPromptDirectives}
 REGRAS OBRIGATÓRIAS:
 - NUNCA transcreva ou cole anotações brutas em um único slide.
 - Sintetize as dores em 3 tópicos curtos (máximo 15 palavras por tópico).
@@ -2784,7 +2807,100 @@ Condições: ${condicoes}`;
       }
     }
 
-    // Fallback determinístico contextual de alta fidelidade
+    if (isCafeteria) {
+      return [
+        {
+          id: 1,
+          kind: "impact",
+          eyebrow: "APRESENTAÇÃO EXCLUSIVA",
+          title: `Acelerando as Vendas da ${prospectName}`,
+          subtitle: `Plano Comercial Estratégico para Cafeterias, Bistrôs & Cafés Especiais`,
+          body: `Como a ${prospectName} atrai novos grupos de clientes, preenche a ociosidade das manhãs e noites, destrava a recorrência e otimiza o giro de mesas no pico.`,
+        },
+        {
+          id: 2,
+          kind: "pain",
+          eyebrow: "DIAGNÓSTICO COMERCIAL",
+          title: `Mesas travadas no pico e ociosidade nas manhãs e noites`,
+          subtitle: "Onde o faturamento está escapando todos os dias",
+          body: "Identificamos os 3 maiores gargalos do salão: ociosidade em períodos estratégicos, mesas travadas no pico sem consumo proporcional e falta de recorrência.",
+          steps: [
+            "Ociosidade sazonal: manhãs iniciais e noites com baixo movimento.",
+            "Mesas ocupadas por muito tempo no pico sem gerar consumo proporcional.",
+            "Falta de captação ativa de novos grupos (corporativo, takeaway e encontros).",
+            "Ausência de um programa de recorrência para trazer clientes toda semana.",
+          ],
+        },
+        {
+          id: 3,
+          kind: "implication",
+          eyebrow: "OPORTUNIDADE DE MERCADO",
+          title: "O Custo Financeiro da Capacidade Ociosa",
+          subtitle: "Quanto a falta de giro e de novos públicos custa no final do ano",
+          body: "Mesas travadas no almoço/tarde somadas a manhãs e noites vazias geram uma perda cumulativa de receita que já poderia estar no caixa.",
+          metric: {
+            value: "R$ 60.000 a R$ 120.000",
+            caption: "em faturamento anual recuperável com preenchimento de horários ociosos e aumento do turnover de mesas",
+          },
+        },
+        {
+          id: 4,
+          kind: "solution",
+          eyebrow: "A ESTRATÉGIA DE CRESCIMENTO",
+          title: "Atração de Novos Públicos, Giro & Recorrência",
+          subtitle: "A máquina comercial para rentabilizar a cafeteria o dia inteiro",
+          steps: [
+            "Atração de Novos Grupos: Campanhas focadas no público corporativo, 'Grab & Go' matinal e encontros sociais.",
+            "Preenchimento de Manhãs e Noites: Combos rápidos de café da manhã e carta especial noturna com drinques de café e tábuas.",
+            "Turnover Inteligente no Pico: Cardápio digital no WhatsApp e pedidos expressos que aceleram o giro de mesas sem atrito.",
+            "Clube de Recorrência & Fidelidade: Programa no WhatsApp que reativa clientes semanalmente no piloto automático.",
+          ],
+        },
+        {
+          id: 5,
+          kind: "partnership",
+          eyebrow: "ESCOPO & ENTREGÁVEIS",
+          title: "O Que Está Incluso no Seu Projeto",
+          subtitle: "Estrutura completa para atração, atendimento e retenção",
+          fronts: [
+            {
+              label: "Geração Digital",
+              tag: "Atração & Posicionamento",
+              items: gdItems.length > 0 ? gdItems : [
+                "Atração de novos grupos (corporativo, takeaway e social)",
+                "Campanhas sazonais para manhãs e noites",
+                "Posicionamento visual e autoridade gastronômica",
+                "Presença forte no Google Maps e redes sociais",
+              ],
+            },
+            {
+              label: "Vexo Atendimento",
+              tag: "IA & Automação Comercial",
+              items: [
+                "Recepcionista Digital 24h no WhatsApp",
+                "Cardápio e pedidos expressos para agilizar o turnover de mesas",
+                "Clube de Fidelidade & Passaporte do Café no WhatsApp",
+                "Campanhas de reativação semanal no piloto automático",
+              ],
+            },
+          ],
+        },
+        {
+          id: 6,
+          kind: "close",
+          eyebrow: "PARCERIA & DECISÃO",
+          title: "Salão Cheio e Rentável o Dia Inteiro",
+          subtitle: "Investimento planejado com retorno rápido na operação",
+          metric: {
+            value: total,
+            caption: "investimento planejado para a transformação completa da operação",
+          },
+          punch: `Vamos iniciar a estruturação da ${prospectName} e colocar a máquina comercial para rodar?`,
+        },
+      ];
+    }
+
+    // Fallback determinístico contextual de alta fidelidade para outros segmentos
     return [
       {
         id: 1,
