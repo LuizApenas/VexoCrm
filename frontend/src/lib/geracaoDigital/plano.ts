@@ -42,6 +42,18 @@ export interface Plano {
    * prazos: 2.200 de VP num Anual de 2.400 e num Semestral de 6.000 é a mesma
    * cara mas outra proporção. Percentual escala junto com cada prazo. */
   vpPercent: number;
+  /** Valor da taxa de setup / implantação Vexo (R$) */
+  valorSetupVexo?: number;
+  valor_setup_vexo?: number;
+  cobrarSetup?: boolean;
+  cobrar_setup?: boolean;
+  vexoPlan?: "essencial" | "avancado" | null;
+  repasse_vexo_pct?: number | null;
+  condicoesEspeciais?: string | null;
+  descontoSetupPorcentagem?: number;
+  descontoMensalPorcentagem?: number;
+  desconto_setup_pct?: number;
+  desconto_mensal_pct?: number;
 }
 
 export const planoVazio = (): Plano => ({
@@ -50,6 +62,12 @@ export const planoVazio = (): Plano => ({
   precos: { mensal: 0, trimestral: 0, semestral: 0, anual: 0 },
   valorTabelaMensal: 0,
   vpPercent: 0,
+  valorSetupVexo: 0,
+  valor_setup_vexo: 0,
+  cobrarSetup: false,
+  cobrar_setup: false,
+  descontoSetupPorcentagem: 0,
+  descontoMensalPorcentagem: 0,
 });
 
 /** VP mensal de um prazo, derivado do percentual. */
@@ -179,16 +197,10 @@ export function planoDePacotes(pacotes: any[]): Plano {
 }
 
 /**
- * Plano de uma proposta LEGADA. Além das linhas de preço, absorve no escopo os
- * "avulsos com valor" que sobraram do modelo antigo.
- *
- * Esses itens não somam mais nada desde PACOTE FECHADO, mas continuavam sendo
- * impressos com preço na proposta do cliente, embaixo de um cabeçalho que diz
- * "tudo incluído no pacote". Apagá-los tiraria serviço prometido do escopo
- * (ex.: a Landing Page da Vitallis não está no pacote). Absorver mantém o
- * serviço e elimina o preço fantasma: ou está no plano, ou não existe.
+ * Plano de uma proposta LEGADA ou em edição. Além das linhas de preço, absorve no escopo os
+ * "avulsos com valor" e hidrata setup, descontos e VP persistidos na proposta.
  */
-export function planoDeProposta(pacotes: any[], itens: any[]): Plano {
+export function planoDeProposta(pacotes: any[], itens: any[], proposal?: any): Plano {
   const plano = planoDePacotes(pacotes);
   const jaNoEscopo = new Set([...plano.gdIds, ...plano.vexoIds]);
 
@@ -201,6 +213,50 @@ export function planoDeProposta(pacotes: any[], itens: any[]): Plano {
     if (item.categoria === "vexo") plano.vexoIds.push(item.product_id);
     else plano.gdIds.push(item.product_id);
   });
+
+  if (proposal) {
+    if (proposal.valor_setup_vexo !== undefined && proposal.valor_setup_vexo !== null) {
+      const v = Number(proposal.valor_setup_vexo || 0);
+      plano.valorSetupVexo = v;
+      plano.valor_setup_vexo = v;
+      plano.cobrarSetup = proposal.cobrar_setup === true || v > 0;
+      plano.cobrar_setup = plano.cobrarSetup;
+    } else if (proposal.cobrar_setup) {
+      plano.cobrarSetup = true;
+      plano.cobrar_setup = true;
+    }
+
+    if (proposal.vexo_plan) {
+      plano.vexoPlan = proposal.vexo_plan;
+      if (!plano.vexoIds.includes(proposal.vexo_plan)) {
+        plano.vexoIds.push(proposal.vexo_plan);
+      }
+    }
+    if (proposal.desconto_setup_pct !== undefined && proposal.desconto_setup_pct !== null) {
+      const d = Number(proposal.desconto_setup_pct);
+      plano.descontoSetupPorcentagem = d;
+      plano.desconto_setup_pct = d;
+    }
+    if (proposal.desconto_mensal_pct !== undefined && proposal.desconto_mensal_pct !== null) {
+      const d = Number(proposal.desconto_mensal_pct);
+      plano.descontoMensalPorcentagem = d;
+      plano.desconto_mensal_pct = d;
+    }
+
+    // VP: se o plano ainda está com vpPercent = 0, mas a proposta gravou valor_vp ou os itens têm valor_vp
+    if (!plano.vpPercent) {
+      const vpProp = Number(proposal.valor_vp || 0);
+      if (vpProp > 0) {
+        const pkgItem = (itens || []).find(
+          (i: any) => (i?.descricao?.startsWith("Pacote:") || i?.categoria === "gd") && Number(i.valor || 0) > 0
+        );
+        const mensalidade = pkgItem ? Number(pkgItem.valor || 0) : Number(proposal.valor_total || 0);
+        if (mensalidade > 0) {
+          plano.vpPercent = Math.round((vpProp / mensalidade) * 100 * 10) / 10;
+        }
+      }
+    }
+  }
 
   return plano;
 }

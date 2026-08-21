@@ -175,7 +175,7 @@ export function useProposalWizard({
         package_vexo_id: newPackageVexoId || null,
         pacotes_ofertados: newPacotesOfertados,
         itens: finalItems,
-        cobrar_setup: newCobrarSetup,
+        cobrar_setup: newCobrarSetup || Number(newValorSetup || 0) > 0,
         // Guarda o valor mesmo com a cobrança desligada: é o que permite
         // exibir "R$ 3.000 (riscado) Isento" na proposta. O cálculo ignora
         // quando cobrar_setup = false.

@@ -203,6 +203,9 @@ export const ProposalWizard: React.FC<ProposalWizardProps> = ({
       setNewPacotesOfertados(r.pacotesOfertados);
       setNewPackageId(r.packageId);
       setNewPackageVexoId("");
+      const setupVal = Number((plano as any).valorSetupVexo ?? (plano as any).valor_setup_vexo ?? 0);
+      setNewValorSetup(setupVal);
+      setNewCobrarSetup(setupVal > 0);
       setWizardStep(3);
     } catch (e: any) {
       toast({ title: "Erro", description: e?.message || "Falha ao gravar o plano.", variant: "destructive" });

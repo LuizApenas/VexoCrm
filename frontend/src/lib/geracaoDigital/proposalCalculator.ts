@@ -131,8 +131,10 @@ export function calculateProposalValues(
   proposal: ProposalLike,
   availablePackages: any[] = []
 ): ProposalCalculatedValues {
-  const cobrarSetup = !!proposal.cobrar_setup;
   const valorSetupVexo = Number(proposal.valor_setup_vexo || 0);
+  const cobrarSetup = proposal.cobrar_setup === undefined
+    ? valorSetupVexo > 0
+    : !!proposal.cobrar_setup;
 
   // Find selected packages in catalog
   const gdPkg = availablePackages.find(p => p.id === proposal.package_id && (p.tipo === "gd" || !p.tipo));

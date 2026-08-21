@@ -254,4 +254,24 @@ describe("integração com o cálculo da proposta", () => {
     expect(calc.setupFinal).toBe(3000);
     expect(calc.totalGeral).toBe(31800);
   });
+
+  it("planoDeProposta hidrata taxa de setup e cobrarSetup da proposta", () => {
+    const prop = {
+      valor_setup_vexo: 3000,
+      cobrar_setup: true,
+      valor_vp: 1200,
+      valor_total: 4800,
+      desconto_setup_pct: 10,
+      desconto_mensal_pct: 5,
+    };
+    const itens = [
+      { descricao: "Pacote: Plano Anual", categoria: "gd", valor: 4800, product_id: null },
+    ];
+    const plano = planoDeProposta([], itens, prop);
+    expect(plano.valorSetupVexo).toBe(3000);
+    expect(plano.cobrarSetup).toBe(true);
+    expect(plano.vpPercent).toBe(25); // 1200 / 4800 = 25%
+    expect(plano.descontoSetupPorcentagem).toBe(10);
+    expect(plano.descontoMensalPorcentagem).toBe(5);
+  });
 });

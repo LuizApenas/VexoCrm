@@ -215,6 +215,8 @@ export default function PlanoEditor({ plano, onChange, gdProducts, vexoProducts,
                   ...plano,
                   valorSetupVexo: val,
                   valor_setup_vexo: val,
+                  cobrarSetup: val > 0,
+                  cobrar_setup: val > 0,
                 } as any);
               }}
               placeholder="Ex: 1000"

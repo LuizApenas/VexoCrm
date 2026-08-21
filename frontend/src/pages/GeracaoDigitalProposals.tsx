@@ -600,7 +600,8 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
         ofertados
           .map((pid) => catalogo.find((p: any) => p.id === pid))
           .filter(Boolean),
-        Array.isArray(prop.itens) ? prop.itens : []
+        Array.isArray(prop.itens) ? prop.itens : [],
+        prop
       )
     );
     // O escopo agora vive no plano (editPlano, acima). A hidratação antiga
@@ -771,16 +772,20 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
       // Construct finalItems array
       const finalItems: any[] = [];
 
+      // Setup Vexo: extrai do plano em edição com fallback nos estados locais
+      const setupDoPlano = Number((editPlano as any).valorSetupVexo ?? (editPlano as any).valor_setup_vexo ?? valorSetupVexo ?? 0);
+      const cobrarSetupFinal = setupDoPlano > 0 ? true : (cobrarSetup || false);
+
       // 1. Add GD package item
       const selectedGdPkg = catalogo.find(p => p.id === pkgId && (p.tipo === "gd" || !p.tipo));
       // VP MENSAL do prazo selecionado (%, do plano). Alimenta o item (período)
-      // e a coluna valor_vp da proposta (mensal). Com plano válido, o % manda;
-      // senão, cai no VP manual antigo (vpActive/editValorVp).
-      const periodoSel = String(selectedGdPkg?.periodo || "");
+      // e a coluna valor_vp da proposta (mensal). Com plano válido e % preenchido, o % manda;
+      // senão, cai no VP manual antigo (editValorVp ou selectedProposal.valor_vp).
+      const periodoSel = String(selectedGdPkg?.periodo || periodoPlano || selectedProposal.periodo_plano || "anual");
       const vpMensalPlano =
-        planoValido(editPlano) && (PERIODOS as readonly any[]).some((p) => p.key === periodoSel)
+        Number(editPlano.vpPercent || 0) > 0 && (PERIODOS as readonly any[]).some((p) => p.key === periodoSel)
           ? vpMensalDoPrazo(editPlano, periodoSel as any)
-          : (vpActive ? Number(editValorVp || 0) : 0);
+          : (Number(editValorVp || 0) > 0 ? Number(editValorVp) : (Number(selectedProposal.valor_vp || 0) > 0 ? Number(selectedProposal.valor_vp) : 0));
       if (selectedGdPkg) {
         const val = Number(selectedGdPkg.valor || 0);
         const PERIOD_MONTHS: Record<string, number> = { mensal: 1, trimestral: 3, semestral: 6, anual: 12 };
@@ -942,9 +947,9 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
         presentation_slides: updatedSlides || undefined,
         condicoes,
         payment_link: paymentLink,
-        cobrar_setup: cobrarSetup,
+        cobrar_setup: cobrarSetupFinal,
         // Mantém o valor gravado mesmo isentando, para exibir o riscado.
-        valor_setup_vexo: Number(valorSetupVexo || 0) || null,
+        valor_setup_vexo: setupDoPlano > 0 ? setupDoPlano : (cobrarSetupFinal && Number(valorSetupVexo || 0) > 0 ? Number(valorSetupVexo) : null),
         segment_id: editSegmentId === "custom" ? (customEditSegment.trim() || "custom") : (editSegmentId || null),
         custom_segment_name: editSegmentId === "custom" ? (customEditSegment.trim() || null) : null,
         prospect_logo: editProspectLogo || null,
@@ -1738,14 +1743,18 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                             casos que fujam dessas seis. */}
                         <div className="pt-3 border-t border-slate-100 dark:border-white/5">
                           {(() => {
+                            const setupVal = Number((editPlano as any).valorSetupVexo ?? (editPlano as any).valor_setup_vexo ?? valorSetupVexo ?? 0);
+                            const cobrar = setupVal > 0 || cobrarSetup;
                             const c = calculateProposalValues(
                               {
-                                cobrar_setup: cobrarSetup,
-                                valor_setup_vexo: valorSetupVexo,
+                                cobrar_setup: cobrar,
+                                valor_setup_vexo: setupVal,
                                 package_id: editPackageId || null,
                                 package_vexo_id: editPackageVexoId || null,
                                 periodo_plano: periodoPlano || "mensal",
                                 itens: items,
+                                desconto_setup_pct: (editPlano as any).descontoSetupPorcentagem ?? (editPlano as any).desconto_setup_pct ?? 0,
+                                desconto_mensal_pct: (editPlano as any).descontoMensalPorcentagem ?? (editPlano as any).desconto_mensal_pct ?? 0,
                               },
                               availablePackages
                             );
@@ -1776,7 +1785,15 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
                         <div className="pt-3 border-t border-slate-100 dark:border-white/5 space-y-3">
                           <PlanoEditor
                             plano={editPlano}
-                            onChange={setEditPlano}
+                            onChange={(novoPlano) => {
+                              setEditPlano(novoPlano);
+                              const setupVal = Number((novoPlano as any).valorSetupVexo ?? (novoPlano as any).valor_setup_vexo ?? 0);
+                              setValorSetupVexo(setupVal);
+                              setCobrarSetup(setupVal > 0);
+                              if (novoPlano.vpPercent > 0) {
+                                setVpActive(true);
+                              }
+                            }}
                             gdProducts={gdProducts}
                             vexoProducts={vexoProducts}
                             isVexoCommercial={isVexoCommercial}
