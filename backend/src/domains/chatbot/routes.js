@@ -11,6 +11,7 @@
 
 import { createLeadMessaging, isGroupJid } from "../shared/leadMessaging.js";
 import { summarizeChatWithAI } from "../leads/chatInsight.js";
+import { upsertLeadByPhone } from "../../services/leadUpsert.js";
 import { OutlierQualificationBot } from "../../hardcoded-chatbot-outlier.js";
 import { getChatMemory } from "../../hardcoded-chatbot.js";
 import {
@@ -558,18 +559,35 @@ export function registerChatbotRoutes(app, deps) {
         }
       }
 
-      // Atualiza no banco de dados se houver lead vinculado
+      // Atualiza no banco de dados se houver lead vinculado ou insere
       if (cleanPhone && clientId && pgDatabasePool) {
-        await pgDatabasePool
+        const last8 = cleanPhone.slice(-8);
+        const updRes = await pgDatabasePool
           .query(
             `UPDATE public.leads 
              SET dados = jsonb_set(COALESCE(dados, '{}'::jsonb), '{resumo_chat}', to_jsonb($1::text)),
                  raw_chat_summary = $1,
                  updated_at = NOW()
-             WHERE client_id = $2 AND (telefone = $3 OR phone = $3 OR telefone = $4 OR phone = $4)`,
-            [summaryText, clientId, cleanPhone, `+${cleanPhone}`]
+             WHERE client_id = $2 AND (
+               telefone = $3 OR phone = $3 OR 
+               telefone = $4 OR phone = $4 OR
+               telefone LIKE $5 OR phone LIKE $5
+             )`,
+            [summaryText, clientId, cleanPhone, `+${cleanPhone}`, `%${last8}`]
           )
-          .catch((e) => console.warn("[summarize-chat] DB update warning:", e.message));
+          .catch((e) => {
+            console.warn("[summarize-chat] DB update warning:", e.message);
+            return null;
+          });
+
+        if (!updRes || updRes.rowCount === 0) {
+          await upsertLeadByPhone(pgDatabasePool, clientId, cleanPhone, {
+            nome: contactName && contactName !== "não informado" ? contactName : null,
+            phone: cleanPhone,
+            raw_chat_summary: summaryText,
+            extracted_from_wa: true,
+          }).catch((e) => console.warn("[summarize-chat] DB upsert warning:", e.message));
+        }
       }
 
       res.json({

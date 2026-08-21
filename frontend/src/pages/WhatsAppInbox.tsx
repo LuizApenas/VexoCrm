@@ -284,7 +284,28 @@ export default function WhatsAppInbox({
   const sendMessage = useSendWhatsAppMessage(clientId, selectedChatId);
   const clearChats = useClearWhatsAppChats(clientId);
 
-  const { data: leads = [] } = useLeads(clientId || undefined);
+  const { data: leads = [], refetch: refetchLeads } = useLeads(clientId || undefined);
+
+  // ── Resumos de Chat IA em LocalStorage ─────────────────────────────────────────
+  const summariesStorageKey = `vexo_inbox_chat_summaries_${clientId || "global"}`;
+  const [chatSummaries, setChatSummaries] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(summariesStorageKey);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const saveChatSummary = (chatId: string, summary: string) => {
+    setChatSummaries((prev) => {
+      const next = { ...prev, [chatId]: summary };
+      try {
+        localStorage.setItem(summariesStorageKey, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // ── Notas Internas Privadas em LocalStorage ──────────────────────────────────
   const notesStorageKey = `vexo_inbox_notes_${clientId || "global"}`;
@@ -432,6 +453,23 @@ export default function WhatsAppInbox({
     setLiveSummary(null);
   }, [selectedChatId]);
 
+  useEffect(() => {
+    if (selectedChatId && matchedLead) {
+      const dbSummary = matchedLead.raw_chat_summary || (matchedLead.dados as any)?.resumo_chat;
+      if (dbSummary && typeof dbSummary === "string" && !chatSummaries[selectedChatId]) {
+        saveChatSummary(selectedChatId, dbSummary);
+      }
+    }
+  }, [selectedChatId, matchedLead, chatSummaries]);
+
+  const currentChatSummary = useMemo(() => {
+    if (liveSummary) return liveSummary;
+    if (selectedChatId && chatSummaries[selectedChatId]) return chatSummaries[selectedChatId];
+    if (matchedLead?.raw_chat_summary) return matchedLead.raw_chat_summary;
+    if ((matchedLead?.dados as any)?.resumo_chat) return String((matchedLead?.dados as any).resumo_chat);
+    return null;
+  }, [liveSummary, selectedChatId, chatSummaries, matchedLead]);
+
   const handleSummarizeWithAI = async () => {
     if (!selectedChatId || combinedTimeline.length === 0) {
       toast.info("Não há mensagens suficientes para resumir.");
@@ -469,7 +507,14 @@ export default function WhatsAppInbox({
       const data = await res.json().catch(() => null);
       if (res.ok && data?.success && data?.summary) {
         setLiveSummary(data.summary);
-        toast.success("Resumo gerado com sucesso pela IA!");
+        if (selectedChatId) {
+          saveChatSummary(selectedChatId, data.summary);
+        }
+        if (typeof refetchLeads === "function") {
+          refetchLeads();
+        }
+        chatsQuery.refetch();
+        toast.success("Resumo gerado e salvo com sucesso!");
       } else {
         throw new Error(data?.error || "Falha ao gerar resumo.");
       }
@@ -1080,9 +1125,9 @@ export default function WhatsAppInbox({
                 </button>
               </div>
               <div className="rounded-2xl border border-border/70 bg-muted/20 p-3 space-y-2 text-xs">
-                {liveSummary || matchedLead?.dados?.resumo_chat || matchedLead?.raw_chat_summary ? (
+                {currentChatSummary ? (
                   <div className="space-y-1.5 whitespace-pre-line text-foreground leading-relaxed text-[11px]">
-                    {liveSummary || matchedLead?.dados?.resumo_chat || matchedLead?.raw_chat_summary}
+                    {currentChatSummary}
                   </div>
                 ) : matchedLead && (matchedLead.interesse || matchedLead.objetivo || matchedLead.cidade || matchedLead.credito) ? (
                   <div className="space-y-1.5">
