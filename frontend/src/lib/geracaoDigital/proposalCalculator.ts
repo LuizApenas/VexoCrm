@@ -11,6 +11,14 @@ export interface ProposalCalculatedValues {
   compromissoOriginal: number;
   compromissoFinal: number;
 
+  /** VP / Permuta comercial */
+  temVp: boolean;
+  vpMensal: number;
+  vpPeriodo: number;
+  dinheiroMensal: number;
+  dinheiroPeriodo: number;
+  vpPercent: number;
+
   /** VP/permuta total, com a MESMA regra anti-bitributação dos valores. */
   vpTotal: number;
   /** Total geral derivado (setup + compromisso do período). Nunca ler valor_total do banco. */
@@ -260,6 +268,73 @@ export function calculateProposalValues(
     repasseVexoSetup = Math.round((setupOriginal * (repasseSetupPct / 100)) * 100) / 100;
   }
 
+  // VP / Permuta comercial
+  let vpMensal = 0;
+  let vpPeriodo = 0;
+
+  // 1. Lê do pacote selecionado no catálogo (se houver)
+  if (gdPkg && Number(gdPkg.valor_vp || 0) > 0) {
+    const months = monthsForPeriod(gdPkg.periodo) || 1;
+    const rawPkgVp = Number(gdPkg.valor_vp);
+    if (months > 1 && rawPkgVp >= gdMonthly && Math.round((rawPkgVp / months) * 100) / 100 < gdMonthly) {
+      vpMensal = Math.round((rawPkgVp / months) * 100) / 100;
+      vpPeriodo = rawPkgVp;
+    } else if (rawPkgVp < gdMonthly) {
+      vpMensal = rawPkgVp;
+      vpPeriodo = Math.round(rawPkgVp * months * 100) / 100;
+    } else {
+      vpMensal = Math.round((rawPkgVp / months) * 100) / 100;
+      vpPeriodo = rawPkgVp;
+    }
+  }
+
+  // 2. Se não encontrou no pacote, lê do item do pacote salvo
+  if (!vpMensal && savedGdPkgItem && Number(savedGdPkgItem.valor_vp || 0) > 0) {
+    const itemMeses = savedGdPkgItem.meses || mesesPeriodo || 1;
+    const rawItemVp = Number(savedGdPkgItem.valor_vp);
+    if (itemMeses > 1 && rawItemVp >= mensalidadeFinal && Math.round((rawItemVp / itemMeses) * 100) / 100 < mensalidadeFinal) {
+      vpMensal = Math.round((rawItemVp / itemMeses) * 100) / 100;
+      vpPeriodo = rawItemVp;
+    } else if (rawItemVp < mensalidadeFinal) {
+      vpMensal = rawItemVp;
+      vpPeriodo = Math.round(rawItemVp * itemMeses * 100) / 100;
+    } else {
+      vpMensal = Math.round((rawItemVp / itemMeses) * 100) / 100;
+      vpPeriodo = rawItemVp;
+    }
+  }
+
+  // 3. Fallback: lê de proposal.valor_vp ou deriva proporção de outros pacotes
+  if (!vpMensal) {
+    const rawPropVp = Number(proposal.valor_vp || 0);
+    if (rawPropVp > 0) {
+      if (rawPropVp >= mensalidadeFinal && mesesPeriodo > 1 && Math.round((rawPropVp / mesesPeriodo) * 100) / 100 < mensalidadeFinal) {
+        vpMensal = Math.round((rawPropVp / mesesPeriodo) * 100) / 100;
+        vpPeriodo = rawPropVp;
+      } else if (rawPropVp < mensalidadeFinal) {
+        vpMensal = rawPropVp;
+        vpPeriodo = Math.round(rawPropVp * mesesPeriodo * 100) / 100;
+      } else {
+        vpMensal = Math.round((rawPropVp / mesesPeriodo) * 100) / 100;
+        vpPeriodo = rawPropVp;
+      }
+    } else {
+      const otherPkgWithVp = availablePackages.find(p => Number(p.valor_vp || 0) > 0 && Number(p.valor || 0) > 0);
+      if (otherPkgWithVp) {
+        const vpPct = Number(otherPkgWithVp.valor_vp) / Number(otherPkgWithVp.valor);
+        if (vpPct > 0 && vpPct < 1) {
+          vpMensal = Math.round(mensalidadeFinal * vpPct * 100) / 100;
+          vpPeriodo = Math.round(vpMensal * mesesPeriodo * 100) / 100;
+        }
+      }
+    }
+  }
+
+  const temVp = vpMensal > 0 && vpMensal < mensalidadeFinal;
+  const dinheiroMensal = temVp ? Math.round((mensalidadeFinal - vpMensal) * 100) / 100 : mensalidadeFinal;
+  const dinheiroPeriodo = temVp ? Math.round((compromissoFinal - vpPeriodo) * 100) / 100 : compromissoFinal;
+  const vpPercent = temVp && mensalidadeFinal > 0 ? Math.round((vpMensal / mensalidadeFinal) * 100 * 10) / 10 : 0;
+
   // VP pela MESMA regra de dedupe
   const vpTotal = computeVpFromItems(items);
   const totalGeral = Math.round((setupFinal + compromissoFinal) * 100) / 100;
@@ -272,6 +347,12 @@ export function calculateProposalValues(
     mesesPeriodo,
     compromissoOriginal: Math.round(compromissoOriginal * 100) / 100,
     compromissoFinal: Math.round(compromissoFinal * 100) / 100,
+    temVp,
+    vpMensal,
+    vpPeriodo,
+    dinheiroMensal,
+    dinheiroPeriodo,
+    vpPercent,
     vpTotal,
     totalGeral,
     descontoSetupPorcentagem,

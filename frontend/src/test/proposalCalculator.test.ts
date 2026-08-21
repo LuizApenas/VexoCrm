@@ -353,4 +353,53 @@ describe("precificação de propostas e repasse Vexo OS em combos GD", () => {
     expect(calc.repasseVexoMensal).toBe(525); // 35% de 1500
     expect(calc.repasseVexoSetup).toBe(0); // 50% de 0
   });
+
+  it("VP / Permuta Comercial: calcula proporcionalidade de 50% para Mensal, Trimestral, Semestral e Anual", () => {
+    const pkgs = [
+      { id: "p-mensal", tipo: "gd", periodo: "mensal", valor: 6000, valor_vp: 3000 },
+      { id: "p-tri", tipo: "gd", periodo: "trimestral", valor: 16800, valor_vp: 8400 },
+      { id: "p-sem", tipo: "gd", periodo: "semestral", valor: 31200, valor_vp: 15600 },
+      { id: "p-anual", tipo: "gd", periodo: "anual", valor: 57600, valor_vp: 28800 },
+    ];
+
+    // 1. Mensal: R$ 6.000 / mês => R$ 3.000 VP
+    const cMensal = calculateProposalValues({ package_id: "p-mensal", periodo_plano: "mensal" }, pkgs);
+    expect(cMensal.mensalidadeFinal).toBe(6000);
+    expect(cMensal.temVp).toBe(true);
+    expect(cMensal.vpMensal).toBe(3000);
+    expect(cMensal.dinheiroMensal).toBe(3000);
+    expect(cMensal.compromissoFinal).toBe(6000);
+    expect(cMensal.vpPeriodo).toBe(3000);
+    expect(cMensal.dinheiroPeriodo).toBe(3000);
+
+    // 2. Trimestral: R$ 5.600 / mês => R$ 2.800 VP (8.400 / 3)
+    const cTri = calculateProposalValues({ package_id: "p-tri", periodo_plano: "trimestral" }, pkgs);
+    expect(cTri.mensalidadeFinal).toBe(5600);
+    expect(cTri.temVp).toBe(true);
+    expect(cTri.vpMensal).toBe(2800);
+    expect(cTri.dinheiroMensal).toBe(2800);
+    expect(cTri.compromissoFinal).toBe(16800);
+    expect(cTri.vpPeriodo).toBe(8400);
+    expect(cTri.dinheiroPeriodo).toBe(8400);
+
+    // 3. Semestral: R$ 5.200 / mês => R$ 2.600 VP (15.600 / 6)
+    const cSem = calculateProposalValues({ package_id: "p-sem", periodo_plano: "semestral" }, pkgs);
+    expect(cSem.mensalidadeFinal).toBe(5200);
+    expect(cSem.temVp).toBe(true);
+    expect(cSem.vpMensal).toBe(2600);
+    expect(cSem.dinheiroMensal).toBe(2600);
+    expect(cSem.compromissoFinal).toBe(31200);
+    expect(cSem.vpPeriodo).toBe(15600);
+    expect(cSem.dinheiroPeriodo).toBe(15600);
+
+    // 4. Anual: R$ 4.800 / mês => R$ 2.400 VP (28.800 / 12)
+    const cAnual = calculateProposalValues({ package_id: "p-anual", periodo_plano: "anual" }, pkgs);
+    expect(cAnual.mensalidadeFinal).toBe(4800);
+    expect(cAnual.temVp).toBe(true);
+    expect(cAnual.vpMensal).toBe(2400);
+    expect(cAnual.dinheiroMensal).toBe(2400);
+    expect(cAnual.compromissoFinal).toBe(57600);
+    expect(cAnual.vpPeriodo).toBe(28800);
+    expect(cAnual.dinheiroPeriodo).toBe(28800);
+  });
 });
