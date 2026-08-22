@@ -513,7 +513,7 @@ function buildVariantBucketPlan(count, hasNameVariable, hasSubject, baseTemPergu
 export async function generateCampaignTemplateVariants(input = {}) {
   const count = Math.min(
     Math.max(Number.parseInt(String(input.count ?? "6"), 10) || 6, 2),
-    MAX_TEMPLATE_VARIANTS
+    25
   );
   const baseText = normalizeString(input.baseText);
   const availableVariables = sanitizeAvailableVariables(input.availableVariables);
@@ -525,19 +525,19 @@ export async function generateCampaignTemplateVariants(input = {}) {
       invariants: { pedido: "", elementos: [] },
     };
   }
-  const prompt = `Você é um estrategista de outbound e mensagens de WhatsApp em português do Brasil.
-Sua missão é gerar exatamente ${count} variações humanizadas e naturais da mensagem base abaixo para rotação de texto antiban.
+  const prompt = `Você é um especialista em WhatsApp outbound e rotação de cópias antiban em português do Brasil.
+Sua missão é gerar exatamente ${count} variações HUMANIZADAS e NATURAIS reescrevendo a mensagem base abaixo.
 
-Mensagem base: """${baseText}"""
+MENSAGEM BASE DO CLIENTE: """${baseText}"""
 
-REGRAS:
-1. Gere EXATAMENTE ${count} variações distintas mantendo o mesmo objetivo e tom da mensagem base.
-2. Cada variação deve ser uma mensagem completa, pronta para envio.
-3. Use português correto do Brasil com acentuação impecável.
-4. ${hasNameVariable ? "Metade das variações deve usar {{nome}} e a outra metade não deve usar." : "Não invente variáveis."}
-5. Alterne entre saudações atemporais ("Olá", "Oi", ou indo direto ao ponto sem saudação). Nunca use saudações temporais como "bom dia" ou "boa tarde".
-6. Sem emojis excessivos, sem listas numeradas e sem formatação markdown pesada.
-7. Retorne EXCLUSIVAMENTE um objeto JSON no formato: { "variants": ["variação 1...", "variação 2...", ...], "rationale": "Breve justificativa estratégica das variações." }`;
+REGRAS CRÍTICAS DE OURO:
+1. FIDELIDADE ABSOLUTA AO ASSUNTO: Todas as ${count} variações devem tratar RIGOROSAMENTE DO MESMO ASSUNTO e ter o MESMO PROPÓSITO da mensagem base acima. Não invente assuntos, ofertas ou pedidos que não estejam na mensagem base.
+2. Cada variação deve ser uma mensagem completa, autônoma e pronta para disparo no WhatsApp.
+3. Português do Brasil natural, com ortografia e acentuação corretas.
+4. ${hasNameVariable ? "Alterne: use {{nome}} em algumas variações (no início ou meio) e omita em outras." : "Não adicione variáveis {{...}} que não existam na base."}
+5. Alterne o estilo: algumas mais diretas, outras com saudação leve ("Oi", "Olá"), outras mais informais. Proibido saudações temporais ("bom dia", "boa tarde", "boa noite").
+6. Sem listas numeradas, sem markdown pesado e sem emojis em excesso.
+7. Retorne EXCLUSIVAMENTE um objeto JSON no formato: { "variants": [ "variação 1...", "variação 2...", ... (total de ${count} variações) ], "rationale": "Variações fiéis à mensagem base para rotação antiban." }`;
 
   try {
     if (process.env.GROQ_API_KEY) {
@@ -549,13 +549,13 @@ REGRAS:
         },
         body: JSON.stringify({
           model: "llama-3.3-70b-versatile",
-          temperature: 0.4,
-          max_completion_tokens: 1000,
+          temperature: 0.6,
+          max_tokens: 2500,
           response_format: { type: "json_object" },
           messages: [
             {
               role: "system",
-              content: "Você é um especialista em WhatsApp outbound e rotação de cópias. Responda apenas com JSON válido.",
+              content: "Você é um gerador de variações antiban para WhatsApp. Responda apenas com JSON válido.",
             },
             { role: "user", content: prompt },
           ],
@@ -569,45 +569,45 @@ REGRAS:
           const rawVariants = Array.isArray(parsed?.variants) ? parsed.variants : [];
           const cleanVariants = rawVariants
             .map((v) => normalizeString(v))
-            .filter((v) => v && v.length > 5);
+            .filter((v) => v && v.length >= 4);
           if (cleanVariants.length >= 2) {
             return {
               variants: cleanVariants.slice(0, count),
-              rationale: parsed.rationale || "Variações geradas com sucesso pela IA da Groq.",
-              invariants: { pedido: "Contato WhatsApp", elementos: [] },
+              rationale: parsed.rationale || "Variações fiéis à mensagem base geradas com sucesso.",
+              invariants: { pedido: "Base", elementos: [] },
             };
           }
         }
+      } else {
+        console.warn("[campaign-ai] Erro HTTP Groq:", response.status, await response.text());
       }
     }
   } catch (err) {
-    console.warn("[campaign-ai] Groq falhou, aplicando fallback determinístico:", err?.message || err);
+    console.warn("[campaign-ai] Groq falhou, aplicando paráfrase dinâmica da base:", err?.message || err);
   }
 
-  // Fallback determinístico inteligente para garantir resposta 200 imediata
-  const fallbacks = [
+  // Fallback dinâmico derivado da PRÓPRIA mensagem base do usuário
+  const dynamicFallbacks = [
     baseText,
-    hasNameVariable
-      ? `Olá, {{nome}}! Tudo bem com você? Poderia conversar agora rapidinho?`
-      : `Olá! Tudo bem com você? Poderia conversar agora rapidinho?`,
-    hasNameVariable
-      ? `Oi, {{nome}}, tudo joia? Tem alguns minutinhos para falarmos?`
-      : `Oi, tudo joia? Tem alguns minutinhos para falarmos?`,
-    hasNameVariable
-      ? `{{nome}}, como você está? Consegue me dar um retorno breve?`
-      : `Como você está? Consegue me dar um retorno breve?`,
-    hasNameVariable
-      ? `Olá, {{nome}}! Passando rápido por aqui para alinharmos, tem um momento?`
-      : `Olá! Passando rápido por aqui para alinharmos, tem um momento?`,
-    hasNameVariable
-      ? `Oi, {{nome}}! Tudo certo por aí? Podemos bater um papo rápido?`
-      : `Oi! Tudo certo por aí? Podemos bater um papo rápido?`,
+    `Oi! ${baseText.replace(/^(olá|oi|fala)[,!]?\s*/i, "")}`,
+    `Olá, tudo bem? ${baseText.replace(/^(olá|oi|fala)[,!]?\s*/i, "")}`,
+    `${baseText.replace(/^(olá|oi|fala)[,!]?\s*/i, "")}`,
+    `Passando por aqui: ${baseText.replace(/^(olá|oi|fala)[,!]?\s*/i, "")}`,
+    `Oi, tudo joia? ${baseText.replace(/^(olá|oi|fala)[,!]?\s*/i, "")}`,
   ];
 
+  if (hasNameVariable) {
+    dynamicFallbacks.push(
+      `Olá, {{nome}}! ${baseText.replace(/^(olá|oi|fala)[,!]?\s*(\{\{nome\}\}[,!]?\s*)?/i, "")}`,
+      `Oi, {{nome}}, tudo bem? ${baseText.replace(/^(olá|oi|fala)[,!]?\s*(\{\{nome\}\}[,!]?\s*)?/i, "")}`,
+      `{{nome}}, ${baseText.replace(/^(olá|oi|fala)[,!]?\s*(\{\{nome\}\}[,!]?\s*)?/i, "")}`
+    );
+  }
+
   return {
-    variants: fallbacks.slice(0, count),
-    rationale: "Variações contextuais geradas para rotação antiban.",
-    invariants: { pedido: "Contato", elementos: [] },
+    variants: Array.from(new Set(dynamicFallbacks)).slice(0, count),
+    rationale: "Variações dinâmicas derivadas da mensagem base.",
+    invariants: { pedido: "Base", elementos: [] },
   };
 }
 
