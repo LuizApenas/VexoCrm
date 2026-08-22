@@ -340,12 +340,9 @@ export function registerCampaignsRoutes(app, deps) {
       res.json({ item: suggestion });
     } catch (error) {
       console.error("campaign ai generate template variants error:", error);
-      res.status(200).json({
-        item: {
-          variants: [req.body?.baseText || "Olá, tudo bem?"],
-          rationale: "Variação padrão mantida.",
-        },
-      });
+      const status = error.statusCode || 502;
+      const code = error.code || "GROQ_REQUEST_FAILED";
+      sendError(res, status, code, error instanceof Error ? error.message : "Falha ao gerar variações com a IA");
     }
   });
 

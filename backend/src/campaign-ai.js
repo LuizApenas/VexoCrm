@@ -512,119 +512,140 @@ function buildVariantBucketPlan(count, hasNameVariable, hasSubject, baseTemPergu
   return plan.map((entry) => ({ key: entry.bucket.key, rule: entry.bucket.rule, size: entry.size }));
 }
 
+export function getVariableCounts(text) {
+  const matches = (text || "").match(/\{\{[a-zA-Z0-9_]+\}\}/g) || [];
+  const counts = {};
+  for (const m of matches) {
+    counts[m] = (counts[m] || 0) + 1;
+  }
+  return counts;
+}
+
+export function hasSameVariableCounts(baseText, variantText) {
+  const baseCounts = getVariableCounts(baseText);
+  const variantCounts = getVariableCounts(variantText);
+  const allVars = new Set([...Object.keys(baseCounts), ...Object.keys(variantCounts)]);
+  for (const v of allVars) {
+    if ((baseCounts[v] || 0) !== (variantCounts[v] || 0)) return false;
+  }
+  return true;
+}
+
 export async function generateCampaignTemplateVariants(input = {}) {
   const count = Math.min(
     Math.max(Number.parseInt(String(input.count ?? "6"), 10) || 6, 2),
     25
   );
   const baseText = normalizeString(input.baseText);
-  const availableVariables = sanitizeAvailableVariables(input.availableVariables);
-  const hasNameVariable = availableVariables.includes("nome") || baseText.includes("{{nome}}");
   if (!baseText) {
     return {
       variants: [],
+      requested: count,
       rationale: "Nenhum texto base fornecido.",
       invariants: { pedido: "", elementos: [] },
     };
   }
+
   const apiKey = process.env.GROQ_API_KEY || process.env.GROQ_KEY;
-  if (apiKey) {
-    try {
-      const groq = new Groq({ apiKey });
-      const prompt = `Você é um copywriter especialista em mensagens de WhatsApp no Brasil.
-Sua missão é reescrever a mensagem base abaixo gerando exatamente ${count} variações HUMANIZADAS, NATURAIS e FLUIDAS para rotação de texto antiban.
-
-MENSAGEM BASE DO CLIENTE: """${baseText}"""
-
-REGRAS OBRIGATÓRIAS:
-1. MESMO ASSUNTO E OBJETIVO: Todas as variações devem falar RIGOROSAMENTE sobre a mesma coisa da mensagem base.
-2. NUNCA DUPLIQUE SAUDAÇÕES: Proibido juntar "Oi! Olá", "Olá {{nome}}! Oi", etc. Use apenas UMA saudação por mensagem.
-3. NUNCA REPITA O NOME: ${hasNameVariable ? "Em algumas mensagens coloque {{nome}} (apenas uma vez!), em outras vá direto ao ponto sem o nome." : "Não adicione {{nome}}."}
-4. Português do Brasil coloquial, natural, educado e com pontuação correta.
-5. Proibido saudações que dependam da hora ("bom dia", "boa tarde", "boa noite"). Use saudações atemporais ("Olá", "Oi", "Tudo bem?") ou vá direto ao assunto.
-6. Cada variação deve ser uma mensagem completa e pronta para envio.
-
-Exemplo de boas variações se a base for "Ola, {{nome}}! Estou precisando falar com voce urgente!":
-- "Oi, {{nome}}, tudo bem? Preciso falar com você com urgência!"
-- "{{nome}}, tudo joia? Surgiu um assunto urgente, consegue me dar um retorno?"
-- "Olá! Tudo bem? Estou precisando falar com você rapidinho sobre um assunto importante."
-- "Oi, {{nome}}! Você tem um minuto agora? É urgente."
-- "Passando aqui porque preciso falar com você urgente, consegue me responder?"
-
-Retorne EXCLUSIVAMENTE um objeto JSON no formato: { "variants": [ "variação 1...", "variação 2...", ... (total de ${count} variações) ], "rationale": "Variações humanizadas sem repetição geradas com sucesso." }`;
-
-      const chatCompletion = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.7,
-        max_tokens: 2500,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: "Você é um gerador de variações naturais de WhatsApp. Responda estritamente em JSON.",
-          },
-          { role: "user", content: prompt },
-        ],
-      });
-      const rawContent = chatCompletion.choices?.[0]?.message?.content;
-      if (rawContent) {
-        const parsed = JSON.parse(rawContent);
-        const rawVariants = Array.isArray(parsed?.variants) ? parsed.variants : [];
-        const cleanVariants = rawVariants
-          .map((v) => normalizeString(v))
-          .filter((v) => v && v.length >= 4 && !v.includes("Oi! Ola") && !v.includes("Olá, Ola"));
-        if (cleanVariants.length >= 2) {
-          return {
-            variants: cleanVariants.slice(0, count),
-            rationale: parsed.rationale || "Variações geradas pela IA da Groq com sucesso.",
-            invariants: { pedido: "Base", elementos: [] },
-          };
-        }
-      }
-    } catch (err) {
-      console.error("[campaign-ai] Erro no Groq SDK:", err?.message || err);
-    }
+  if (!apiKey) {
+    const error = new Error("Chave da Groq (GROQ_API_KEY) não está configurada no servidor.");
+    error.statusCode = 503;
+    error.code = "GROQ_KEY_MISSING";
+    throw error;
   }
 
-  // Fallback inteligente com extração limpa do núcleo da mensagem (sem duplicações)
-  let cleanCore = baseText
-    .replace(/^(ol[aá]|oi|fala|opa|e a[ií])[,!]?\s*/i, "")
-    .replace(/^\{\{nome\}\}[,!]?\s*/i, "")
-    .replace(/^(ol[aá]|oi|fala|opa|tudo bem\??|tudo j[oó]ia\??)[,!]?\s*/i, "")
-    .replace(/^\{\{nome\}\}[,!]?\s*/i, "")
-    .replace(/^(ol[aá]|oi|fala|opa|tudo bem\??|tudo j[oó]ia\??)[,!]?\s*/i, "")
-    .trim();
+  const varCounts = getVariableCounts(baseText);
+  const varKeys = Object.keys(varCounts);
+  const varRules = varKeys.length > 0
+    ? `As seguintes variáveis estão na mensagem base e DEVEM aparecer em CADA variação EXATAMENTE com a mesma contagem:\n${varKeys.map((k) => `- ${k}: exatamente ${varCounts[k]} vez(es)`).join("\n")}\nPROIBIDO duplicar ou omitir qualquer uma dessas variáveis.`
+    : `A mensagem base NÃO contém variáveis. Não adicione {{nome}} ou qualquer outra variável.`;
 
-  if (!cleanCore || cleanCore.length < 3) {
-    cleanCore = baseText;
+  const prompt = `Você é um copywriter especialista em mensagens de WhatsApp no Brasil.
+Sua missão é REESCREVER a mensagem base abaixo gerando exatamente ${count} variações HUMANIZADAS, COMPLETAS e NATURAIS para rotação antiban.
+
+MENSAGEM BASE DO CLIENTE:
+"""${baseText}"""
+
+REGRAS OBRIGATÓRIAS DE REESCRITA:
+1. REESCRITA INTEGRAL: Reescreva a mensagem por completo usando sinônimos e estruturas de frases diferentes. PROIBIDO apenas colar cumprimentos na frente da mensagem base.
+2. MESMA INTENÇÃO E OBJETIVO: Todas as variações devem transmitir rigorosamente a mesma mensagem, pedido ou proposta da original.
+3. COMPRIMENTO SIMILAR: Mantenha tamanho e tom próximos ao original.
+4. PRESERVAÇÃO EXATA DE VARIÁVEIS:
+${varRules}
+5. UMA ÚNICA SAUDAÇÃO NATURAL: Proibido juntar cumprimentos como "Oi! Olá". Use uma única saudação ou vá direto ao assunto.
+6. SAUDAÇÕES ATEMPORAIS: Proibido "bom dia", "boa tarde", "boa noite". Use "Olá", "Oi", "Tudo bem?", ou inicie direto.
+7. SEM DUPLICATAS: Nenhuma variação pode ser idêntica à mensagem base nem a outra variação.
+8. Português do Brasil coloquial, educado e fluido.
+
+Retorne EXCLUSIVAMENTE um objeto JSON no formato:
+{
+  "variants": [
+    "variação 1 completa...",
+    "variação 2 completa..."
+  ],
+  "rationale": "Explicação breve das variações geradas"
+}`;
+
+  const groq = new Groq({ apiKey });
+  const chatCompletion = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    temperature: 0.7,
+    max_tokens: 2500,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: "Você é um gerador de variações naturais de WhatsApp. Responda estritamente em JSON válido.",
+      },
+      { role: "user", content: prompt },
+    ],
+  });
+
+  const rawContent = chatCompletion.choices?.[0]?.message?.content;
+  if (!rawContent) {
+    const error = new Error("A IA da Groq retornou uma resposta vazia.");
+    error.statusCode = 502;
+    error.code = "GROQ_EMPTY_RESPONSE";
+    throw error;
   }
 
-  const dynamicFallbacks = [
-    baseText,
-    hasNameVariable
-      ? `Oi, {{nome}}! ${cleanCore}`
-      : `Oi! ${cleanCore}`,
-    hasNameVariable
-      ? `Olá, {{nome}}, tudo bem? ${cleanCore}`
-      : `Olá, tudo bem? ${cleanCore}`,
-    hasNameVariable
-      ? `{{nome}}, tudo joia? ${cleanCore}`
-      : `Tudo joia? ${cleanCore}`,
-    hasNameVariable
-      ? `Oi, {{nome}}! Passando por aqui: ${cleanCore}`
-      : `Passando por aqui: ${cleanCore}`,
-    hasNameVariable
-      ? `{{nome}}, consegue me responder rapidinho? ${cleanCore}`
-      : `Consegue me responder rapidinho? ${cleanCore}`,
-    hasNameVariable
-      ? `Olá, {{nome}}! ${cleanCore}`
-      : `Olá! ${cleanCore}`,
-    cleanCore,
-  ];
+  let parsed;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (err) {
+    const error = new Error("A IA da Groq retornou um formato JSON inválido.");
+    error.statusCode = 502;
+    error.code = "GROQ_INVALID_JSON";
+    throw error;
+  }
+
+  const rawVariants = Array.isArray(parsed?.variants) ? parsed.variants : [];
+  const normalizedBase = normalizeString(baseText);
+  const cleanVariants = [];
+  const seen = new Set([normalizedBase.toLowerCase()]);
+
+  for (const raw of rawVariants) {
+    const v = normalizeString(raw);
+    if (!v || v.length < 4) continue;
+    const lower = v.toLowerCase();
+    if (seen.has(lower)) continue;
+    if (!hasSameVariableCounts(baseText, v)) continue;
+
+    seen.add(lower);
+    cleanVariants.push(v);
+  }
+
+  if (cleanVariants.length === 0) {
+    const error = new Error("A IA não gerou variações válidas que preservem o texto original e suas variáveis.");
+    error.statusCode = 502;
+    error.code = "GROQ_NO_VALID_VARIANTS";
+    throw error;
+  }
 
   return {
-    variants: Array.from(new Set(dynamicFallbacks)).slice(0, count),
-    rationale: "Variações higienizadas derivadas do núcleo da mensagem base.",
+    variants: cleanVariants.slice(0, count),
+    requested: count,
+    rationale: parsed?.rationale || `${cleanVariants.length} variações humanizadas geradas com sucesso.`,
     invariants: { pedido: "Base", elementos: [] },
   };
 }
