@@ -868,7 +868,7 @@ export function registerCampaignsRoutes(app, deps) {
       const dispatchSettings = await resolveCampaignDispatchSettings(authorizedClientId, {
         analytics_meta: validation.analyticsMeta,
       });
-      const webhookUrl = dispatchSettings.webhookUrl || process.env.DISPATCH_WEBHOOK_URL || "https://evolution.vexoia.com";
+      const webhookUrl = dispatchSettings.webhookUrl || null;
       const webhookToken = dispatchSettings.webhookToken || null;
 
       // Só checar saúde de conexão se o status da campanha for ativação imediata

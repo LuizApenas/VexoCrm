@@ -925,7 +925,13 @@ export default function LeadImports({
             });
           }
         }
-        toast({ title: "Sucesso!", description: `${numBatches} lotes criados e enfileirados com sucesso.` });
+        const hasConnectedChips = evolutionInstanceOptions.length > 0 || Boolean(selectedLeadClient?.n8n_settings?.dispatch_webhook_url);
+        toast({
+          title: "Sucesso!",
+          description: hasConnectedChips
+            ? `${numBatches} lotes criados e enfileirados com sucesso.`
+            : `${numBatches} lotes criados, mas não vão disparar até conectar um chip.`,
+        });
       } else {
         const dispatchRes = await fetch(`${API_BASE_URL}/api/campaigns/${campaignId}/dispatches`, {
           method: "POST",
@@ -943,6 +949,8 @@ export default function LeadImports({
         const dispatchData = await dispatchRes.json();
         const dispatchId = dispatchData.dispatch.id;
 
+        const hasConnectedChips = evolutionInstanceOptions.length > 0 || Boolean(selectedLeadClient?.n8n_settings?.dispatch_webhook_url);
+
         // 3. Trigger immediate execution if manual
         if (newTriggerType === "manual") {
           setSubmittingStatus("Disparando lote de envios...");
@@ -952,9 +960,19 @@ export default function LeadImports({
           });
           toast({ title: "Sucesso!", description: "O lote de disparos foi iniciado com sucesso." });
         } else if (newTriggerType === "draft") {
-          toast({ title: "Sucesso!", description: "Campanha salva como rascunho (Stand by)." });
+          toast({
+            title: "Campanha salva!",
+            description: hasConnectedChips
+              ? "Campanha salva como rascunho (Stand by)."
+              : "Campanha salva, mas não vai disparar até conectar um chip.",
+          });
         } else {
-          toast({ title: "Sucesso!", description: "Lote de disparos agendado com sucesso." });
+          toast({
+            title: "Sucesso!",
+            description: hasConnectedChips
+              ? "Lote de disparos agendado com sucesso."
+              : "Campanha agendada, mas não vai disparar até conectar um chip.",
+          });
         }
       }
 
