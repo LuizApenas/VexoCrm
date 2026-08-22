@@ -1,4 +1,5 @@
 import { Groq } from "groq-sdk";
+import { callLlmChatCompletion } from "./chatbot-ai-engine.js";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 // Modelo instruct, nao de raciocinio. Medido 06/08/2026: gerar 25 variacoes e
@@ -586,9 +587,8 @@ Retorne EXCLUSIVAMENTE um objeto JSON no formato:
   "rationale": "Explicação breve das variações geradas"
 }`;
 
-  const groq = new Groq({ apiKey });
-  const chatCompletion = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+  const rawContent = await callLlmChatCompletion({
+    model: "llama-3.1-8b-instant",
     temperature: 0.7,
     max_tokens: 2500,
     response_format: { type: "json_object" },
@@ -600,8 +600,6 @@ Retorne EXCLUSIVAMENTE um objeto JSON no formato:
       { role: "user", content: prompt },
     ],
   });
-
-  const rawContent = chatCompletion.choices?.[0]?.message?.content;
   if (!rawContent) {
     const error = new Error("A IA da Groq retornou uma resposta vazia.");
     error.statusCode = 502;
@@ -611,12 +609,26 @@ Retorne EXCLUSIVAMENTE um objeto JSON no formato:
 
   let parsed;
   try {
-    parsed = JSON.parse(rawContent);
+    const cleanedJson = (rawContent || "")
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+    parsed = JSON.parse(cleanedJson);
   } catch (err) {
-    const error = new Error("A IA da Groq retornou um formato JSON inválido.");
-    error.statusCode = 502;
-    error.code = "GROQ_INVALID_JSON";
-    throw error;
+    const match = rawContent.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        parsed = JSON.parse(match[0]);
+      } catch {
+        // ignore
+      }
+    }
+    if (!parsed) {
+      const error = new Error("A IA da Groq retornou um formato JSON inválido.");
+      error.statusCode = 502;
+      error.code = "GROQ_INVALID_JSON";
+      throw error;
+    }
   }
 
   const rawVariants = Array.isArray(parsed?.variants) ? parsed.variants : [];
@@ -625,8 +637,14 @@ Retorne EXCLUSIVAMENTE um objeto JSON no formato:
   const seen = new Set([normalizedBase.toLowerCase()]);
 
   for (const raw of rawVariants) {
-    const v = normalizeString(raw);
+    let v = normalizeString(raw);
     if (!v || v.length < 4) continue;
+    for (const k of varKeys) {
+      const singleBrace = k.replace(/^\{\{/, "{").replace(/\}\}$/, "}");
+      if (!v.includes(k) && v.includes(singleBrace)) {
+        v = v.replaceAll(singleBrace, k);
+      }
+    }
     const lower = v.toLowerCase();
     if (seen.has(lower)) continue;
     if (!hasSameVariableCounts(baseText, v)) continue;

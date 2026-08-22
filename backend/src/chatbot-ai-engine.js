@@ -206,10 +206,16 @@ export async function callLlmChatCompletion({
     const err = await res.text();
     lastError = new Error(`Groq HTTP ${res.status}: ${err.slice(0, 200)}`);
 
-    // Se o modelo não existir, for depreciado ou não tiver acesso (404 / 400 decommissioned), tenta o próximo modelo da lista
+    // Se o modelo atingir limite de taxa (429 TPM/RPM), não existir, for depreciado ou não tiver acesso (404 / 400), tenta o próximo modelo da lista
     if (
+      res.status === 429 ||
       res.status === 404 ||
       res.status === 400 ||
+      err.includes("rate_limit") ||
+      err.includes("Rate limit") ||
+      err.includes("TPM") ||
+      err.includes("tokens per minute") ||
+      err.includes("Too Many Requests") ||
       err.includes("model_not_found") ||
       err.includes("does not exist") ||
       err.includes("decommissioned") ||
@@ -217,7 +223,7 @@ export async function callLlmChatCompletion({
       err.includes("deprecated") ||
       err.includes("invalid_request_error")
     ) {
-      console.warn(`[chatbot-ai-engine] Groq modelo "${m}" indisponível (${res.status}), tentando próximo modelo...`);
+      console.warn(`[chatbot-ai-engine] Groq modelo "${m}" indisponível ou limite de taxa (${res.status}), tentando próximo modelo...`);
       continue;
     }
 

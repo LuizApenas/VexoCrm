@@ -402,6 +402,9 @@ function getCampaignApiCandidates(path: string) {
 
 function shouldRetryCampaignResponse(response: Response) {
   const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return false;
+  }
   return [502, 503, 504].includes(response.status) || (response.status >= 500 && contentType.includes("text/html"));
 }
 
