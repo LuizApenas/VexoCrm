@@ -145,6 +145,13 @@ export async function ensureLeadClientEvolutionInstancesTable() {
   }
 }
 
+export function selectDefaultEvolutionInstance(instances = []) {
+  if (!Array.isArray(instances)) return null;
+  const active = instances.filter((i) => i && i.active !== false);
+  if (active.length === 0) return null;
+  return active.find((i) => i.is_default === true) || active[0] || null;
+}
+
 export async function getLeadClientEvolutionInstances(clientId) {
   if (!clientId) return [];
   try {
@@ -160,7 +167,7 @@ export async function getLeadClientEvolutionInstances(clientId) {
         LEFT JOIN public.evolution_instance_daily_usage u
           ON u.instance_id = i.id AND u.date = CURRENT_DATE
         WHERE i.client_id = $1
-        ORDER BY i.is_default DESC, i.active DESC, i.created_at ASC
+        ORDER BY i.active DESC, i.is_default DESC, i.created_at ASC
       `,
       [clientId]
     );
@@ -170,7 +177,7 @@ export async function getLeadClientEvolutionInstances(clientId) {
     console.warn("[evolution-instances] Primary query warning for client", clientId, err.message);
     try {
       const { rows } = await pgDatabasePool.query(
-        `SELECT * FROM public.lead_client_evolution_instances WHERE client_id = $1`,
+        `SELECT * FROM public.lead_client_evolution_instances WHERE client_id = $1 ORDER BY active DESC, is_default DESC, created_at ASC`,
         [clientId]
       );
       return rows;
@@ -195,7 +202,7 @@ export async function getLeadClientEvolutionInstancesMap(clientIds) {
       LEFT JOIN public.evolution_instance_daily_usage u
         ON u.instance_id = i.id AND u.date = CURRENT_DATE
       WHERE i.client_id = ANY($1::text[])
-      ORDER BY i.is_default DESC, i.active DESC, i.created_at ASC
+      ORDER BY i.active DESC, i.is_default DESC, i.created_at ASC
     `,
     [clientIds]
   );
@@ -209,9 +216,7 @@ export async function getLeadClientEvolutionInstancesMap(clientIds) {
 
 export async function getDefaultLeadClientEvolutionInstance(clientId) {
   const instances = await getLeadClientEvolutionInstances(clientId);
-  return instances.find((instance) => instance.active !== false && instance.is_default) ||
-    instances.find((instance) => instance.active !== false) ||
-    null;
+  return selectDefaultEvolutionInstance(instances);
 }
 
 export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWebhookUrl, dispatchWebhookToken) {

@@ -25,11 +25,32 @@ import { buildDefaultSegmentationConfig, sanitizeSegmentationConfig } from "../s
 import { isMissingSchemaError } from "./analytics.js";
 import {
   getDefaultLeadClientEvolutionInstance,
+  getLeadClientEvolutionInstances,
   mergeEvolutionInstanceIntoSettings,
   getLeadClientEvolutionInstancesMap,
   maskEvolutionInstance,
 } from "./evolution.js";
 import { isMaskedSecretPlaceholder, getRequestBearerToken, sendError } from "./httpInfra.js";
+
+export const N8N_SETTINGS_SELECT_FIELDS =
+  "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, chip_limit, degustacao_expira_em, updated_at, updated_by_uid, updated_by_email";
+
+export function resolveSingleLeadClientSettings(rawRow, instances = []) {
+  const masked = rawRow ? maskN8nSettings(rawRow) : null;
+  const activeInstances = Array.isArray(instances) ? instances.filter((i) => i && i.active !== false) : [];
+  const defaultInstance =
+    activeInstances.find((i) => i.is_default === true) ||
+    activeInstances[0] ||
+    null;
+
+  const merged = mergeEvolutionInstanceIntoSettings(masked, defaultInstance);
+  if (!merged && !instances.length) return null;
+
+  return {
+    ...(merged || masked || {}),
+    evolution_instances: (instances || []).map(maskEvolutionInstance),
+  };
+}
 
 export function maskN8nSettings(row) {
   if (!row) {
@@ -103,9 +124,7 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
 
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
-    .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, chip_limit, degustacao_expira_em, updated_at, updated_by_uid, updated_by_email"
-    )
+    .select(N8N_SETTINGS_SELECT_FIELDS)
     .eq("client_id", clientId)
     .maybeSingle();
 
@@ -126,8 +145,11 @@ export async function getLeadClientN8nSettingsStatus(clientId) {
     throw error;
   }
 
+  const instances = await getLeadClientEvolutionInstances(clientId);
+  const resolvedSettings = resolveSingleLeadClientSettings(data, instances);
+
   return {
-    settings: data ? maskN8nSettings(data) : null,
+    settings: resolvedSettings,
     schemaAvailable: true,
     source: "database",
   };
@@ -139,17 +161,11 @@ export async function getLeadClientN8nSettings(clientId) {
 }
 
 export async function getLeadClientN8nSettingsMap(clientIds) {
-  if (!supabase || clientIds.length === 0) return {};
+  if (!supabase || !Array.isArray(clientIds) || clientIds.length === 0) return {};
 
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
-    .select(
-      // chatbot_instances FALTAVA aqui (existe no SELECT de getLeadClientN8nSettings).
-      // Como maskN8nSettings faz `Array.isArray(row.chatbot_instances) ? ... : []`, a
-      // coluna ausente virava [] e a tela do Agente IA relia "Todos sem agente inbound"
-      // a cada visita — a marcacao de chip era gravada e depois lida como vazia.
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, chip_limit, degustacao_expira_em, updated_at, updated_by_email"
-    )
+    .select(N8N_SETTINGS_SELECT_FIELDS)
     .in("client_id", clientIds);
 
   if (error) {
@@ -157,22 +173,16 @@ export async function getLeadClientN8nSettingsMap(clientIds) {
     throw error;
   }
 
-  const settingsMap = Object.fromEntries((data || []).map((row) => [row.client_id, maskN8nSettings(row)]));
+  const rawMap = Object.fromEntries((data || []).map((row) => [row.client_id, row]));
   const evolutionInstancesMap = await getLeadClientEvolutionInstancesMap(clientIds);
 
+  const settingsMap = {};
   for (const clientId of clientIds) {
+    const rawRow = rawMap[clientId] || null;
     const instances = evolutionInstancesMap[clientId] || [];
-    const defaultInstance =
-      instances.find((instance) => instance.active !== false && instance.is_default) ||
-      instances.find((instance) => instance.active !== false) ||
-      null;
-    const mergedSettings = mergeEvolutionInstanceIntoSettings(settingsMap[clientId] || null, defaultInstance);
-
-    if (mergedSettings || settingsMap[clientId] || instances.length) {
-      settingsMap[clientId] = {
-        ...(mergedSettings || settingsMap[clientId] || {}),
-        evolution_instances: instances.map(maskEvolutionInstance),
-      };
+    const resolved = resolveSingleLeadClientSettings(rawRow, instances);
+    if (resolved) {
+      settingsMap[clientId] = resolved;
     }
   }
 

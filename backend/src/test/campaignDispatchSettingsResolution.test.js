@@ -16,9 +16,9 @@ describe("auto-resolucao de instancias evolution em campanhas", () => {
     expect(bloco).toContain("selectedEvolutionInstanceName: primaryInstance.name || \"WhatsApp Principal\"");
   });
 
-  it("aplica fallback global seguro quando nao ha instancia ativa cadastrada", () => {
-    expect(bloco).toContain("process.env.DISPATCH_WEBHOOK_URL || process.env.EVOLUTION_API_URL || \"https://evolution.vexoia.com\"");
-    expect(bloco).toContain("source: tenantWebhookUrl ? tenantDispatch.source : (cachedWebhookUrl ? \"campaign_cache\" : \"system_default\")");
+  it("NAO aplica fallback global de chip para garantir isolamento multi-tenant", () => {
+    expect(bloco).not.toContain("https://evolution.vexoia.com");
+    expect(bloco).toContain("tenant_settings_missing");
   });
 });
 

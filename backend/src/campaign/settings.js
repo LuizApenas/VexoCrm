@@ -225,6 +225,17 @@ export async function resolveDispatchWebhookSettings(clientId) {
           ? "missing_url"
           : "missing";
 
+  const instances = Array.isArray(settings?.evolution_instances) ? settings.evolution_instances : [];
+  const activeInstances = instances.filter((i) => i.active !== false);
+  const legacyHasUrl = Boolean(settings?.dispatch_webhook_url);
+  console.warn("[dispatch-settings] Webhook URL nao resolvida para o tenant:", {
+    clientId,
+    source,
+    totalInstances: instances.length,
+    activeInstances: activeInstances.length,
+    legacyHasUrl,
+  });
+
   return {
     settings,
     webhookUrl: null,
@@ -300,7 +311,7 @@ export async function resolveCampaignDispatchSettings(clientId, campaign = {}) {
   const instances = await getLeadClientEvolutionInstances(clientId);
   const activeInstances = Array.isArray(instances) ? instances.filter((i) => i.active !== false) : [];
 
-  // Se o usuário selecionou uma instância específica
+  // 1. Se o usuário selecionou uma instância específica ativa
   if (selectedEvolutionInstanceId) {
     const selectedInstance = instances.find((instance) => instance.id === selectedEvolutionInstanceId) || null;
     if (selectedInstance && selectedInstance.active !== false && selectedInstance.dispatch_webhook_url) {
@@ -317,10 +328,10 @@ export async function resolveCampaignDispatchSettings(clientId, campaign = {}) {
     }
   }
 
-  // Se há pelo menos uma instância ativa para esta empresa, usa automaticamente
+  // 2. Se há pelo menos uma instância ativa para esta empresa, usa a default ou a primeira ativa
   if (activeInstances.length > 0) {
-    const primaryInstance = activeInstances[0];
-    if (primaryInstance.dispatch_webhook_url) {
+    const primaryInstance = activeInstances.find((i) => i.is_default === true) || activeInstances[0];
+    if (primaryInstance && primaryInstance.dispatch_webhook_url) {
       return {
         webhookUrl: normalizeString(primaryInstance.dispatch_webhook_url),
         webhookToken: normalizeString(primaryInstance.dispatch_webhook_token) || null,
@@ -334,22 +345,21 @@ export async function resolveCampaignDispatchSettings(clientId, campaign = {}) {
     }
   }
 
-  // Fallback tenant n8n / env / padrão do sistema
+  // 3. Fallback estritamente para as configurações do próprio tenant (lead_client_n8n_settings / env do tenant)
   const tenantDispatch = await resolveDispatchWebhookSettings(clientId);
   const tenantWebhookUrl = normalizeString(tenantDispatch.webhookUrl);
   const tenantWebhookToken = normalizeString(tenantDispatch.webhookToken) || null;
   const cachedWebhookUrl = normalizeString(campaign.webhook_url);
   const cachedWebhookToken = normalizeString(campaign.webhook_token) || null;
-  const globalDefaultUrl = process.env.DISPATCH_WEBHOOK_URL || process.env.EVOLUTION_API_URL || "https://evolution.vexoia.com";
-  const webhookUrl = tenantWebhookUrl || cachedWebhookUrl || globalDefaultUrl;
-  const webhookToken = tenantWebhookUrl ? tenantWebhookToken : (cachedWebhookToken || process.env.EVOLUTION_API_KEY || null);
+  const webhookUrl = tenantWebhookUrl || cachedWebhookUrl || null;
+  const webhookToken = tenantWebhookUrl ? tenantWebhookToken : (cachedWebhookToken || null);
 
   return {
     ...tenantDispatch,
     webhookUrl,
     webhookToken,
-    source: tenantWebhookUrl ? tenantDispatch.source : (cachedWebhookUrl ? "campaign_cache" : "system_default"),
+    source: tenantWebhookUrl ? tenantDispatch.source : (cachedWebhookUrl ? "campaign_cache" : "tenant_settings_missing"),
     usingCachedCampaignSettings: !tenantWebhookUrl && !!cachedWebhookUrl,
-    tenantSettingsSource: tenantDispatch.source || "system_default",
+    tenantSettingsSource: tenantDispatch.source || "tenant_settings_missing",
   };
 }

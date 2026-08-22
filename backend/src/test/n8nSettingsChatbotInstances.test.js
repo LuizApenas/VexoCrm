@@ -19,6 +19,12 @@ function selectColumnsOf(functionName) {
   const start = source.indexOf(`export async function ${functionName}`);
   expect(start, `${functionName} nao encontrada`).toBeGreaterThan(-1);
   const slice = source.slice(start, start + 2500);
+  if (slice.includes("N8N_SETTINGS_SELECT_FIELDS") || functionName === "getLeadClientN8nSettings") {
+    const constMatch = source.match(/export const N8N_SETTINGS_SELECT_FIELDS\s*=\s*"([^"]+)";/);
+    if (constMatch) {
+      return constMatch[1].split(",").map((c) => c.trim());
+    }
+  }
   const match = slice.match(/\.select\(\s*(?:\/\/[^\n]*\n\s*)*"([^"]+)"/);
   expect(match, `select de ${functionName} nao encontrado`).toBeTruthy();
   return match[1].split(",").map((c) => c.trim());
