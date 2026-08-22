@@ -35,4 +35,22 @@ describe("generateCampaignTemplateVariants - fidelidade e fallback dinamico", ()
     const hasName = res.variants.some((v) => v.includes("{{nome}}"));
     expect(hasName).toBe(true);
   });
+
+  it("limpa o nucleo da mensagem e impede duplicacao de saudacoes e {{nome}}", async () => {
+    const baseText = "Ola, {{nome}}! Estou precisando falar com voce urgente!";
+    const res = await generateCampaignTemplateVariants({
+      baseText,
+      count: 6,
+      availableVariables: ["nome"],
+    });
+
+    expect(res.variants.length).toBeGreaterThanOrEqual(2);
+    for (const v of res.variants) {
+      expect(v).not.toMatch(/oi!?\s*olá/i);
+      expect(v).not.toMatch(/olá,?\s*ola/i);
+      // Nao duplica {{nome}}
+      const countNome = (v.match(/\{\{nome\}\}/g) || []).length;
+      expect(countNome).toBeLessThanOrEqual(1);
+    }
+  });
 });
