@@ -8,7 +8,17 @@ export function hasInternalPageAccess(access, page) {
   }
 
   const pagesToCheck = Array.isArray(page) ? page : [page];
-  const gdPages = ["geracao-digital", "implantacao-gd", "propostas-gd", "briefings-gd", "apresentacao-gd", "dashboard-gd"];
+  const gdPages = [
+    "geracao-digital",
+    "implantacao-gd",
+    "propostas-gd",
+    "briefings-gd",
+    "apresentacao-gd",
+    "dashboard-gd",
+    "contratos-gd",
+    "pacotes-gd",
+    "condicoes-gd",
+  ];
 
   const isGdPage = pagesToCheck.some((p) => gdPages.includes(p));
   if (isGdPage) {

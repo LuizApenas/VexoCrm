@@ -109,3 +109,58 @@ describe("base universal do plano modular", () => {
     expect(MODULE_CATALOG.some((m) => m.id === "banco-de-dados")).toBe(true);
   });
 });
+
+import { deriveTenantInternalPages, INTERNAL_PAGE_KEYS } from "../access/claims.js";
+import { hasInternalPageAccess } from "../accessGuards.js";
+
+describe("comportamento de derivacao de permissoes e isolamento", () => {
+  it("AVAILABLE_CUSTOM_MODULES do backend contem todos os 11 modulos incluindo banco-de-dados", async () => {
+    const { AVAILABLE_CUSTOM_MODULES } = await import("../access/permissionsRegistry.js");
+    expect(AVAILABLE_CUSTOM_MODULES.map((m) => m.id)).toContain("banco-de-dados");
+    expect(AVAILABLE_CUSTOM_MODULES.length).toBe(11);
+  });
+
+  it("INTERNAL_PAGE_KEYS contem as 36 chaves de pagina incluindo as 4 chaves -gd", () => {
+    expect(INTERNAL_PAGE_KEYS).toContain("propostas-gd");
+    expect(INTERNAL_PAGE_KEYS).toContain("contratos-gd");
+    expect(INTERNAL_PAGE_KEYS).toContain("pacotes-gd");
+    expect(INTERNAL_PAGE_KEYS).toContain("condicoes-gd");
+    expect(INTERNAL_PAGE_KEYS).toContain("banco-de-dados");
+  });
+
+  it("tenant modular COM 'banco-de-dados' contratado recebe a pagina nas permissoes efetivas", () => {
+    const tenantComBanco = {
+      id: "teste-com-banco",
+      plan_tier: "modular",
+      modulos_avulsos: ["banco-de-dados"],
+    };
+    const pages = deriveTenantInternalPages(tenantComBanco);
+    expect(pages).toContain("banco-de-dados");
+    expect(pages).toContain("dashboard");
+    expect(pages).toContain("leads");
+  });
+
+  it("tenant modular SEM 'banco-de-dados' contratado NAO recebe a pagina", () => {
+    const tenantSemBanco = {
+      id: "teste-sem-banco",
+      plan_tier: "modular",
+      modulos_avulsos: ["disparador_campanhas"],
+    };
+    const pages = deriveTenantInternalPages(tenantSemBanco);
+    expect(pages).not.toContain("banco-de-dados");
+    expect(pages).toContain("campanhas");
+  });
+
+  it("usuario com role 'client' NUNCA acessa paginas -gd nem paginas internas", () => {
+    const clientAccess = {
+      role: "client",
+      allowedViews: ["dashboard", "leads"],
+      internalPages: [],
+    };
+    expect(hasInternalPageAccess(clientAccess, "propostas-gd")).toBe(false);
+    expect(hasInternalPageAccess(clientAccess, "contratos-gd")).toBe(false);
+    expect(hasInternalPageAccess(clientAccess, "pacotes-gd")).toBe(false);
+    expect(hasInternalPageAccess(clientAccess, "condicoes-gd")).toBe(false);
+  });
+});
+

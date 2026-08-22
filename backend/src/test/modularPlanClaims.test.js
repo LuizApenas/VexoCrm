@@ -3,8 +3,8 @@ import { deriveTenantInternalPages, INTERNAL_PAGE_KEYS } from "../access/claims.
 import { AVAILABLE_CUSTOM_MODULES, deriveEffectivePermissions } from "../access/permissionsRegistry.js";
 
 describe("Modular Plan Claims & Gating", () => {
-  it("exports all 10 canonical custom modules in registry", () => {
-    expect(AVAILABLE_CUSTOM_MODULES).toHaveLength(10);
+  it("exports all 11 canonical custom modules in registry", () => {
+    expect(AVAILABLE_CUSTOM_MODULES).toHaveLength(11);
     const ids = AVAILABLE_CUSTOM_MODULES.map((m) => m.id);
     expect(ids).toContain("disparador_campanhas");
     expect(ids).toContain("agente_inbound");
@@ -16,6 +16,7 @@ describe("Modular Plan Claims & Gating", () => {
     expect(ids).toContain("origem_leads");
     expect(ids).toContain("antiban_groq");
     expect(ids).toContain("relatorios");
+    expect(ids).toContain("banco-de-dados");
   });
 
   it("includes banco-de-dados in INTERNAL_PAGE_KEYS", () => {

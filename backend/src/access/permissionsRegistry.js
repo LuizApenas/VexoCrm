@@ -95,6 +95,14 @@ export const AVAILABLE_CUSTOM_MODULES = [
     pages: ["relatorios", "inteligencia-comercial"],
     views: [],
   },
+  {
+    id: "banco-de-dados",
+    featureKey: "banco-de-dados",
+    label: "Banco de Dados Inteligente",
+    desc: "Base de leads própria: importação, extração do WhatsApp, exportação e edição em massa",
+    pages: ["banco-de-dados"],
+    views: [],
+  },
 ];
 
 export const PERMISSION_CATEGORIES = [
