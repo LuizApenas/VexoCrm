@@ -10,57 +10,43 @@
 // recebe), ou concede um que a tela nao oferece. Este teste falha no dia em que
 // alguem mexer num sem mexer no outro.
 
-import { readFileSync } from "fs";
-import { resolve } from "path";
 import { describe, expect, it } from "vitest";
-import { MODULE_CATALOG, MODULAR_BASE_PAGES, pagesForContractedModules } from "../access/permissionsRegistry.js";
+import {
+  MODULE_CATALOG,
+  MODULAR_BASE_PAGES,
+  AVAILABLE_CUSTOM_MODULES as BACKEND_CUSTOM_MODULES,
+  pagesForContractedModules,
+} from "../access/permissionsRegistry.js";
+import { AVAILABLE_CUSTOM_MODULES as FRONTEND_CUSTOM_MODULES } from "../../../frontend/src/lib/planTier.ts";
+import { INTERNAL_PAGE_ORDER as FRONTEND_INTERNAL_PAGE_ORDER } from "../../../frontend/src/lib/access.ts";
 
-// Le o catalogo do frontend do fonte: o backend nao importa TS.
-function catalogoDoFrontend() {
-  const src = readFileSync(
-    resolve("../frontend/src/lib/planTier.ts"),
-    "utf8"
-  );
-  const bloco = src.slice(
-    src.indexOf("export const AVAILABLE_CUSTOM_MODULES"),
-    src.indexOf("] as const;", src.indexOf("export const AVAILABLE_CUSTOM_MODULES"))
-  );
-
-  const modulos = [];
-  for (const linha of bloco.split("\n")) {
-    const id = linha.match(/\bid:\s*"([^"]+)"/);
-    if (!id) continue;
-    const pagesRaw = linha.match(/\bpages:\s*\[([^\]]*)\]/);
-    const pages = pagesRaw
-      ? pagesRaw[1].split(",").map((p) => p.trim().replace(/^"|"$/g, "")).filter(Boolean)
-      : [];
-    modulos.push({ id: id[1], pages });
-  }
-  return modulos;
-}
-
-const frontend = catalogoDoFrontend();
-
-describe("os dois catalogos descrevem os mesmos modulos", () => {
-  it("o frontend foi lido (guarda contra teste vazio que passa a toa)", () => {
-    expect(frontend.length).toBeGreaterThan(5);
-  });
-
-  it("mesmos ids, na mesma quantidade", () => {
-    const noBackend = MODULE_CATALOG.map((m) => m.id).sort();
-    const noFrontend = frontend.map((m) => m.id).sort();
-    expect(noFrontend).toEqual(noBackend);
+describe("os dois catalogos descrevem os mesmos modulos (em memoria)", () => {
+  it("mesmos ids de modulos, na mesma quantidade exata", () => {
+    const backendIds = BACKEND_CUSTOM_MODULES.map((m) => m.id).sort();
+    const frontendIds = FRONTEND_CUSTOM_MODULES.map((m) => m.id).sort();
+    expect(backendIds).toEqual(frontendIds);
+    expect(backendIds).toContain("banco-de-dados");
+    expect(backendIds).toHaveLength(11);
   });
 
   it("cada modulo libera as MESMAS paginas nos dois lados", () => {
-    for (const doFrontend of frontend) {
-      const doBackend = MODULE_CATALOG.find((m) => m.id === doFrontend.id);
+    for (const doFrontend of FRONTEND_CUSTOM_MODULES) {
+      const doBackend = BACKEND_CUSTOM_MODULES.find((m) => m.id === doFrontend.id);
       expect(doBackend, `${doFrontend.id} nao existe no backend`).toBeTruthy();
       expect(
         [...doFrontend.pages].sort(),
         `paginas de ${doFrontend.id} divergem entre backend e frontend`
       ).toEqual([...doBackend.pages].sort());
     }
+  });
+
+  it("INTERNAL_PAGE_KEYS do backend e INTERNAL_PAGE_ORDER do frontend possuem exatamente o mesmo conjunto", async () => {
+    const { INTERNAL_PAGE_KEYS } = await import("../access/claims.js");
+    const backendSet = new Set(INTERNAL_PAGE_KEYS);
+    const frontendSet = new Set(FRONTEND_INTERNAL_PAGE_ORDER);
+
+    expect([...backendSet].sort()).toEqual([...frontendSet].sort());
+    expect(backendSet.size).toBe(36);
   });
 });
 
