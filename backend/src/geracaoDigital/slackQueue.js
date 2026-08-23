@@ -31,4 +31,17 @@ export function getSlackQueue() {
   return _queue;
 }
 
+export async function closeSlackQueue() {
+  if (_queue) {
+    try {
+      await _queue.close();
+      console.info("[gd-slack-setup] Fila encerrada.");
+    } catch (err) {
+      console.warn("[gd-slack-setup] Erro ao encerrar fila:", err.message || err);
+    } finally {
+      _queue = null;
+    }
+  }
+}
+
 export { QUEUE_NAME, getRedisConnection };

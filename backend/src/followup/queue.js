@@ -42,4 +42,17 @@ export function getFollowupQueue() {
   return _queue;
 }
 
+export async function closeFollowupQueue() {
+  if (_queue) {
+    try {
+      await _queue.close();
+      console.info("[followup/queue] Fila encerrada.");
+    } catch (err) {
+      console.warn("[followup/queue] Erro ao encerrar fila:", err.message || err);
+    } finally {
+      _queue = null;
+    }
+  }
+}
+
 export { QUEUE_NAME, getRedisConnection };

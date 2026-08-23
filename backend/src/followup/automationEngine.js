@@ -465,9 +465,22 @@ export function triggerAutomationRun() {
   return { started: true };
 }
 
+let cronTask = null;
+
+export function stopAutomationEngine() {
+  if (cronTask) {
+    cronTask.stop();
+    cronTask = null;
+    console.info("[followup/engine] Motor proativo parado.");
+  }
+}
+
 export function startAutomationEngine() {
+  if (cronTask) {
+    cronTask.stop();
+  }
   // Executar a cada hora
-  cron.schedule("0 * * * *", () => {
+  cronTask = cron.schedule("0 * * * *", () => {
     if (engineRunning) return;
     engineRunning = true;
     runAutomationEngine(false)
@@ -475,5 +488,5 @@ export function startAutomationEngine() {
       .finally(() => { engineRunning = false; });
   });
   console.info("[followup/engine] Motor proativo agendado (a cada 1h)");
-  return { runNow: triggerAutomationRun };
+  return { runNow: triggerAutomationRun, stop: stopAutomationEngine };
 }

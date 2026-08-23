@@ -48,6 +48,16 @@ import {
 let _evolutionDailyUsageSchemaEnsured = false;
 let _dispatchRunsClaimSchemaEnsured = false;
 let _dueDispatchTimerStarted = false;
+let _dueDispatchInterval = null;
+
+export function stopDueDispatchScheduler() {
+  if (_dueDispatchInterval) {
+    clearInterval(_dueDispatchInterval);
+    _dueDispatchInterval = null;
+    _dueDispatchTimerStarted = false;
+    console.log("[campaign-dispatch-scheduler] scheduler de disparos avulsos parado.");
+  }
+}
 
 // Origem dos leads de uma campanha. Uma campanha pode apontar para varias
 // planilhas importadas: a lista fica em analytics_meta.importIds (jsonb), e a
@@ -1398,13 +1408,14 @@ export function registerCampaignsRoutes(app, deps) {
   // Native interval scheduler for scheduled independent dispatches
   if (!_dueDispatchTimerStarted) {
     _dueDispatchTimerStarted = true;
-    setInterval(async () => {
+    _dueDispatchInterval = setInterval(async () => {
       try {
         await runDueIndependentDispatches({ limit: 10 });
       } catch (err) {
         console.error("[campaign-dispatch-scheduler] background tick failed:", err);
       }
     }, 30000); // ticks every 30 seconds
+    if (_dueDispatchInterval?.unref) _dueDispatchInterval.unref();
   }
 
   // POST /api/campaigns/run-due is used by cron/n8n to execute due scheduled campaigns.

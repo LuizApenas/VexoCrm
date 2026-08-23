@@ -287,5 +287,32 @@ export function startSlackWorker() {
   });
 
   console.info(`[gd-setup] Worker BullMQ iniciado — fila: ${QUEUE_NAME}`);
+  _worker = worker;
   return worker;
+}
+
+let _worker = null;
+
+export async function pauseSlackWorker() {
+  if (_worker) {
+    try {
+      await _worker.pause();
+      console.info("[gd-setup] Worker pausado (não aceita novos jobs).");
+    } catch (err) {
+      console.warn("[gd-setup] Erro ao pausar worker:", err.message || err);
+    }
+  }
+}
+
+export async function stopSlackWorker() {
+  if (_worker) {
+    try {
+      await _worker.close();
+      console.info("[gd-setup] Worker encerrado.");
+    } catch (err) {
+      console.warn("[gd-setup] Erro ao encerrar worker:", err.message || err);
+    } finally {
+      _worker = null;
+    }
+  }
 }

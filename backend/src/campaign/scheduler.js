@@ -115,18 +115,39 @@ export async function tickCampaignScheduler() {
   }
 }
 
+let initialTimeout = null;
+let intervalTimer = null;
+
+export function stopCampaignScheduler() {
+  if (initialTimeout) {
+    clearTimeout(initialTimeout);
+    initialTimeout = null;
+  }
+  if (intervalTimer) {
+    clearInterval(intervalTimer);
+    intervalTimer = null;
+  }
+  console.log("[campaign-scheduler] scheduler parado.");
+}
+
 export function startCampaignScheduler() {
   if (!shouldStartCampaignScheduler()) {
     console.log("[campaign-scheduler] disabled by CAMPAIGN_SCHEDULER_ENABLED=false");
     return;
   }
 
+  // Se já houver timers ativos, encerra antes de reiniciar
+  stopCampaignScheduler();
+
   const intervalMs = getCampaignRunnerIntervalMs();
   console.log(`[campaign-scheduler] enabled; checking due campaigns every ${intervalMs}ms`);
-  setTimeout(() => {
+  initialTimeout = setTimeout(() => {
     void tickCampaignScheduler();
   }, 15_000);
-  setInterval(() => {
+  if (initialTimeout?.unref) initialTimeout.unref();
+
+  intervalTimer = setInterval(() => {
     void tickCampaignScheduler();
   }, intervalMs);
+  if (intervalTimer?.unref) intervalTimer.unref();
 }

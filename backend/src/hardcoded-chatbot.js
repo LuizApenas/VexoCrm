@@ -35,6 +35,23 @@ export async function initializeRedisChat() {
   console.info("[redis-chat] ✅ Sistema pronto - Redis lazy loading ativado");
 }
 
+export async function closeRedisChat() {
+  if (redisClient) {
+    try {
+      if (typeof redisClient.quit === "function") {
+        await redisClient.quit();
+      } else if (typeof redisClient.disconnect === "function") {
+        await redisClient.disconnect();
+      }
+    } catch (err) {
+      console.warn("[redis-chat] Erro ao encerrar Redis:", err.message || err);
+    } finally {
+      redisClient = null;
+    }
+    console.info("[redis-chat] Conexão Redis encerrada.");
+  }
+}
+
 // Função para recuperar memória do PostgreSQL (fallback quando Redis não está disponível)
 let supabaseClientRef = null;
 export function setSupabaseClient(supabase) {

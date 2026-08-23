@@ -256,5 +256,32 @@ export function startFollowupWorker() {
   );
 
   console.info("[followup/worker] Worker BullMQ iniciado — fila:", QUEUE_NAME);
+  _worker = worker;
   return worker;
+}
+
+let _worker = null;
+
+export async function pauseFollowupWorker() {
+  if (_worker) {
+    try {
+      await _worker.pause();
+      console.info("[followup/worker] Worker pausado (não aceita novos jobs).");
+    } catch (err) {
+      console.warn("[followup/worker] Erro ao pausar worker:", err.message || err);
+    }
+  }
+}
+
+export async function stopFollowupWorker() {
+  if (_worker) {
+    try {
+      await _worker.close();
+      console.info("[followup/worker] Worker encerrado.");
+    } catch (err) {
+      console.warn("[followup/worker] Erro ao encerrar worker:", err.message || err);
+    } finally {
+      _worker = null;
+    }
+  }
 }

@@ -75,7 +75,7 @@ import {
   hasUserPermission,
 } from "./userAccessScope.js";
 import { whatsappSessionManager } from "./whatsapp.js";
-import { initializeRedisChat, getChatMemory, setSupabaseClient } from "./hardcoded-chatbot.js";
+import { initializeRedisChat, getChatMemory, setSupabaseClient, closeRedisChat } from "./hardcoded-chatbot.js";
 import {
   bufferMessage,
   resolveMessageContent,
@@ -87,9 +87,12 @@ import { routeDeps } from "./http/routeDeps.js";
 import { registerAllDomainRoutes } from "./domains/registerAllDomainRoutes.js";
 import { registerEventosRoutes } from "./domains/eventos/routes.js";
 import { registerWebhooksRoutes } from "./webhooks/routes.js";
-import { startFollowupWorker } from "./followup/worker.js";
-import { startSlackWorker } from "./geracaoDigital/slackWorker.js";
-import { startAutomationEngine } from "./followup/automationEngine.js";
+import { startFollowupWorker, pauseFollowupWorker, stopFollowupWorker } from "./followup/worker.js";
+import { startSlackWorker, pauseSlackWorker, stopSlackWorker } from "./geracaoDigital/slackWorker.js";
+import { startAutomationEngine, stopAutomationEngine } from "./followup/automationEngine.js";
+import { closeFollowupQueue } from "./followup/queue.js";
+import { closeSlackQueue } from "./geracaoDigital/slackQueue.js";
+import { stopDueDispatchScheduler } from "./domains/campaigns/routes.js";
 // getSegmentationCatalog, normalizeSegmentationCatalog, isFilterShape, normalizeFilters,
 // leadMatchesSegmentation, buildDefaultSegmentationConfig, sanitizeSegmentationConfig ficaram
 // sem consumidor em server.js apos a extracao do grupo D (Onda 3, Run E) -- import de
@@ -300,6 +303,7 @@ import {
   runDueCampaignDispatches,
   tickCampaignScheduler,
   startCampaignScheduler,
+  stopCampaignScheduler,
 } from "./campaign/scheduler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -834,38 +838,122 @@ function listenWithRetry(attempt = 1) {
   });
 }
 
-// (B) Shutdown gracioso: fecha o servidor HTTP (libera a porta RÁPIDO), encerra o pool
-// pg, e sai com 0. Timeout de força garante que nunca fique pendurado segurando :PORT.
+// (B) Shutdown gracioso ordenado:
+// 1. Parar de aceitar trabalho novo (schedulers, crons, workers BullMQ pausados)
+// 2. Fechar HTTP server + derrubar sockets ociosos (closeIdleConnections)
+// 3. Aguardar requisições em voo (com prazo de segurança antes de closeAllConnections)
+// 4. Fechar workers BullMQ, filas BullMQ, Redis e pool Postgres
+// 5. Sair com código 0
 let shuttingDown = false;
-function gracefulShutdown(signal) {
+async function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
+  const shutdownStart = Date.now();
   console.log(`[server] ${signal} recebido — iniciando shutdown gracioso...`);
 
   const forceTimer = setTimeout(() => {
-    console.error(`[server] shutdown excedeu ${SHUTDOWN_FORCE_MS}ms — forçando saída.`);
+    const elapsed = Date.now() - shutdownStart;
+    console.error(`[server] shutdown excedeu ${SHUTDOWN_FORCE_MS}ms (${elapsed}ms decorridos) — forçando saída.`);
     process.exit(0);
   }, SHUTDOWN_FORCE_MS);
   forceTimer.unref();
 
-  const finish = () => {
-    Promise.resolve(shutdownPgPool())
-      .catch(() => {})
-      .finally(() => {
-        console.log("[server] shutdown concluído.");
-        clearTimeout(forceTimer);
-        process.exit(0);
-      });
-  };
+  try {
+    // ── ETAPA 1: Parar de aceitar trabalho novo ───────────────────────────
+    const t1 = Date.now();
+    try {
+      stopCampaignScheduler();
+      stopDueDispatchScheduler();
+      stopAutomationEngine();
+      await Promise.allSettled([
+        pauseFollowupWorker(),
+        pauseSlackWorker(),
+      ]);
+      console.log(`[server] [etapa 1/4] novos trabalhos pausados e schedulers encerrados (${Date.now() - t1}ms).`);
+    } catch (err) {
+      console.warn(`[server] [etapa 1/4] erro ao pausar novos trabalhos (${Date.now() - t1}ms):`, err?.message || err);
+    }
 
-  if (httpServer) {
-    httpServer.close((err) => {
-      if (err) console.error("[server] erro ao fechar HTTP server:", err.message || err);
-      else console.log("[server] HTTP server fechado (porta liberada).");
-      finish();
-    });
-  } else {
-    finish();
+    // ── ETAPA 2 & 3: Fechar HTTP server e aguardar requisições em voo ─────
+    const t2 = Date.now();
+    if (httpServer) {
+      // 2. Derruba sockets keep-alive ociosos imediatamente, mantendo requisições ativas
+      if (typeof httpServer.closeIdleConnections === "function") {
+        httpServer.closeIdleConnections();
+      }
+
+      await new Promise((resolve) => {
+        let isDone = false;
+        const done = () => {
+          if (!isDone) {
+            isDone = true;
+            console.log(`[server] HTTP server fechado (porta liberada) (${Date.now() - t2}ms).`);
+            resolve();
+          }
+        };
+
+        // 3. Prazo de até 4000ms para requisições em voo antes de forçar o fechamento de sockets restantes
+        const inFlightTimeout = setTimeout(() => {
+          if (!isDone) {
+            console.warn(`[server] [etapa 2/4] prazo de requisições em voo esgotado (${Date.now() - t2}ms) — encerrando sockets restantes.`);
+            if (typeof httpServer.closeAllConnections === "function") {
+              httpServer.closeAllConnections();
+            }
+          }
+        }, 4000);
+        inFlightTimeout.unref();
+
+        httpServer.close((err) => {
+          clearTimeout(inFlightTimeout);
+          if (err) console.error("[server] erro ao fechar HTTP server:", err.message || err);
+          done();
+        });
+      });
+    }
+
+    // ── ETAPA 4: Fechar workers BullMQ, filas BullMQ, conexões Redis e pool Postgres ──
+    const t4 = Date.now();
+    try {
+      // 4a. Workers BullMQ (close)
+      const tw = Date.now();
+      await Promise.allSettled([
+        stopFollowupWorker(),
+        stopSlackWorker(),
+      ]);
+      console.log(`[server] [etapa 4a/4] workers BullMQ fechados (${Date.now() - tw}ms).`);
+
+      // 4b. Filas BullMQ (close)
+      const tq = Date.now();
+      await Promise.allSettled([
+        closeFollowupQueue(),
+        closeSlackQueue(),
+      ]);
+      console.log(`[server] [etapa 4b/4] filas BullMQ fechadas (${Date.now() - tq}ms).`);
+
+      // 4c. Redis (quit)
+      const tr = Date.now();
+      await Promise.allSettled([
+        closeRedisChat(),
+      ]);
+      console.log(`[server] [etapa 4c/4] conexões Redis encerradas (${Date.now() - tr}ms).`);
+
+      // 4d. Pool Postgres
+      const tp = Date.now();
+      await shutdownPgPool();
+      console.log(`[server] [etapa 4d/4] pool Postgres encerrado (${Date.now() - tp}ms).`);
+    } catch (err) {
+      console.warn(`[server] [etapa 4/4] erro durante encerramento de infraestrutura (${Date.now() - t4}ms):`, err?.message || err);
+    }
+
+    // ── ETAPA 5: Sair limpo ───────────────────────────────────────────────
+    clearTimeout(forceTimer);
+    const totalElapsed = Date.now() - shutdownStart;
+    console.log(`[server] shutdown concluído em ${totalElapsed}ms.`);
+    process.exit(0);
+  } catch (fatalErr) {
+    console.error("[server] erro fatal durante shutdown gracioso:", fatalErr?.message || fatalErr);
+    clearTimeout(forceTimer);
+    process.exit(0);
   }
 }
 
