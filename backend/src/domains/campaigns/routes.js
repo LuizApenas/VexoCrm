@@ -1917,6 +1917,31 @@ export function registerCampaignsRoutes(app, deps) {
         client: { id: clientId, name: await getClientName(clientId) },
       },
       onLeadClaim: claimLead,
+      onStepDispatched: async ({ lead, phone, step, sentAt, instanceName, activeChip }) => {
+        try {
+          const chipName = activeChip?.instanceId || activeChip?.instanceName || instanceName || null;
+          await appendLeadMessage({
+            clientId,
+            campaignId: campaign.id,
+            leadId: lead?.id || null,
+            phone,
+            senderType: "bot",
+            direction: "outbound",
+            messageText: step.text || (step.type === "image" ? `[Imagem: ${step.image?.name || "anexo"}]` : ""),
+            deliveredAt: sentAt || new Date().toISOString(),
+            instanceName: chipName,
+            meta: {
+              source: "campaign_dispatch",
+              dispatchId,
+              stepId: step.id,
+              stepType: step.type,
+              stepOrder: step.order,
+            },
+          });
+        } catch (err) {
+          console.warn("[campaign-dispatch] falha ao gravar lead_messages do passo:", err?.message || err);
+        }
+      },
       onLeadFailed: async ({ lead, reason }) => {
         await finalizeLeadFailed({ lead, reason });
       },

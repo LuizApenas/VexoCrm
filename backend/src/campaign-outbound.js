@@ -892,6 +892,8 @@ export async function dispatchCampaignSequence({
               totalSteps: enabledSteps.length,
               sentAt,
               hasNextStep: stepIndex < enabledSteps.length - 1,
+              instanceName: activeChip?.instanceId || activeChip?.instanceName || context?.instanceName || null,
+              activeChip,
             });
           } catch (callbackError) {
             summary.warnings.push({

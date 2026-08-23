@@ -931,7 +931,16 @@ function hoursSince(isoDate) {
  * ATENCAO: o texto abaixo esta CHUMBADO no codigo. Nao e configuravel por
  * tenant nem por prompt, ao contrario do resto do atendimento. Ver relatorio.
  */
-async function responderPrimeiroRecontato({ supabase, leadsTable, clientId, phone, existing, dadosAntigos, tenantSettings = null }) {
+async function responderPrimeiroRecontato({
+  supabase,
+  leadsTable,
+  clientId,
+  phone,
+  existing,
+  dadosAntigos,
+  tenantSettings = null,
+  instanceName = null,
+}) {
   const horario = dadosAntigos.melhor_horario || null;
   const interesse = dadosAntigos.interesse || null;
 
@@ -977,6 +986,30 @@ async function responderPrimeiroRecontato({ supabase, leadsTable, clientId, phon
     });
   }
 
+  // Salvar resposta de recontato em lead_messages (com delivered_at e instance_name para o Inbox)
+  const now = new Date().toISOString();
+  try {
+    const tableRef = supabase?.from ? supabase.from("lead_messages") : null;
+    if (tableRef && typeof tableRef.insert === "function") {
+      tableRef.insert([{
+        client_id: clientId,
+        phone,
+        sender_type: "bot",
+        direction: "outbound",
+        message_text: msgRecontato,
+        delivered_at: now,
+        created_at: now,
+        instance_name: instanceName || null,
+      }]).then(({ error }) => {
+        if (error) console.warn("[chatbot-ai] lead_messages recontact insert error:", error.message);
+      }).catch((err) => {
+        console.warn("[chatbot-ai] lead_messages recontact insert error:", err?.message || err);
+      });
+    }
+  } catch (err) {
+    console.warn("[chatbot-ai] lead_messages recontact insert error:", err?.message || err);
+  }
+
   return {
     mensagem: msgRecontato,
     status_conversa: "finalizado",
@@ -987,7 +1020,19 @@ async function responderPrimeiroRecontato({ supabase, leadsTable, clientId, phon
   };
 }
 
-export async function processBatch({ clientId, phone, messages, supabase, model, promptType: promptTypeOverride = null, campaignPromptId = null, llmModel = null, inboundPrompt = null, inboundSpinInstruction = "" }) {
+export async function processBatch({
+  clientId,
+  phone,
+  messages,
+  supabase,
+  model,
+  promptType: promptTypeOverride = null,
+  campaignPromptId = null,
+  llmModel = null,
+  inboundPrompt = null,
+  inboundSpinInstruction = "",
+  instanceName = null,
+}) {
   if (!model) {
     console.error("[chatbot-ai] model não configurado para cliente — chatbot silenciado", { clientId });
     return null;
@@ -1072,6 +1117,7 @@ export async function processBatch({ clientId, phone, messages, supabase, model,
         existing,
         dadosAntigos,
         tenantSettings,
+        instanceName,
       });
     }
   }
@@ -1193,12 +1239,39 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
   // (as colunas lead_phone/role/content da migration 20260516 nunca aplicaram).
   // Convenção canônica do projeto (appendLeadMessage): lead=inbound, bot=outbound.
   const leadMsgs = [
-    { client_id: clientId, phone, sender_type: "lead", direction: "inbound", message_text: combinedText, created_at: now },
-    { client_id: clientId, phone, sender_type: "bot", direction: "outbound", message_text: aiResponse.mensagem, created_at: now },
+    {
+      client_id: clientId,
+      phone,
+      sender_type: "lead",
+      direction: "inbound",
+      message_text: combinedText,
+      delivered_at: now,
+      created_at: now,
+      instance_name: instanceName || null,
+    },
+    {
+      client_id: clientId,
+      phone,
+      sender_type: "bot",
+      direction: "outbound",
+      message_text: aiResponse.mensagem,
+      delivered_at: now,
+      created_at: now,
+      instance_name: instanceName || null,
+    },
   ];
-  supabase.from("lead_messages").insert(leadMsgs).then(({ error }) => {
-    if (error) console.warn("[chatbot-ai] lead_messages insert error:", error.message);
-  });
+  try {
+    const tableRef = supabase?.from ? supabase.from("lead_messages") : null;
+    if (tableRef && typeof tableRef.insert === "function") {
+      tableRef.insert(leadMsgs).then(({ error }) => {
+        if (error) console.warn("[chatbot-ai] lead_messages insert error:", error.message);
+      }).catch((err) => {
+        console.warn("[chatbot-ai] lead_messages insert error:", err?.message || err);
+      });
+    }
+  } catch (err) {
+    console.warn("[chatbot-ai] lead_messages insert error:", err?.message || err);
+  }
 
   // Inclui histórico completo no retorno para o caller usar no briefing SDR
   // sem precisar rebuscar no banco (evita round-trip extra na finalização)

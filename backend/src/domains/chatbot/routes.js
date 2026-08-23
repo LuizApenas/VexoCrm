@@ -1494,6 +1494,7 @@ export function registerChatbotRoutes(app, deps) {
             llmModel: inboundConfig?.model || null,
             inboundPrompt: inboundConfig?.prompt || null,
             inboundSpinInstruction: inboundConfig ? buildSpinInstruction(inboundConfig.spinFields) : "",
+            instanceName,
           });
 
           if (!aiResponse?.mensagem) return;
@@ -1829,6 +1830,7 @@ export function registerChatbotRoutes(app, deps) {
         llmModel: inboundConfig?.model || null,
         inboundPrompt: inboundConfig?.prompt || null,
         inboundSpinInstruction: inboundConfig ? buildSpinInstruction(inboundConfig.spinFields) : "",
+        instanceName,
       });
 
       if (!aiResponse?.mensagem) {

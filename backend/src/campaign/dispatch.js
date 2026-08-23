@@ -43,6 +43,14 @@ import {
   logCampaignReplyFlow,
   resolveEnvCampaignQualificationWebhookSettings,
 } from "./settings.js";
+import { createLeadMessaging } from "../domains/shared/leadMessaging.js";
+
+const { appendLeadMessage } = createLeadMessaging({
+  supabase,
+  normalizeString,
+  leadsTableName,
+  isMissingSchemaError,
+});
 
 // ---- dispatch ----
 
@@ -1647,7 +1655,7 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
       },
       client: { id: clientId, name: await getClientName(clientId) },
     },
-    onStepDispatched: async ({ step, stepIndex, sentAt }) => {
+    onStepDispatched: async ({ step, stepIndex, sentAt, instanceName, activeChip }) => {
       const originalStepIndex = nextStepIndex + stepIndex;
       lastDispatchedStep = step;
       lastDispatchedOriginalIndex = originalStepIndex;
@@ -1660,6 +1668,30 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
         stepType: step.type,
         originalStepIndex,
       });
+
+      try {
+        const chipName = activeChip?.instanceId || activeChip?.instanceName || instanceName || dispatchSettings?.instanceName || null;
+        await appendLeadMessage({
+          clientId,
+          campaignId: campaign.id,
+          leadId: leadImportItem?.id || null,
+          phone,
+          senderType: "bot",
+          direction: "outbound",
+          messageText: step.text || (step.type === "image" ? `[Imagem: ${step.image?.name || "anexo"}]` : ""),
+          deliveredAt: sentAt || new Date().toISOString(),
+          instanceName: chipName,
+          meta: {
+            source: "campaign_reply_progression",
+            stepId: step.id,
+            stepType: step.type,
+            stepOrder: step.order ?? originalStepIndex + 1,
+          },
+        });
+      } catch (err) {
+        console.warn("[campaign-reply] falha ao gravar lead_messages do passo:", err?.message || err);
+      }
+
       if (leadImportItem?.id) {
         await updateLeadImportItemCampaignProgress({
           clientId,
