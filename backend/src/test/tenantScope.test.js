@@ -73,3 +73,50 @@ describe("tenant scope enforcement", () => {
     );
   });
 });
+
+import { resolveAuthorizedClientId } from "../services/tenant.js";
+
+describe("resolveAuthorizedClientId measurement fallback", () => {
+  it("logs [tenant-default] and returns geracao-digital when admin does not supply clientId", () => {
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const req = {
+      method: "GET",
+      originalUrl: "/api/leads",
+      authAccess: {
+        role: "internal",
+        isAdmin: true,
+        clientId: null,
+      },
+    };
+    const res = makeResponse();
+
+    const clientId = resolveAuthorizedClientId(req, res, null);
+
+    expect(clientId).toBe("geracao-digital");
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[tenant-default] rota=GET /api/leads credencial=admin assumedClientId=geracao-digital")
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it("does not log [tenant-default] when requestedClientId is explicitly provided", () => {
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const req = {
+      method: "POST",
+      originalUrl: "/api/campaigns",
+      authAccess: {
+        role: "internal",
+        isAdmin: true,
+        clientId: null,
+      },
+    };
+    const res = makeResponse();
+
+    const clientId = resolveAuthorizedClientId(req, res, "tenant-custom");
+
+    expect(clientId).toBe("tenant-custom");
+    expect(consoleSpy).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+});
+

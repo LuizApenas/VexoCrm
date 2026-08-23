@@ -107,7 +107,27 @@ export function resolveAuthorizedClientId(req, res, requestedClientId) {
   };
 
   if (authAccess.role === "superadmin" || authAccess.isAdmin) {
-    return requestedClientId || authAccess.clientId || "geracao-digital";
+    if (requestedClientId) {
+      return requestedClientId;
+    }
+    if (authAccess.clientId) {
+      return authAccess.clientId;
+    }
+
+    const rota = req?.originalUrl || req?.url || "desconhecida";
+    const metodo = req?.method || "UNKNOWN";
+    const tipoCredencial = authAccess.role === "superadmin"
+      ? "superadmin"
+      : authAccess.isAdmin
+        ? "admin"
+        : (req?.authAccess ? "interno" : "sem_auth");
+    const assumido = "geracao-digital";
+
+    console.warn(
+      `[tenant-default] rota=${metodo} ${rota} credencial=${tipoCredencial} assumedClientId=${assumido}`
+    );
+
+    return assumido;
   }
 
   const clientIds = authAccess.clientIds || [];
