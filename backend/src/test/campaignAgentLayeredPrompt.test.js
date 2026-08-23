@@ -321,6 +321,96 @@ describe("Composição em Camadas: Roteiro da Campanha + Agente de Qualificaçã
     }
   });
 
+  it("TESTE DE ACEITE: campanha manda 'Você gostou? 1. Sim 2. Não' e lead responde '1'", async () => {
+    let capturedSystemPrompt = null;
+    let capturedMessages = [];
+
+    const promptCampanhaDiagnostico = `OFERTA: Diagnóstico gratuito de processos de vendas para identificar vazamento de clientes e oportunidades.
+Condição exclusiva para empresas que querem estruturar o time comercial.`;
+
+    const mockSupabase = buildMockSupabase({
+      campaignPrompt: promptCampanhaDiagnostico,
+      leadRow: {
+        id: "lead-diagnostico-1",
+        dados: {},
+        historico: [
+          { role: "assistant", content: "Olá! Preparamos um diagnóstico gratuito para a sua empresa. Você gostou da proposta?\n1. Sim\n2. Não" },
+        ],
+        status_conversa: "em_atendimento",
+        finalizado: false,
+        updated_at: new Date().toISOString(),
+      },
+    });
+
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockImplementation((url, options) => {
+      const body = JSON.parse(options.body);
+      const systemMsg = body.messages.find((m) => m.role === "system");
+      capturedSystemPrompt = systemMsg?.content || "";
+      capturedMessages = body.messages;
+
+      // Simulando a resposta gerada com as diretrizes do prompt:
+      // Reconhece o Sim + fala do diagnóstico + pergunta contextual na mesma frase
+      const respostaIA = "Que bom! O diagnóstico analisa de onde seus clientes estão vindo hoje e onde estão os gargalos. Hoje você já acompanha esses números de alguma forma ou é mais no feeling?";
+
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                mensagem: respostaIA,
+                status_conversa: "aguardando_usuario",
+                dados: { interesse: "diagnostico" },
+                classificacao: "MORNO",
+                finalizado: false,
+                spin_fase: "situacao",
+              }),
+            },
+          }],
+        }),
+      });
+    });
+
+    try {
+      const result = await processBatch({
+        clientId: CLIENT_ID,
+        phone: PHONE,
+        messages: [{ text: "1", type: "text" }],
+        supabase: mockSupabase,
+        model: "padrao",
+        promptType: "padrao",
+        campaignPromptId: "camp-diagnostico-uuid",
+      });
+
+      // 1. Validar que o prompt enviado à IA contém as diretrizes comportamentais e o exemplo
+      expect(capturedSystemPrompt).toContain("A OFERTA É O ASSUNTO CENTRAL");
+      expect(capturedSystemPrompt).toContain("NENHUMA PERGUNTA NASCE DO NADA");
+      expect(capturedSystemPrompt).toContain("UMA PERGUNTA POR VEZ E COM ENTREGA DE VALOR");
+      expect(capturedSystemPrompt).toContain("EXEMPLO CONCRETO DE COMPORTAMENTO:");
+      expect(capturedSystemPrompt).toContain("Diagnóstico gratuito de processos de vendas");
+
+      // 2. Validar a mensagem que foi gerada para o lead
+      const msg = result.mensagem;
+      expect(msg).toBeTruthy();
+
+      // Reconhece a concordância ("Que bom!", "Perfeito", etc.)
+      expect(msg.toLowerCase()).toMatch(/que bom|ótimo|perfeito|excelente/);
+
+      // Fala da oferta configurada (diagnóstico / clientes / gargalos)
+      expect(msg.toLowerCase()).toContain("diagnóstico");
+
+      // NÃO é a pergunta genérica e descontextualizada do SPIN puro
+      expect(msg).not.toContain("Qual é o seu segmento de atuação?");
+
+      // Contém no máximo UMA pergunta
+      const questionMarkCount = (msg.match(/\?/g) || []).length;
+      expect(questionMarkCount).toBeLessThanOrEqual(1);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it("Teste de Mutação: se o prompt da campanha substituísse o padrão, as regras de SPIN e finalização sumiriam", () => {
     const promptPadrao = PROMPT_PADRAO;
     const promptCampanha = PROMPT_CAMPANHA;
