@@ -122,6 +122,16 @@ export function requireInternalPageAccess(page) {
   return (req, res, next) => {
     const access = req.authAccess;
 
+    if (access?.error === "TENANT_SETTINGS_READ_FAILED") {
+      sendError(
+        res,
+        503,
+        "SERVICE_UNAVAILABLE",
+        "Instabilidade temporária ao verificar permissões de acesso. Por favor, tente novamente em instantes."
+      );
+      return;
+    }
+
     if (access?.role !== "internal") {
       sendError(res, 403, "FORBIDDEN", "Internal access required");
       return;
@@ -153,6 +163,16 @@ export function requireAnyInternalPageAccess(pages) {
   return (req, res, next) => {
     const access = req.authAccess;
 
+    if (access?.error === "TENANT_SETTINGS_READ_FAILED") {
+      sendError(
+        res,
+        503,
+        "SERVICE_UNAVAILABLE",
+        "Instabilidade temporária ao verificar permissões de acesso. Por favor, tente novamente em instantes."
+      );
+      return;
+    }
+
     if (access?.role !== "internal") {
       sendError(res, 403, "FORBIDDEN", "Internal access required");
       return;
@@ -175,6 +195,16 @@ export function requireAnyInternalPageAccess(pages) {
 export function requireAppViewAccess(view) {
   return (req, res, next) => {
     const access = req.authAccess;
+
+    if (access?.error === "TENANT_SETTINGS_READ_FAILED") {
+      sendError(
+        res,
+        503,
+        "SERVICE_UNAVAILABLE",
+        "Instabilidade temporária ao carregar a visualização. Por favor, tente novamente em instantes."
+      );
+      return;
+    }
 
     if (!access || access.role === "pending") {
       sendError(res, 403, "PENDING_APPROVAL", "Your account is waiting for approval");

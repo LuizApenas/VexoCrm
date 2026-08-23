@@ -149,17 +149,38 @@ describe("o gate nunca CONCEDE, so tira", () => {
   });
 });
 
-describe("falha de leitura no banco NEGA acesso por seguranca (fail-closed)", () => {
-  it("erro ao ler settings nega acesso a paginas internas em vez de liberar tudo", async () => {
-    // Simula erro de banco no mock
-    settingsPorTenant.set("tenant-com-erro", "__THROW__");
-    const antes = usuarioDoTenant("tenant-com-erro");
+describe("resiliencia a oscilacao de banco: uso da ultima leitura boa em cache", () => {
+  it("tenant essencial com leitura boa em cache + erro de banco na leitura seguinte continua acessando normalmente", async () => {
+    const TENANT = "tenant-essencial-resiliente";
+    // 1. Leitura bem-sucedida inicial
+    settingsPorTenant.set(TENANT, { plan_tier: "essencial", modulos_avulsos: [] });
+    const antes = usuarioDoTenant(TENANT);
+    const primeiro = await applyModularPlanGate(antes);
+    expect(primeiro.internalPages).toEqual(TODAS);
+    expect(passouNoGuard(primeiro, "campanhas").passou).toBe(true);
+
+    // 2. Banco oscila e passa a lancar erro
+    settingsPorTenant.set(TENANT, "__THROW__");
+
+    // 3. O gate deve utilizar a ultima leitura boa em cache e manter o acesso liberado
+    const segundo = await applyModularPlanGate(antes);
+    expect(segundo.internalPages).toEqual(TODAS);
+    expect(segundo.error).toBeUndefined();
+    expect(passouNoGuard(segundo, "campanhas").passou).toBe(true);
+  });
+
+  it("tenant sem leitura prévia + erro no banco é negado com 503 e mensagem amigável", async () => {
+    settingsPorTenant.set("tenant-novo-com-erro", "__THROW__");
+    const antes = usuarioDoTenant("tenant-novo-com-erro");
     const depois = await applyModularPlanGate(antes);
 
     expect(depois.internalPages).toEqual([]);
     expect(depois.error).toBe("TENANT_SETTINGS_READ_FAILED");
-    expect(passouNoGuard(depois, "campanhas").passou).toBe(false);
-    expect(passouNoGuard(depois, "dashboard").passou).toBe(false);
+
+    const r = passouNoGuard(depois, "campanhas");
+    expect(r.passou).toBe(false);
+    expect(r.status).toBe(503);
+    expect(r.code).toBe("SERVICE_UNAVAILABLE");
   });
 
   it("admin/superadmin continuam passando mesmo com erro de settings", async () => {

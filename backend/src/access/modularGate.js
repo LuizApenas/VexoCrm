@@ -39,15 +39,28 @@ export function isPlanoModular(settings) {
 async function settingsDoTenant(clientId) {
   const agora = Date.now();
   const emCache = cache.get(clientId);
-  if (emCache && agora - emCache.em < TTL_MS) return emCache.settings;
+  if (emCache && agora - emCache.em < TTL_MS && emCache.lastGood) {
+    return emCache.settings;
+  }
 
   try {
     const settings = await getLeadClientN8nSettings(clientId);
-    cache.set(clientId, { settings, em: agora });
+    cache.set(clientId, { settings, em: agora, lastGood: settings });
     return settings;
   } catch (err) {
-    // Em controle de acesso, falha de leitura NEGA acesso (fail-closed) e loga com erro.
-    console.error("[modular-gate] falha ao ler settings do tenant; acesso negado por seguranca", {
+    // Se existe última leitura bem-sucedida em cache, usa-a e evita trancar o tenant
+    if (emCache?.lastGood) {
+      console.warn("[modular-gate] oscilação de banco: usando última leitura de settings bem-sucedida em cache", {
+        clientId,
+        plano: planoDoTenant(emCache.lastGood),
+        erro: err?.message || err,
+      });
+      return emCache.lastGood;
+    }
+
+    // Em controle de acesso, se NUNCA houve leitura bem-sucedida para aquele tenant:
+    // falha de leitura NEGA acesso (fail-closed) e loga com erro.
+    console.error("[modular-gate] falha ao ler settings do tenant sem cache prévio; acesso negado por segurança", {
       clientId,
       erro: err?.message || err,
     });
@@ -131,6 +144,16 @@ export function requireContractedModulePage(page) {
 
     if (access?.isAdmin || access?.role === "superadmin") {
       next();
+      return;
+    }
+
+    if (access?.error === "TENANT_SETTINGS_READ_FAILED") {
+      sendError(
+        res,
+        503,
+        "SERVICE_UNAVAILABLE",
+        "Instabilidade temporária ao verificar módulo contratado. Por favor, tente novamente em instantes."
+      );
       return;
     }
 
