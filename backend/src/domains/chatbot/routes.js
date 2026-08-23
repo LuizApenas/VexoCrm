@@ -91,7 +91,19 @@ export function registerChatbotRoutes(app, deps) {
       .filter(Boolean);
     if (requested.length === 0) return null;
 
-    const allInstances = await getLeadClientEvolutionInstances(clientId).catch(() => []);
+    let allInstances;
+    try {
+      allInstances = await getLeadClientEvolutionInstances(clientId);
+    } catch (err) {
+      console.error("[chatbot-aliases] falha de leitura no banco ao buscar instâncias Evolution para aliases", {
+        clientId,
+        rawInstanceName,
+        error: err?.message || String(err),
+      });
+      // Degradação com log: como é rota de listagem/filtro visual de tela (inbox),
+      // degrada utilizando os próprios nomes literais requisitados em vez de silenciar ou retornar vazio.
+      return requested;
+    }
     const aliases = new Set();
 
     for (const wanted of requested) {

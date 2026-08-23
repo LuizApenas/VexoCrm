@@ -4,6 +4,7 @@ import {
   getLeadClientEvolutionInstances,
   getLeadClientEvolutionInstancesMap,
 } from "../services/evolution.js";
+import { resolveInboundDispatchSettings } from "../campaign/settings.js";
 
 describe("evolution instances - separacao de 'sem chip' vs 'erro de banco'", () => {
   it("erro de banco no pool Postgres NAO devolve [] silencioso e lanca erro com contexto", async () => {
@@ -45,6 +46,21 @@ describe("evolution instances - separacao de 'sem chip' vs 'erro de banco'", () 
     try {
       const res = await getLeadClientEvolutionInstances("cliente-sem-chip");
       expect(res).toEqual([]);
+    } finally {
+      _setPgDatabasePoolForTesting(null);
+    }
+  });
+
+  it("resolveInboundDispatchSettings NAO silencia erro de banco em .catch e lanca erro de envio", async () => {
+    const fakePool = {
+      query: vi.fn().mockRejectedValue(new Error("DB_FATAL_ERROR: read timeout")),
+    };
+    _setPgDatabasePoolForTesting(fakePool);
+
+    try {
+      await expect(
+        resolveInboundDispatchSettings({ clientId: "cliente-inbound", instanceName: "chip-alpha" })
+      ).rejects.toThrow("[inbound-dispatch-settings] falha de banco ao resolver chip 'chip-alpha'");
     } finally {
       _setPgDatabasePoolForTesting(null);
     }

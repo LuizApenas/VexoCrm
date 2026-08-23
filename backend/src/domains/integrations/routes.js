@@ -537,13 +537,16 @@ export function registerIntegrationsRoutes(app, deps) {
 
       try {
         await ensureTenantExistsForEvolutionRoute(tenantId, res).catch(() => {});
-        const instances = await getLeadClientEvolutionInstances(tenantId).catch(() => []);
+        const instances = await getLeadClientEvolutionInstances(tenantId);
         const items = Array.isArray(instances) ? instances.map(maskEvolutionInstance).filter(Boolean) : [];
 
         res.json({ items });
       } catch (error) {
-        console.warn("lead client evolution instances query warning:", error?.message || error);
-        res.json({ items: [] });
+        console.error("[evolution-instances] falha ao consultar instâncias Evolution:", {
+          tenantId,
+          error: error?.message || error,
+        });
+        sendError(res, 500, "EVOLUTION_INSTANCES_QUERY_FAILED", "Falha ao consultar instâncias Evolution do tenant");
       }
     }
   );

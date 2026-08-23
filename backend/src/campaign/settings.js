@@ -264,7 +264,28 @@ export async function resolveInboundDispatchSettings({ clientId, instanceName = 
   const alvo = normalizeString(instanceName);
 
   if (alvo) {
-    const instancias = await getLeadClientEvolutionInstances(clientId).catch(() => []);
+    let instancias;
+    try {
+      instancias = await getLeadClientEvolutionInstances(clientId);
+    } catch (err) {
+      console.error("[inbound-dispatch-settings] falha de leitura no banco ao buscar instâncias Evolution do tenant", {
+        clientId,
+        instanceName: alvo,
+        error: err?.message || String(err),
+      });
+      tentativas.push({
+        fonte: "chip_do_webhook",
+        instanceName: alvo,
+        resultado: "erro_de_leitura_banco",
+        erro: err?.message || String(err),
+      });
+      // Em caminho de ENVIO de mensagem: falha de leitura no banco recusa o envio
+      // em vez de fingir que o chip nao existe e degradar silenciosamente.
+      throw new Error(
+        `[inbound-dispatch-settings] falha de banco ao resolver chip '${alvo}' para o tenant '${clientId}': ${err?.message || err}`
+      );
+    }
+
     // O mesmo chip tem tres nomes: o amigavel, o id, e o ultimo segmento da URL de
     // disparo. O webhook manda um deles — comparar so por `name` erra.
     const casada = instancias.find((inst) => {
