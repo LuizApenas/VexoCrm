@@ -1622,6 +1622,10 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
     });
   }
 
+  let lastDispatchedStep = null;
+  let lastDispatchedOriginalIndex = null;
+  let lastDispatchedAt = null;
+
   const { summary } = await dispatchCampaignSequence({
     webhookUrl,
     webhookToken,
@@ -1645,6 +1649,9 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
     },
     onStepDispatched: async ({ step, stepIndex, sentAt }) => {
       const originalStepIndex = nextStepIndex + stepIndex;
+      lastDispatchedStep = step;
+      lastDispatchedOriginalIndex = originalStepIndex;
+      lastDispatchedAt = sentAt;
       logCampaignReplyFlow("info", "reply_step_sent", {
         clientId,
         campaignId: campaign.id,
@@ -1750,6 +1757,16 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
     };
   }
 
+  const actuallySentStepIndex = Number.isInteger(lastDispatchedOriginalIndex)
+    ? lastDispatchedOriginalIndex
+    : nextStepIndex;
+  const actuallySentStep = lastDispatchedStep || remainingSteps[0] || null;
+  const hasMoreStepsAhead = actuallySentStepIndex < steps.length - 1;
+  const pendingNextStepIndex = hasMoreStepsAhead ? actuallySentStepIndex + 1 : null;
+  const newProgressStatus = hasMoreStepsAhead ? "aguardando_usuario" : "finalizado";
+  const newLeadStatus = hasMoreStepsAhead ? "aguardando_resposta" : "sequencia_concluida";
+  const finalizedCurrentLead = summary.successCount > 0 && !hasMoreStepsAhead;
+
   if (summary.successCount > 0 && leadImportItem?.id) {
     try {
       await markCampaignLeadWaitingReply({
@@ -1757,24 +1774,23 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
         lead: { id: leadImportItem.id, nome: lead.nome },
         phone,
         campaign,
-        step: finalStep,
-        stepIndex: finalStepIndex,
+        step: actuallySentStep,
+        stepIndex: actuallySentStepIndex,
         totalSteps: steps.length,
-        dispatchedAt: new Date().toISOString(),
-        nextStepIndex: null,
-        status: "finalizado",
+        dispatchedAt: lastDispatchedAt || new Date().toISOString(),
+        nextStepIndex: pendingNextStepIndex,
+        status: newProgressStatus,
         userRepliedAt: repliedAt,
       });
     } catch (error) {
       finalizationWarning =
         error instanceof Error
           ? error.message
-          : "Falha ao salvar a finalizacao interna da campanha apos envio bem-sucedido.";
+          : "Falha ao salvar o progresso da campanha apos envio bem-sucedido.";
     }
   }
 
-  const finalizedCurrentLead = summary.successCount > 0;
-  let n8nQualification = { called: false, skipped: true, reason: "lead_not_finalized" };
+  let n8nQualification = { called: false, skipped: true, reason: hasMoreStepsAhead ? "has_more_steps" : "lead_not_finalized" };
   if (finalizedCurrentLead) {
     n8nQualification = await callCampaignQualificationWebhook({
       clientId,
@@ -1821,8 +1837,8 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
   if (finalizationWarning) {
     summary.warnings.push({
       phone,
-      stepId: finalStep?.id || null,
-      stepType: finalStep?.type || null,
+      stepId: actuallySentStep?.id || null,
+      stepType: actuallySentStep?.type || null,
       reason: finalizationWarning,
     });
   }
@@ -1833,8 +1849,9 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
     campaignFinalized: campaignFinalization.finalized === true,
     campaignId: campaign.id,
     campaignName: campaign.name,
-    sentStepIndex: nextStepIndex,
-    remainingSteps: Math.max(steps.length - (nextStepIndex + 1), 0),
+    sentStepIndex: actuallySentStepIndex,
+    nextStepIndex: pendingNextStepIndex,
+    remainingSteps: Math.max(steps.length - (actuallySentStepIndex + 1), 0),
     nextLeadStart,
     n8nQualification,
     summary,
