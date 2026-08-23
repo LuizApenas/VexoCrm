@@ -34,7 +34,6 @@ import {
   useCreateCampaign,
   useDeleteCampaign,
   useGenerateCampaignTemplateVariants,
-  useTriggerCampaign,
   useUpdateCampaign,
   useCampaignDispatches,
   useCreateDispatch,
@@ -303,7 +302,6 @@ export default function LeadImports({
   const createCampaign = useCreateCampaign();
   const updateCampaign = useUpdateCampaign();
   const deleteCampaign = useDeleteCampaign();
-  const triggerCampaign = useTriggerCampaign();
   const generateTemplateVariants = useGenerateCampaignTemplateVariants();
   const saveCampaignPrompt = useSaveCampaignPrompt();
   // Usado ao duplicar: a copia leva o TEXTO do roteiro, nao o id, para nascer com

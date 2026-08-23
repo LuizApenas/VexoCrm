@@ -131,23 +131,5 @@ export function stopCampaignScheduler() {
 }
 
 export function startCampaignScheduler() {
-  if (!shouldStartCampaignScheduler()) {
-    console.log("[campaign-scheduler] disabled by CAMPAIGN_SCHEDULER_ENABLED=false");
-    return;
-  }
-
-  // Se já houver timers ativos, encerra antes de reiniciar
-  stopCampaignScheduler();
-
-  const intervalMs = getCampaignRunnerIntervalMs();
-  console.log(`[campaign-scheduler] enabled; checking due campaigns every ${intervalMs}ms`);
-  initialTimeout = setTimeout(() => {
-    void tickCampaignScheduler();
-  }, 15_000);
-  if (initialTimeout?.unref) initialTimeout.unref();
-
-  intervalTimer = setInterval(() => {
-    void tickCampaignScheduler();
-  }, intervalMs);
-  if (intervalTimer?.unref) intervalTimer.unref();
+  console.log("[campaign-scheduler] disabled: scheduler legado de campanhas desarmado em favor da fila campaign_dispatches");
 }

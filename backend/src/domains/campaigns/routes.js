@@ -1442,62 +1442,16 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  // POST /api/campaigns/:id/trigger — dispara campanha (chama webhook n8n)
+  // POST /api/campaigns/:id/trigger — legado desativado (disparos ocorrem via fila /api/campaigns/dispatches/:id/trigger)
   app.post("/api/campaigns/:id/trigger", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
 
-    const id = normalizeString(req.params?.id);
-    if (!id) { sendError(res, 400, "INVALID_PARAM", "Missing campaign id"); return; }
-
-    try {
-      let { data: campaign, error: fetchError } = await supabase
-        .from("campaigns")
-        .select("id, name, client_id, import_id, limit_per_run, webhook_url, webhook_token, status, scheduled_for, archived_at, created_by_uid, created_by_email, analytics_meta")
-        .eq("id", id)
-        .single();
-
-      if (fetchError && isMissingSchemaError(fetchError)) {
-        const fallback = await supabase
-          .from("campaigns")
-          .select("id, name, client_id, import_id, limit_per_run, webhook_url, webhook_token, status, scheduled_for, archived_at, created_by_uid, created_by_email")
-          .eq("id", id)
-          .single();
-        campaign = fallback.data;
-        fetchError = fallback.error;
-      }
-
-      if (fetchError || !campaign) {
-        sendError(res, 404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
-        return;
-      }
-
-      const authorizedClientId = resolveAuthorizedClientId(req, res, campaign.client_id);
-      if (!authorizedClientId) return;
-
-      if (!canCampaignBeDispatched(campaign.status)) {
-        sendError(res, 400, "CAMPAIGN_NOT_DISPATCHABLE", `Campaign cannot be dispatched from status ${campaign.status}`);
-        return;
-      }
-      if (campaign.archived_at) {
-        sendError(res, 400, "CAMPAIGN_ARCHIVED", "Campaign is archived");
-        return;
-      }
-
-      const result = await executeCampaignDispatch({ ...campaign, client_id: authorizedClientId }, { triggerSource: "manual" });
-      res.json(result);
-    } catch (error) {
-      console.error("campaign trigger error:", error);
-      if (error?.name === "AbortError") {
-        sendError(res, 504, "N8N_TIMEOUT", "n8n webhook timed out (20s)");
-        return;
-      }
-      sendError(
-        res,
-        error?.statusCode || 500,
-        error?.code || "INTERNAL_ERROR",
-        error instanceof Error ? error.message : "Internal server error"
-      );
-    }
+    sendError(
+      res,
+      410,
+      "CAMPAIGN_TRIGGER_DEPRECATED",
+      "Endpoint legado de disparo direto desativado. Utilize a fila de envios via POST /api/campaigns/dispatches/:id/trigger."
+    );
   });
 
   // ── Campaign Dispatches ──────────────────────────────────────────────────────
