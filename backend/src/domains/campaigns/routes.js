@@ -1737,7 +1737,7 @@ export function registerCampaignsRoutes(app, deps) {
       });
       if (sequenceRequiresSchedulingLink) {
         throw new Error(
-          `Disparo interrompido: falha ao buscar links de agendamento ({{scheduling_link}}): ${dbErr?.message || dbErr}`
+          `Disparo interrompido: falha no banco de dados ao buscar agenda de consultores ({{scheduling_link}}): ${dbErr?.message || dbErr}`
         );
       }
     }

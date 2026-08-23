@@ -102,6 +102,11 @@ export function DispatchQueueTable({
                         <Badge className={cn("border text-[10px] font-semibold rounded-xl px-2 py-0.5", CAMPAIGN_STATUS_COLORS[disp.status] || "")}>
                           {CAMPAIGN_STATUS_LABELS[disp.status] || disp.status}
                         </Badge>
+                        {disp.status === "failed" && disp.error_message && (
+                          <p className="mt-1 text-[10px] text-rose-500 font-medium max-w-[160px] mx-auto leading-tight" title={disp.error_message}>
+                            {disp.error_message}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell className="px-4 py-4">
                         <div className="flex flex-col items-center justify-center gap-1 w-28 mx-auto">

@@ -20,7 +20,7 @@ describe("protecao contra disparo com {{scheduling_link}} nao substituido", () =
 
     // Confirma que o trecho do catch lanca erro e bloqueia o disparo em vez de apenas console.warn
     expect(source).toContain("sequenceRequiresSchedulingLink");
-    expect(source).toContain("Disparo interrompido: falha ao buscar links de agendamento ({{scheduling_link}})");
+    expect(source).toContain("Disparo interrompido: falha no banco de dados ao buscar agenda de consultores ({{scheduling_link}})");
     expect(source).toContain("Disparo interrompido: ${motivo}");
     expect(source).not.toContain("failed to apply consultant schedules to leads: dbErr.message");
   });
