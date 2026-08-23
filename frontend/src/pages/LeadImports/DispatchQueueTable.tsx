@@ -103,7 +103,7 @@ export function DispatchQueueTable({
                           {CAMPAIGN_STATUS_LABELS[disp.status] || disp.status}
                         </Badge>
                         {disp.status === "failed" && disp.error_message && (
-                          <p className="mt-1 text-[10px] text-rose-500 font-medium max-w-[160px] mx-auto leading-tight" title={disp.error_message}>
+                          <p className="mt-1 text-[10px] text-rose-500 font-medium max-w-[220px] mx-auto leading-tight" title={disp.error_message}>
                             {disp.error_message}
                           </p>
                         )}
@@ -138,19 +138,20 @@ export function DispatchQueueTable({
                       </TableCell>
                       <TableCell className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {(disp.status === "draft" || disp.status === "paused") && (
+                          {(disp.status === "draft" || disp.status === "paused" || disp.status === "failed") && (
                             <Button
                               size="sm"
                               variant="default"
                               title={
-                                disp.status === "paused"
+                                disp.status === "paused" || disp.status === "failed"
                                   ? "Continua de onde parou: quem já recebeu não recebe de novo"
                                   : "Iniciar o envio deste lote"
                               }
                               onClick={() => onTriggerDispatchBatch(disp.id)}
                               className="h-8 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs px-2.5 font-bold shadow-sm"
                             >
-                              <Play className="h-3.5 w-3.5 mr-1" /> {disp.status === "paused" ? "Retomar" : "Iniciar"}
+                              <Play className="h-3.5 w-3.5 mr-1" />{" "}
+                              {disp.status === "paused" ? "Retomar" : disp.status === "failed" ? "Disparar" : "Iniciar"}
                             </Button>
                           )}
                           {disp.status === "running" && (

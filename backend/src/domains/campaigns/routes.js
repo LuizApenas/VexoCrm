@@ -2660,7 +2660,7 @@ export function registerCampaignsRoutes(app, deps) {
         .single();
       if (fetchErr || !dispatch) return sendError(res, 404, "DISPATCH_NOT_FOUND", "Dispatch not found");
       if (dispatch.status === "running") return sendError(res, 409, "DISPATCH_RUNNING", "Dispatch is already running");
-      if (!["draft","scheduled","failed"].includes(dispatch.status)) {
+      if (!["draft", "scheduled", "failed", "paused"].includes(dispatch.status)) {
         return sendError(res, 409, "DISPATCH_DONE", "Dispatch already completed");
       }
 

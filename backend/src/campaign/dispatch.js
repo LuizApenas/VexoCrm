@@ -184,13 +184,13 @@ export async function buildDispatchLeads({ clientId, importId = null, limit = nu
   );
 
   // Defeito A: elegibilidade por disparo. Remove da fila todo lead que JÁ tem registro
-  // neste disparo (qualquer status: claimed/sent/failed) → já tocado = fora.
+  // neste disparo (qualquer status: claimed/sent/failed/skipped) → já tocado = fora.
   // Escopo é POR DISPARO (excludeDispatchId), não histórico global do lead.
   let eligibleLeads = leads;
   if (excludeDispatchId) {
     const { data: touchedRows, error: touchedError } = await supabase
       .from("campaign_dispatch_runs")
-      .select("lead_id")
+      .select("lead_id, phone")
       .eq("dispatch_id", excludeDispatchId);
     if (touchedError) {
       throw touchedError;
@@ -200,8 +200,18 @@ export async function buildDispatchLeads({ clientId, importId = null, limit = nu
         .map((row) => row.lead_id)
         .filter((id) => id != null)
     );
-    if (touchedLeadIds.size > 0) {
-      eligibleLeads = leads.filter((lead) => !touchedLeadIds.has(lead.id));
+    const touchedPhones = new Set(
+      (touchedRows || [])
+        .map((row) => normalizeString(row.phone).replace(/\D/g, ""))
+        .filter(Boolean)
+    );
+    if (touchedLeadIds.size > 0 || touchedPhones.size > 0) {
+      eligibleLeads = leads.filter((lead) => {
+        if (lead.id && touchedLeadIds.has(lead.id)) return false;
+        const normPhone = normalizeString(lead.telefone).replace(/\D/g, "");
+        if (normPhone && touchedPhones.has(normPhone)) return false;
+        return true;
+      });
     }
   }
 

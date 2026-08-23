@@ -305,6 +305,7 @@ import {
   startCampaignScheduler,
   stopCampaignScheduler,
 } from "./campaign/scheduler.js";
+import { recoverOrphanDispatches } from "./campaign/orphanRecovery.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env") });
@@ -971,7 +972,12 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-// Rodar migrations antes de subir o servidor
-runMigrations(pgDatabasePool).finally(() => {
-  listenWithRetry();
-});
+// Rodar migrations e recuperação de lotes órfãos antes de subir o servidor
+runMigrations(pgDatabasePool)
+  .then(() => recoverOrphanDispatches(pgDatabasePool))
+  .catch((err) => {
+    console.error("[server] erro na inicialização/recuperação de lotes órfãos:", err?.message || err);
+  })
+  .finally(() => {
+    listenWithRetry();
+  });
