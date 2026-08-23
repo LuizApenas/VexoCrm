@@ -1,79 +1,175 @@
-// Chatbot mudo em producao: a IA gerava a resposta e o envio abortava com
-// "[chatbot-webhook] No Evolution URL for clientId: geracao-digital". Lead real
-// mandou audio e recebeu silencio.
+// Resolução da Evolution para a resposta do INBOUND do chatbot.
 //
-// Causa: DOIS resolvedores de Evolution, e o inbound usava o que nao sabe de qual
-// chip veio a conversa.
-//   campanha -> resolveCampaignDispatchSettings: instancia escolhida na campanha
-//   inbound  -> resolveDispatchWebhookSettings(clientId): DEFAULT do tenant
-// Por isso o disparo funcionava para o mesmo clientId enquanto o inbound falhava.
+// O inbound resolve pelo chip que RECEBEU a mensagem (amigável, ID, ou segmento de URL),
+// e cai no default do tenant apenas se não identificar ou se o chip estiver inativo.
 //
-// Agora o inbound resolve pelo chip que RECEBEU a mensagem, e cai no default so se
-// nao identificar. E nunca falha calado: devolve `tentativas` com cada fonte.
+// Este teste valida a resolução REAL (invocação de resolveInboundDispatchSettings).
 
-import { readFileSync } from "fs";
-import { resolve } from "path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { resolveInboundDispatchSettings, _resetInboundChipLastGoodCache } from "../campaign/settings.js";
+import { _setPgDatabasePoolForTesting } from "../services/database.js";
 
-const settingsSource = readFileSync(resolve("src/campaign/settings.js"), "utf8");
-const chatbotSource = readFileSync(resolve("src/domains/chatbot/routes.js"), "utf8");
+describe("o inbound resolve pelo chip que recebeu a mensagem", () => {
+  const MOCK_INSTANCES = [
+    {
+      id: "inst-uuid-1",
+      client_id: "geracao-digital",
+      name: "GD Priscila",
+      active: true,
+      dispatch_webhook_url: "https://evo.vexo.com/message/sendText/priscila_evo",
+      dispatch_webhook_token: "token-priscila",
+    },
+    {
+      id: "inst-uuid-2",
+      client_id: "geracao-digital",
+      name: "GD Inativo",
+      active: false,
+      dispatch_webhook_url: "https://evo.vexo.com/message/sendText/inativo_evo",
+    },
+    {
+      id: "inst-uuid-3",
+      client_id: "geracao-digital",
+      name: "GD Sem Url",
+      active: true,
+      dispatch_webhook_url: "",
+    },
+  ];
 
-describe("o inbound resolve pelo chip que recebeu", () => {
-  const bloco = settingsSource.slice(
-    settingsSource.indexOf("export async function resolveInboundDispatchSettings"),
-    settingsSource.indexOf("export async function resolveCampaignDispatchSettings")
-  );
+  function setupMockPool(instances = MOCK_INSTANCES) {
+    const fakePool = {
+      query: vi.fn().mockImplementation((queryText, params) => {
+        const sql = typeof queryText === "string" ? queryText : queryText?.text || "";
+        if (sql.includes("lead_client_evolution_instances")) {
+          return Promise.resolve({ rows: instances });
+        }
+        if (sql.includes("lead_client_n8n_settings")) {
+          return Promise.resolve({
+            rows: [
+              {
+                client_id: "geracao-digital",
+                active: true,
+                dispatch_webhook_url: "https://evo.vexo.com/message/sendText/default-tenant",
+                dispatch_webhook_token: "token-default",
+              },
+            ],
+          });
+        }
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+    _setPgDatabasePoolForTesting(fakePool);
+  }
 
-  it("consulta as instancias do tenant quando o webhook informa o chip", () => {
-    expect(bloco).toContain("getLeadClientEvolutionInstances(clientId)");
+  it("resolve pelo nome amigável da instância (name)", async () => {
+    _resetInboundChipLastGoodCache();
+    setupMockPool();
+    try {
+      const res = await resolveInboundDispatchSettings({
+        clientId: "geracao-digital",
+        instanceName: "GD Priscila",
+      });
+      expect(res.webhookUrl).toBe("https://evo.vexo.com/message/sendText/priscila_evo");
+      expect(res.webhookToken).toBe("token-priscila");
+      expect(res.source).toBe("inbound_chip");
+      expect(res.instanceName).toBe("GD Priscila");
+    } finally {
+      _setPgDatabasePoolForTesting(null);
+    }
   });
 
-  it("casa o chip pelos TRES nomes: amigavel, id e o da URL de disparo", () => {
-    // Comparar so por `name` erra: o webhook manda qualquer um dos tres.
-    expect(bloco).toContain("inst.name === alvo || inst.id === alvo || daUrl === alvo");
+  it("resolve pelo ID da instância (id)", async () => {
+    _resetInboundChipLastGoodCache();
+    setupMockPool();
+    try {
+      const res = await resolveInboundDispatchSettings({
+        clientId: "geracao-digital",
+        instanceName: "inst-uuid-1",
+      });
+      expect(res.webhookUrl).toBe("https://evo.vexo.com/message/sendText/priscila_evo");
+      expect(res.webhookToken).toBe("token-priscila");
+      expect(res.source).toBe("inbound_chip");
+      expect(res.instanceName).toBe("GD Priscila");
+    } finally {
+      _setPgDatabasePoolForTesting(null);
+    }
   });
 
-  it("chip inativo ou sem URL nao e usado — cai para o default", () => {
-    expect(bloco).toContain("instancia_inativa");
-    expect(bloco).toContain("sem_url_de_disparo");
+  it("resolve pelo segmento da URL de disparo (endpoint suffix)", async () => {
+    _resetInboundChipLastGoodCache();
+    setupMockPool();
+    try {
+      const res = await resolveInboundDispatchSettings({
+        clientId: "geracao-digital",
+        instanceName: "priscila_evo",
+      });
+      expect(res.webhookUrl).toBe("https://evo.vexo.com/message/sendText/priscila_evo");
+      expect(res.source).toBe("inbound_chip");
+    } finally {
+      _setPgDatabasePoolForTesting(null);
+    }
   });
 
-  it("sem chip identificado, usa o default do tenant", () => {
-    expect(bloco).toContain("resolveDispatchWebhookSettings(clientId)");
-    expect(bloco).toContain("default_do_tenant");
+  it("chip inativo não é usado — cai para o default do tenant", async () => {
+    _resetInboundChipLastGoodCache();
+    setupMockPool();
+    try {
+      const res = await resolveInboundDispatchSettings({
+        clientId: "geracao-digital",
+        instanceName: "GD Inativo",
+      });
+      // Cai para o default do tenant (inst-uuid-1, que é a instância ativa default)
+      expect(res.webhookUrl).toBe("https://evo.vexo.com/message/sendText/priscila_evo");
+      expect(res.source).toBe("tenant:client_settings");
+      expect(res.tentativas).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ fonte: "chip_do_webhook", resultado: "instancia_inativa" }),
+          expect.objectContaining({ fonte: "default_do_tenant" }),
+        ])
+      );
+    } finally {
+      _setPgDatabasePoolForTesting(null);
+    }
   });
 
-  it("registra CADA fonte consultada, para o log poder explicar a falha", () => {
-    expect(bloco).toContain("const tentativas = []");
-    expect(bloco).toContain("tentativas.push");
-    expect(bloco).toContain("tentativas,");
+  it("chip sem URL de disparo não é usado — cai para o default do tenant", async () => {
+    _resetInboundChipLastGoodCache();
+    setupMockPool();
+    try {
+      const res = await resolveInboundDispatchSettings({
+        clientId: "geracao-digital",
+        instanceName: "GD Sem Url",
+      });
+      expect(res.webhookUrl).toBe("https://evo.vexo.com/message/sendText/priscila_evo");
+      expect(res.source).toBe("tenant:client_settings");
+      expect(res.tentativas).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ fonte: "chip_do_webhook", resultado: "sem_url_de_disparo" }),
+          expect.objectContaining({ fonte: "default_do_tenant" }),
+        ])
+      );
+    } finally {
+      _setPgDatabasePoolForTesting(null);
+    }
   });
-});
 
-describe("o webhook do chatbot passa a usar o resolvedor certo", () => {
-  it("chama resolveInboundDispatchSettings com o instanceName do webhook", () => {
-    expect(chatbotSource).toContain(
-      "await resolveInboundDispatchSettings({ clientId, instanceName })"
-    );
-  });
-
-  it("nao usa mais o resolvedor de default para responder o lead", () => {
-    const envio = chatbotSource.slice(
-      chatbotSource.indexOf("// Enviar resposta via Evolution"),
-      chatbotSource.indexOf("const evolutionHeaders")
-    );
-    expect(envio).not.toContain("resolveDispatchWebhookSettings(clientId)");
-  });
-
-  it("a falha vira console.error com as fontes consultadas, nao um warn generico", () => {
-    const envio = chatbotSource.slice(
-      chatbotSource.indexOf("// Enviar resposta via Evolution"),
-      chatbotSource.indexOf("const evolutionHeaders")
-    );
-    expect(envio).toContain("resposta NAO enviada: sem URL da Evolution");
-    expect(envio).toContain("tentativas: dispatchSettings.tentativas");
-    expect(envio).toContain("instanceName");
-    // A mensagem antiga nao dizia o que foi consultado.
-    expect(chatbotSource).not.toContain("No Evolution URL for clientId");
+  it("sem chip informado no webhook, usa o default do tenant e registra tentativas", async () => {
+    _resetInboundChipLastGoodCache();
+    setupMockPool();
+    try {
+      const res = await resolveInboundDispatchSettings({
+        clientId: "geracao-digital",
+        instanceName: null,
+      });
+      expect(res.webhookUrl).toBe("https://evo.vexo.com/message/sendText/priscila_evo");
+      expect(res.source).toBe("tenant:client_settings");
+      expect(res.tentativas).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ fonte: "chip_do_webhook", resultado: "webhook_sem_instance" }),
+          expect.objectContaining({ fonte: "default_do_tenant", temUrl: true }),
+        ])
+      );
+    } finally {
+      _setPgDatabasePoolForTesting(null);
+    }
   });
 });

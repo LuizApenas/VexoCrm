@@ -97,6 +97,7 @@ function shutdownPgPool() {
 
 export function _setPgDatabasePoolForTesting(pool) {
   pgDatabasePool = pool;
+  supabase = pool ? createPgSupabaseClient(pool) : null;
 }
 
 export {

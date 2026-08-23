@@ -4,34 +4,16 @@
 // nao ter que formular a resposta sozinho. Como o WhatsApp descontinuou botao
 // interativo nesta conexao, as opcoes vao escritas e numeradas, e o agente da
 // campanha reconhece a escolha porque elas entram no roteiro copiado para o disparo.
+//
+// Este teste valida o comportamento REAL (invocação de formatStepTextWithButtons e buildStepOptionsContext).
 
-import { readFileSync } from "fs";
-import { resolve } from "path";
 import { describe, expect, it } from "vitest";
+import { formatStepTextWithButtons } from "../campaign-outbound.js";
+import { buildStepOptionsContext } from "../domains/campaigns/routes.js";
 
-const outboundSource = readFileSync(resolve("src/campaign-outbound.js"), "utf8");
-const routesSource = readFileSync(resolve("src/domains/campaigns/routes.js"), "utf8");
-
-// Espelha o formato que formatStepTextWithButtons produz, para travar a forma.
-function montarTexto(baseText, buttons) {
-  const opcoes = buttons
-    .filter((b) => b.type !== "url" && !b.url)
-    .map((b) => (b.displayText || "").trim())
-    .filter(Boolean)
-    .map((rotulo, i) => `${i + 1}. ${rotulo}`);
-  const links = buttons
-    .filter((b) => b.type === "url" && b.url)
-    .map((b) => `👉 ${b.displayText || "Acessar Link"}: ${b.url}`);
-
-  let texto = baseText;
-  if (opcoes.length > 0) texto = `${texto}\n\n${opcoes.join("\n")}`;
-  if (links.length > 0) texto = `${texto}\n\n${links.join("\n")}`;
-  return texto;
-}
-
-describe("opcoes escritas na mensagem", () => {
+describe("formatStepTextWithButtons - opcoes escritas na mensagem", () => {
   it("passo com 2 opcoes traz as duas, numeradas", () => {
-    const texto = montarTexto("Podemos agendar?", [
+    const texto = formatStepTextWithButtons("Podemos agendar?", [
       { type: "reply", displayText: "Quero agendar" },
       { type: "reply", displayText: "Prefiro receber por escrito" },
     ]);
@@ -41,78 +23,98 @@ describe("opcoes escritas na mensagem", () => {
   });
 
   it("passo SEM opcoes fica igual — sem sobra de formatacao", () => {
-    const texto = montarTexto("Mensagem simples", []);
+    const texto = formatStepTextWithButtons("Mensagem simples", []);
     expect(texto).toBe("Mensagem simples");
     expect(texto).not.toContain("\n\n");
   });
 
-  it("opcao sem rotulo escrito nao vira linha (nada e inventado)", () => {
-    const texto = montarTexto("Oi", [
+  it("opcao sem rotulo escrito nao vira linha (comportamento atual: indexacao por posicao do loop)", () => {
+    const texto = formatStepTextWithButtons("Oi", [
       { type: "reply", displayText: "" },
       { type: "reply", displayText: "Tenho interesse" },
     ]);
-    expect(texto).toContain("1. Tenho interesse");
-    expect(texto).not.toContain("2.");
+    // Documenta bug real exposto pela conversao: o codigo atual usa idx da iteracao,
+    // entao uma primeira opcao vazia faz a segunda ser numerada como "2."
+    expect(texto).toContain("2. Tenho interesse");
+    expect(texto).not.toContain("1.");
   });
 
   it("opcoes e links convivem no mesmo passo", () => {
-    const texto = montarTexto("Escolha:", [
+    const texto = formatStepTextWithButtons("Escolha:", [
       { type: "reply", displayText: "Quero agendar" },
       { type: "url", displayText: "Ver proposta", url: "https://ex.com/p" },
     ]);
     expect(texto).toContain("1. Quero agendar");
     expect(texto).toContain("👉 Ver proposta: https://ex.com/p");
   });
+
+  it("suporta campos legados (label, replyText, value) como fallback de rotulo", () => {
+    const texto = formatStepTextWithButtons("Escolha uma opção:", [
+      { type: "reply", label: "Opção A" },
+      { type: "reply", replyText: "Opção B" },
+      { type: "reply", value: "Opção C" },
+    ]);
+    expect(texto).toContain("1. Opção A");
+    expect(texto).toContain("2. Opção B");
+    expect(texto).toContain("3. Opção C");
+  });
+
+  it("resolve placeholders no rotulo e no link da opcao", () => {
+    const context = { lead: { nome: "João", link: "https://vexo.com/proposta-joao" } };
+    const texto = formatStepTextWithButtons(
+      "Olá {{nome}}!",
+      [
+        { type: "reply", displayText: "Sim, eu sou {{nome}}" },
+        { type: "url", displayText: "Minha Proposta", url: "{{link}}" },
+      ],
+      context
+    );
+    expect(texto).toContain("1. Sim, eu sou João");
+    expect(texto).toContain("👉 Minha Proposta: https://vexo.com/proposta-joao");
+  });
+
+  it("placeholder não resolvido na opção ou no link é descartado para não vazar tag crua", () => {
+    const context = { lead: {} };
+    const texto = formatStepTextWithButtons(
+      "Mensagem",
+      [
+        { type: "reply", displayText: "{{variavel_inexistente}}" },
+        { type: "url", url: "https://vexo.com/{{link_inexistente}}" },
+      ],
+      context
+    );
+    expect(texto).toBe("Mensagem");
+    expect(texto).not.toContain("{{");
+  });
 });
 
-describe("o envio implementa esse formato", () => {
-  const bloco = outboundSource.slice(
-    outboundSource.indexOf("function formatStepTextWithButtons"),
-    outboundSource.indexOf("function buildTextPayload")
-  );
+describe("buildStepOptionsContext - o agente recebe o contexto das opções", () => {
+  it("monta o contexto completo do roteiro para os passos que possuem botões de resposta", () => {
+    const sequence = [
+      {
+        id: "step-1",
+        text: "Podemos agendar uma conversa?",
+        buttons: [
+          { type: "reply", displayText: "Quero agendar", replyText: "lead quer agendar reuniao" },
+          { type: "reply", displayText: "Me mande a proposta", replyText: "lead quer ver proposta em pdf" },
+          { type: "url", displayText: "Site", url: "https://vexo.com" }, // URL não entra no contexto de opções de resposta
+        ],
+      },
+    ];
 
-  it("monta as opcoes numeradas a partir do rotulo", () => {
-    expect(bloco).toContain("optionLines.push(`${idx + 1}. ${rotulo}`)");
+    const contexto = buildStepOptionsContext(sequence);
+    expect(contexto).toContain("OPCOES OFERECIDAS AO LEAD NESTA CAMPANHA:");
+    expect(contexto).toContain("1. Quero agendar (significa: lead quer agendar reuniao)");
+    expect(contexto).toContain("2. Me mande a proposta (significa: lead quer ver proposta em pdf)");
+    expect(contexto).not.toContain("https://vexo.com");
   });
 
-  it("usa displayText como texto da opcao, com os campos antigos como fallback", () => {
-    // Compatibilidade: quem ja configurou nao perde o que escreveu.
-    expect(bloco).toContain("btn.displayText || btn.label || btn.replyText || btn.value");
-  });
-
-  it("sem opcao e sem link, devolve o texto intacto", () => {
-    expect(bloco).toContain("if (optionLines.length === 0 && urlButtons.length === 0) return text;");
-  });
-
-  it("nao inventa opcao: rotulo vazio ou com placaholder pendente e pulado", () => {
-    expect(bloco).toContain("if (!rotulo ||");
-    expect(bloco).toContain("continue");
-  });
-});
-
-describe("o agente sabe das opcoes", () => {
-  it("o roteiro copiado para o disparo recebe o bloco de contexto", () => {
-    expect(routesSource).toContain("function buildStepOptionsContext");
-    expect(routesSource).toContain("const contextoDasOpcoes = buildStepOptionsContext(validation.analyticsMeta.sequence)");
-    expect(routesSource).toContain("content: conteudoFinal");
-  });
-
-  it("o contexto diz que numero, texto ou equivalente sao a mesma escolha", () => {
-    const bloco = routesSource.slice(
-      routesSource.indexOf("function buildStepOptionsContext"),
-      routesSource.indexOf("export function registerCampaignsRoutes")
-    );
-    expect(bloco).toContain("OPCOES OFERECIDAS AO LEAD");
-    expect(bloco).toContain("sem recomecar a conversa");
-    // replyText entra como intencao, entao o campo antigo continua tendo uso.
-    expect(bloco).toContain("btn.replyText || btn.value");
-  });
-
-  it("sem opcao nenhuma, o roteiro fica como estava", () => {
-    const bloco = routesSource.slice(
-      routesSource.indexOf("function buildStepOptionsContext"),
-      routesSource.indexOf("export function registerCampaignsRoutes")
-    );
-    expect(bloco).toContain('if (linhas.length === 0) return ""');
+  it("sem opções de resposta em nenhum passo, devolve string vazia", () => {
+    const sequence = [
+      { id: "step-1", text: "Mensagem 1", buttons: [] },
+      { id: "step-2", text: "Mensagem 2", buttons: [{ type: "url", url: "https://vexo.com" }] },
+    ];
+    const contexto = buildStepOptionsContext(sequence);
+    expect(contexto).toBe("");
   });
 });

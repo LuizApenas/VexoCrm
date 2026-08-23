@@ -1,49 +1,100 @@
 // A marcacao de chip do Agente IA era gravada e depois lida como vazia.
 //
 // getLeadClientN8nSettingsMap (usado por GET /api/lead-clients, que alimenta
-// client.n8n_settings na tela) NAO pedia chatbot_instances no SELECT, enquanto
-// getLeadClientN8nSettings pedia. Coluna ausente -> maskN8nSettings devolve [] ->
-// a tela reidrata em "Todos sem agente inbound" e a escolha some.
+// client.n8n_settings na tela) e getLeadClientN8nSettings / getLeadClientN8nSettingsStatus
+// devem expor rigorosamente os MESMOS campos para o mesmo tenant.
 //
-// Este teste trava a lista de colunas: qualquer campo que maskN8nSettings exponha
-// tem de estar nos DOIS selects.
+// Este teste valida o comportamento REAL (invocação de funções e asserção de dados observáveis).
 
-import { readFileSync } from "fs";
-import { resolve } from "path";
-import { describe, expect, it } from "vitest";
-import { maskN8nSettings } from "../services/n8nSettings.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  getLeadClientN8nSettingsStatus,
+  getLeadClientN8nSettingsMap,
+  maskN8nSettings,
+  resolveSingleLeadClientSettings,
+} from "../services/n8nSettings.js";
+import { _setPgDatabasePoolForTesting } from "../services/database.js";
 
-const source = readFileSync(resolve("src/services/n8nSettings.js"), "utf8");
+describe("chatbot_instances e configuracoes de Evolution: paridade entre Status e Map", () => {
+  it("Status e Map devolvem os MESMOS campos e valores para o mesmo clientId", async () => {
+    const CLIENT_ID = "tenant-paridade-test";
 
-function selectColumnsOf(functionName) {
-  const start = source.indexOf(`export async function ${functionName}`);
-  expect(start, `${functionName} nao encontrada`).toBeGreaterThan(-1);
-  const slice = source.slice(start, start + 2500);
-  if (slice.includes("N8N_SETTINGS_SELECT_FIELDS") || functionName === "getLeadClientN8nSettings") {
-    const constMatch = source.match(/export const N8N_SETTINGS_SELECT_FIELDS\s*=\s*"([^"]+)";/);
-    if (constMatch) {
-      return constMatch[1].split(",").map((c) => c.trim());
-    }
-  }
-  const match = slice.match(/\.select\(\s*(?:\/\/[^\n]*\n\s*)*"([^"]+)"/);
-  expect(match, `select de ${functionName} nao encontrado`).toBeTruthy();
-  return match[1].split(",").map((c) => c.trim());
-}
+    const mockRow = {
+      client_id: CLIENT_ID,
+      active: true,
+      dispatch_webhook_url: "https://evo.vexo.com/message/sendText/chip-default",
+      dispatch_webhook_token: "token-default",
+      inbound_bearer_token: "inbound-123",
+      chatbot_enabled: true,
+      chatbot_model: "claude-3-5-sonnet",
+      chatbot_llm_model: "gpt-4o",
+      chatbot_system_prompt: "Você é um assistente de vendas",
+      chatbot_instances: ["chip-principal", "chip-reserva"],
+      sdr_whatsapp_number: "5511999999999",
+      allowed_tabs: ["dashboard", "campanhas"],
+      segmentation_config: { auto: true },
+      plan_tier: "modular",
+      modulos_avulsos: ["banco-de-dados"],
+      degustacao_expira_em: "2026-12-31T23:59:59Z",
+      updated_at: "2026-08-23T12:00:00Z",
+    };
 
-describe("chatbot_instances sobrevive da gravacao ate a tela", () => {
-  it("getLeadClientN8nSettingsMap pede chatbot_instances (era o bug)", () => {
-    expect(selectColumnsOf("getLeadClientN8nSettingsMap")).toContain("chatbot_instances");
-  });
+    const mockEvolutionInstances = [
+      {
+        id: "chip-uuid-1",
+        client_id: CLIENT_ID,
+        name: "chip-principal",
+        active: true,
+        is_default: true,
+        dispatch_webhook_url: "https://evo.vexo.com/message/sendText/chip-principal",
+        dispatch_webhook_token: "tok-1",
+        daily_limit_override: 100,
+        chip_state: "warm",
+      },
+    ];
 
-  it("os dois selects cobrem tudo que maskN8nSettings expoe", () => {
-    const single = selectColumnsOf("getLeadClientN8nSettings");
-    const map = selectColumnsOf("getLeadClientN8nSettingsMap");
+    const fakePool = {
+      query: vi.fn().mockImplementation((queryText, params) => {
+        const sql = typeof queryText === "string" ? queryText : queryText?.text || "";
+        if (sql.includes("FROM public.lead_client_evolution_instances")) {
+          return Promise.resolve({ rows: mockEvolutionInstances });
+        }
+        if (sql.includes("lead_client_n8n_settings")) {
+          return Promise.resolve({ rows: [mockRow] });
+        }
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+    _setPgDatabasePoolForTesting(fakePool);
 
-    // Campos que a mascara le direto da row (evolution_instances vem de outra query).
-    const exposed = ["chatbot_enabled", "chatbot_model", "chatbot_instances", "sdr_whatsapp_number", "allowed_tabs", "segmentation_config", "plan_tier", "modulos_avulsos", "degustacao_expira_em"];
-    for (const column of exposed) {
-      expect(single, `${column} ausente em getLeadClientN8nSettings`).toContain(column);
-      expect(map, `${column} ausente em getLeadClientN8nSettingsMap`).toContain(column);
+    try {
+      // 1. Invocação de getLeadClientN8nSettingsStatus (leitura unitária)
+      const statusResult = await getLeadClientN8nSettingsStatus(CLIENT_ID);
+      expect(statusResult.schemaAvailable).toBe(true);
+      const settingsSingle = statusResult.settings;
+
+      // 2. Invocação de getLeadClientN8nSettingsMap (leitura em lote)
+      const mapResult = await getLeadClientN8nSettingsMap([CLIENT_ID]);
+      const settingsMap = mapResult[CLIENT_ID];
+
+      // 3. Asserção de paridade exata
+      expect(settingsSingle).toBeDefined();
+      expect(settingsMap).toBeDefined();
+      expect(settingsSingle.chatbot_instances).toEqual(["chip-principal", "chip-reserva"]);
+      expect(settingsMap.chatbot_instances).toEqual(["chip-principal", "chip-reserva"]);
+
+      expect(settingsSingle.plan_tier).toBe("modular");
+      expect(settingsMap.plan_tier).toBe("modular");
+
+      expect(settingsSingle.modulos_avulsos).toEqual(["banco-de-dados"]);
+      expect(settingsMap.modulos_avulsos).toEqual(["banco-de-dados"]);
+
+      expect(settingsSingle.sdr_whatsapp_number).toBe("5511999999999");
+      expect(settingsMap.sdr_whatsapp_number).toBe("5511999999999");
+
+      expect(settingsSingle).toEqual(settingsMap);
+    } finally {
+      _setPgDatabasePoolForTesting(null);
     }
   });
 
@@ -51,9 +102,24 @@ describe("chatbot_instances sobrevive da gravacao ate a tela", () => {
     const marcado = maskN8nSettings({ client_id: "geracao-digital", chatbot_instances: ["geracao-digital"] });
     expect(marcado.chatbot_instances).toEqual(["geracao-digital"]);
 
-    // Coluna ausente vira [] — comportamento correto da mascara. O defeito estava
-    // no SELECT que a fazia receber undefined, nao aqui.
+    // Coluna ausente vira [] — comportamento correto da mascara.
     const semColuna = maskN8nSettings({ client_id: "geracao-digital" });
     expect(semColuna.chatbot_instances).toEqual([]);
+  });
+
+  it("resolveSingleLeadClientSettings unifica a row com as instancias Evolution mascaradas", () => {
+    const row = {
+      client_id: "vexo",
+      chatbot_instances: ["inst-1"],
+      dispatch_webhook_url: "https://evo.vexo.com/default",
+    };
+    const instances = [
+      { id: "i1", name: "inst-1", active: true, dispatch_webhook_url: "https://evo.vexo.com/i1" },
+    ];
+    const resolved = resolveSingleLeadClientSettings(row, instances);
+    expect(resolved.chatbot_instances).toEqual(["inst-1"]);
+    expect(resolved.evolution_instances).toHaveLength(1);
+    expect(resolved.evolution_instances[0].id).toBe("i1");
+    expect(resolved.evolution_instances[0].name).toBe("inst-1");
   });
 });

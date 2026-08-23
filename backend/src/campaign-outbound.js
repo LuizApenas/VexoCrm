@@ -530,7 +530,7 @@ function parseDataUrl(dataUrl) {
   };
 }
 
-function formatStepTextWithButtons(baseText, stepButtons, context = {}, phone = "") {
+export function formatStepTextWithButtons(baseText, stepButtons, context = {}, phone = "") {
   let text = baseText || "";
   if (!Array.isArray(stepButtons) || stepButtons.length === 0) return text;
 

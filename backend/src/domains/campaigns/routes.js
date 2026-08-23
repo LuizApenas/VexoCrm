@@ -70,7 +70,7 @@ function resolveCampaignImportSelection(campaign) {
  * Nada e inventado: sem opcao escrita, devolve string vazia e o roteiro fica como
  * estava.
  */
-function buildStepOptionsContext(sequence) {
+export function buildStepOptionsContext(sequence) {
   const linhas = [];
   for (const step of Array.isArray(sequence) ? sequence : []) {
     const opcoes = (Array.isArray(step?.buttons) ? step.buttons : []).filter(
@@ -3148,4 +3148,9 @@ export function registerCampaignsRoutes(app, deps) {
       sendError(res, 500, "CAMPAIGN_PROMPT_DELETE_FAILED", err instanceof Error ? err.message : "Failed");
     }
   });
+
+  return {
+    runCampaignDispatch,
+    buildStepOptionsContext,
+  };
 }
