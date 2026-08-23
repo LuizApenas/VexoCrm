@@ -111,20 +111,17 @@ export function MessageSequenceStep({
 
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Gatilho:</span>
-                    {/* "with_previous" foi removido da tela: nao havia consumidor no
-                        backend, e o passo era tratado como imediato (dois envios
-                        seguidos, com o atraso normal). Passo antigo gravado assim
-                        aparece como "Imediato", que e o que ele de fato faz. */}
                     <Select
-                      value={step.triggerMode === "after_reply" ? "after_reply" : "immediate"}
-                      onValueChange={(val) => updateCampaignStep(step.id, { triggerMode: val as "immediate" | "after_reply" })}
+                      value={step.triggerMode || "immediate"}
+                      onValueChange={(val) => updateCampaignStep(step.id, { triggerMode: val as "immediate" | "after_reply" | "with_previous" })}
                     >
-                      <SelectTrigger className="h-7 text-[11px] font-semibold bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 w-[210px]">
+                      <SelectTrigger className="h-7 text-[11px] font-semibold bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 w-[230px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="immediate">⚡ Enviar na hora (Imediato)</SelectItem>
-                        <SelectItem value="after_reply">💬 Enviar após resposta do lead</SelectItem>
+                        <SelectItem value="after_reply">🚪 Enviar após resposta do lead</SelectItem>
+                        <SelectItem value="with_previous">➕ Enviar junto com a anterior</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -145,7 +142,13 @@ export function MessageSequenceStep({
 
               {step.triggerMode === "after_reply" && (
                 <div className="flex items-center gap-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200/80 dark:border-amber-900/40">
-                  <span className="font-bold">💬 Aguardar resposta:</span> Esta mensagem só será enviada quando o lead responder à mensagem anterior.
+                  <span className="font-bold">🚪 Porta de Parada:</span> O envio pausa aqui e aguarda uma nova resposta do lead para disparar esta mensagem (e qualquer passo &quot;junto com a anterior&quot; abaixo dela).
+                </div>
+              )}
+
+              {step.triggerMode === "with_previous" && (
+                <div className="flex items-center gap-1.5 text-[10px] font-medium text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/30 p-2 rounded-lg border border-sky-200/80 dark:border-sky-900/40">
+                  <span className="font-bold">➕ Envio em Lote:</span> Esta mensagem é enviada no mesmo lote do passo anterior (com intervalo de segurança anti-ban entre elas).
                 </div>
               )}
 

@@ -306,8 +306,9 @@ function normalizeDispatchOptions(rawOptions = {}, sequence = []) {
   // rejeitava o envio com "precisam de pelo menos um passo imediato" — o passo 2
   // nunca chegava a ser tentado. Regressao introduzida em b935ea7.
   const passos = (Array.isArray(sequence) ? sequence : []).filter((step) => step?.enabled !== false);
-  const temPassoAposResposta = passos.some((step) => step?.triggerMode === "after_reply");
-  const temPassoImediato = passos.some((step) => step?.triggerMode !== "after_reply");
+  const firstDoorIndex = passos.findIndex((step, index) => index > 0 && step?.triggerMode === "after_reply");
+  const temPassoAposResposta = firstDoorIndex !== -1;
+  const temPassoImediato = firstDoorIndex === -1 ? passos.length > 0 : firstDoorIndex > 0;
   const derivarDaSequencia = temPassoAposResposta && temPassoImediato;
   const waitForReply = derivarDaSequencia || normalizeBoolean(rawOptions.waitForReply, false);
   const replyTimeoutSeconds = Math.min(
@@ -390,10 +391,14 @@ export function getEnabledCampaignSteps(rawMeta = {}) {
 export function getCampaignStepPlan(rawMeta = {}) {
   const analyticsMeta = normalizeCampaignAnalyticsMeta(rawMeta);
   const enabledSteps = analyticsMeta.sequence.filter((step) => step.enabled);
-  const immediateSteps = enabledSteps.filter((step) => step.triggerMode !== "after_reply");
+  const firstDoorIndex = enabledSteps.findIndex(
+    (step, index) => index > 0 && step.triggerMode === "after_reply"
+  );
+  const immediateSteps =
+    firstDoorIndex === -1 ? enabledSteps : enabledSteps.slice(0, firstDoorIndex);
   const replySteps = enabledSteps
     .map((step, index) => ({ step, index }))
-    .filter((entry) => entry.step.triggerMode === "after_reply");
+    .filter((entry, index) => index > 0 && entry.step.triggerMode === "after_reply");
   const shouldUseReplyFlow =
     analyticsMeta.dispatchOptions.waitForReply === true && replySteps.length > 0;
 
@@ -437,8 +442,12 @@ export function validateCampaignAnalyticsMeta(rawMeta = {}) {
   }
 
   if (analyticsMeta.dispatchOptions.waitForReply === true) {
-    const immediateSteps = enabledSteps.filter((step) => step.triggerMode !== "after_reply");
-    const replySteps = enabledSteps.filter((step) => step.triggerMode === "after_reply");
+    const firstDoorIndex = enabledSteps.findIndex(
+      (step, index) => index > 0 && step.triggerMode === "after_reply"
+    );
+    const immediateSteps =
+      firstDoorIndex === -1 ? enabledSteps : enabledSteps.slice(0, firstDoorIndex);
+    const replySteps = enabledSteps.filter((step, index) => index > 0 && step.triggerMode === "after_reply");
     if (replySteps.length > 0 && immediateSteps.length === 0) {
       return {
         valid: false,
@@ -920,7 +929,11 @@ export async function dispatchCampaignSequence({
 
       const hasNextStep = stepIndex < enabledSteps.length - 1;
       if (hasNextStep) {
-        await sleep(step.delayAfterSeconds * 1000);
+        const stepDelaySeconds = Math.max(
+          normalizeNonNegativeInteger(step.delayAfterSeconds, DEFAULT_STEP_DELAY_SECONDS),
+          2
+        );
+        await sleep(stepDelaySeconds * 1000);
       }
     }
 
