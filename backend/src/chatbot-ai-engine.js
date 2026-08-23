@@ -1129,22 +1129,23 @@ export async function processBatch({
 
   const history = buildHistory(storedHistorico);
 
-  // Busca prompt e template do banco em paralelo
-  // promptTypeOverride vem do roteamento de campanha (campanha | padrao)
-  // fallback legacy: se model começa com "campanha_" → campanha
+  // Busca prompt padrão do tenant, prompt da campanha (se houver) e template em paralelo
   const promptType = promptTypeOverride || (model.startsWith("campanha_") ? "campanha" : "padrao");
   const baseModelKey = model.startsWith("campanha_") ? model.replace("campanha_", "") : model;
 
-  const [dynamicPrompt, template] = await Promise.all([
-    campaignPromptId
-      ? fetchCampaignPromptById(supabase, campaignPromptId)
-      : fetchDynamicPrompt(supabase, clientId, promptType),
+  const [dynamicPrompt, campaignPrompt, template] = await Promise.all([
+    fetchDynamicPrompt(supabase, clientId, promptType),
+    campaignPromptId ? fetchCampaignPromptById(supabase, campaignPromptId) : Promise.resolve(null),
     fetchTemplate(supabase, clientId, baseModelKey),
   ]);
 
-  // Prompt escrito na tela do Agente Inbound tem precedencia sobre o prompt
-  // dinamico do tenant: e o agente daquele numero especifico.
-  if (!dynamicPrompt && !inboundPrompt) {
+  // Se houver inboundPrompt (customizado por chip), ele é a base. Senão, dynamicPrompt.
+  // Se nenhum dos dois existir mas houver campaignPrompt, usa campaignPrompt como fallback.
+  const basePromptText = inboundPrompt
+    ? `${inboundPrompt}${inboundSpinInstruction}`
+    : dynamicPrompt || campaignPrompt;
+
+  if (!basePromptText) {
     console.error("[chatbot-ai] PROMPT NOT FOUND in DB — chatbot silenciado", { clientId, promptType });
     return null;
   }
@@ -1155,14 +1156,29 @@ export async function processBatch({
   // Garante que todas as colunas do template existam na tabela (fire-and-forget nos erros)
   await ensureTemplateColumns(supabase, leadsTable, template?.data_fields);
 
-  const basePromptText = inboundPrompt
-    ? `${inboundPrompt}${inboundSpinInstruction}`
-    : dynamicPrompt;
-
   const fieldContext = buildFieldContext(template);
   const baseSystemPrompt = fieldContext
     ? `${basePromptText}\n\n${fieldContext}`
     : basePromptText;
+
+  // Se houver prompt específico de campanha e ele não for o único prompt base:
+  // Anexa a CAMADA DA CAMPANHA no final do prompt do sistema, como camada aditiva que prevalece em detalhes da oferta.
+  let effectiveSystemPrompt = baseSystemPrompt;
+  if (campaignPrompt && basePromptText !== campaignPrompt) {
+    const campaignHeader = [
+      "",
+      "==================================================",
+      "CAMADA DA CAMPANHA (OFERTA ESPECÍFICA DESTE DISPARO):",
+      "As instruções abaixo são específicas para a campanha e oferta deste lead.",
+      "Mantenha sua identidade, tom de voz, método de qualificação (SPIN), critérios de finalização e regras de classificação definidos acima.",
+      "Utilize as diretrizes abaixo para responder sobre esta oferta, condições especiais, produtos e objeções deste disparo.",
+      "Em caso de conflito direto sobre detalhes específicos desta oferta, as instruções abaixo prevalecem.",
+      "==================================================",
+      campaignPrompt.trim(),
+    ].join("\n");
+
+    effectiveSystemPrompt = `${baseSystemPrompt}\n${campaignHeader}`;
+  }
 
   // ── Cenário 2: lead abandonou no meio — reengajamento após REENGAGEMENT_HOURS ──
   let systemPromptOverride = null;
@@ -1170,7 +1186,7 @@ export async function processBatch({
     const horasInativo = hoursSince(existing.updated_at);
     if (horasInativo >= REENGAGEMENT_HOURS) {
       const ultimaPergunta = history.filter((m) => m.role === "assistant").at(-1)?.content || "";
-      systemPromptOverride = `${baseSystemPrompt}
+      systemPromptOverride = `${effectiveSystemPrompt}
 
 CONTEXTO ESPECIAL — REENGAJAMENTO:
 Este lead ficou ${Math.round(horasInativo)}h sem responder. Retomou o contato agora.
@@ -1185,7 +1201,7 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
 
   // ── Cenário 3: lead novo ou em andamento — fluxo normal ──────────────────
   const aiResponse = await runChatbotAI({
-    systemPrompt: systemPromptOverride || baseSystemPrompt,
+    systemPrompt: systemPromptOverride || effectiveSystemPrompt,
     history,
     newMessages: [combinedText],
     existingData: storedData,

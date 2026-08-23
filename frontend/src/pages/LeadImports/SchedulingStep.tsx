@@ -260,9 +260,9 @@ export function SchedulingStep({
 
           <div className="space-y-2">
             {[
-              { valor: "passos" as const, titulo: "Só enviar os passos configurados (sem IA)", ajuda: "O lead recebe a sequência e mais nada. Nenhum agente responde." },
-              { valor: "campanha" as const, titulo: "Agente da campanha", ajuda: "Responde com o roteiro desta campanha, não com o de atendimento." },
-              { valor: "atendimento" as const, titulo: "Agente de atendimento (inbound)", ajuda: "O mesmo agente que atende quem procura a empresa." },
+              { valor: "passos" as const, titulo: "Sem IA — o lead recebe só os passos", ajuda: "O lead recebe a sequência configurada e mais nada. Nenhum agente responde." },
+              { valor: "campanha" as const, titulo: "Qualificar com o roteiro desta campanha", ajuda: "Qualifica o lead (SPIN, dados e SDR) somando o roteiro e as regras específicas desta oferta." },
+              { valor: "atendimento" as const, titulo: "Qualificar com o atendimento padrão", ajuda: "Usa o agente de atendimento padrão (inbound) da empresa." },
             ].map((opcao) => (
               <label
                 key={opcao.valor}
@@ -302,18 +302,18 @@ export function SchedulingStep({
               
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                  Roteiro de Atendimento & Regras da Oferta:
+                  Regras e Contexto da Oferta:
                 </label>
                 <Textarea
                   value={campaignAgentPrompt}
                   onChange={(e) => setCampaignAgentPrompt(e.target.value)}
-                  placeholder="Ex: Persona: Consultor especialista e atencioso.&#10;Objetivo: Responder dúvidas sobre a oferta do lote, qualificar interesse e direcionar para {{scheduling_link}}.&#10;Regras: Se o cliente perguntar preço, informe a condição especial de lançamento e pergunte qual o melhor horário para agendar."
+                  placeholder="Ex: Oferta: Condição exclusiva com 20% de desconto na primeira parcela.&#10;Objetivo: Responder dúvidas sobre este lote, contornar objeções de preço e direcionar para {{scheduling_link}}.&#10;Regras: Destaque a validade da oferta até sexta-feira."
                   className="min-h-[120px] text-xs bg-white dark:bg-slate-900 rounded-xl"
                 />
               </div>
 
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                💡 <em>Este roteiro fica congelado para este disparo. Quando o lead responder, a IA assumirá com base nessas instruções sem afetar o atendimento geral do Inbox.</em>
+                💡 <em>A identidade da empresa, o método SPIN e as regras de qualificação/SDR continuam ativos. Escreva aqui apenas as informações e regras específicas desta <strong>OFERTA</strong>.</em>
               </p>
             </div>
           )}
