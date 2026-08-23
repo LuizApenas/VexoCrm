@@ -76,8 +76,8 @@ describe("tenant scope enforcement", () => {
 
 import { resolveAuthorizedClientId } from "../services/tenant.js";
 
-describe("resolveAuthorizedClientId measurement fallback", () => {
-  it("logs [tenant-default] and returns geracao-digital when admin does not supply clientId", () => {
+describe("resolveAuthorizedClientId strict tenant requirement", () => {
+  it("logs [tenant-missing], responds with 400, and returns null (NEVER returns geracao-digital) when admin does not supply clientId", () => {
     const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const req = {
       method: "GET",
@@ -92,14 +92,24 @@ describe("resolveAuthorizedClientId measurement fallback", () => {
 
     const clientId = resolveAuthorizedClientId(req, res, null);
 
-    expect(clientId).toBe("geracao-digital");
+    expect(clientId).toBeNull();
+    expect(clientId).not.toBe("geracao-digital");
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: "MISSING_TENANT_ID",
+          message: "Tenant (clientId) não informado na requisição",
+        }),
+      })
+    );
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[tenant-default] rota=GET /api/leads credencial=admin assumedClientId=geracao-digital")
+      expect.stringContaining("[tenant-missing] rota=GET /api/leads credencial=admin erro=MISSING_TENANT_ID")
     );
     consoleSpy.mockRestore();
   });
 
-  it("does not log [tenant-default] when requestedClientId is explicitly provided", () => {
+  it("does not log [tenant-missing] and returns requestedClientId when explicitly provided", () => {
     const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const req = {
       method: "POST",

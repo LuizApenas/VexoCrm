@@ -121,13 +121,13 @@ export function resolveAuthorizedClientId(req, res, requestedClientId) {
       : authAccess.isAdmin
         ? "admin"
         : (req?.authAccess ? "interno" : "sem_auth");
-    const assumido = "geracao-digital";
 
     console.warn(
-      `[tenant-default] rota=${metodo} ${rota} credencial=${tipoCredencial} assumedClientId=${assumido}`
+      `[tenant-missing] rota=${metodo} ${rota} credencial=${tipoCredencial} erro=MISSING_TENANT_ID (tenant/clientId não informado)`
     );
 
-    return assumido;
+    sendError(res, 400, "MISSING_TENANT_ID", "Tenant (clientId) não informado na requisição");
+    return null;
   }
 
   const clientIds = authAccess.clientIds || [];
