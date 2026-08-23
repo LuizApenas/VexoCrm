@@ -19,8 +19,11 @@ import { deriveTenantInternalPages } from "./claims.js";
 import { getLeadClientN8nSettings } from "../services/n8nSettings.js";
 import { sendError } from "../services/httpInfra.js";
 
-const TTL_MS = 60_000;
-const cache = new Map();
+const REVALIDATION_TTL_MS = 60_000; // 1 minuto para revalidação periódica
+const LAST_GOOD_HORIZON_MS = 24 * 60 * 60_000; // 24 horas de resiliência durante instabilidade de banco
+
+const revalidationCache = new Map();
+const lastGoodCache = new Map();
 
 function planoDoTenant(settings) {
   return String(settings?.plan_tier || settings?.planTier || "").toLowerCase().trim();
@@ -31,36 +34,55 @@ export function isPlanoModular(settings) {
   return plano.includes("modular") || plano.includes("avulso");
 }
 
+function formatAge(ms) {
+  const seg = Math.max(0, Math.floor(ms / 1000));
+  if (seg < 60) return `${seg}s`;
+  const min = Math.floor(seg / 60);
+  if (min < 60) return `${min}m ${seg % 60}s`;
+  const horas = Math.floor(min / 60);
+  return `${horas}h ${min % 60}m`;
+}
+
 /**
- * Settings do tenant com cache curto. O gate roda em toda requisicao autenticada;
- * sem cache seria uma consulta por request. TTL de 1 minuto: mudanca de plano
- * demora no maximo isso para valer, e o admin ja recarrega a tela depois de salvar.
+ * Settings do tenant com revalidação a cada 1 minuto (TTL) e rede de degradação
+ * separada (lastGoodCache) com horizonte de 24 horas.
+ *
+ * Em caso de oscilação do banco (readError):
+ * - Se existe última leitura bem-sucedida dentro de 24h, usa-a e loga a idade exata
+ *   da leitura ("usando cache de X atrás"), mantendo planos essencial/avançado/modular no ar.
+ * - Só nega (fail-closed) se NUNCA houve leitura boa ou se a última tiver mais de 24 horas.
  */
 async function settingsDoTenant(clientId) {
   const agora = Date.now();
-  const emCache = cache.get(clientId);
-  if (emCache && agora - emCache.em < TTL_MS && emCache.lastGood) {
-    return emCache.settings;
+  const revalEntry = revalidationCache.get(clientId);
+  if (revalEntry && agora - revalEntry.timestamp < REVALIDATION_TTL_MS) {
+    return revalEntry.settings;
   }
 
   try {
     const settings = await getLeadClientN8nSettings(clientId);
-    cache.set(clientId, { settings, em: agora, lastGood: settings });
+    revalidationCache.set(clientId, { settings, timestamp: agora });
+    lastGoodCache.set(clientId, { settings, timestamp: agora });
     return settings;
   } catch (err) {
-    // Se existe última leitura bem-sucedida em cache, usa-a e evita trancar o tenant
-    if (emCache?.lastGood) {
+    const lastGood = lastGoodCache.get(clientId);
+    if (lastGood && agora - lastGood.timestamp < LAST_GOOD_HORIZON_MS) {
+      const idadeMs = agora - lastGood.timestamp;
+      const idadeLegivel = formatAge(idadeMs);
       console.warn("[modular-gate] oscilação de banco: usando última leitura de settings bem-sucedida em cache", {
         clientId,
-        plano: planoDoTenant(emCache.lastGood),
+        plano: planoDoTenant(lastGood.settings),
+        idadeMs,
+        idadeLegivel,
+        aviso: `usando cache de ${idadeLegivel} atrás`,
         erro: err?.message || err,
       });
-      return emCache.lastGood;
+      return lastGood.settings;
     }
 
-    // Em controle de acesso, se NUNCA houve leitura bem-sucedida para aquele tenant:
+    // Em controle de acesso, se NUNCA houve leitura bem-sucedida ou expirou o horizonte máximo:
     // falha de leitura NEGA acesso (fail-closed) e loga com erro.
-    console.error("[modular-gate] falha ao ler settings do tenant sem cache prévio; acesso negado por segurança", {
+    console.error("[modular-gate] falha ao ler settings do tenant sem cache prévio válido; acesso negado por segurança", {
       clientId,
       erro: err?.message || err,
     });
@@ -68,9 +90,10 @@ async function settingsDoTenant(clientId) {
   }
 }
 
-/** So para teste: zera o cache entre casos. */
+/** So para teste: zera ambos os caches entre casos. */
 export function _resetModularGateCache() {
-  cache.clear();
+  revalidationCache.clear();
+  lastGoodCache.clear();
 }
 
 /**

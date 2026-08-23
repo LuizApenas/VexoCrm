@@ -150,23 +150,53 @@ describe("o gate nunca CONCEDE, so tira", () => {
 });
 
 describe("resiliencia a oscilacao de banco: uso da ultima leitura boa em cache", () => {
-  it("tenant essencial com leitura boa em cache + erro de banco na leitura seguinte continua acessando normalmente", async () => {
-    const TENANT = "tenant-essencial-resiliente";
-    // 1. Leitura bem-sucedida inicial
-    settingsPorTenant.set(TENANT, { plan_tier: "essencial", modulos_avulsos: [] });
-    const antes = usuarioDoTenant(TENANT);
-    const primeiro = await applyModularPlanGate(antes);
-    expect(primeiro.internalPages).toEqual(TODAS);
-    expect(passouNoGuard(primeiro, "campanhas").passou).toBe(true);
+  it("tenant essencial com leitura boa em cache + avanco do relogio alem do TTL (5 min) + erro de banco continua acessando via lastGood", async () => {
+    vi.useFakeTimers();
+    try {
+      const TENANT = "tenant-essencial-alem-do-ttl";
+      // 1. Leitura bem-sucedida inicial
+      settingsPorTenant.set(TENANT, { plan_tier: "essencial", modulos_avulsos: [] });
+      const antes = usuarioDoTenant(TENANT);
+      const primeiro = await applyModularPlanGate(antes);
+      expect(primeiro.internalPages).toEqual(TODAS);
+      expect(passouNoGuard(primeiro, "campanhas").passou).toBe(true);
 
-    // 2. Banco oscila e passa a lancar erro
-    settingsPorTenant.set(TENANT, "__THROW__");
+      // 2. Avanca o relogio 5 minutos (bem alem do TTL de revalidacao de 1 minuto)
+      vi.advanceTimersByTime(5 * 60 * 1000);
 
-    // 3. O gate deve utilizar a ultima leitura boa em cache e manter o acesso liberado
-    const segundo = await applyModularPlanGate(antes);
-    expect(segundo.internalPages).toEqual(TODAS);
-    expect(segundo.error).toBeUndefined();
-    expect(passouNoGuard(segundo, "campanhas").passou).toBe(true);
+      // 3. Banco oscila e lanca erro
+      settingsPorTenant.set(TENANT, "__THROW__");
+
+      // 4. O gate tenta revalidar, captura o erro e recorre ao lastGoodCache (horizonte de 24h)
+      const segundo = await applyModularPlanGate(antes);
+      expect(segundo.internalPages).toEqual(TODAS);
+      expect(segundo.error).toBeUndefined();
+      expect(passouNoGuard(segundo, "campanhas").passou).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("se a ultima leitura boa tiver mais de 24 horas (horizonte maximo expirado), o gate nega por seguranca", async () => {
+    vi.useFakeTimers();
+    try {
+      const TENANT = "tenant-expirado-25h";
+      settingsPorTenant.set(TENANT, { plan_tier: "essencial", modulos_avulsos: [] });
+      const antes = usuarioDoTenant(TENANT);
+      await applyModularPlanGate(antes);
+
+      // Avanca 25 horas
+      vi.advanceTimersByTime(25 * 60 * 60 * 1000);
+      settingsPorTenant.set(TENANT, "__THROW__");
+
+      const depois = await applyModularPlanGate(antes);
+      expect(depois.internalPages).toEqual([]);
+      expect(depois.error).toBe("TENANT_SETTINGS_READ_FAILED");
+      expect(passouNoGuard(depois, "campanhas").passou).toBe(false);
+      expect(passouNoGuard(depois, "campanhas").status).toBe(503);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("tenant sem leitura prévia + erro no banco é negado com 503 e mensagem amigável", async () => {
