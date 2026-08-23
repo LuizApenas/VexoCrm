@@ -1,5 +1,6 @@
 import { routeDeps } from "../http/routeDeps.js";
 import { randomBytes } from "crypto";
+import { upsertLeadByPhone } from "../services/leadUpsert.js";
 
 /**
  * Registra rotas públicas de webhooks para Inbound Leads e Conversões (Sales).
@@ -81,23 +82,14 @@ export function registerWebhooksRoutes(app) {
         return res.status(400).json({ error: "Missing phone number in payload" });
       }
 
-      // Insere ou atualiza o lead em leads_clients / leads
-      await pgDatabasePool.query(`
-        INSERT INTO public.leads (
-          client_id, telefone, nome, status, qualificacao, historico
-        ) VALUES (
-          $1, $2, $3, 'NOVO', $4, $5
-        ) ON CONFLICT (client_id, telefone) DO UPDATE SET
-          nome = EXCLUDED.nome,
-          qualificacao = EXCLUDED.qualificacao,
-          updated_at = now()
-      `, [
-        tenant_id, 
-        phone, 
-        name, 
-        `Source: ${source} | Campaign: ${campaign}`,
-        `Lead entrou via Webhook em ${new Date().toISOString()}`
-      ]);
+      // Insere ou atualiza o lead via rotina unificada sem depender de constraint única
+      await upsertLeadByPhone(pgDatabasePool, tenant_id, phone, {
+        phone,
+        nome: name || null,
+        status: "NOVO",
+        qualificacao: `Source: ${source} | Campaign: ${campaign}`,
+        historico: `Lead entrou via Webhook em ${new Date().toISOString()}`,
+      });
 
       return res.status(200).json({ success: true, message: "Lead registered via webhook" });
     } catch (err) {

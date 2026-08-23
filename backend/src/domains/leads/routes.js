@@ -14,7 +14,7 @@ import {
 } from "../../lead-client-tables.js";
 import { hasAccessPermission } from "../../accessGuards.js";
 import { requireContractedModulePage } from "../../access/modularGate.js";
-import { upsertLeadByPhone } from "../../services/leadUpsert.js";
+import { upsertLeadByPhone, upsertLeadsBatchByPhone } from "../../services/leadUpsert.js";
 import { summarizeChatWithAI } from "./chatInsight.js";
 import {
   getDefaultLeadClientEvolutionInstance,
@@ -1291,26 +1291,14 @@ export function registerLeadsRoutes(app, deps) {
 
       if (parsedLeads.length > 0) {
         try {
-          const { data, error } = await supabase
-            .from("leads")
-            .upsert(parsedLeads, { onConflict: "client_id,telefone" })
-            .select("id");
-
-          if (error) {
-            console.warn("[leads-import-csv] Falha no upsert com telefone, tentando fallback:", error.message);
-            // Fallback: tenta upsert sem 'telefone' caso a constraint seja apenas 'client_id,phone'
-            const { data: fbData, error: fbError } = await supabase
-              .from("leads")
-              .upsert(parsedLeads, { onConflict: "client_id,phone" })
-              .select("id");
-
-            if (fbError) throw fbError;
-            importedCount = fbData?.length || parsedLeads.length;
-          } else {
-            importedCount = data?.length || parsedLeads.length;
-          }
+          const { insertedCount, updatedCount, totalCount } = await upsertLeadsBatchByPhone(
+            pgDatabasePool,
+            clientId,
+            parsedLeads
+          );
+          importedCount = totalCount;
         } catch (dbErr) {
-          console.error("[leads-import-csv] Erro fatal no Supabase:", dbErr);
+          console.error("[leads-import-csv] Erro no upsertLeadsBatchByPhone:", dbErr);
           throw dbErr;
         }
       }
@@ -1399,14 +1387,24 @@ export function registerLeadsRoutes(app, deps) {
         updated_at: new Date().toISOString(),
       };
 
-      const { data, error } = await supabase
+      await upsertLeadByPhone(pgDatabasePool, clientId, phone, {
+        phone,
+        nome: payload.nome,
+        stage: payload.stage,
+        temperature: payload.temperature,
+        tags: payload.tags,
+      });
+
+      const { data: item } = await supabase
         .from("leads")
-        .upsert(payload, { onConflict: "client_id,telefone" })
         .select("*")
+        .eq("client_id", clientId)
+        .or(`telefone.eq.${phone.replace(/^\+/, "")},phone.eq.${phone.replace(/^\+/, "")},telefone.eq.${phone},phone.eq.${phone}`)
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .single();
 
-      if (error) throw error;
-      res.status(201).json({ item: data });
+      res.status(201).json({ item: item || { ...payload, client_id: clientId } });
     } catch (err) {
       sendError(res, 500, "LEAD_CREATE_FAILED", err.message || "Erro ao criar lead");
     }
