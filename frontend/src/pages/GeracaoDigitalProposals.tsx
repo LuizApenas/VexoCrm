@@ -543,6 +543,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
     setSelectedProposal(prop);
     setProspectName(prop.prospect_name);
     setCondicoes(prop.condicoes);
+    setNewCondicoes((prop as any).condicoes_especiais || (prop as any).condicao_especial || "");
     setItems(Array.isArray(prop.itens) ? prop.itens : []);
     setSignerName(prop.signer_name || "");
     setPaymentLink(prop.payment_link || "");
@@ -972,7 +973,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
         // divide a mensalidade por ele). Vem do % do plano, com fallback no
         // VP manual antigo.
         valor_vp: vpMensalPlano > 0 ? vpMensalPlano : null,
-        condicoes_especiais: (editPlano as any).condicoesEspeciais || (editPlano as any).condicoes_especiais || condicoes || null,
+        condicoes_especiais: newCondicoes || (editPlano as any).condicoesEspeciais || null,
         desconto_setup_pct: (editPlano as any).descontoSetupPorcentagem ?? (editPlano as any).desconto_setup_pct ?? 0,
         desconto_mensal_pct: (editPlano as any).descontoMensalPorcentagem ?? (editPlano as any).desconto_mensal_pct ?? 0,
         vexo_plan: (editPlano as any).vexoPlan || null,

@@ -186,7 +186,6 @@ export function useProposalWizard({
           return gdPkg?.periodo || vexoPkg?.periodo || "mensal";
         })(),
         validade_ate: newValidade ? new Date(`${newValidade}T23:59:59`).toISOString() : null,
-        condicoes: newCondicoes || undefined,
         payment_link: newPaymentLink || null,
         carencia_dias: newCarencia !== "" ? Number(newCarencia) : null,
         // Coluna valor_vp = VP MENSAL do prazo pré-selecionado. A página

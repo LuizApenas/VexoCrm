@@ -64,7 +64,7 @@ describe("stepper de parcelas", () => {
     let f = formasVazias();
     f = ajustarParcelas(f, "cartao_parcelado", 3); // 3 -> 6
     expect(nomeDaForma(f, FORMAS_SETUP[2])).toBe("Parcelado no Cartão em até 3x em 6x");
-    expect(nomeDaForma(f, FORMAS_SETUP[0])).toBe("Pix à vista (Com desconto)");
+    expect(nomeDaForma(f, FORMAS_SETUP[0])).toBe("Pix à vista");
   });
 });
 

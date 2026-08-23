@@ -772,15 +772,15 @@ export default function GeracaoDigitalPublicProposal() {
             );
           })()}
 
-          {/* Quadro: CONDIÇÕES DE PAGAMENTO OFERECIDAS / CONDIÇÃO ESPECIAL */}
-          {(proposal.condicoes || (proposal as any).condicoes_especiais || (proposal as any).condicao_especial) && (
+          {/* Quadro: CONDIÇÕES DE PAGAMENTO OFERECIDAS / CONDIÇÃO ESPECIAL (Apenas se condicoes_especiais estiver preenchido) */}
+          {Boolean((proposal as any).condicoes_especiais || (proposal as any).condicao_especial) && (
             <div className="rounded-2xl bg-gradient-to-r from-amber-500/10 to-amber-600/10 border border-amber-500/30 p-5 space-y-2">
               <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
                 <Info className="h-4 w-4 text-amber-400" />
                 CONDIÇÕES DE PAGAMENTO OFERECIDAS & ESPECIAIS
               </h4>
               <p className="text-xs text-amber-100 whitespace-pre-wrap leading-relaxed">
-                {(proposal as any).condicoes_especiais || (proposal as any).condicao_especial || proposal.condicoes}
+                {(proposal as any).condicoes_especiais || (proposal as any).condicao_especial}
               </p>
             </div>
           )}

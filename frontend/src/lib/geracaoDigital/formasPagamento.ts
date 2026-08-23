@@ -26,7 +26,7 @@ export interface FormaDef {
 }
 
 export const FORMAS_SETUP: FormaDef[] = [
-  { id: "pix_avista", label: "Pix à vista (Com desconto)", aplica_a: "setup", parcelavel: false },
+  { id: "pix_avista", label: "Pix à vista", aplica_a: "setup", parcelavel: false },
   { id: "entrada_pix_30d", label: "Entrada no Pix + 30 dias no Pix", aplica_a: "setup", parcelavel: false },
   { id: "cartao_parcelado", label: "Parcelado no Cartão em até 3x", aplica_a: "setup", parcelavel: true },
 ];
@@ -93,7 +93,7 @@ export function formasParaTerms(formas: FormasSelecionadas): PaymentTerm[] {
 
     switch (def.id) {
       case "pix_avista":
-        return { ...base, tipo: "avista_desconto", config: { meio: "pix", percentual_desconto: 5 } };
+        return { ...base, tipo: "custom", config: { meio: "pix", descricao: "Pix à vista" } };
       case "entrada_pix_30d":
         return { ...base, tipo: "custom", config: { meio: "pix", descricao: "Entrada no Pix + 30 dias no Pix" } };
       case "cartao_parcelado":

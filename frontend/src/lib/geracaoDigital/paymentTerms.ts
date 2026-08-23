@@ -49,7 +49,7 @@ export const CARTAO_RECORRENTE_PLANOS: { value: number; label: string }[] = [
 ];
 
 export const PAYMENT_TERM_TIPOS: { value: PaymentTermTipo; label: string }[] = [
-  { value: "avista_desconto", label: "À vista com desconto" },
+  { value: "avista_desconto", label: "À vista" },
   { value: "entrada_parcelas", label: "Entrada + parcelas" },
   { value: "parcelado_cartao", label: "Parcelado no cartão" },
   { value: "cartao_recorrente", label: "Recorrência mensal no cartão" },
@@ -85,7 +85,9 @@ export function computePaymentBreakdown(
       const final = base * (1 - p / 100);
       return {
         linhas: [
-          `À vista${cfg.meio ? ` no ${MEIO_LABELS[cfg.meio] || cfg.meio}` : ""}: ${brl(base)} com ${p}% off = ${brl(final)}`,
+          p > 0
+            ? `À vista${cfg.meio ? ` no ${MEIO_LABELS[cfg.meio] || cfg.meio}` : ""}: ${brl(base)} com ${p}% de desconto = ${brl(final)}`
+            : `À vista${cfg.meio ? ` no ${MEIO_LABELS[cfg.meio] || cfg.meio}` : ""}: ${brl(base)}`,
         ],
         totalFinal: final,
       };
