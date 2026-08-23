@@ -95,6 +95,10 @@ function shutdownPgPool() {
   return Promise.resolve();
 }
 
+export function _setPgDatabasePoolForTesting(pool) {
+  pgDatabasePool = pool;
+}
+
 export {
   initDatabase,
   shutdownPgPool,

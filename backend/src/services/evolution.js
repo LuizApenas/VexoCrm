@@ -154,6 +154,7 @@ export function selectDefaultEvolutionInstance(instances = []) {
 
 export async function getLeadClientEvolutionInstances(clientId) {
   if (!clientId) return [];
+  if (!pgDatabasePool) return [];
   try {
     await ensureLeadClientEvolutionInstancesTable();
     const { rows } = await pgDatabasePool.query(
@@ -174,44 +175,48 @@ export async function getLeadClientEvolutionInstances(clientId) {
 
     return rows;
   } catch (err) {
-    console.warn("[evolution-instances] Primary query warning for client", clientId, err.message);
-    try {
-      const { rows } = await pgDatabasePool.query(
-        `SELECT * FROM public.lead_client_evolution_instances WHERE client_id = $1 ORDER BY active DESC, is_default DESC, created_at ASC`,
-        [clientId]
-      );
-      return rows;
-    } catch (fallbackErr) {
-      console.warn("[evolution-instances] Fallback query failed:", fallbackErr.message);
-      return [];
-    }
+    console.error("[evolution-instances] Erro ao buscar instâncias Evolution para client:", {
+      clientId,
+      error: err?.message || err,
+    });
+    throw err;
   }
 }
 
 export async function getLeadClientEvolutionInstancesMap(clientIds) {
-  if (!clientIds?.length || !(await ensureLeadClientEvolutionInstancesTable())) return {};
+  if (!clientIds?.length) return {};
+  if (!pgDatabasePool) return {};
+  try {
+    await ensureLeadClientEvolutionInstancesTable();
 
-  const { rows } = await pgDatabasePool.query(
-    `
-      SELECT i.id, i.client_id, i.name, i.dispatch_webhook_url, i.dispatch_webhook_token,
-             i.inbound_bearer_token, i.active, i.is_default, i.chip_state, i.daily_limit_override,
-             i.webhook_enabled,
-             i.created_at, i.updated_at, i.updated_by_email,
-             COALESCE(u.sent_count, 0) AS sent_count_today
-      FROM public.lead_client_evolution_instances i
-      LEFT JOIN public.evolution_instance_daily_usage u
-        ON u.instance_id = i.id AND u.date = CURRENT_DATE
-      WHERE i.client_id = ANY($1::text[])
-      ORDER BY i.active DESC, i.is_default DESC, i.created_at ASC
-    `,
-    [clientIds]
-  );
+    const { rows } = await pgDatabasePool.query(
+      `
+        SELECT i.id, i.client_id, i.name, i.dispatch_webhook_url, i.dispatch_webhook_token,
+               i.inbound_bearer_token, i.active, i.is_default, i.chip_state, i.daily_limit_override,
+               i.webhook_enabled,
+               i.created_at, i.updated_at, i.updated_by_email,
+               COALESCE(u.sent_count, 0) AS sent_count_today
+        FROM public.lead_client_evolution_instances i
+        LEFT JOIN public.evolution_instance_daily_usage u
+          ON u.instance_id = i.id AND u.date = CURRENT_DATE
+        WHERE i.client_id = ANY($1::text[])
+        ORDER BY i.active DESC, i.is_default DESC, i.created_at ASC
+      `,
+      [clientIds]
+    );
 
-  return rows.reduce((acc, row) => {
-    if (!acc[row.client_id]) acc[row.client_id] = [];
-    acc[row.client_id].push(row);
-    return acc;
-  }, {});
+    return rows.reduce((acc, row) => {
+      if (!acc[row.client_id]) acc[row.client_id] = [];
+      acc[row.client_id].push(row);
+      return acc;
+    }, {});
+  } catch (err) {
+    console.error("[evolution-instances] Erro ao buscar mapa de instâncias Evolution:", {
+      clientIds,
+      error: err?.message || err,
+    });
+    throw err;
+  }
 }
 
 export async function getDefaultLeadClientEvolutionInstance(clientId) {
