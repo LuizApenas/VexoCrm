@@ -3089,7 +3089,8 @@ Condições: ${condicoes}`;
       const { id } = req.params;
 
       const result = await pool.query(
-        `SELECT * FROM public.gd_proposals WHERE id = $1`,
+        `SELECT id, tenant_id, presentation_id, package_id, package_vexo_id, prospect_name, itens, valor_total, condicoes, status, payment_link, assinatura, signer_name, signed_at, created_at, sent_at, cobrar_setup, valor_setup_vexo, condicoes_pagamento, periodo_plano, validade_ate, valor_apos_validade, observacao_validade, descontos_concedidos, assinatura_metodo, valor_vp, meio_pagamento, carencia_dias, pacotes_ofertados, presentation_slides, owner_company, condicoes_especiais, desconto_setup_pct, desconto_mensal_pct, vexi_plan, vexi_price, vexo_plan, vexo_price, prospect_logo, segment_id
+         FROM public.gd_proposals WHERE id = $1`,
         [id]
       );
 
@@ -3190,16 +3191,53 @@ Condições: ${condicoes}`;
       const valorSetup = somaSetup(items);
       const valorRecorrente = somaRecorrente(items);
 
+      const publicData = {
+        id: row.id,
+        package_id: row.package_id,
+        package_vexo_id: row.package_vexo_id,
+        prospect_name: row.prospect_name,
+        itens: items,
+        valor_total: row.valor_total,
+        condicoes: row.condicoes,
+        status: row.status,
+        payment_link: finalPaymentLink,
+        sent_at: row.sent_at,
+        assinatura: row.assinatura,
+        signer_name: row.signer_name,
+        signed_at: row.signed_at,
+        created_at: row.created_at,
+        cobrar_setup: row.cobrar_setup,
+        valor_setup_vexo: row.valor_setup_vexo,
+        condicoes_pagamento: row.condicoes_pagamento,
+        periodo_plano: row.periodo_plano,
+        validade_ate: row.validade_ate,
+        valor_apos_validade: row.valor_apos_validade,
+        observacao_validade: row.observacao_validade,
+        descontos_concedidos: row.descontos_concedidos,
+        assinatura_metodo: row.assinatura_metodo,
+        valor_vp: row.valor_vp,
+        meio_pagamento: row.meio_pagamento,
+        carencia_dias: row.carencia_dias,
+        pacotes_ofertados: row.pacotes_ofertados,
+        presentation_slides: row.presentation_slides,
+        owner_company: row.owner_company,
+        condicoes_especiais: row.condicoes_especiais,
+        desconto_setup_pct: row.desconto_setup_pct,
+        desconto_mensal_pct: row.desconto_mensal_pct,
+        vexi_plan: row.vexi_plan,
+        vexi_price: row.vexi_price,
+        vexo_plan: row.vexo_plan,
+        vexo_price: row.vexo_price,
+        prospect_logo: row.prospect_logo,
+        segment_id: row.segment_id,
+        valor_setup: valorSetup,
+        valor_recorrente: valorRecorrente,
+        packages: packagesRows
+      };
+
       res.json({
         success: true,
-        data: {
-          ...row,
-          itens: items,
-          payment_link: finalPaymentLink,
-          valor_setup: valorSetup,
-          valor_recorrente: valorRecorrente,
-          packages: packagesRows
-        }
+        data: publicData
       });
     } catch (error) {
       console.error("[GeracaoDigital] Erro ao buscar proposta pública:", error);
