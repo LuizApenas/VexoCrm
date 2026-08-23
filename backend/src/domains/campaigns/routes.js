@@ -79,12 +79,13 @@ export function buildStepOptionsContext(sequence) {
     if (opcoes.length === 0) continue;
 
     const doPasso = [];
-    opcoes.forEach((btn, idx) => {
-      const rotulo = String(btn.displayText || btn.label || "").trim();
-      if (!rotulo) return;
+    for (const btn of opcoes) {
+      const rotulo = String(btn.displayText || btn.label || btn.replyText || btn.value || "").trim();
+      if (!rotulo || /\{\{.*?\}\}/.test(rotulo)) continue;
       const intencao = String(btn.replyText || btn.value || "").trim();
-      doPasso.push(intencao ? `${idx + 1}. ${rotulo} (significa: ${intencao})` : `${idx + 1}. ${rotulo}`);
-    });
+      const numero = doPasso.length + 1;
+      doPasso.push(intencao && intencao !== rotulo ? `${numero}. ${rotulo} (significa: ${intencao})` : `${numero}. ${rotulo}`);
+    }
     if (doPasso.length > 0) linhas.push(...doPasso);
   }
 

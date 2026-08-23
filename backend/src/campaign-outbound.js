@@ -548,13 +548,13 @@ export function formatStepTextWithButtons(baseText, stepButtons, context = {}, p
   // mensagem: sao dois campos com papeis diferentes, e nenhum se perde.
   const optionButtons = stepButtons.filter((b) => b && (b.type === "reply" || (b.type !== "url" && !b.url && !b.href)));
   const optionLines = [];
-  for (const [idx, btn] of optionButtons.entries()) {
+  for (const btn of optionButtons) {
     const rotulo = normalizeString(
       applyMessagePlaceholders(btn.displayText || btn.label || btn.replyText || btn.value, context.lead, phone)
     );
     // Nada e inventado: opcao sem texto escrito nao vira linha.
     if (!rotulo || /\{\{.*?\}\}/.test(rotulo)) continue;
-    optionLines.push(`${idx + 1}. ${rotulo}`);
+    optionLines.push(`${optionLines.length + 1}. ${rotulo}`);
   }
 
   if (optionLines.length === 0 && urlButtons.length === 0) return text;

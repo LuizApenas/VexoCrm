@@ -28,15 +28,43 @@ describe("formatStepTextWithButtons - opcoes escritas na mensagem", () => {
     expect(texto).not.toContain("\n\n");
   });
 
-  it("opcao sem rotulo escrito nao vira linha (comportamento atual: indexacao por posicao do loop)", () => {
+  it("opcao sem rotulo escrito nao vira linha e a numeracao subsequente continua estritamente sequencial a partir de 1", () => {
     const texto = formatStepTextWithButtons("Oi", [
       { type: "reply", displayText: "" },
       { type: "reply", displayText: "Tenho interesse" },
     ]);
-    // Documenta bug real exposto pela conversao: o codigo atual usa idx da iteracao,
-    // entao uma primeira opcao vazia faz a segunda ser numerada como "2."
-    expect(texto).toContain("2. Tenho interesse");
-    expect(texto).not.toContain("1.");
+    expect(texto).toContain("1. Tenho interesse");
+    expect(texto).not.toContain("2.");
+  });
+
+  it("botões [vazio, 'Tenho interesse', vazio, 'Depois'] → texto final e contexto do agente usam estritamente '1. Tenho interesse' e '2. Depois'", () => {
+    const botoes = [
+      { type: "reply", displayText: "" },
+      { type: "reply", displayText: "Tenho interesse", replyText: "lead quer saber mais" },
+      { type: "reply", displayText: "   " },
+      { type: "reply", displayText: "Depois", replyText: "lead quer falar outro dia" },
+    ];
+
+    // 1. Verificação do texto entregue ao lead
+    const textoFinal = formatStepTextWithButtons("Podemos conversar?", botoes);
+    expect(textoFinal).toContain("1. Tenho interesse");
+    expect(textoFinal).toContain("2. Depois");
+    expect(textoFinal).not.toContain("3.");
+    expect(textoFinal).not.toContain("4.");
+
+    // 2. Verificação do contexto injetado no prompt do Agente IA
+    const sequence = [
+      {
+        id: "step-1",
+        text: "Podemos conversar?",
+        buttons: botoes,
+      },
+    ];
+    const contextoAgente = buildStepOptionsContext(sequence);
+    expect(contextoAgente).toContain("1. Tenho interesse (significa: lead quer saber mais)");
+    expect(contextoAgente).toContain("2. Depois (significa: lead quer falar outro dia)");
+    expect(contextoAgente).not.toContain("3.");
+    expect(contextoAgente).not.toContain("4.");
   });
 
   it("opcoes e links convivem no mesmo passo", () => {
