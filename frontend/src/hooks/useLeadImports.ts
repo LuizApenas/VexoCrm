@@ -178,6 +178,14 @@ async function fetchLeadImports(path: string, init: RequestInit) {
   throw networkError instanceof Error ? networkError : new Error("Falha de conexao com a API de importacoes.");
 }
 
+function isClientTerminalError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message;
+    return msg.includes("404") || msg.includes("403") || msg.includes("401");
+  }
+  return false;
+}
+
 export function useLeadImports(clientId?: string) {
   const { isAuthenticated, canAccessView, getIdToken } = useAuth();
 
@@ -205,7 +213,7 @@ export function useLeadImports(clientId?: string) {
       const payload = await readLeadImportsJson<{ items?: LeadImportItem[] }>(res, "list_imports");
       return Array.isArray(payload.items) ? payload.items : [];
     },
-    retry: 1,
+    retry: (failureCount, error) => !isClientTerminalError(error) && failureCount < 1,
     staleTime: 30 * 1000,
   });
 }
@@ -264,7 +272,7 @@ export function useLeadImportItems(
         matched: payload.matched,
       };
     },
-    retry: 1,
+    retry: (failureCount, error) => !isClientTerminalError(error) && failureCount < 1,
     staleTime: 30 * 1000,
   });
 }

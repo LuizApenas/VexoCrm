@@ -484,13 +484,21 @@ export function useCanAccessCampaigns() {
   });
 }
 
+function isCampaignClientTerminalError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message;
+    return msg.includes("404") || msg.includes("403") || msg.includes("401");
+  }
+  return false;
+}
+
 export function useCampanhas(clientId?: string) {
-  const { getIdToken } = useAuth();
+  const { isAuthenticated, getIdToken } = useAuth();
   const canAccess = useCanAccessCampaigns();
 
   return useQuery({
     queryKey: ["campaigns", clientId || "all"],
-    enabled: canAccess && !!clientId,
+    enabled: canAccess && isAuthenticated && !!clientId,
     queryFn: async (): Promise<Campaign[]> => {
       const token = await getIdToken();
       if (!token) throw new Error("Usuário não autenticado.");
@@ -510,7 +518,7 @@ export function useCampanhas(clientId?: string) {
       const payload = await readCampaignJson<{ items?: Campaign[] }>(res, "list_campaigns");
       return Array.isArray(payload.items) ? payload.items : [];
     },
-    retry: 1,
+    retry: (failureCount, error) => !isCampaignClientTerminalError(error) && failureCount < 1,
     staleTime: 30 * 1000,
   });
 }
@@ -538,7 +546,7 @@ export function useCampaignLeads(campaignId?: string) {
       const payload = await readCampaignJson<{ items?: CampaignLead[] }>(res, "list_campaign_leads");
       return Array.isArray(payload.items) ? payload.items : [];
     },
-    retry: 1,
+    retry: (failureCount, error) => !isCampaignClientTerminalError(error) && failureCount < 1,
     staleTime: 30 * 1000,
   });
 }

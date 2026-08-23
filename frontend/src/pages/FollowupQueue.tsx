@@ -155,6 +155,11 @@ export default function FollowupDashboard() {
     }
   }, [loadingCompanies, companies.length, connectedInstances.length, tenantId, isAutoCreating]);
 
+  // Reseta seleção ao alternar de empresa (tenant)
+  useEffect(() => {
+    setCompanyId("");
+  }, [tenantId]);
+
   // Seleciona o número do tenant automaticamente assim que carrega.
   useEffect(() => {
     if (companies.length > 0 && !companies.some((c) => c.id === companyId)) {

@@ -293,21 +293,77 @@ export function LeadImportAuditReport({ activeClientId, imports, onSelectImportF
     }
   };
 
+  // ── Limpeza de estado e seleções ao trocar de empresa (tenant) ───────────
+  useEffect(() => {
+    setSelectedImportId("");
+    setAuditItems([]);
+    setSelectedItemIds(new Set());
+    setSearchTerm("");
+    setActiveFilter("all");
+    setDispatchesSearchTerm("");
+    setDownloadingId(null);
+  }, [activeClientId]);
+
+  // ── Sincronização de seleção com os imports válidos do tenant atual ──────
+  useEffect(() => {
+    if (imports.length > 0) {
+      if (!selectedImportId || !imports.some((imp) => imp.id === selectedImportId)) {
+        setSelectedImportId(imports[0].id);
+      }
+    } else {
+      setSelectedImportId("");
+      setAuditItems([]);
+    }
+  }, [imports, selectedImportId]);
+
+  // ── Carregamento de auditoria protegido com AbortController ──────────────
   useEffect(() => {
     if (!selectedImportId || !activeClientId) {
       setAuditItems([]);
       return;
     }
 
+    // Validação estrita: não envia requisição com ID que não pertence ao tenant ativo
+    if (imports.length > 0 && !imports.some((imp) => imp.id === selectedImportId)) {
+      setAuditItems([]);
+      return;
+    }
+
+    let isMounted = true;
+    const controller = new AbortController();
+
     async function loadAudit() {
       setLoading(true);
       try {
         const token = await getIdToken();
+        if (!token) throw new Error("Usuário não autenticado.");
+
         const res = await fetch(
           `${API_BASE_URL}/api/campaigns/reports/import-audit?clientId=${encodeURIComponent(activeClientId)}&importId=${encodeURIComponent(selectedImportId)}`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          }
         );
+
         if (!res.ok) {
+          // Erros 404 e 403 não devem disparar toasts destrutivos de erro genérico
+          if (res.status === 404) {
+            if (isMounted) setAuditItems([]);
+            const isOtherTenantOrDeleted = !imports.some((imp) => imp.id === selectedImportId);
+            const msg = isOtherTenantOrDeleted
+              ? "Selecione uma planilha desta empresa."
+              : "Essa planilha não existe mais.";
+            console.warn("[audit-report] 404:", msg, { clientId: activeClientId, importId: selectedImportId });
+            return;
+          }
+
+          if (res.status === 403) {
+            if (isMounted) setAuditItems([]);
+            console.warn("[audit-report] 403: Acesso não autorizado.", { clientId: activeClientId, importId: selectedImportId });
+            return;
+          }
+
           const contentType = res.headers.get("content-type") || "";
           let errorMsg = "Erro ao carregar auditoria";
           if (contentType.includes("application/json")) {
@@ -325,28 +381,37 @@ export function LeadImportAuditReport({ activeClientId, imports, onSelectImportF
           }
           throw new Error(errorMsg);
         }
+
         const data = await res.json();
-        setAuditItems(data.items || []);
-        setSelectedItemIds(new Set());
+        if (isMounted) {
+          setAuditItems(data.items || []);
+          setSelectedItemIds(new Set());
+        }
       } catch (err) {
-        toast({
-          title: "Erro ao carregar relatório",
-          description: err instanceof Error ? err.message : "Erro desconhecido.",
-          variant: "destructive",
-        });
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        if (isMounted) {
+          toast({
+            title: "Erro ao carregar relatório",
+            description: err instanceof Error ? err.message : "Erro desconhecido.",
+            variant: "destructive",
+          });
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
     loadAudit();
-  }, [selectedImportId, activeClientId]);
 
-  useEffect(() => {
-    if (imports.length > 0 && !selectedImportId) {
-      setSelectedImportId(imports[0].id);
-    }
-  }, [imports, selectedImportId]);
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [selectedImportId, activeClientId, imports, getIdToken]);
 
   const filteredItems = useMemo(() => {
     return auditItems.filter((item) => {

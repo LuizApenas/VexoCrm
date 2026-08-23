@@ -247,6 +247,50 @@ export default function LeadImports({
   const updateConsultant = useUpdateConsultantSchedule();
   const deleteConsultant = useDeleteConsultantSchedule();
 
+  // ── Limpeza de estado e seleções ao trocar de empresa (tenant) ───────────
+  useEffect(() => {
+    setSelectedImportId(ALL_IMPORTS_VALUE);
+    setSelectedImportIds([]);
+    setSelectedFile(null);
+    setParsedRows([]);
+    setFilterRules([]);
+    setParseError(null);
+    setPreviewDispatchId(null);
+    setPreviewOpen(false);
+    setViewingImport(null);
+    setPromptDispatchId(null);
+    setSelectedImageStepId(null);
+  }, [activeClientId]);
+
+  // Se o editingCampaignId pertencer a outro tenant ou não existir na lista, reseta
+  useEffect(() => {
+    if (editingCampaignId && campaigns.length > 0 && !campaigns.some((c) => c.id === editingCampaignId)) {
+      setEditingCampaignId(null);
+    }
+  }, [campaigns, editingCampaignId, setEditingCampaignId]);
+
+  // Se selectedImportId apontar para uma planilha que não existe na lista do tenant, reseta para ALL_IMPORTS_VALUE
+  useEffect(() => {
+    if (
+      selectedImportId !== ALL_IMPORTS_VALUE &&
+      selectedImportId !== CRM_BASE_VALUE &&
+      imports.length > 0 &&
+      !imports.some((imp) => imp.id === selectedImportId)
+    ) {
+      setSelectedImportId(ALL_IMPORTS_VALUE);
+    }
+  }, [imports, selectedImportId]);
+
+  // Limpa IDs de planilhas selecionadas que não pertencem ao tenant ativo
+  useEffect(() => {
+    if (selectedImportIds.length > 0 && imports.length > 0) {
+      const validIds = selectedImportIds.filter((id) => imports.some((imp) => imp.id === id));
+      if (validIds.length !== selectedImportIds.length) {
+        setSelectedImportIds(validIds);
+      }
+    }
+  }, [imports, selectedImportIds]);
+
   const { data: pendingData, refetch: refetchPending } = useLeadImportItems(
     activeClientId,
     selectedImportId === ALL_IMPORTS_VALUE ? undefined : selectedImportId,
