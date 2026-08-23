@@ -1703,12 +1703,23 @@ export function registerCampaignsRoutes(app, deps) {
     }
 
     // Apply database Round-Robin scheduling links to leads if they don't have one
+    const sequenceRequiresSchedulingLink = (steps || []).some((s) => {
+      const texts = [s.text, ...(Array.isArray(s.textVariants) ? s.textVariants : [])].filter(Boolean);
+      return texts.some((t) => /\{\{\s*scheduling_link\s*\}\}/i.test(t));
+    });
+
+    let activeConsultantLinks = [];
     try {
-      const consultantRes = await pgDatabasePool.query(
-        "SELECT scheduling_link FROM public.crm_consultant_schedules WHERE client_id = $1 AND active = true ORDER BY name ASC",
-        [clientId]
-      );
-      const activeConsultantLinks = consultantRes.rows.map(r => r.scheduling_link);
+      if (pgDatabasePool) {
+        const consultantRes = await pgDatabasePool.query(
+          "SELECT scheduling_link FROM public.crm_consultant_schedules WHERE client_id = $1 AND active = true ORDER BY name ASC",
+          [clientId]
+        );
+        activeConsultantLinks = (consultantRes?.rows || [])
+          .map((r) => r.scheduling_link)
+          .filter((link) => Boolean(normalizeString(link)));
+      }
+
       if (activeConsultantLinks.length > 0) {
         leads.forEach((lead, idx) => {
           if (!lead.normalized_data) {
@@ -1720,7 +1731,32 @@ export function registerCampaignsRoutes(app, deps) {
         });
       }
     } catch (dbErr) {
-      console.warn("[campaign-dispatch] failed to apply consultant schedules to leads:", dbErr.message);
+      console.error("[campaign-dispatch] failed to apply consultant schedules to leads:", {
+        clientId,
+        error: dbErr?.message || dbErr,
+      });
+      if (sequenceRequiresSchedulingLink) {
+        throw new Error(
+          `Disparo interrompido: falha ao buscar links de agendamento ({{scheduling_link}}): ${dbErr?.message || dbErr}`
+        );
+      }
+    }
+
+    // Se a campanha usa {{scheduling_link}}, nenhum lead pode ser disparado com a variável crua
+    if (sequenceRequiresSchedulingLink) {
+      const leadsSemLink = leads.filter((lead) => !normalizeString(lead.normalized_data?.scheduling_link));
+      if (leadsSemLink.length > 0) {
+        const motivo = activeConsultantLinks.length === 0
+          ? "Nenhum consultor ativo com link de agendamento cadastrado para preencher {{scheduling_link}}."
+          : `Link de agendamento ausente para ${leadsSemLink.length} de ${leads.length} lead(s).`;
+        console.error("[campaign-dispatch] Disparo bloqueado por link de agendamento ausente:", {
+          clientId,
+          leadsSemLink: leadsSemLink.length,
+          totalLeads: leads.length,
+          motivo,
+        });
+        throw new Error(`Disparo interrompido: ${motivo}`);
+      }
     }
 
     // Constrói analyticsMeta compatível com dispatchCampaignSequence

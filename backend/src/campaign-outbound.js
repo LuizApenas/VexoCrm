@@ -46,7 +46,7 @@ function normalizeTextVariants(value) {
  * Replace per-lead placeholders in outbound copy (Evolution text/caption).
  * Supports {{nome}} and {{telefone}} with optional spaces inside braces (case-insensitive tokens).
  */
-function applyMessagePlaceholders(text, lead, phone) {
+export function applyMessagePlaceholders(text, lead, phone) {
   let raw = normalizeString(text);
   if (!raw) return raw;
   const nome = normalizeString(lead?.nome) || "cliente";
