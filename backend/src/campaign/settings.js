@@ -245,6 +245,21 @@ export async function resolveDispatchWebhookSettings(clientId) {
   };
 }
 
+const INBOUND_CHIP_LAST_GOOD_HORIZON_MS = 5 * 60 * 1000; // 5 minutos de horizonte de degradação em oscilação de banco
+const inboundChipLastGoodCache = new Map();
+
+function formatInboundChipAge(ms) {
+  const seg = Math.max(0, Math.floor(ms / 1000));
+  if (seg < 60) return `${seg}s`;
+  const min = Math.floor(seg / 60);
+  return `${min}m ${seg % 60}s`;
+}
+
+/** So para teste: zera o cache de chips entre casos. */
+export function _resetInboundChipLastGoodCache() {
+  inboundChipLastGoodCache.clear();
+}
+
 /**
  * URL da Evolution para a resposta do INBOUND.
  *
@@ -258,17 +273,57 @@ export async function resolveDispatchWebhookSettings(clientId) {
  * Ordem: o chip que RECEBEU a mensagem; sem identificar, o default do tenant.
  * Devolve `tentativas` para o log dizer o que foi consultado e o que veio vazio —
  * este caminho nao pode mais falhar sem explicar.
+ *
+ * Resiliência (lastGood):
+ * - Em caso de oscilação transitória do banco, usa o chip previamente resolvido para
+ *   aquele MESMO tenant (estritamente isolado por clientId) dentro do horizonte curto
+ *   de 5 minutos. Passado esse horizonte, recusa o envio com erro explícito para evitar
+ *   disparar por chips que foram desconectados ou banidos.
  */
 export async function resolveInboundDispatchSettings({ clientId, instanceName = null }) {
+  const agora = Date.now();
   const tentativas = [];
   const alvo = normalizeString(instanceName);
+  const cacheKey = `${clientId}::${alvo || "__default__"}`;
 
   if (alvo) {
     let instancias;
     try {
       instancias = await getLeadClientEvolutionInstances(clientId);
     } catch (err) {
-      console.error("[inbound-dispatch-settings] falha de leitura no banco ao buscar instâncias Evolution do tenant", {
+      const lastGood = inboundChipLastGoodCache.get(cacheKey);
+      // Isolamento estrito por tenant: garante que o registro pertence exatamente a este clientId
+      if (
+        lastGood &&
+        lastGood.clientId === clientId &&
+        agora - lastGood.timestamp < INBOUND_CHIP_LAST_GOOD_HORIZON_MS
+      ) {
+        const idadeMs = agora - lastGood.timestamp;
+        const idadeLegivel = formatInboundChipAge(idadeMs);
+        console.warn(`[inbound-dispatch-settings] oscilação de banco: usando chip em cache de ${idadeLegivel} atrás`, {
+          clientId,
+          instanceName: alvo,
+          idadeMs,
+          idadeLegivel,
+          aviso: `usando chip em cache de ${idadeLegivel} atrás`,
+          erro: err?.message || err,
+        });
+        tentativas.push({
+          fonte: "chip_do_webhook_cache",
+          instanceName: alvo,
+          resultado: "usado_last_good",
+          idadeLegivel,
+        });
+        return {
+          webhookUrl: lastGood.webhookUrl,
+          webhookToken: lastGood.webhookToken,
+          source: "inbound_chip_cache",
+          instanceName: lastGood.instanceName || alvo,
+          tentativas,
+        };
+      }
+
+      console.error("[inbound-dispatch-settings] falha de leitura no banco ao buscar instâncias Evolution do tenant sem cache válido", {
         clientId,
         instanceName: alvo,
         error: err?.message || String(err),
@@ -279,8 +334,7 @@ export async function resolveInboundDispatchSettings({ clientId, instanceName = 
         resultado: "erro_de_leitura_banco",
         erro: err?.message || String(err),
       });
-      // Em caminho de ENVIO de mensagem: falha de leitura no banco recusa o envio
-      // em vez de fingir que o chip nao existe e degradar silenciosamente.
+      // Em caminho de ENVIO de mensagem: falha de leitura no banco sem cache válido recusa o envio
       throw new Error(
         `[inbound-dispatch-settings] falha de banco ao resolver chip '${alvo}' para o tenant '${clientId}': ${err?.message || err}`
       );
@@ -302,28 +356,83 @@ export async function resolveInboundDispatchSettings({ clientId, instanceName = 
     } else if (!normalizeString(casada.dispatch_webhook_url)) {
       tentativas.push({ fonte: "chip_do_webhook", instanceName: alvo, resultado: "sem_url_de_disparo" });
     } else {
-      return {
+      const resolved = {
         webhookUrl: normalizeString(casada.dispatch_webhook_url),
         webhookToken: normalizeString(casada.dispatch_webhook_token) || null,
         source: "inbound_chip",
         instanceName: casada.name || alvo,
         tentativas,
       };
+      // Guarda leitura boa no cache isolado do tenant
+      inboundChipLastGoodCache.set(cacheKey, {
+        clientId,
+        instanceName: resolved.instanceName,
+        webhookUrl: resolved.webhookUrl,
+        webhookToken: resolved.webhookToken,
+        timestamp: agora,
+      });
+      return resolved;
     }
   } else {
     tentativas.push({ fonte: "chip_do_webhook", resultado: "webhook_sem_instance" });
   }
 
-  const doTenant = await resolveDispatchWebhookSettings(clientId);
+  let doTenant;
+  try {
+    doTenant = await resolveDispatchWebhookSettings(clientId);
+  } catch (err) {
+    const lastGood = inboundChipLastGoodCache.get(cacheKey);
+    if (
+      lastGood &&
+      lastGood.clientId === clientId &&
+      agora - lastGood.timestamp < INBOUND_CHIP_LAST_GOOD_HORIZON_MS
+    ) {
+      const idadeMs = agora - lastGood.timestamp;
+      const idadeLegivel = formatInboundChipAge(idadeMs);
+      console.warn(`[inbound-dispatch-settings] oscilação de banco: usando chip default em cache de ${idadeLegivel} atrás`, {
+        clientId,
+        idadeMs,
+        idadeLegivel,
+        aviso: `usando chip default em cache de ${idadeLegivel} atrás`,
+        erro: err?.message || err,
+      });
+      tentativas.push({
+        fonte: "default_do_tenant_cache",
+        resultado: "usado_last_good",
+        idadeLegivel,
+      });
+      return {
+        webhookUrl: lastGood.webhookUrl,
+        webhookToken: lastGood.webhookToken,
+        source: "tenant_cache",
+        instanceName: alvo || null,
+        tentativas,
+      };
+    }
+    throw err;
+  }
+
   tentativas.push({ fonte: "default_do_tenant", resultado: doTenant.source, temUrl: Boolean(doTenant.webhookUrl) });
 
-  return {
+  const resolved = {
     webhookUrl: doTenant.webhookUrl,
     webhookToken: doTenant.webhookToken,
     source: doTenant.webhookUrl ? `tenant:${doTenant.source}` : doTenant.source,
     instanceName: alvo || null,
     tentativas,
   };
+
+  if (resolved.webhookUrl) {
+    inboundChipLastGoodCache.set(cacheKey, {
+      clientId,
+      instanceName: resolved.instanceName,
+      webhookUrl: resolved.webhookUrl,
+      webhookToken: resolved.webhookToken,
+      timestamp: agora,
+    });
+  }
+
+  return resolved;
 }
 
 export async function resolveCampaignDispatchSettings(clientId, campaign = {}) {
