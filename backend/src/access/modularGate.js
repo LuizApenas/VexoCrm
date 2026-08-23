@@ -46,13 +46,12 @@ async function settingsDoTenant(clientId) {
     cache.set(clientId, { settings, em: agora });
     return settings;
   } catch (err) {
-    // Falha de leitura NAO pode tirar acesso de quem tem: devolve null e o gate
-    // deixa passar. Negar por indisponibilidade do banco derrubaria tenant pagante.
-    console.warn("[modular-gate] falha ao ler settings do tenant; acesso mantido", {
+    // Em controle de acesso, falha de leitura NEGA acesso (fail-closed) e loga com erro.
+    console.error("[modular-gate] falha ao ler settings do tenant; acesso negado por seguranca", {
       clientId,
       erro: err?.message || err,
     });
-    return null;
+    return { readError: true, error: err };
   }
 }
 
@@ -75,7 +74,18 @@ export async function applyModularPlanGate(accessProfile) {
   if (!clientId) return accessProfile;
 
   const settings = await settingsDoTenant(clientId);
-  if (!settings || !isPlanoModular(settings)) return accessProfile;
+  if (!settings) return accessProfile;
+
+  if (settings.readError) {
+    return {
+      ...accessProfile,
+      internalPages: [],
+      planTier: "error",
+      error: "TENANT_SETTINGS_READ_FAILED",
+    };
+  }
+
+  if (!isPlanoModular(settings)) return accessProfile;
 
   const permitidas = deriveTenantInternalPages({
     plan_tier: settings.plan_tier,

@@ -14,7 +14,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const settingsPorTenant = new Map();
 
 vi.mock("../services/n8nSettings.js", () => ({
-  getLeadClientN8nSettings: async (clientId) => settingsPorTenant.get(clientId) ?? null,
+  getLeadClientN8nSettings: async (clientId) => {
+    const val = settingsPorTenant.get(clientId);
+    if (val === "__THROW__") {
+      throw new Error("DB_CONNECTION_TIMEOUT: database connection failed");
+    }
+    return val ?? null;
+  },
 }));
 
 const { applyModularPlanGate, _resetModularGateCache } = await import("../access/modularGate.js");
@@ -143,15 +149,23 @@ describe("o gate nunca CONCEDE, so tira", () => {
   });
 });
 
-describe("falha de leitura nao derruba tenant pagante", () => {
-  it("erro ao ler settings mantem o acesso de quem tem", async () => {
-    const { getLeadClientN8nSettings } = await import("../services/n8nSettings.js");
-    const original = getLeadClientN8nSettings;
-    // Simula indisponibilidade: a implementacao devolve null e o gate deixa passar.
-    settingsPorTenant.set("t", null);
-    const antes = usuarioDoTenant("t");
+describe("falha de leitura no banco NEGA acesso por seguranca (fail-closed)", () => {
+  it("erro ao ler settings nega acesso a paginas internas em vez de liberar tudo", async () => {
+    // Simula erro de banco no mock
+    settingsPorTenant.set("tenant-com-erro", "__THROW__");
+    const antes = usuarioDoTenant("tenant-com-erro");
     const depois = await applyModularPlanGate(antes);
-    expect(depois.internalPages).toEqual(antes.internalPages);
-    expect(typeof original).toBe("function");
+
+    expect(depois.internalPages).toEqual([]);
+    expect(depois.error).toBe("TENANT_SETTINGS_READ_FAILED");
+    expect(passouNoGuard(depois, "campanhas").passou).toBe(false);
+    expect(passouNoGuard(depois, "dashboard").passou).toBe(false);
+  });
+
+  it("admin/superadmin continuam passando mesmo com erro de settings", async () => {
+    settingsPorTenant.set("tenant-com-erro", "__THROW__");
+    const admin = { ...usuarioDoTenant("tenant-com-erro"), isAdmin: true };
+    const depois = await applyModularPlanGate(admin);
+    expect(depois.internalPages).toEqual(admin.internalPages);
   });
 });
