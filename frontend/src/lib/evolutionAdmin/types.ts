@@ -9,6 +9,7 @@ export interface EvolutionInstanceRow {
   active: boolean;
   is_default: boolean;
   chip_state: "cold" | "warm";
+  connection_state?: string | null;
   daily_limit_override: number | null;
   updated_at: string | null;
   updated_by_email?: string | null;

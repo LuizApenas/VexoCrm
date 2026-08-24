@@ -35,12 +35,8 @@ export function logCampaignDispatch(level, event, details = {}) {
 
 export function maskEvolutionInstance(row) {
   if (!row) return null;
-  const rawState = (row.chip_state || "").toLowerCase();
-  const chipState = ["open", "connected"].includes(rawState)
-    ? "open"
-    : rawState === "warm"
-    ? "warm"
-    : "cold";
+  const chipState = (row.chip_state || "").toLowerCase() === "warm" ? "warm" : "cold";
+  const connState = (row.connection_state || "unknown").toLowerCase();
 
   return {
     id: row.id,
@@ -52,7 +48,12 @@ export function maskEvolutionInstance(row) {
     active: row.active !== false,
     is_default: row.is_default === true,
     chip_state: chipState,
-    connectionStatus: chipState === "open" ? "open" : row.active !== false ? "active" : "disconnected",
+    connection_state: connState,
+    connectionStatus: ["open", "connected", "online"].includes(connState)
+      ? "open"
+      : row.active !== false
+      ? "active"
+      : "disconnected",
     daily_limit_override: row.daily_limit_override != null ? Number(row.daily_limit_override) : null,
     sent_count_today: row.sent_count_today != null ? Number(row.sent_count_today) : 0,
     webhook_enabled: row.webhook_enabled === true,
@@ -107,6 +108,7 @@ export async function ensureLeadClientEvolutionInstancesTable() {
         is_default BOOLEAN NOT NULL DEFAULT false,
         webhook_enabled BOOLEAN NOT NULL DEFAULT false,
         chip_state TEXT NOT NULL DEFAULT 'cold',
+        connection_state TEXT NOT NULL DEFAULT 'unknown',
         daily_limit_override INTEGER,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -114,6 +116,11 @@ export async function ensureLeadClientEvolutionInstancesTable() {
         updated_by_email TEXT
       )
     `);
+
+    await pgDatabasePool.query(`
+      ALTER TABLE public.lead_client_evolution_instances
+        ADD COLUMN IF NOT EXISTS connection_state TEXT NOT NULL DEFAULT 'unknown'
+    `).catch(() => {});
 
     await pgDatabasePool.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_client_evolution_default
@@ -160,7 +167,7 @@ export async function getLeadClientEvolutionInstances(clientId) {
     const { rows } = await pgDatabasePool.query(
       `
         SELECT i.id, i.client_id, i.name, i.dispatch_webhook_url, i.dispatch_webhook_token,
-               i.inbound_bearer_token, i.active, i.is_default, i.chip_state, i.daily_limit_override,
+               i.inbound_bearer_token, i.active, i.is_default, i.chip_state, i.connection_state, i.daily_limit_override,
                i.webhook_enabled,
                i.created_at, i.updated_at, i.updated_by_email,
                COALESCE(u.sent_count, 0) AS sent_count_today
@@ -192,7 +199,7 @@ export async function getLeadClientEvolutionInstancesMap(clientIds) {
     const { rows } = await pgDatabasePool.query(
       `
         SELECT i.id, i.client_id, i.name, i.dispatch_webhook_url, i.dispatch_webhook_token,
-               i.inbound_bearer_token, i.active, i.is_default, i.chip_state, i.daily_limit_override,
+               i.inbound_bearer_token, i.active, i.is_default, i.chip_state, i.connection_state, i.daily_limit_override,
                i.webhook_enabled,
                i.created_at, i.updated_at, i.updated_by_email,
                COALESCE(u.sent_count, 0) AS sent_count_today
@@ -711,6 +718,9 @@ export async function upsertLeadClientEvolutionInstance(clientId, input, authAcc
   const chipState = Object.prototype.hasOwnProperty.call(body, "chipState")
     ? normalizeString(body.chipState) === "warm" ? "warm" : "cold"
     : existing?.chip_state === "warm" ? "warm" : "cold";
+  const connectionState = Object.prototype.hasOwnProperty.call(body, "connectionState")
+    ? normalizeString(body.connectionState) || "unknown"
+    : existing?.connection_state || "unknown";
   const rawLimit = Object.prototype.hasOwnProperty.call(body, "dailyLimitOverride")
     ? body.dailyLimitOverride
     : existing?.daily_limit_override ?? null;
@@ -726,6 +736,7 @@ export async function upsertLeadClientEvolutionInstance(clientId, input, authAcc
     name,
     dispatch_webhook_url: dispatchWebhookUrl,
     chip_state: chipState,
+    connection_state: connectionState,
     daily_limit_override: dailyLimitOverride,
     dispatch_webhook_token:
       Object.prototype.hasOwnProperty.call(body, "dispatchWebhookToken")
@@ -777,10 +788,11 @@ export async function upsertLeadClientEvolutionInstance(clientId, input, authAcc
               webhook_enabled = $9,
               updated_at = now(),
               updated_by_uid = $10,
-              updated_by_email = $11
-          WHERE id = $12 AND client_id = $13
+              updated_by_email = $11,
+              connection_state = $12
+          WHERE id = $13 AND client_id = $14
           RETURNING id, client_id, name, dispatch_webhook_url, dispatch_webhook_token,
-                    inbound_bearer_token, active, is_default, chip_state, daily_limit_override,
+                    inbound_bearer_token, active, is_default, chip_state, connection_state, daily_limit_override,
                     webhook_enabled,
                     created_at, updated_at, updated_by_email
         `,
@@ -796,6 +808,7 @@ export async function upsertLeadClientEvolutionInstance(clientId, input, authAcc
           payload.webhook_enabled,
           payload.updated_by_uid,
           payload.updated_by_email,
+          payload.connection_state,
           existing.id,
           clientId,
         ]
@@ -818,10 +831,10 @@ export async function upsertLeadClientEvolutionInstance(clientId, input, authAcc
         `
           INSERT INTO public.lead_client_evolution_instances
             (client_id, name, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token,
-             active, is_default, chip_state, daily_limit_override, webhook_enabled, updated_by_uid, updated_by_email)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             active, is_default, chip_state, connection_state, daily_limit_override, webhook_enabled, updated_by_uid, updated_by_email)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
           RETURNING id, client_id, name, dispatch_webhook_url, dispatch_webhook_token,
-                    inbound_bearer_token, active, is_default, chip_state, daily_limit_override,
+                    inbound_bearer_token, active, is_default, chip_state, connection_state, daily_limit_override,
                     webhook_enabled,
                     created_at, updated_at, updated_by_email
         `,
@@ -834,6 +847,7 @@ export async function upsertLeadClientEvolutionInstance(clientId, input, authAcc
           payload.active,
           shouldDefault,
           payload.chip_state,
+          payload.connection_state,
           payload.daily_limit_override,
           payload.webhook_enabled,
           payload.updated_by_uid,

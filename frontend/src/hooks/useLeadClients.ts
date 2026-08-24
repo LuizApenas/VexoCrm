@@ -82,6 +82,7 @@ export interface LeadClientEvolutionInstance {
   active: boolean;
   is_default: boolean;
   chip_state: "cold" | "warm";
+  connection_state?: string | null;
   daily_limit_override: number | null;
   sent_count_today: number;
   webhook_enabled: boolean;

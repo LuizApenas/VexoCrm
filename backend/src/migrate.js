@@ -110,6 +110,10 @@ async function isAlreadyApplied(pool, filename) {
       NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='chatbot_prompts')
       OR EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chatbot_prompts_type_check' AND pg_get_constraintdef(oid) LIKE '%resumo%')
     ) AS ok`,
+    "20260824110000_separate_evolution_chip_connection_state.sql": `SELECT (
+      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='lead_client_evolution_instances')
+      OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_evolution_instances' AND column_name='connection_state')
+    ) AS ok`,
   };
 
   const query = checks[filename];

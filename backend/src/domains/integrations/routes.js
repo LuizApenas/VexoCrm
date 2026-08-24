@@ -280,7 +280,7 @@ export function registerIntegrationsRoutes(app, deps) {
       pgDatabasePool.query(`
         SELECT i.id, i.client_id, c.name AS client_name, i.name, i.dispatch_webhook_url,
                i.dispatch_webhook_token, i.inbound_bearer_token, i.active, i.is_default,
-               i.chip_state, i.daily_limit_override, i.created_at, i.updated_at, i.updated_by_email
+               i.chip_state, i.connection_state, i.daily_limit_override, i.created_at, i.updated_at, i.updated_by_email
         FROM public.lead_client_evolution_instances i
         LEFT JOIN public.leads_clients c ON c.id = i.client_id
         ORDER BY i.client_id, i.is_default DESC, i.active DESC, i.created_at ASC
@@ -361,6 +361,7 @@ export function registerIntegrationsRoutes(app, deps) {
         active: row.active !== false,
         is_default: row.is_default === true,
         chip_state: row.chip_state === "warm" ? "warm" : "cold",
+        connection_state: (row.connection_state || "unknown").toLowerCase(),
         daily_limit_override: row.daily_limit_override != null ? Number(row.daily_limit_override) : null,
         created_at: row.created_at || null,
         updated_at: row.updated_at || null,
@@ -1103,7 +1104,7 @@ export function registerIntegrationsRoutes(app, deps) {
         if (pgDatabasePool) {
           try {
             const { rows } = await pgDatabasePool.query(
-              `SELECT id, name, dispatch_webhook_url, chip_state FROM public.lead_client_evolution_instances WHERE id = $1 AND client_id = $2`,
+              `SELECT id, name, dispatch_webhook_url, chip_state, connection_state FROM public.lead_client_evolution_instances WHERE id = $1 AND client_id = $2`,
               [instanceId, tenantId]
             );
             if (rows.length > 0) instanceRecord = rows[0];
@@ -1115,7 +1116,7 @@ export function registerIntegrationsRoutes(app, deps) {
         if (!instanceRecord && supabase) {
           const { data } = await supabase
             .from("lead_client_evolution_instances")
-            .select("id, name, dispatch_webhook_url, chip_state")
+            .select("id, name, dispatch_webhook_url, chip_state, connection_state")
             .eq("id", instanceId)
             .eq("client_id", tenantId)
             .maybeSingle();
@@ -1184,20 +1185,20 @@ export function registerIntegrationsRoutes(app, deps) {
           }
         }
 
-        if (connected) {
-          if (pgDatabasePool) {
-            await pgDatabasePool.query(
-              `UPDATE public.lead_client_evolution_instances SET chip_state = 'open', updated_at = now() WHERE id = $1`,
-              [instanceId]
-            ).catch(() => {});
-          }
-          if (supabase) {
-            await supabase
-              .from("lead_client_evolution_instances")
-              .update({ chip_state: "open" })
-              .eq("id", instanceId)
-              .catch(() => {});
-          }
+        const connectionStateValue = connected ? "open" : "close";
+
+        if (pgDatabasePool) {
+          await pgDatabasePool.query(
+            `UPDATE public.lead_client_evolution_instances SET connection_state = $1, updated_at = now() WHERE id = $2`,
+            [connectionStateValue, instanceId]
+          ).catch(() => {});
+        }
+        if (supabase) {
+          await supabase
+            .from("lead_client_evolution_instances")
+            .update({ connection_state: connectionStateValue })
+            .eq("id", instanceId)
+            .catch(() => {});
         }
 
         res.json({
