@@ -856,7 +856,20 @@ export async function runChatbotAI({ systemPrompt, history, newMessages, existin
     response_format: { type: "json_object" },
   });
 
-  return parseAIResponse(raw, finalSystemPrompt);
+  const resposta = parseAIResponse(raw, finalSystemPrompt);
+
+  // Mensagem vazia nao pode virar silencio nem, jamais, reaproveitamento da fala
+  // anterior: a mensagem e a resposta DAQUELE turno. Marcada aqui, quem chama
+  // consegue DIZER que falhou em vez de mandar "" para o lead.
+  if (!String(resposta.mensagem || "").trim()) {
+    console.error("[chatbot-ai] MODELO NAO PRODUZIU MENSAGEM neste turno", {
+      contratoQuebrado: resposta.contratoQuebrado === true,
+      rawPreview: typeof raw === "string" ? raw.slice(0, 200) : typeof raw,
+    });
+    return { ...resposta, mensagem: "", mensagemAusente: true };
+  }
+
+  return resposta;
 }
 
 const VALID_SPIN_FASES = new Set(["situacao", "problema", "implicacao", "necessidade"]);
@@ -1157,7 +1170,11 @@ export async function processBatch({
   // Carregar estado atual do banco
   const { data: existingArray } = await supabase
     .from(leadsTable)
-    .select("id, dados, historico, status_conversa, finalizado, updated_at, lead_temperature")
+    // status e lead_source ENTRAM aqui porque o payload os preserva quando o
+    // modelo nao classifica no turno. Sem estar no SELECT, existing.status era
+    // sempre undefined e a "preservacao" gravava null — a classificacao anterior
+    // era apagada justamente no turno em que se queria protege-la.
+    .select("id, dados, historico, status, lead_source, status_conversa, finalizado, updated_at, lead_temperature")
     .eq("client_id", clientId)
     .eq("telefone", phone)
     .order("created_at", { ascending: false })
@@ -1336,6 +1353,22 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
     phone: phone.slice(-4),
   });
 
+  // Repetir a ultima fala palavra por palavra quase sempre significa que o modelo
+  // nao recebeu o historico. Nao se corrige a resposta aqui — inventar texto seria
+  // o defeito que este repositorio ja pagou quatro vezes —, mas o log passa a dizer
+  // o que esta acontecendo em vez de deixar o dono adivinhando.
+  const ultimaFalaDoAgente = history.filter((m) => m.role === "assistant").at(-1)?.content || "";
+  const repetiuUltimaFala =
+    Boolean(ultimaFalaDoAgente) && ultimaFalaDoAgente.trim() === String(aiResponse.mensagem || "").trim();
+  if (repetiuUltimaFala) {
+    console.error("[chatbot-ai] RESPOSTA IDENTICA A ANTERIOR — sinal de que o historico nao chegou ao modelo", {
+      clientId,
+      phone: phone.slice(-4),
+      turnosNoHistorico: history.length,
+      trecho: ultimaFalaDoAgente.slice(0, 80),
+    });
+  }
+
   // Atualizar histórico
   const newHistory = appendToHistory(history, combinedText, aiResponse.mensagem);
 
@@ -1365,10 +1398,30 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
     ...extractIndividualColumns(dadosToSave, template?.data_fields),
   };
 
-  if (existing?.id) {
-    await supabase.from(leadsTable).update(payload).eq("id", existing.id);
-  } else {
-    await supabase.from(leadsTable).insert([{ ...payload, created_at: new Date().toISOString() }]);
+  // Gravacao do lead. O erro E VERIFICADO: este cliente nao lanca excecao, devolve
+  // { error }. Sem conferir, uma falha de escrita some — e com ela o historico,
+  // que e o unico lugar de onde a conversa e relida no turno seguinte. O sintoma
+  // nao parece erro de banco: o agente repete a mesma pergunta para sempre,
+  // porque a cada turno ele acorda sem memoria.
+  let persistErro = null;
+  try {
+    const resultado = existing?.id
+      ? await supabase.from(leadsTable).update(payload).eq("id", existing.id)
+      : await supabase.from(leadsTable).insert([{ ...payload, created_at: new Date().toISOString() }]);
+    persistErro = resultado?.error || null;
+  } catch (err) {
+    persistErro = err;
+  }
+
+  if (persistErro) {
+    console.error("[chatbot-ai] FALHA AO GRAVAR O LEAD — o historico NAO foi salvo. O proximo turno vai comecar sem memoria e o agente tende a repetir a ultima pergunta.", {
+      clientId,
+      table: leadsTable,
+      phone: phone.slice(-4),
+      operacao: existing?.id ? "update" : "insert",
+      erro: persistErro?.message || String(persistErro),
+      colunasDoPayload: Object.keys(payload),
+    });
   }
 
   // Salvar turno em lead_messages (fire-and-forget — não bloqueia resposta)
@@ -1413,5 +1466,11 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
 
   // Inclui histórico completo no retorno para o caller usar no briefing SDR
   // sem precisar rebuscar no banco (evita round-trip extra na finalização)
-  return { ...aiResponse, _history: newHistory, _dados: dadosToSave };
+  return {
+    ...aiResponse,
+    _history: newHistory,
+    _dados: dadosToSave,
+    _persistErro: persistErro ? persistErro.message || String(persistErro) : null,
+    _repetiuUltimaFala: repetiuUltimaFala,
+  };
 }

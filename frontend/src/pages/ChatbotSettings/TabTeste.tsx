@@ -6,6 +6,23 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchApi, readApiErrorMessage, readApiJson } from "@/lib/api";
 
+/**
+ * "Failed to fetch" e "signal is aborted" não dizem nada a quem está testando um
+ * prompt. Traduz para o que de fato aconteceu e para o que fazer.
+ */
+function describeRequestFailure(e: unknown): string {
+  const nome = e instanceof DOMException ? e.name : "";
+  const msg = e instanceof Error ? e.message : String(e);
+
+  if (nome === "AbortError" || /abort/i.test(msg)) {
+    return "o modelo demorou demais para responder e a requisição foi cancelada. Tente de novo; se repetir, o provedor de IA está lento ou fora.";
+  }
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return "não foi possível falar com a API. Backend fora do ar, ou a origem desta página não está liberada no CORS do servidor.";
+  }
+  return msg || "erro desconhecido";
+}
+
 export function TabTeste({ clientId }: { clientId: string }) {
   const { getIdToken } = useAuth();
   const [phone] = useState("5511999999999");
@@ -25,18 +42,27 @@ export function TabTeste({ clientId }: { clientId: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ clientId, phone, message: userMsg }),
+        // Um turno do agente é uma chamada de LLM com rotação de modelos: passa
+        // dos 15s padrão com facilidade. No timeout o fetch é abortado e a tela
+        // mostrava "Falha: Failed to fetch", como se a API estivesse fora.
+        timeoutMs: 90000,
       });
       if (res.ok) {
-        const data = await readApiJson<{ response?: string | null; reason?: string }>(res, "chatbot_test");
+        const data = await readApiJson<{ response?: string | null; reason?: string; avisos?: string[] }>(res, "chatbot_test");
         const botMsg = data?.response;
         if (botMsg) setConversation((c) => [...c, { role: "bot", text: botMsg }]);
         else setConversation((c) => [...c, { role: "bot", text: `⚠️ ${data?.reason ?? "Sem resposta — verifique se o prompt padrão está configurado."}` }]);
+        // Resposta gerada mas com problema por trás (não salvou, repetiu a
+        // anterior). Sem isto o defeito só aparece dois turnos depois.
+        for (const aviso of data?.avisos ?? []) {
+          setConversation((c) => [...c, { role: "bot", text: `⚠️ ${aviso}` }]);
+        }
       } else {
         const err = await readApiErrorMessage(res, "Erro");
         setConversation((c) => [...c, { role: "bot", text: `Erro: ${err}` }]);
       }
     } catch (e) {
-      setConversation((c) => [...c, { role: "bot", text: `Falha: ${e instanceof Error ? e.message : "Erro desconhecido"}` }]);
+      setConversation((c) => [...c, { role: "bot", text: `Falha: ${describeRequestFailure(e)}` }]);
     } finally {
       setLoading(false);
     }
@@ -83,7 +109,7 @@ export function TabTeste({ clientId }: { clientId: string }) {
               disabled={loading}
               className="h-9 text-sm"
             />
-            <Button size="sm" className="h-9 gap-1.5" onClick={handleSend} disabled={loading || !message.trim()}>
+            <Button size="sm" aria-label="Enviar" className="h-9 gap-1.5" onClick={handleSend} disabled={loading || !message.trim()}>
               <Send className="h-3.5 w-3.5" />
             </Button>
           </div>

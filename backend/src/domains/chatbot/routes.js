@@ -1845,18 +1845,45 @@ export function registerChatbotRoutes(app, deps) {
       });
 
       if (!aiResponse?.mensagem) {
-        return res.json({ success: true, response: null, reason: "Prompt não configurado ou chatbot silenciado para este cliente." });
+        // Dois motivos MUITO diferentes cabiam nesta mesma frase. Sem separar, o
+        // dono lia "prompt nao configurado" quando o prompt estava certo e quem
+        // falhou foi o modelo — e ia mexer no lugar errado.
+        const motivo = aiResponse?.mensagemAusente
+          ? "O modelo respondeu, mas sem texto na chave \"mensagem\". O prompt está configurado; a resposta é que veio fora do contrato."
+          : "Prompt não configurado ou chatbot silenciado para este cliente.";
+        return res.status(502).json({
+          success: false,
+          error: "Não foi possível gerar a resposta.",
+          reason: motivo,
+          code: aiResponse?.mensagemAusente ? "MODEL_EMPTY_MESSAGE" : "CHATBOT_NOT_CONFIGURED",
+        });
+      }
+
+      // A resposta saiu, mas pode nao ter sido GRAVADA. Sem este aviso, o dono ve
+      // uma conversa aparentemente saudavel que reinicia sozinha no turno seguinte.
+      const avisos = [];
+      if (aiResponse._persistErro) {
+        avisos.push(
+          `A resposta foi gerada mas NÃO foi salva (${aiResponse._persistErro}). O histórico se perdeu: o próximo turno vai começar sem memória.`
+        );
+      }
+      if (aiResponse._repetiuUltimaFala) {
+        avisos.push(
+          "Esta resposta é idêntica à anterior — sinal de que o histórico não chegou ao modelo."
+        );
       }
 
       res.json({
         success: true,
         response: aiResponse.mensagem,
+        ...(avisos.length > 0 ? { avisos } : {}),
         meta: {
           classificacao: aiResponse.classificacao,
           spin_fase: aiResponse.spin_fase,
           finalizado: aiResponse.finalizado,
           agente: inboundConfig ? "inbound" : "tenant",
           dados: aiResponse.dados || {},
+          contratoQuebrado: aiResponse.contratoQuebrado === true,
         },
       });
     } catch (err) {
