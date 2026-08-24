@@ -644,9 +644,20 @@ export function normalizeLeadSource(source) {
  */
 export function stripLegacyJsonSection(text) {
   if (!text || typeof text !== "string") return "";
-  return text
-    .replace(/(?:\r?\n)+\s*(?:={3,}|-{3,}|═{3,})?\s*FORMATO DE RESPOSTA[\s\S]*$/i, "")
-    .trim();
+
+  const marcador = /(?:\r?\n)+\s*(?:={3,}|-{3,}|═{3,})?\s*FORMATO DE RESPOSTA[\s\S]*$/i;
+  const achado = text.match(marcador);
+  if (!achado) return text.trim();
+
+  // So corta se o trecho for MESMO um schema JSON legado. Sem esta guarda, um
+  // prompt que apenas mencione "formato de resposta" no meio do texto perderia
+  // tudo o que vem depois — e a regra e que prompt antigo saia com comportamento
+  // identico ao de hoje.
+  const trecho = achado[0];
+  const pareceSchema = trecho.includes("{") && /"?(mensagem|status_conversa|classificacao)"?\s*:/i.test(trecho);
+  if (!pareceSchema) return text.trim();
+
+  return text.replace(marcador, "").trim();
 }
 
 export function buildJsonInstruction() {
@@ -852,15 +863,17 @@ const VALID_SPIN_FASES = new Set(["situacao", "problema", "implicacao", "necessi
 
 export function parseAIResponse(raw, fullSystemPrompt = null) {
   if (raw === null || raw === undefined) {
-    console.warn("[chatbot-ai] AI response is null/undefined");
+    console.error("[chatbot-ai] CONTRATO QUEBRADO: modelo nao devolveu conteudo algum.");
     return {
       mensagem: "Desculpe, tive um problema técnico. Pode repetir?",
       status_conversa: "aguardando_usuario",
       dados: {},
       lead_source: null,
-      classificacao: "FRIO",
+      // null, nao "FRIO": nenhuma classificacao foi feita.
+      classificacao: null,
       finalizado: false,
       spin_fase: null,
+      contratoQuebrado: true,
     };
   }
 
@@ -910,11 +923,19 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
     } catch (_) {}
   }
 
-  // 3. Fallback: o modelo respondeu em texto corrido (não-JSON).
-  // Registra no log com transparência a resposta crua recebida do modelo
-  console.warn("[chatbot-ai] Resposta da LLM não é JSON. Utilizando texto diretamente na mensagem:", {
+  // 3. O modelo respondeu em texto corrido. A MENSAGEM e aproveitada — o texto e
+  // do modelo, nao inventado aqui — mas a qualificacao NAO existe nesta resposta.
+  //
+  // Devolver classificacao: "FRIO" aqui seria repetir o defeito do || "QUENTE":
+  // gravar no banco uma classificacao que o modelo nunca deu, com a conversa
+  // parecendo saudavel e o briefing do dono chegando vazio. Fica null, e quem
+  // grava decide o que fazer com a ausencia.
+  console.warn("[chatbot-ai] CONTRATO QUEBRADO: resposta da LLM nao e JSON. Mensagem aproveitada, qualificacao PERDIDA nesta rodada.", {
     rawLength: rawStr.length,
-    rawPreview: rawStr.slice(0, 150),
+    rawCompleta: rawStr.slice(0, 2000),
+    systemPromptTemContrato: fullSystemPrompt
+      ? fullSystemPrompt.includes("FORMATO DE RESPOSTA OBRIGATÓRIO")
+      : null,
   });
 
   return {
@@ -922,9 +943,10 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
     status_conversa: "aguardando_usuario",
     dados: {},
     lead_source: null,
-    classificacao: "FRIO",
+    classificacao: null,
     finalizado: false,
     spin_fase: null,
+    contratoQuebrado: true,
   };
 }
 
@@ -1296,10 +1318,19 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
     llmModel: activeLlmModel,
   });
 
+  if (aiResponse.contratoQuebrado) {
+    console.error("[chatbot-ai] CONTRATO QUEBRADO neste turno — lead segue sem qualificacao nova", {
+      clientId,
+      phone: phone.slice(-4),
+      table: leadsTable,
+    });
+  }
+
   console.log("[chatbot-ai] AI response:", {
     table: leadsTable,
     status: aiResponse.status_conversa,
     classificacao: aiResponse.classificacao,
+    contratoQuebrado: aiResponse.contratoQuebrado === true,
     finalizado: aiResponse.finalizado,
     msgPreview: aiResponse.mensagem.slice(0, 60),
     phone: phone.slice(-4),
@@ -1319,7 +1350,10 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
     client_id: clientId,
     telefone: phone,
     status_conversa: aiResponse.status_conversa,
-    status: aiResponse.classificacao,
+    // classificacao null = o modelo quebrou o contrato e NAO classificou nesta
+    // rodada. Preserva a classificacao anterior em vez de sobrescrever com um
+    // palpite; nunca inventa valor. Ver parseAIResponse.
+    status: aiResponse.classificacao ?? existing?.status ?? null,
     lead_source: normalizeLeadSource(aiResponse.lead_source || dadosToSave?.origem_marketing) || existing?.lead_source || null,
     spin_fase: aiResponse.spin_fase || null,
     dados: dadosToSave,

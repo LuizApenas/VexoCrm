@@ -85,6 +85,7 @@ import {
 
 import { routeDeps } from "./http/routeDeps.js";
 import { registerAllDomainRoutes } from "./domains/registerAllDomainRoutes.js";
+import { configureCorsPolicy } from "./services/corsPolicy.js";
 import { registerEventosRoutes } from "./domains/eventos/routes.js";
 import { registerWebhooksRoutes } from "./webhooks/routes.js";
 import { startFollowupWorker, pauseFollowupWorker, stopFollowupWorker } from "./followup/worker.js";
@@ -416,6 +417,13 @@ if (isProduction && corsOrigins.length > 0) {
   console.info("[cors] Allowed browser origins:", corsOrigins.join(", "));
 }
 
+// A MESMA lista passa a valer para as respostas de erro (sendError, em
+// services/httpInfra.js). Antes so o middleware cors() a enxergava.
+configureCorsPolicy({
+  allowAny: allowAnyCorsOrigin || corsAllowAnyOriginBecauseListEmpty,
+  origens: corsOrigins,
+});
+
 // sendError: movido para ./services/httpInfra.js (Onda 3, Run A).
 
 /** When true, INTERNAL_ERROR responses include a short `details` payload (for staging / temporary prod debugging). */
@@ -454,7 +462,12 @@ app.use(
         normalized + ")",
         "| Ensure this normalized value is covered by CORS_ORIGINS or FRONTEND_ORIGIN in EasyPanel."
       );
-      callback(new Error(`Origin not allowed: ${origin}`));
+      // callback(null, false) em vez de throw: lancar aqui derruba a requisicao no
+      // error handler do Express e devolve um 500 opaco, sem cabecalho de CORS —
+      // o navegador mostra so "Failed to fetch" e o operador nunca ve o motivo.
+      // Sem os cabecalhos o navegador bloqueia igual, que e o comportamento
+      // correto, mas a resposta e limpa e o log acima diz o que fazer.
+      callback(null, false);
     },
   })
 );

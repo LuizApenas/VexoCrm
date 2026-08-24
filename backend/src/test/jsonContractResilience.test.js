@@ -105,7 +105,11 @@ FORMATO DE RESPOSTA (JSON obrigatório):
     const parsed = parseAIResponse(plainTextOutput);
     expect(parsed.mensagem).toBe(plainTextOutput);
     expect(parsed.status_conversa).toBe("aguardando_usuario");
-    expect(parsed.classificacao).toBe("FRIO");
+    // classificacao NAO pode ser "FRIO" aqui: o modelo nao classificou nada nesta
+    // resposta. Gravar "FRIO" seria o mesmo defeito do || "QUENTE" — valor
+    // inventado pelo codigo se passando por saida da IA.
+    expect(parsed.classificacao).toBe(null);
+    expect(parsed.contratoQuebrado).toBe(true);
     expect(parsed.finalizado).toBe(false);
   });
 
@@ -113,6 +117,8 @@ FORMATO DE RESPOSTA (JSON obrigatório):
     const parsedNull = parseAIResponse(null);
     expect(parsedNull.mensagem).toContain("Desculpe");
     expect(parsedNull.status_conversa).toBe("aguardando_usuario");
+    expect(parsedNull.classificacao).toBe(null);
+    expect(parsedNull.contratoQuebrado).toBe(true);
 
     const parsedUndefined = parseAIResponse(undefined);
     expect(parsedUndefined.mensagem).toContain("Desculpe");

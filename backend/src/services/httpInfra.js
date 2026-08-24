@@ -10,8 +10,16 @@
 
 import { supabase, useDirectPostgres } from "./database.js";
 import { normalizeString } from "../textNormalize.js";
+import { applyCorsHeaders } from "./corsPolicy.js";
 
 export function sendError(res, status, code, message, details) {
+  // Defesa em profundidade: o middleware cors() ja roda antes de toda rota, entao
+  // na pratica o cabecalho ja esta aqui. Isto cobre o caminho em que a resposta e
+  // montada fora da cadeia normal. Usa a MESMA lista de origens do middleware —
+  // refletir req.headers.origin cru devolveria Access-Control-Allow-Origin para
+  // qualquer site, com credenciais, justamente nas respostas que levam detalhe de erro.
+  applyCorsHeaders(res, res?.req?.headers?.origin);
+
   const body = {
     error: {
       code,

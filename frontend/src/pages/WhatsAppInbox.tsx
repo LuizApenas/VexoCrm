@@ -516,7 +516,8 @@ export default function WhatsAppInbox({
         chatsQuery.refetch();
         toast.success("Resumo gerado e salvo com sucesso!");
       } else {
-        throw new Error(data?.error || "Falha ao gerar resumo.");
+        const errorDetail = data?.reason ? `${data.error || "Falha ao gerar resumo"}: ${data.reason}` : (data?.error || "Falha ao gerar resumo.");
+        throw new Error(errorDetail);
       }
     } catch (err: any) {
       toast.error(err?.message || "Erro ao processar resumo com IA.");

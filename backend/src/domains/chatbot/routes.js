@@ -11,6 +11,7 @@
 
 import { createLeadMessaging, isGroupJid } from "../shared/leadMessaging.js";
 import { summarizeChatWithAI } from "../leads/chatInsight.js";
+import { applyCorsHeaders } from "../../services/corsPolicy.js";
 import { upsertLeadByPhone } from "../../services/leadUpsert.js";
 import { OutlierQualificationBot } from "../../hardcoded-chatbot-outlier.js";
 import { getChatMemory } from "../../hardcoded-chatbot.js";
@@ -568,6 +569,10 @@ export function registerChatbotRoutes(app, deps) {
       if (!insight?.summary) {
         const errorReason = insight?.error || "A IA não retornou um resumo válido para o histórico fornecido.";
         console.warn(`[summarize-chat] Falha na IA para o chat ${chatId} (client: ${clientId}): ${errorReason}`);
+        // CORS aqui e responsabilidade do middleware cors(), que roda antes de
+        // toda rota (server.js:427), com reforco em sendError/applyCorsHeaders.
+        // Copia local numa rota so nao escala e refletia origem nao validada.
+        applyCorsHeaders(res, req.headers?.origin);
         return res.status(502).json({
           success: false,
           error: "Não foi possível gerar o resumo com IA no momento. Tente novamente.",

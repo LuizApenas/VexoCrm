@@ -32,6 +32,40 @@ REGRAS
 · Não repita a conversa. Isso é resumo, não transcrição.
 · Sem subitens (a)(b)(c), sem parágrafos, sem numeração.`;
 
+/**
+ * Contrato de SAIDA do resumo, anexado pelo codigo — nunca deixado a cargo do
+ * texto que o dono edita na tela. Mesmo principio do contrato JSON do agente
+ * (buildJsonInstruction) e do buildFieldContext: o usuario escreve COMPORTAMENTO,
+ * o sistema garante o FORMATO.
+ *
+ * Sem isto, um prompt de resumo reescrito sem os quatro emojis faz
+ * formatSummaryOutput nao achar marcador nenhum e devolver "nada ainda" nas
+ * quatro linhas — resumo vazio, sem erro, exatamente o tipo de falha silenciosa
+ * que este repositorio ja pagou caro tres vezes.
+ */
+export const SUMMARY_OUTPUT_CONTRACT = `
+
+═══════════════════════════════════════════════════════════════
+FORMATO DE SAÍDA OBRIGATÓRIO — QUATRO LINHAS, UMA POR MARCADOR
+═══════════════════════════════════════════════════════════════
+Responda EXATAMENTE nestas quatro linhas, cada uma começando pelo seu emoji,
+sem texto antes ou depois, sem markdown, sem numeração:
+
+🎯 [o que a pessoa quer]
+📋 [fatos já estabelecidos, literais da conversa]
+🤝 [o que foi combinado ou prometido]
+⏭️ [próximo passo concreto]
+
+Linha sem conteúdo real recebe exatamente "nada ainda". Nunca invente.`;
+
+export function buildSummarySystemPrompt(promptDoUsuario) {
+  const base = String(promptDoUsuario || "").trim();
+  // Prompt que ja traz os quatro marcadores nao recebe o contrato de novo:
+  // duplicar instrucao e o que confunde o modelo.
+  const jaTemContrato = ["🎯", "📋", "🤝", "⏭"].every((marcador) => base.includes(marcador));
+  return jaTemContrato ? base : `${base}${SUMMARY_OUTPUT_CONTRACT}`;
+}
+
 function getModel() {
   const raw = String(process.env.GROQ_CAMPAIGN_AI_MODEL || process.env.GROQ_MODEL || "").trim();
   if (!raw || raw.includes(" ") || raw.includes("gpt-oss")) return DEFAULT_GROQ_MODEL;
@@ -74,18 +108,34 @@ export function formatSummaryOutput(raw) {
     combinados = String(parsed.combinados || parsed.o_que_foi_combinado || parsed.acordos || "").trim();
     proximo = String(parsed.proximo_passo || parsed.proxima_acao || parsed.acao || "").trim();
   } else if (typeof raw === "string") {
-    // 2. Extrai de texto corrido baseado nos marcadores de emoji
+    // 2. Extrai de texto corrido baseado nos marcadores de emoji.
+    //
+    // O seletor de variacao U+FE0F e OPCIONAL em cada marcador: o modelo emite
+    // ora "⏭️" ora "⏭" cru, e startsWith("⏭️") falhava no segundo caso — a linha
+    // do proximo passo caia para "nada ainda" sem erro nenhum aparecer.
+    const MARCADORES = [
+      { re: /^🎯\uFE0F?\s*/u, campo: "objetivo" },
+      { re: /^📋\uFE0F?\s*/u, campo: "fatos" },
+      { re: /^🤝\uFE0F?\s*/u, campo: "combinados" },
+      { re: /^⏭\uFE0F?\s*/u, campo: "proximo" },
+    ];
+    const capturado = { objetivo: "", fatos: "", combinados: "", proximo: "" };
+
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     for (const line of lines) {
-      if (line.startsWith("🎯")) objetivo = line.replace(/^🎯\s*/, "").trim();
-      else if (line.startsWith("📋")) fatos = line.replace(/^📋\s*/, "").trim();
-      else if (line.startsWith("🤝")) combinados = line.replace(/^🤝\s*/, "").trim();
-      else if (line.startsWith("⏭️")) proximo = line.replace(/^⏭️\s*/, "").trim();
-      else if (!objetivo && !line.startsWith("📋") && !line.startsWith("🤝") && !line.startsWith("⏭️")) {
-        // Se a primeira linha não tem emoji, assume objetivo
-        objetivo = line;
+      const marcador = MARCADORES.find(({ re }) => re.test(line));
+      if (marcador) {
+        capturado[marcador.campo] = line.replace(marcador.re, "").trim();
+      } else if (!capturado.objetivo && !MARCADORES.some(({ re }) => re.test(line))) {
+        // Primeira linha sem marcador nenhum: assume objetivo.
+        capturado.objetivo = line;
       }
     }
+
+    objetivo = capturado.objetivo;
+    fatos = capturado.fatos;
+    combinados = capturado.combinados;
+    proximo = capturado.proximo;
   }
 
   // Limpeza de frases proibidas / vazias
@@ -173,7 +223,7 @@ export async function summarizeChatWithAI(messages, contactName, options = {}) {
   }
 
   const clientId = options?.clientId || null;
-  const promptToUse = await resolvePromptForTenant(clientId, options);
+  const promptToUse = buildSummarySystemPrompt(await resolvePromptForTenant(clientId, options));
 
   // Varre a conversa inteira (até 100 mensagens ou 16.000 caracteres para não perder fatos iniciais)
   const conversa = texts.slice(-100).join("\n").slice(0, 16000);

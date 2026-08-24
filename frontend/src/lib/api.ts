@@ -25,7 +25,9 @@ export function getApiCandidates(path: string) {
 
 export function shouldRetryApiResponse(response: Response) {
   const contentType = response.headers.get("content-type") || "";
-  return [502, 503, 504].includes(response.status) || (response.status >= 500 && contentType.includes("text/html"));
+  // Só tenta fallback se a resposta for HTML de proxy/gateway (ex: Cloudflare 502/504),
+  // NUNCA se o backend respondeu JSON válido com status de erro (ex: 502 ou 4xx da aplicação).
+  return contentType.includes("text/html") && (response.status >= 500 || [502, 503, 504].includes(response.status));
 }
 
 /** Operações longas (ex.: importar o histórico de conversas de um chip) podem
@@ -94,7 +96,17 @@ export async function readApiErrorMessage(res: Response, fallback: string) {
 
   if (contentType.includes("application/json")) {
     const data = await res.json().catch(() => null);
-    return data?.error?.message || data?.message || `${fallback}: ${res.status}`;
+    if (data) {
+      const errorStr = typeof data.error === "string" ? data.error : data.error?.message;
+      const reasonStr = data.reason || data.error?.details;
+      if (errorStr && reasonStr && errorStr !== reasonStr) {
+        return `${errorStr} (${reasonStr})`;
+      }
+      if (errorStr) return errorStr;
+      if (reasonStr) return String(reasonStr);
+      if (data.message) return data.message;
+    }
+    return `${fallback}: ${res.status}`;
   }
 
   const text = await res.text().catch(() => "");
