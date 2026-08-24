@@ -568,14 +568,18 @@ export function registerChatbotRoutes(app, deps) {
 
       if (!insight?.summary) {
         const errorReason = insight?.error || "A IA não retornou um resumo válido para o histórico fornecido.";
+        const ehCota = /cota de ia|rate.?limit|tokens por minuto|TPM/i.test(String(errorReason));
         console.warn(`[summarize-chat] Falha na IA para o chat ${chatId} (client: ${clientId}): ${errorReason}`);
         // CORS aqui e responsabilidade do middleware cors(), que roda antes de
         // toda rota (server.js:427), com reforco em sendError/applyCorsHeaders.
         // Copia local numa rota so nao escala e refletia origem nao validada.
         applyCorsHeaders(res, req.headers?.origin);
-        return res.status(502).json({
+        return res.status(ehCota ? 429 : 502).json({
           success: false,
-          error: "Não foi possível gerar o resumo com IA no momento. Tente novamente.",
+          ...(ehCota ? { code: "LLM_QUOTA_EXCEEDED" } : {}),
+          error: ehCota
+            ? "Cota de IA esgotada — o resumo não foi gerado."
+            : "Não foi possível gerar o resumo com IA no momento. Tente novamente.",
           reason: errorReason,
         });
       }
@@ -1894,9 +1898,30 @@ export function registerChatbotRoutes(app, deps) {
         error: err?.message || err,
       });
       const detail = err instanceof Error ? err.message : "Erro desconhecido ao simular resposta do modelo";
+
+      // Cota estourada nao e "erro tecnico": e informacao de negocio. O dono
+      // precisa saber que a IA parou por limite de plano, com o modelo e o teto,
+      // para decidir se paga plano maior. Ate aqui isso chegava na tela como
+      // "Failed to fetch" ou "Prompt nao configurado".
+      if (err?.code === "LLM_QUOTA_EXCEEDED") {
+        return res.status(429).json({
+          success: false,
+          error: "Cota de IA esgotada",
+          reason: detail,
+          code: "LLM_QUOTA_EXCEEDED",
+          quota: {
+            modelo: err.modelo ?? null,
+            limiteTpm: err.limiteTpm ?? null,
+            usadoTpm: err.usadoTpm ?? null,
+            esperarSegundos: err.esperarSegundos ?? null,
+          },
+        });
+      }
+
       res.status(502).json({
         success: false,
         error: `Falha ao processar resposta do modelo: ${detail}`,
+        reason: detail,
         code: "CHATBOT_TEST_FAILED",
       });
     }

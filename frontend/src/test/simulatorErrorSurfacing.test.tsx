@@ -108,6 +108,40 @@ describe("resposta boa com problema por trás não passa calada", () => {
   });
 });
 
+describe("cota de IA esgotada aparece como tal", () => {
+  it("429 vira aviso de cota, com o modelo e o teto — não 'erro técnico'", async () => {
+    fetchApiMock.mockResolvedValue(
+      respostaJson(429, {
+        success: false,
+        error: "Cota de IA esgotada",
+        reason: "A cota de IA do modelo openai/gpt-oss-20b acabou. Teto de 8.000 tokens por minuto, 6.592 já usados.",
+        code: "LLM_QUOTA_EXCEEDED",
+        quota: { modelo: "openai/gpt-oss-20b", limiteTpm: 8000, usadoTpm: 6592 },
+      })
+    );
+
+    await enviar();
+    await waitFor(() => {
+      // O marcador 🚫 só existe no ramo específico de 429. Sem ele o teste
+      // passaria mesmo com o ramo removido, porque readApiErrorMessage também
+      // devolve o texto "Cota de IA esgotada" vindo do corpo.
+      expect(screen.getByText(/^🚫 Cota de IA esgotada/)).toBeTruthy();
+      expect(screen.getByText(/openai\/gpt-oss-20b/)).toBeTruthy();
+      expect(screen.getByText(/8\.000 tokens por minuto/)).toBeTruthy();
+      expect(screen.queryByText(/^Erro:/)).toBeNull();
+    });
+  });
+
+  it("não confunde cota com prompt mal configurado", async () => {
+    fetchApiMock.mockResolvedValue(
+      respostaJson(429, { success: false, error: "Cota de IA esgotada", reason: "teto atingido", code: "LLM_QUOTA_EXCEEDED" })
+    );
+    await enviar();
+    await waitFor(() => expect(screen.getByText(/^🚫 Cota de IA esgotada/)).toBeTruthy());
+    expect(screen.queryByText(/Prompt não configurado/i)).toBeNull();
+  });
+});
+
 describe("o turno da LLM ganha tempo suficiente", () => {
   it("a chamada pede timeout maior que o padrão de 15s", async () => {
     fetchApiMock.mockResolvedValue(respostaJson(200, { success: true, response: "oi" }));

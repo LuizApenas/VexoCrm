@@ -1,4 +1,5 @@
 import pg from "pg";
+import { defaultGroqModel } from "../services/llmModels.js";
 import { v4 as uuidv4 } from "uuid";
 import crypto from "crypto";
 import { getSlackQueue } from "../geracaoDigital/slackQueue.js";
@@ -2752,7 +2753,7 @@ Condições: ${condicoes}`;
 
     if (apiKey) {
       try {
-        const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+        const model = process.env.GROQ_MODEL || defaultGroqModel();
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
           headers: {

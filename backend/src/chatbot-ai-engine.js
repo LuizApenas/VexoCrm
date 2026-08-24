@@ -1,4 +1,11 @@
 import {
+  resolveGroqLadder,
+  groqModelLadder,
+  defaultGroqModel,
+  classifyLlmHttpError,
+  mensagemDeCotaEstourada,
+} from "./services/llmModels.js";
+import {
   normalizeLeadsOutlierDados,
   parseStoredHistorico,
   serializeHistorico,
@@ -20,11 +27,15 @@ const BUFFER_DELAY_MS = 3000;
 
 // ─── Configuração de Provedores e Modelos de LLM ────────────────────────────
 export const LLM_MODELS = [
-  // Groq
-  { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B (Versatile)", provider: "groq", providerName: "Groq" },
-  { id: "llama-3.1-8b-instant", name: "Llama 3.1 8B (Instant)", provider: "groq", providerName: "Groq" },
-  // mixtral-8x7b-32768 e llama-3.2-11b-vision-preview sairam: a Groq
-  // descontinuou os dois. Ficavam selecionaveis e falhavam no envio.
+  // Groq — lista real da conta, conferida em /openai/v1/models em 24/08/2026.
+  // Os dois Llama sairam: a Groq descontinuou os dois e as chamadas voltavam 404.
+  // Ficavam selecionaveis na tela do tenant e derrubavam o agente em producao.
+  { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B (Groq)", provider: "groq", providerName: "Groq" },
+  { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B (Groq)", provider: "groq", providerName: "Groq" },
+  { id: "qwen/qwen3.6-27b", name: "Qwen 3.6 27B", provider: "groq", providerName: "Groq" },
+  // 70.000 TPM contra 8.000 dos de cima — a folga real quando a cota aperta.
+  { id: "groq/compound", name: "Groq Compound (cota alta)", provider: "groq", providerName: "Groq" },
+  { id: "groq/compound-mini", name: "Groq Compound Mini (cota alta)", provider: "groq", providerName: "Groq" },
 
   // ChatGPT / OpenAI
   { id: "gpt-4o", name: "GPT-4o (Omni)", provider: "openai", providerName: "ChatGPT / OpenAI" },
@@ -52,7 +63,8 @@ export function getLlmProviderStatus() {
   };
 }
 
-export const DEFAULT_LLM_MODEL = "llama-3.3-70b-versatile";
+// Vem da escada configuravel, nao de um nome fixo que a Groq pode aposentar.
+export const DEFAULT_LLM_MODEL = defaultGroqModel();
 
 // Modelo salvo pode ter sido descontinuado pelo provedor depois de escolhido.
 // Sem isso a chamada seguia com um id morto e falhava no provedor, sem pista.
@@ -87,7 +99,7 @@ function groqKey() {
 }
 
 export async function callLlmChatCompletion({
-  model = "llama-3.3-70b-versatile",
+  model = defaultGroqModel(),
   messages = [],
   temperature = 0.4,
   max_tokens = 600,
@@ -175,19 +187,21 @@ export async function callLlmChatCompletion({
     throw new Error("GROQ_API_KEY não configurada no servidor (Easypanel)");
   }
 
-  const fallbackGroqModels = [
-    model,
-    process.env.GROQ_CAMPAIGN_AI_MODEL,
-    "llama-3.1-8b-instant",
-    "llama-3.3-70b-versatile",
-    "gemma2-9b-it",
-    "deepseek-r1-distill-llama-70b",
-    "qwen-2.5-32b",
-    "openai/gpt-oss-20b",
-  ].filter(Boolean);
-
-  const modelsToTry = Array.from(new Set(fallbackGroqModels));
+  // Escada vinda de services/llmModels.js — configuravel por GROQ_MODEL_LADDER e
+  // com os modelos descontinuados descartados antes de gastar uma chamada neles.
+  const modelsToTry = resolveGroqLadder(model);
   let lastError = null;
+  let ultimaCota = null;
+
+  // Escada vazia significa que TODOS os modelos configurados estao na lista de
+  // descontinuados. Sem esta guarda o laco nao roda, lastError fica null e a
+  // funcao devolveria undefined — silencio, que e o pior desfecho possivel aqui.
+  if (modelsToTry.length === 0) {
+    throw new Error(
+      "Nenhum modelo Groq utilizavel: todos os configurados foram descontinuados. " +
+        `Ajuste GROQ_MODEL_LADDER (atual: "${groqModelLadder().join(", ")}").`
+    );
+  }
 
   for (const m of modelsToTry) {
     const body = { model: m, messages, temperature, max_tokens };
@@ -206,29 +220,51 @@ export async function callLlmChatCompletion({
     const err = await res.text();
     lastError = new Error(`Groq HTTP ${res.status}: ${err.slice(0, 200)}`);
 
-    // Se o modelo atingir limite de taxa (429 TPM/RPM), não existir, for depreciado ou não tiver acesso (404 / 400), tenta o próximo modelo da lista
-    if (
-      res.status === 429 ||
-      res.status === 404 ||
-      res.status === 400 ||
-      err.includes("rate_limit") ||
-      err.includes("Rate limit") ||
-      err.includes("TPM") ||
-      err.includes("tokens per minute") ||
-      err.includes("Too Many Requests") ||
-      err.includes("model_not_found") ||
-      err.includes("does not exist") ||
-      err.includes("decommissioned") ||
-      err.includes("not supported") ||
-      err.includes("deprecated") ||
-      err.includes("invalid_request_error")
-    ) {
-      console.warn(`[chatbot-ai-engine] Groq modelo "${m}" indisponível ou limite de taxa (${res.status}), tentando próximo modelo...`);
+    // 404 (modelo morto) e 429 (cota estourada) sao problemas diferentes e sairam
+    // do mesmo jeito no log durante toda a investigacao: "indisponivel ou limite
+    // de taxa". Um se resolve trocando a lista, o outro pagando plano ou
+    // espalhando a carga. Agora cada um diz o que e.
+    const diagnostico = classifyLlmHttpError(res.status, err);
+
+    if (diagnostico.tipo === "COTA_ESTOURADA") {
+      ultimaCota = { modelo: m, ...diagnostico };
+      console.warn(
+        `[chatbot-ai-engine] COTA ESTOURADA no modelo "${m}" (HTTP ${res.status})` +
+          `${diagnostico.limiteTpm ? ` — teto ${diagnostico.limiteTpm} TPM, usados ${diagnostico.usadoTpm ?? "?"}` : ""}` +
+          `${diagnostico.esperarSegundos ? `, libera em ~${diagnostico.esperarSegundos}s` : ""}. Tentando o proximo modelo da escada.`
+      );
       continue;
     }
 
-    // Para outros erros (ex: 401 não autorizado), falha imediatamente
+    if (diagnostico.tipo === "MODELO_INEXISTENTE") {
+      console.error(
+        `[chatbot-ai-engine] MODELO INEXISTENTE: "${m}" (HTTP ${res.status}). ` +
+          `A Groq descontinuou este modelo. Atualize GROQ_MODEL_LADDER ou o modelo do tenant — ` +
+          `enquanto ele estiver na lista, toda chamada perde uma ida de rede aqui.`
+      );
+      continue;
+    }
+
+    if (diagnostico.tentarProximo) {
+      console.warn(`[chatbot-ai-engine] Groq recusou o modelo "${m}" (HTTP ${res.status}, ${diagnostico.tipo}). Tentando o proximo.`);
+      continue;
+    }
+
+    // Credencial invalida, contrato de JSON: trocar de modelo nao resolve.
     throw lastError;
+  }
+
+  // Todos os modelos da escada estouraram a cota: o erro final precisa dizer
+  // "sua cota de IA acabou", nao um generico. E informacao de negocio — o dono
+  // decide se esta na hora de subir o plano.
+  if (ultimaCota) {
+    const erroDeCota = new Error(mensagemDeCotaEstourada(ultimaCota));
+    erroDeCota.code = "LLM_QUOTA_EXCEEDED";
+    erroDeCota.modelo = ultimaCota.modelo;
+    erroDeCota.limiteTpm = ultimaCota.limiteTpm ?? null;
+    erroDeCota.usadoTpm = ultimaCota.usadoTpm ?? null;
+    erroDeCota.esperarSegundos = ultimaCota.esperarSegundos ?? null;
+    lastError = erroDeCota;
   }
 
   // Se falhou por validação de JSON na Groq e estávamos usando response_format:
@@ -794,7 +830,7 @@ function buildFieldContext(template) {
  * Recebe o histórico da conversa e os dados coletados, retorna texto formatado.
  * Se não houver prompt extrato no banco, retorna null (caller usa fallback determinístico).
  */
-export async function extractBriefingWithAI({ supabase, clientId, phone, history, collectedData, classificacao, llmModel = "llama-3.3-70b-versatile" }) {
+export async function extractBriefingWithAI({ supabase, clientId, phone, history, collectedData, classificacao, llmModel = defaultGroqModel() }) {
   const extractPrompt = await fetchDynamicPrompt(supabase, clientId, "extrato");
   if (!extractPrompt) return null;
 
@@ -833,7 +869,7 @@ export async function extractBriefingWithAI({ supabase, clientId, phone, history
   }
 }
 
-export async function runChatbotAI({ systemPrompt, history, newMessages, existingData, llmModel = "llama-3.3-70b-versatile" }) {
+export async function runChatbotAI({ systemPrompt, history, newMessages, existingData, llmModel = defaultGroqModel() }) {
   // Mesclar dados existentes no contexto do sistema
   const dataContext = existingData && Object.keys(existingData).length > 0
     ? `\n\nDADOS JÁ COLETADOS ATÉ AGORA:\n${JSON.stringify(existingData, null, 2)}`

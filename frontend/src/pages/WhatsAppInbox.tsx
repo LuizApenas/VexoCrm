@@ -515,6 +515,10 @@ export default function WhatsAppInbox({
         }
         chatsQuery.refetch();
         toast.success("Resumo gerado e salvo com sucesso!");
+      } else if (data?.code === "LLM_QUOTA_EXCEEDED") {
+        // Cota esgotada é informação de negócio, não falha técnica: o dono
+        // precisa saber que a IA parou por limite de plano.
+        throw new Error(`🚫 Cota de IA esgotada — ${data?.reason || "o resumo não foi gerado."}`);
       } else {
         const errorDetail = data?.reason ? `${data.error || "Falha ao gerar resumo"}: ${data.reason}` : (data?.error || "Falha ao gerar resumo.");
         throw new Error(errorDetail);

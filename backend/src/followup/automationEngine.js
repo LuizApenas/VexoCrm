@@ -3,6 +3,7 @@
 // NÃO envia mensagens — apenas cria sugestões para aprovação do operador.
 
 import cron from "node-cron";
+import { defaultGroqModel } from "../services/llmModels.js";
 import Groq from "groq-sdk";
 import { query } from "./db.js";
 import { buildDefaultSegmentationConfig } from "../segmentation.js";
@@ -216,7 +217,7 @@ export async function generateSuggestion(lead, templates, reasonType, company = 
 
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: defaultGroqModel(),
       messages: [
         {
           role: "system",

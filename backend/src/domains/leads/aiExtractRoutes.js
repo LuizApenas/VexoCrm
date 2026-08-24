@@ -2,6 +2,7 @@
 // Endpoint de extração semântica e inteligente de contatos/conversas com Groq (Llama 3.3 70B Versatile).
 
 import { callLlmChatCompletion } from "../../chatbot-ai-engine.js";
+import { defaultGroqModel } from "../../services/llmModels.js";
 
 export function registerAiExtractRoutes(app, deps) {
   const {
@@ -78,7 +79,7 @@ ${rawText}
 """`;
 
         const rawContent = await callLlmChatCompletion({
-          model: "llama-3.3-70b-versatile",
+          model: defaultGroqModel(),
           temperature: 0.1,
           max_tokens: 1200,
           messages: [

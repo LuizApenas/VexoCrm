@@ -8,9 +8,10 @@
 // ⏭️ [próximo passo concreto]
 
 import { callLlmChatCompletion } from "../../chatbot-ai-engine.js";
+import { defaultGroqModel, resolveGroqLadder, classifyLlmHttpError } from "../../services/llmModels.js";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_GROQ_MODEL = defaultGroqModel();
 
 export const DEFAULT_SUMMARY_PROMPT = `Você resume conversas de WhatsApp para o dono do negócio se situar sem precisar reler tudo.
 
@@ -68,7 +69,10 @@ export function buildSummarySystemPrompt(promptDoUsuario) {
 
 function getModel() {
   const raw = String(process.env.GROQ_CAMPAIGN_AI_MODEL || process.env.GROQ_MODEL || "").trim();
-  if (!raw || raw.includes(" ") || raw.includes("gpt-oss")) return DEFAULT_GROQ_MODEL;
+  // A exclusao de "gpt-oss" que estava aqui recusava justamente a UNICA familia
+  // de modelos que a conta ainda tem, e caia no llama-3.3, descontinuado (404).
+  // Era o motivo de o resumo do Inbox nao gerar de jeito nenhum.
+  if (!raw || raw.includes(" ")) return DEFAULT_GROQ_MODEL;
   return raw;
 }
 
@@ -260,7 +264,8 @@ export async function summarizeChatWithAI(messages, contactName, options = {}) {
 
   // 2. Fallback direto para Groq API com modelos canônicos
   if (process.env.GROQ_API_KEY) {
-    const modelsToTry = [getModel(), "llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+    // Escada compartilhada: os dois nomes que estavam aqui foram descontinuados.
+    const modelsToTry = resolveGroqLadder(getModel());
     for (const m of Array.from(new Set(modelsToTry))) {
       try {
         const response = await fetch(GROQ_BASE_URL, {
@@ -281,7 +286,15 @@ export async function summarizeChatWithAI(messages, contactName, options = {}) {
         });
 
         if (!response.ok) {
-          lastError = `Groq API status ${response.status}: ${response.statusText}`;
+          const corpo = await response.text().catch(() => "");
+          const diagnostico = classifyLlmHttpError(response.status, corpo);
+          lastError =
+            diagnostico.tipo === "COTA_ESTOURADA"
+              ? `Cota de IA estourada no modelo ${m}${diagnostico.limiteTpm ? ` (teto ${diagnostico.limiteTpm} TPM)` : ""}`
+              : diagnostico.tipo === "MODELO_INEXISTENTE"
+                ? `Modelo ${m} nao existe mais na Groq (HTTP ${response.status})`
+                : `Groq API status ${response.status}: ${response.statusText}`;
+          console.warn(`[chat-insight] ${lastError}`);
           continue;
         }
 

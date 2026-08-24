@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { defaultGroqModel } from "../services/llmModels.js";
 import Groq from "groq-sdk";
 import { getAuth } from "firebase-admin/auth";
 import { getPool } from "./db.js";
@@ -93,7 +94,7 @@ export function registerOnboardingRoutes(app, requireFirebaseAuth, requireIntern
     }
 
     try {
-      const model = process.env.GROQ_CAMPAIGN_AI_MODEL || "llama-3.1-8b-instant";
+      const model = process.env.GROQ_CAMPAIGN_AI_MODEL || defaultGroqModel();
       const completion = await getGroq().chat.completions.create({
         model,
         messages: [

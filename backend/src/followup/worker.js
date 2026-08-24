@@ -6,6 +6,7 @@
 //  - trigger no_reply    → verifica followup_replies; se respondeu → skipped
 //  - 3 tentativas com backoff de 30s; após todas: status "failed"
 import { Worker } from "bullmq";
+import { defaultGroqModel } from "../services/llmModels.js";
 import { query, getSupabase } from "./db.js";
 import { QUEUE_NAME, getRedisConnection, getFollowupQueue } from "./queue.js";
 import Groq from "groq-sdk";
@@ -172,7 +173,7 @@ async function processEventJourneyJob(job) {
       userMsg += `\n\nEscreva a mensagem (sem aspas ou explicações extras):`;
       
       const completion = await groq.chat.completions.create({
-        model: "llama-3.1-8b-instant",
+        model: defaultGroqModel(),
         messages: [
           { role: "system", content: systemMsg },
           { role: "user", content: userMsg },

@@ -1,5 +1,6 @@
 import { Groq } from "groq-sdk";
 import { callLlmChatCompletion } from "./chatbot-ai-engine.js";
+import { defaultGroqModel } from "./services/llmModels.js";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 // Modelo instruct, nao de raciocinio. Medido 06/08/2026: gerar 25 variacoes e
@@ -10,7 +11,8 @@ const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 // contagem errada). O llama nao tem esse overhead: 0 token de raciocinio, e o
 // limite da camada gratuita e maior — 12000 TPM contra 8000 do gpt-oss-20b
 // (header x-ratelimit-limit-tokens da propria API, mesma chave).
-const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
+// Escada em services/llmModels.js: llama-3.3-70b-versatile foi descontinuado.
+const DEFAULT_GROQ_MODEL = defaultGroqModel();
 const STRICT_JSON_MODELS = new Set(["openai/gpt-oss-20b", "openai/gpt-oss-120b"]);
 const CURIOSITY_NAME_TECHNIQUE = {
   name: "name_curiosity_recovery",
@@ -588,7 +590,7 @@ Retorne EXCLUSIVAMENTE um objeto JSON no formato:
 }`;
 
   const rawContent = await callLlmChatCompletion({
-    model: "llama-3.1-8b-instant",
+    model: defaultGroqModel(),
     temperature: 0.7,
     max_tokens: 2500,
     response_format: { type: "json_object" },

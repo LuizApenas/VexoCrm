@@ -57,6 +57,12 @@ export function TabTeste({ clientId }: { clientId: string }) {
         for (const aviso of data?.avisos ?? []) {
           setConversation((c) => [...c, { role: "bot", text: `⚠️ ${aviso}` }]);
         }
+      } else if (res.status === 429) {
+        // Cota esgotada não é erro técnico: é informação de negócio. Aparece com
+        // rótulo próprio para o dono não confundir com "prompt errado".
+        const dados = await res.json().catch(() => null);
+        const detalhe = dados?.reason || dados?.error || "A cota de IA da conta acabou.";
+        setConversation((c) => [...c, { role: "bot", text: `🚫 Cota de IA esgotada — ${detalhe}` }]);
       } else {
         const err = await readApiErrorMessage(res, "Erro");
         setConversation((c) => [...c, { role: "bot", text: `Erro: ${err}` }]);
