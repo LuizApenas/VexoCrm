@@ -407,7 +407,7 @@ export default function BancoDeDados() {
       try {
         const token = await getIdToken();
         if (!token) return;
-        const res = await fetch(`${API_BASE_URL}/api/admin/settings`, {
+        const res = await fetch(`${API_BASE_URL}/api/system/settings`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {

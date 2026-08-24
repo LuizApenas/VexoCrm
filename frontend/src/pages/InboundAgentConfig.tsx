@@ -458,7 +458,7 @@ export default function InboundAgentConfig() {
                           const inst = instanceNameFromChip(chip);
                           const marcado = numerosVinculados.includes(inst);
                           return (
-                            <label key={chip.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent">
+                            <label key={chip.id || chip.name || inst} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent">
                               <Checkbox
                                 checked={marcado}
                                 onCheckedChange={() =>

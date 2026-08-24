@@ -206,8 +206,8 @@ export function registerSuperAdminRoutes(app, deps) {
     upsellWhatsappNumber: "5511999999999",
   };
 
-  // GET /api/system/settings -> Obter configurações globais do sistema
-  app.get("/api/system/settings", requireFirebaseAuth, async (req, res) => {
+  // GET /api/system/settings & alias /api/admin/settings -> Obter configurações globais do sistema
+  const handleGetSystemSettings = async (req, res) => {
     let chipLimitsBruto = null;
     try {
       const { data } = await supabase.from("system_settings").select("key, value");
@@ -228,7 +228,10 @@ export function registerSuperAdminRoutes(app, deps) {
     // funcao de normalizacao do backend, para nao inventarem numero proprio.
     // Ausencia cai em CHIP_LIMIT_DEFAULTS — nunca em bloqueio.
     res.json({ ...inMemorySettings, chipLimits: normalizeChipLimits(chipLimitsBruto) });
-  });
+  };
+
+  app.get("/api/system/settings", requireFirebaseAuth, handleGetSystemSettings);
+  app.get("/api/admin/settings", requireFirebaseAuth, handleGetSystemSettings);
 
   // POST /api/system/settings -> Atualizar configurações globais do sistema (SuperAdmin)
   app.post("/api/system/settings", requireFirebaseAuth, requireSuperAdminGuard, async (req, res) => {

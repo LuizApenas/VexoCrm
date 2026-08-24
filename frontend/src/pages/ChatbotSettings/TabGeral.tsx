@@ -15,6 +15,9 @@ import { fetchApi, readApiErrorMessage, readApiJson } from "@/lib/api";
 import { useLeadClients, useUpdateLeadClientN8nSettings } from "@/hooks/useLeadClients";
 import { useChatbotTemplates, useBuiltinTemplates, useLlmModels } from "@/hooks/useChatbotTemplates";
 import { buildWebhookUrl } from "@/lib/chatbotSettings/helpers";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { hasFeatureUnlocked } from "@/lib/planTier";
+import { assertTenantMatch } from "@/lib/tenantIsolation";
 
 // ─── CopyButton ───────────────────────────────────────────────────────────────
 
@@ -31,10 +34,6 @@ function CopyButton({ text }: { text: string }) {
     </button>
   );
 }
-
-import { useOptionalCrmClient } from "@/hooks/useCrmClient";
-import { hasFeatureUnlocked } from "@/lib/planTier";
-import { assertTenantMatch } from "@/lib/tenantIsolation";
 
 // ─── Tab: Geral ───────────────────────────────────────────────────────────────
 
@@ -343,7 +342,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                       const inst = nomeInstancia(chip);
                       const marcado = chipsDoChatbot.includes(inst);
                       return (
-                        <label key={chip.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs hover:bg-accent">
+                        <label key={chip.id || chip.name || inst} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs hover:bg-accent">
                           <Checkbox
                             checked={marcado}
                             onCheckedChange={() =>

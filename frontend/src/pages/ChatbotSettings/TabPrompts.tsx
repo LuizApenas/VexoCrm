@@ -9,6 +9,7 @@ import { usePrompt, useSavePrompt, type PromptType } from "@/hooks/usePrompts";
 import { formatDate } from "@/lib/chatbotSettings/helpers";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { assertTenantMatch } from "@/lib/tenantIsolation";
+import { PROMPT_CONFIGS } from "@/lib/chatbotSettings/constants";
 
 function PromptBlock({ clientId, type, label, description }: { clientId: string; type: PromptType; label: string; description: string }) {
   const crmClient = useOptionalCrmClient();

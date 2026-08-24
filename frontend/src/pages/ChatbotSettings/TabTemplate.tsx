@@ -15,6 +15,8 @@ import {
   type ChatbotTemplate, type TemplateField,
 } from "@/hooks/useChatbotTemplates";
 import { emptyTemplate, type EditorState } from "@/lib/chatbotSettings/helpers";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { assertTenantMatch } from "@/lib/tenantIsolation";
 
 function FieldEditor({
   field, isRequired, index, total, onUpdate, onToggleRequired, onRemove, onMoveUp, onMoveDown,
@@ -54,9 +56,6 @@ function FieldEditor({
     </div>
   );
 }
-
-import { useOptionalCrmClient } from "@/hooks/useCrmClient";
-import { assertTenantMatch } from "@/lib/tenantIsolation";
 
 function TemplateEditorPanel({ initial, clientId, onClose }: { initial: EditorState; clientId: string; onClose: () => void }) {
   const crmClient = useOptionalCrmClient();
