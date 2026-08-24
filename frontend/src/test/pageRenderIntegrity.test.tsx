@@ -17,7 +17,7 @@ const mockTenant = {
   n8n_settings: {
     chatbot_enabled: true,
     chatbot_model: "generico",
-    chatbot_llm_model: "llama-3.3-70b-versatile",
+    chatbot_llm_model: "openai/gpt-oss-120b",
     evolution_instances: [{ name: "Instancia-1", active: true }],
   },
 };
@@ -60,7 +60,11 @@ vi.mock("@/hooks/useChatbotTemplates", () => ({
   useChatbotTemplates: () => ({ data: [], isLoading: false }),
   useBuiltinTemplates: () => ({ data: [], isLoading: false }),
   useLlmModels: () => ({
-    data: { models: [{ id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B", providerName: "Groq" }], providerStatus: {} },
+    data: {
+      models: [{ id: "openai/gpt-oss-120b", name: "GPT-OSS 120B (Groq)", provider: "groq", providerName: "Groq" }],
+      defaultModel: "openai/gpt-oss-120b",
+      providerStatus: { groq: true, openai: false, anthropic: false, gemini: false },
+    },
     isLoading: false,
   }),
   useSaveChatbotTemplate: () => ({ mutateAsync: vi.fn(), isPending: false }),

@@ -48,6 +48,10 @@ export interface LeadClientN8nSettingsPayload {
   chatbotModel?: string;
   chatbotLlmModel?: string;
   chatbotInstances?: string[];
+  chatbotInboundScope?: "leads_only" | "all" | string;
+  chatbot_inbound_scope?: "leads_only" | "all" | string;
+  recontactMessage?: string | null;
+  recontact_message?: string | null;
   segmentationConfig?: LeadClientSegmentationConfig;
   sdrWhatsappNumber?: string | null;
   sdrWhatsappNumbers?: string[];
@@ -120,6 +124,8 @@ export interface LeadClientN8nSettingsSummary {
   chatbot_llm_model?: string;
   /** Chips que este chatbot atende. Vazio = qualquer chip sem agente inbound. */
   chatbot_instances?: string[];
+  chatbot_inbound_scope?: "leads_only" | "all" | string;
+  recontact_message?: string | null;
   segmentation_config?: LeadClientSegmentationConfig;
   sdr_whatsapp_number: string | null;
   /** Destinos do briefing. Substitui o campo único; os dois convivem no deploy. */

@@ -69,11 +69,15 @@ export const DEFAULT_LLM_MODEL = defaultGroqModel();
 // Modelo salvo pode ter sido descontinuado pelo provedor depois de escolhido.
 // Sem isso a chamada seguia com um id morto e falhava no provedor, sem pista.
 export function resolveLlmModel(modelId) {
-  if (modelId && LLM_MODELS.some((m) => m.id === modelId)) return modelId;
-  if (modelId) {
-    console.warn(`[chatbot-ai] modelo "${modelId}" nao esta disponivel; usando ${DEFAULT_LLM_MODEL}.`);
+  const normalized = typeof modelId === "string" ? modelId.trim() : "";
+  const defaultModel = defaultGroqModel();
+  if (normalized && LLM_MODELS.some((m) => m.id === normalized)) return normalized;
+  if (normalized) {
+    console.warn(`[chatbot-ai] modelo "${normalized}" nao esta disponivel; usando ${defaultModel}.`);
+  } else {
+    console.log(`[chatbot-ai] tenant sem modelo LLM configurado — usando modelo padrão da escada: ${defaultModel}`);
   }
-  return DEFAULT_LLM_MODEL;
+  return defaultModel;
 }
 
 export function detectLlmProvider(modelId) {
@@ -105,7 +109,8 @@ export async function callLlmChatCompletion({
   max_tokens = 600,
   response_format = null,
 }) {
-  const provider = detectLlmProvider(model);
+  const chosenModel = model || defaultGroqModel();
+  const provider = detectLlmProvider(chosenModel);
 
   if (provider === "openai") {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -245,12 +250,23 @@ export async function callLlmChatCompletion({
       continue;
     }
 
+    if (diagnostico.tipo === "CONTRATO_JSON" && response_format) {
+      console.warn(`[chatbot-ai-engine] Groq recusou response_format estrito no modelo "${m}". Reexecutando em modo de texto com extração de JSON resiliente...`);
+      return callLlmChatCompletion({
+        model: m,
+        messages,
+        temperature,
+        max_tokens,
+        response_format: null,
+      });
+    }
+
     if (diagnostico.tentarProximo) {
       console.warn(`[chatbot-ai-engine] Groq recusou o modelo "${m}" (HTTP ${res.status}, ${diagnostico.tipo}). Tentando o proximo.`);
       continue;
     }
 
-    // Credencial invalida, contrato de JSON: trocar de modelo nao resolve.
+    // Credencial invalida, etc: trocar de modelo nao resolve.
     throw lastError;
   }
 
@@ -265,18 +281,6 @@ export async function callLlmChatCompletion({
     erroDeCota.usadoTpm = ultimaCota.usadoTpm ?? null;
     erroDeCota.esperarSegundos = ultimaCota.esperarSegundos ?? null;
     lastError = erroDeCota;
-  }
-
-  // Se falhou por validação de JSON na Groq e estávamos usando response_format:
-  if (response_format && lastError && (lastError.message.includes("json_validate_failed") || lastError.message.includes("Failed to validate JSON"))) {
-    console.warn("[chatbot-ai-engine] Groq recusou response_format estrito. Reexecutando chamada em modo de texto com extração de JSON resiliente...");
-    return callLlmChatCompletion({
-      model,
-      messages,
-      temperature,
-      max_tokens,
-      response_format: null,
-    });
   }
 
   // Fallback cruzado se todos os modelos da Groq falharem
@@ -1186,15 +1190,11 @@ export async function processBatch({
   inboundSpinInstruction = "",
   instanceName = null,
 }) {
-  if (!model) {
-    console.error("[chatbot-ai] model não configurado para cliente — chatbot silenciado", { clientId });
-    return null;
-  }
-
   const tenantSettings = await getLeadClientN8nSettings(clientId).catch(() => null);
-  let activeLlmModel = llmModel || resolveLlmModel(tenantSettings?.chatbot_llm_model);
+  const effectivePersonaModel = model || tenantSettings?.chatbot_model || "generico";
+  let activeLlmModel = resolveLlmModel(llmModel || tenantSettings?.chatbot_llm_model);
 
-  const modelConfig = getChatbotModel(model);
+  const modelConfig = getChatbotModel(effectivePersonaModel);
   const leadsTable = chatbotLeadsTable(clientId);
 
   // Combinar textos do batch
@@ -1290,8 +1290,8 @@ export async function processBatch({
   const history = buildHistory(storedHistorico);
 
   // Busca prompt padrão do tenant, prompt da campanha (se houver) e template em paralelo
-  const promptType = promptTypeOverride || (model.startsWith("campanha_") ? "campanha" : "padrao");
-  const baseModelKey = model.startsWith("campanha_") ? model.replace("campanha_", "") : model;
+  const promptType = promptTypeOverride || (effectivePersonaModel.startsWith("campanha_") ? "campanha" : "padrao");
+  const baseModelKey = effectivePersonaModel.startsWith("campanha_") ? effectivePersonaModel.replace("campanha_", "") : effectivePersonaModel;
 
   const [dynamicPrompt, campaignPrompt, template] = await Promise.all([
     fetchDynamicPrompt(supabase, clientId, promptType),

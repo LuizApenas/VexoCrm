@@ -63,6 +63,7 @@ export function maskN8nSettings(row) {
       active: false,
       chatbot_enabled: false,
       chatbot_model: "outlier",
+      chatbot_llm_model: defaultGroqModel(),
       chatbot_instances: [],
       chatbot_inbound_scope: "leads_only",
       recontact_message: null,
@@ -81,6 +82,7 @@ export function maskN8nSettings(row) {
     active: row.active !== false,
     chatbot_enabled: row.chatbot_enabled === true,
     chatbot_model: row.chatbot_model || "outlier",
+    chatbot_llm_model: row.chatbot_llm_model || null,
     // Chips que este chatbot atende. Vazio = qualquer chip sem agente inbound.
     chatbot_instances: Array.isArray(row.chatbot_instances) ? row.chatbot_instances : [],
     // Quem o chatbot atende. Default seguro: so lead conhecido. So o literal

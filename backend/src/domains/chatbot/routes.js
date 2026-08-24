@@ -15,6 +15,7 @@ import { applyCorsHeaders } from "../../services/corsPolicy.js";
 import { upsertLeadByPhone } from "../../services/leadUpsert.js";
 import { OutlierQualificationBot } from "../../hardcoded-chatbot-outlier.js";
 import { getChatMemory } from "../../hardcoded-chatbot.js";
+import { defaultGroqModel } from "../../services/llmModels.js";
 import {
   bufferMessage,
   resolveMessageContent,
@@ -946,6 +947,7 @@ export function registerChatbotRoutes(app, deps) {
   app.get("/api/chatbot-llm-models", requireFirebaseAuth, async (req, res) => {
     return res.json({
       models: LLM_MODELS,
+      defaultModel: defaultGroqModel(),
       providerStatus: getLlmProviderStatus(),
     });
   });

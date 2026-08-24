@@ -55,7 +55,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const n8n = client?.n8n_settings;
   const [enabled, setEnabled] = useState(n8n?.chatbot_enabled ?? false);
   const [model, setModel] = useState(n8n?.chatbot_model ?? "generico");
-  const [llmModel, setLlmModel] = useState(n8n?.chatbot_llm_model ?? "llama-3.3-70b-versatile");
+  const [llmModel, setLlmModel] = useState(n8n?.chatbot_llm_model || "");
   const [sdrNumber, setSdrNumber] = useState("");
   // Lista de destinos do briefing. Vem do backend ja com o numero antigo
   // migrado, entao ninguem perde configuracao.
@@ -80,7 +80,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     hidratadoPara.current = clientId;
     setEnabled(n8n.chatbot_enabled ?? false);
     setModel(n8n.chatbot_model ?? "generico");
-    setLlmModel(n8n.chatbot_llm_model ?? "llama-3.3-70b-versatile");
+    setLlmModel(n8n.chatbot_llm_model || "");
     // O campo de texto e so a caixa de digitacao; a lista vem do backend ja
     // com o numero antigo migrado.
     setSdrNumber("");
@@ -271,6 +271,12 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     }
   }
 
+  const defaultLlmModel = llmInfo?.defaultModel || "openai/gpt-oss-120b";
+  const isCustomModel = Boolean(llmModel && llmModels.some((m) => m.id === llmModel));
+  const isDeadModel = Boolean(llmModel && llmModels.length > 0 && !llmModels.some((m) => m.id === llmModel));
+  const effectiveLlmModel = isCustomModel ? llmModel : defaultLlmModel;
+  const defaultModelName = llmModels.find((m) => m.id === defaultLlmModel)?.name || defaultLlmModel;
+
   const groqModels = llmModels.filter((m) => m.provider === "groq");
   const openaiModels = llmModels.filter((m) => m.provider === "openai");
   const anthropicModels = llmModels.filter((m) => m.provider === "anthropic");
@@ -397,9 +403,14 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
               <Label className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
                 <Cpu className="h-3.5 w-3.5 text-purple-500" /> Provedor & Motor de IA (LLM)
               </Label>
+              {!isCustomModel && (
+                <span className="text-[10px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800 font-normal">
+                  Padrão do Sistema ({defaultModelName})
+                </span>
+              )}
             </div>
 
-            <Select value={llmModel} onValueChange={handleLlmModelChange} disabled={updateSettings.isPending}>
+            <Select value={effectiveLlmModel} onValueChange={handleLlmModelChange} disabled={updateSettings.isPending}>
               <SelectTrigger className="h-8 text-xs bg-white dark:bg-slate-900">
                 <SelectValue placeholder="Selecione o motor de IA..." />
               </SelectTrigger>
@@ -410,7 +421,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                   </SelectLabel>
                   {groqModels.map((m) => (
                     <SelectItem key={m.id} value={m.id} className="text-xs">
-                      {m.name}
+                      {m.name}{m.id === defaultLlmModel ? " (Padrão)" : ""}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -421,7 +432,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                   </SelectLabel>
                   {openaiModels.map((m) => (
                     <SelectItem key={m.id} value={m.id} className="text-xs">
-                      {m.name}
+                      {m.name}{m.id === defaultLlmModel ? " (Padrão)" : ""}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -432,7 +443,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                   </SelectLabel>
                   {anthropicModels.map((m) => (
                     <SelectItem key={m.id} value={m.id} className="text-xs">
-                      {m.name}
+                      {m.name}{m.id === defaultLlmModel ? " (Padrão)" : ""}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -443,12 +454,18 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                   </SelectLabel>
                   {geminiModels.map((m) => (
                     <SelectItem key={m.id} value={m.id} className="text-xs">
-                      {m.name}
+                      {m.name}{m.id === defaultLlmModel ? " (Padrão)" : ""}
                     </SelectItem>
                   ))}
                 </SelectGroup>
               </SelectContent>
             </Select>
+
+            {isDeadModel && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                O modelo salvo ("{llmModel}") não está mais disponível. O agente está usando o padrão do sistema ({defaultModelName}). Escolha um modelo e salve para atualizar.
+              </p>
+            )}
 
             {/* Status de chaves de API no servidor */}
             <div className="rounded-md border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-900/50 p-2.5 space-y-2">

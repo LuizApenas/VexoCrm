@@ -15,6 +15,7 @@ import {
 import { getAnalytics } from "./analyticsService.js";
 import { getFollowupQueue } from "./queue.js";
 import { triggerAutomationRun } from "./automationEngine.js";
+import { defaultGroqModel } from "../services/llmModels.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -280,7 +281,7 @@ function normalizeInstanceList(list, fallback) {
           calendly_webhook_secret: str(calendly_webhook_secret),
           panel_access: Boolean(panel_access),
           inbound_enabled: Boolean(inbound_enabled),
-          inbound_model: str(inbound_model) || 'gpt-4o',
+          inbound_model: str(inbound_model) || defaultGroqModel(),
           inbound_prompt: str(inbound_prompt),
           inbound_spin_fields: Array.isArray(inbound_spin_fields) ? inbound_spin_fields : [],
           inbound_webhook_url: str(inbound_webhook_url),

@@ -103,8 +103,9 @@ export default function InboundAgentConfig() {
 
   const activeCompany = companies.find((c) => c.id === companyId);
 
+  const defaultLlmModel = llmInfo?.defaultModel || "openai/gpt-oss-120b";
   const [inboundEnabled, setInboundEnabled] = useState(false);
-  const [inboundModel, setInboundModel] = useState("llama-3.3-70b-versatile");
+  const [inboundModel, setInboundModel] = useState("");
   const [inboundPrompt, setInboundPrompt] = useState("");
   const [sdrPhone, setSdrPhone] = useState("");
   const [sdrTransferEnabled, setSdrTransferEnabled] = useState(false);
@@ -138,7 +139,7 @@ export default function InboundAgentConfig() {
   useEffect(() => {
     if (activeCompany) {
       setInboundEnabled(activeCompany.inbound_enabled ?? false);
-      setInboundModel(activeCompany.inbound_model ?? "llama-3.3-70b-versatile");
+      setInboundModel(activeCompany.inbound_model || "");
       setInboundPrompt(activeCompany.inbound_prompt ?? "");
       setSdrPhone(activeCompany.sdr_whatsapp_number ?? "");
       setSdrTransferEnabled(activeCompany.sdr_transfer_enabled ?? false);
@@ -479,39 +480,55 @@ export default function InboundAgentConfig() {
                   </p>
                 </div>
 
-                <div className="space-y-2 max-w-md">
-                  <Label>Modelo de IA</Label>
-                  <Select value={inboundModel} onValueChange={setInboundModel}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o modelo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {providerOrder.map((provider) => {
-                        const group = llmModels.filter((m) => m.provider === provider);
-                        if (group.length === 0) return null;
-                        const configured = providerStatus?.[provider];
-                        return (
-                          <SelectGroup key={provider}>
-                            <SelectLabel className="text-[10px] uppercase tracking-wide">
-                              {group[0].providerName}
-                              {configured === false && " — sem chave de API"}
-                            </SelectLabel>
-                            {group.map((m) => (
-                              <SelectItem key={m.id} value={m.id} disabled={configured === false}>
-                                {m.name}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                  {inboundModel && llmModels.length > 0 && !llmModels.some((m) => m.id === inboundModel) && (
-                    <p className="text-xs text-amber-600 dark:text-amber-500">
-                      O modelo salvo ("{inboundModel}") não está mais disponível. Escolha outro e salve.
-                    </p>
-                  )}
-                </div>
+                {(() => {
+                  const isCustomInboundModel = Boolean(inboundModel && llmModels.some((m) => m.id === inboundModel));
+                  const isDeadInboundModel = Boolean(inboundModel && llmModels.length > 0 && !llmModels.some((m) => m.id === inboundModel));
+                  const effectiveInboundModel = isCustomInboundModel ? inboundModel : defaultLlmModel;
+                  const defaultModelName = llmModels.find((m) => m.id === defaultLlmModel)?.name || defaultLlmModel;
+
+                  return (
+                    <div className="space-y-2 max-w-md">
+                      <div className="flex items-center justify-between">
+                        <Label>Modelo de IA</Label>
+                        {!isCustomInboundModel && (
+                          <span className="text-[10px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800 font-normal">
+                            Padrão do Sistema ({defaultModelName})
+                          </span>
+                        )}
+                      </div>
+                      <Select value={effectiveInboundModel} onValueChange={setInboundModel}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o modelo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {providerOrder.map((provider) => {
+                            const group = llmModels.filter((m) => m.provider === provider);
+                            if (group.length === 0) return null;
+                            const configured = providerStatus?.[provider];
+                            return (
+                              <SelectGroup key={provider}>
+                                <SelectLabel className="text-[10px] uppercase tracking-wide">
+                                  {group[0].providerName}
+                                  {configured === false && " — sem chave de API"}
+                                </SelectLabel>
+                                {group.map((m) => (
+                                  <SelectItem key={m.id} value={m.id} disabled={configured === false}>
+                                    {m.name}{m.id === defaultLlmModel ? " (Padrão)" : ""}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      {isDeadInboundModel && (
+                        <p className="text-xs text-amber-600 dark:text-amber-500">
+                          O modelo salvo ("{inboundModel}") não está mais disponível. O agente está usando o padrão do sistema ({defaultModelName}). Escolha outro e salve.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="space-y-2 max-w-md">
                   <Label>Quem o chatbot atende (Escopo Inbound)</Label>

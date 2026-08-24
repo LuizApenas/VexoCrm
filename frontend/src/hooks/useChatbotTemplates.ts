@@ -101,16 +101,17 @@ export function useLlmModels() {
     queryKey: ["chatbot-llm-models"],
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000,
-    queryFn: async (): Promise<{ models: LlmModelOption[]; providerStatus: LlmProviderStatus }> => {
+    queryFn: async (): Promise<{ models: LlmModelOption[]; defaultModel: string; providerStatus: LlmProviderStatus }> => {
       const token = await getIdToken();
       if (!token) throw new Error("Usuário não autenticado.");
       const res = await fetchApi("/api/chatbot-llm-models", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao carregar modelos LLM"));
-      const data = await readApiJson<{ models: LlmModelOption[]; providerStatus: LlmProviderStatus }>(res, "llm_models_fetch");
+      const data = await readApiJson<{ models: LlmModelOption[]; defaultModel?: string; providerStatus: LlmProviderStatus }>(res, "llm_models_fetch");
       return {
         models: data.models ?? [],
+        defaultModel: data.defaultModel || "openai/gpt-oss-120b",
         providerStatus: data.providerStatus ?? { groq: false, openai: false, anthropic: false, gemini: false },
       };
     },
