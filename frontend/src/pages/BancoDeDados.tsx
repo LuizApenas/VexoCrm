@@ -386,6 +386,18 @@ export default function BancoDeDados() {
     fetchLeads();
   }, [clientId, activeTab, selectedTag]);
 
+  // Reseta seleções, drawer de detalhes e modais ao alternar de empresa (tenant)
+  useEffect(() => {
+    setSelectedLeadIds([]);
+    setSelectedLead(null);
+    setIsDetailSheetOpen(false);
+    setCampaignSelectedLeadIds([]);
+    setAiExtractedLeads([]);
+    setIsAIImportModalOpen(false);
+    setIsCreateModalOpen(false);
+    setIsFollowupModalOpen(false);
+  }, [clientId]);
+
   useEffect(() => {
     fetchEvolutionInstances();
   }, [clientId]);

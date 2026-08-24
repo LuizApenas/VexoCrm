@@ -55,7 +55,11 @@ function FieldEditor({
   );
 }
 
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { assertTenantMatch } from "@/lib/tenantIsolation";
+
 function TemplateEditorPanel({ initial, clientId, onClose }: { initial: EditorState; clientId: string; onClose: () => void }) {
+  const crmClient = useOptionalCrmClient();
   const [state, setState] = useState<EditorState>(initial);
   const save = useSaveChatbotTemplate();
 
@@ -93,11 +97,12 @@ function TemplateEditorPanel({ initial, clientId, onClose }: { initial: EditorSt
     if (!state.template_key) return toast({ title: "Preencha a chave do template", variant: "destructive" });
     if (!state.display_name) return toast({ title: "Preencha o nome do template", variant: "destructive" });
     try {
+      assertTenantMatch(clientId, crmClient?.selectedClientId);
       await save.mutateAsync({ ...state, clientId });
       toast({ title: "Template salvo" });
       onClose();
     } catch (e) {
-      toast({ title: "Erro ao salvar", description: String(e), variant: "destructive" });
+      toast({ title: "Erro ao salvar", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
     }
   }
 

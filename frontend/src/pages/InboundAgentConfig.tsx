@@ -20,6 +20,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { fetchApi } from "@/lib/api";
 import { useLeadClients, useUpdateLeadClientN8nSettings } from "@/hooks/useLeadClients";
 import { useLlmModels } from "@/hooks/useChatbotTemplates";
+import { assertTenantMatch } from "@/lib/tenantIsolation";
 
 // Empresa "de mentira" mostrada quando o tenant ainda nao tem linha em
 // followup_companies. Salvar com ela cria a linha de verdade.
@@ -91,6 +92,10 @@ export default function InboundAgentConfig() {
   const providerOrder = ["groq", "openai", "anthropic", "gemini"] as const;
 
   useEffect(() => {
+    setCompanyId("all");
+  }, [selectedClientId]);
+
+  useEffect(() => {
     if (companies.length > 0 && (companyId === "all" || !companies.some((c) => c.id === companyId))) {
       setCompanyId(companies[0].id);
     }
@@ -156,6 +161,7 @@ export default function InboundAgentConfig() {
     setInboundEnabled(value);
     if (isPlaceholderCompany || !activeCompany) return; // sem linha ainda: salva junto na criacao
     try {
+      assertTenantMatch(selectedClientId, crmClient?.selectedClientId);
       await updateCompany.mutateAsync({ id: activeCompany.id, inbound_enabled: value } as any);
       toast({ title: value ? "Agente ativado" : "Agente desativado" });
     } catch (e: any) {
@@ -166,6 +172,12 @@ export default function InboundAgentConfig() {
 
   const handleSave = async () => {
     if (!activeCompany) return;
+    try {
+      assertTenantMatch(selectedClientId, crmClient?.selectedClientId);
+    } catch (e: any) {
+      toast({ title: "Erro de segurança", description: e.message, variant: "destructive" });
+      return;
+    }
     const payload = {
       inbound_enabled: inboundEnabled,
       inbound_model: inboundModel,

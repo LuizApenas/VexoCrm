@@ -7,9 +7,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/use-toast";
 import { usePrompt, useSavePrompt, type PromptType } from "@/hooks/usePrompts";
 import { formatDate } from "@/lib/chatbotSettings/helpers";
-import { PROMPT_CONFIGS } from "@/lib/chatbotSettings/constants";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { assertTenantMatch } from "@/lib/tenantIsolation";
 
 function PromptBlock({ clientId, type, label, description }: { clientId: string; type: PromptType; label: string; description: string }) {
+  const crmClient = useOptionalCrmClient();
   const { data: prompt, isLoading } = usePrompt(clientId, type);
   const savePrompt = useSavePrompt();
   const [draft, setDraft] = useState("");
@@ -20,6 +22,7 @@ function PromptBlock({ clientId, type, label, description }: { clientId: string;
 
   async function handleSave() {
     try {
+      assertTenantMatch(clientId, crmClient?.selectedClientId);
       await savePrompt.mutateAsync({ clientId, type, content: draft });
       setIsDirty(false);
       toast({ title: "Prompt salvo" });

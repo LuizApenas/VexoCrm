@@ -14,10 +14,13 @@ import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PageShell, PageShellContext } from "@/components/PageShell";
 
+import { TenantScopeBoundary } from "@/components/TenantScopeBoundary";
+
 export default function AgenteIA() {
   const { isInternalUser, isAdminUser } = useAuth();
   const crmClient = useOptionalCrmClient();
   const selectedClient = crmClient?.selectedClient;
+  const activeClientId = selectedClient?.id || crmClient?.selectedClientId || "";
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isRagUnlocked = hasFeatureUnlocked(selectedClient, "agente_rag");
@@ -115,7 +118,9 @@ export default function AgenteIA() {
             {hasAgente && (
               <TabsContent value="operacao" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
                 <ErrorBoundary>
-                  <ChatbotKanban />
+                  <TenantScopeBoundary tenantId={activeClientId}>
+                    <ChatbotKanban />
+                  </TenantScopeBoundary>
                 </ErrorBoundary>
               </TabsContent>
             )}
@@ -123,7 +128,9 @@ export default function AgenteIA() {
             {hasSettings && (
               <TabsContent value="settings" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
                 <ErrorBoundary>
-                  <ChatbotSettings />
+                  <TenantScopeBoundary tenantId={activeClientId}>
+                    <ChatbotSettings />
+                  </TenantScopeBoundary>
                 </ErrorBoundary>
               </TabsContent>
             )}
@@ -131,7 +138,9 @@ export default function AgenteIA() {
             {hasAgente && (
               <TabsContent value="inbound" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
                 <ErrorBoundary>
-                  <InboundAgentConfig />
+                  <TenantScopeBoundary tenantId={activeClientId}>
+                    <InboundAgentConfig />
+                  </TenantScopeBoundary>
                 </ErrorBoundary>
               </TabsContent>
             )}
@@ -139,24 +148,26 @@ export default function AgenteIA() {
             {hasAgente && (
               <TabsContent value="rag" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
                 <ErrorBoundary>
-                  {isRagUnlocked ? (
-                    <KnowledgeBaseRagTab />
-                  ) : (
-                    <UpsellCard
-                      title="Base de Conhecimento RAG (PDFs & Docs)"
-                      subtitle="Exclusivo do Plano Avançado"
-                      description="Faça upload de catálogos, tabelas de preços, manuais técnicos e termos contratuais para o Agente IA consultar fatos exatos sem risco de alucinação."
-                      moduleName="Base de Conhecimento RAG"
-                      benefits={[
-                        "Upload de PDFs, DOCX, TXT e planilhas técnicas",
-                        "Indexação vetorial automática e busca semântica",
-                        "Respostas 100% embasadas na documentação oficial",
-                        "Simulador integrado de busca semântica em tempo real",
-                      ]}
-                    >
+                  <TenantScopeBoundary tenantId={activeClientId}>
+                    {isRagUnlocked ? (
                       <KnowledgeBaseRagTab />
-                    </UpsellCard>
-                  )}
+                    ) : (
+                      <UpsellCard
+                        title="Base de Conhecimento RAG (PDFs & Docs)"
+                        subtitle="Exclusivo do Plano Avançado"
+                        description="Faça upload de catálogos, tabelas de preços, manuais técnicos e termos contratuais para o Agente IA consultar fatos exatos sem risco de alucinação."
+                        moduleName="Base de Conhecimento RAG"
+                        benefits={[
+                          "Upload de PDFs, DOCX, TXT e planilhas técnicas",
+                          "Indexação vetorial automática e busca semântica",
+                          "Respostas 100% embasadas na documentação oficial",
+                          "Simulador integrado de busca semântica em tempo real",
+                        ]}
+                      >
+                        <KnowledgeBaseRagTab />
+                      </UpsellCard>
+                    )}
+                  </TenantScopeBoundary>
                 </ErrorBoundary>
               </TabsContent>
             )}
@@ -164,7 +175,9 @@ export default function AgenteIA() {
             {hasDocs && (
               <TabsContent value="docs" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
                 <ErrorBoundary>
-                  <ChatbotDocs />
+                  <TenantScopeBoundary tenantId={activeClientId}>
+                    <ChatbotDocs />
+                  </TenantScopeBoundary>
                 </ErrorBoundary>
               </TabsContent>
             )}

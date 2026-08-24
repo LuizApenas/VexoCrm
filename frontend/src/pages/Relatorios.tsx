@@ -48,6 +48,8 @@ function formatDiaLabel(dia: string): string {
   return parts.length === 3 ? `${parts[2]}/${parts[1]}` : dia;
 }
 
+import { TenantScopeBoundary } from "@/components/TenantScopeBoundary";
+
 export default function Relatorios() {
   const { clientId } = useAuth();
   const { selectedClientId } = useCrmClient();
@@ -193,6 +195,7 @@ export default function Relatorios() {
       compactHero
       headerRight={null}
     >
+      <TenantScopeBoundary tenantId={activeClientId}>
       <ErrorMessage message={error ? (error as Error).message : null} variant="banner" />
 
       {!activeClientId ? (
@@ -482,6 +485,7 @@ export default function Relatorios() {
           </Card>
         </>
       )}
+      </TenantScopeBoundary>
     </PageShell>
   );
 }

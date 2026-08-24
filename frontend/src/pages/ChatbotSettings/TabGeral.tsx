@@ -34,6 +34,7 @@ function CopyButton({ text }: { text: string }) {
 
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { hasFeatureUnlocked } from "@/lib/planTier";
+import { assertTenantMatch } from "@/lib/tenantIsolation";
 
 // ─── Tab: Geral ───────────────────────────────────────────────────────────────
 
@@ -107,11 +108,12 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   async function handleToggle(value: boolean) {
     setEnabled(value);
     try {
+      assertTenantMatch(clientId, crmClient?.selectedClientId);
       await updateSettings.mutateAsync({ tenantId: clientId, chatbotEnabled: value });
       toast({ title: value ? "Chatbot ativado" : "Chatbot desativado" });
-    } catch {
+    } catch (e: any) {
       setEnabled(!value);
-      toast({ title: "Erro ao salvar status do chatbot", variant: "destructive" });
+      toast({ title: "Erro ao salvar status do chatbot", description: e?.message, variant: "destructive" });
     }
   }
 
@@ -127,6 +129,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     const anterior = chipsDoChatbot;
     setChipsDoChatbot(lista);
     try {
+      assertTenantMatch(clientId, crmClient?.selectedClientId);
       await updateSettings.mutateAsync({ tenantId: clientId, chatbotInstances: lista });
       toast({
         title: "Chips do chatbot atualizados",
@@ -144,6 +147,7 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     const prev = model;
     setModel(value);
     try {
+      assertTenantMatch(clientId, crmClient?.selectedClientId);
       // Usa o que o SERVIDOR devolveu, nao o que mandamos. Se o backend gravar
       // outra coisa (ou ignorar o campo), a tela mostra a divergencia na hora em
       // vez de fingir que salvou e "voltar sozinho" depois.
@@ -178,12 +182,13 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
     const prev = llmModel;
     setLlmModel(value);
     try {
+      assertTenantMatch(clientId, crmClient?.selectedClientId);
       await updateSettings.mutateAsync({ tenantId: clientId, chatbotLlmModel: value });
       const found = llmModels.find((m) => m.id === value);
       toast({ title: "Motor de IA atualizado", description: found ? `${found.providerName}: ${found.name}` : value });
-    } catch {
+    } catch (e: any) {
       setLlmModel(prev);
-      toast({ title: "Erro ao salvar modelo LLM", variant: "destructive" });
+      toast({ title: "Erro ao salvar modelo LLM", description: e?.message, variant: "destructive" });
     }
   }
 
@@ -194,11 +199,12 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   async function salvarListaSdr(novaLista: string[]) {
     setSavingSdr(true);
     try {
+      assertTenantMatch(clientId, crmClient?.selectedClientId);
       await updateSettings.mutateAsync({ tenantId: clientId, sdrWhatsappNumbers: novaLista });
       setSdrNumbers(novaLista);
       toast({ title: "Números SDR salvos" });
-    } catch {
-      toast({ title: "Erro ao salvar números SDR", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Erro ao salvar números SDR", description: e?.message, variant: "destructive" });
     } finally {
       setSavingSdr(false);
     }

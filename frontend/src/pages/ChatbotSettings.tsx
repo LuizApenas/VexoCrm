@@ -17,19 +17,7 @@ export default function ChatbotSettings() {
   const { data: clients = [], isLoading: loadingClients } = useLeadClients();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [subTab, setSubTab] = useState<string>(searchParams.get("subtab") || "geral");
-
-  // Auto-select first client or CRM client
-  useEffect(() => {
-    if (!selectedClientId) {
-      if (crmClient?.selectedClientId && crmClient.selectedClientId !== "global") {
-        setSelectedClientId(crmClient.selectedClientId);
-      } else if (clients.length > 0) {
-        setSelectedClientId(clients[0].id);
-      }
-    }
-  }, [clients, crmClient?.selectedClientId, selectedClientId]);
 
   // Sync subtab with URL query param `subtab` without wiping `tab=settings`
   useEffect(() => {
@@ -56,17 +44,18 @@ export default function ChatbotSettings() {
     );
   }
 
-  // NUNCA cair em clients[0]. Enquanto selectedClientId nao esta resolvido, o
-  // fallback antigo exibia (e permitia SALVAR sobre) os dados do primeiro tenant
-  // da lista. Como o tenant "outlier" tem chatbot_model = "outlier", a tela
-  // ficava mostrando esse template no lugar do da empresa selecionada, e voltava
-  // a ele a cada carregamento. Risco maior: currentClientId derivava do mesmo
-  // fallback, entao um clique nessa janela gravava no tenant errado.
-  const selectedClient = selectedClientId
-    ? clients.find((c) => c.id === selectedClientId) || null
+  // Deriva o tenant ativo diretamente do seletor global do CRM sem duplicar
+  // estado em useState estático. Ao mudar no cabeçalho, o painel muda na hora.
+  const activeClientId =
+    crmClient?.selectedClientId && crmClient.selectedClientId !== "global"
+      ? crmClient.selectedClientId
+      : (clients[0]?.id || "");
+
+  const selectedClient = activeClientId
+    ? clients.find((c) => c.id === activeClientId) || null
     : null;
 
-  if (loadingClients || !selectedClientId || !selectedClient) {
+  if (loadingClients || !activeClientId || !selectedClient) {
     return (
       <PageShell title="Configurações do Chatbot SPIN" subtitle="Ajuste parâmetros gerais, templates, prompts e simulações por empresa">
         <div className="flex h-32 items-center justify-center">
@@ -82,7 +71,7 @@ export default function ChatbotSettings() {
     return allowedTabs.includes(`chatbot:${subTabKey}`);
   };
 
-  const currentClientId = selectedClientId;
+  const currentClientId = activeClientId;
 
   return (
     <PageShell title="Configurações do Chatbot SPIN" subtitle="Ajuste parâmetros gerais, templates, prompts e simulações por empresa" spacing="space-y-6">

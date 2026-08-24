@@ -28,7 +28,7 @@ export default function CommercialIntelligence() {
           Cliente ativo: <span className="text-foreground">{selectedClientName}</span>
         </p>
       )}
-      {effectiveClientId ? <CommercialIntelligenceContent clientId={effectiveClientId} /> : null}
+      {effectiveClientId ? <CommercialIntelligenceContent key={effectiveClientId} clientId={effectiveClientId} /> : null}
     </PageShell>
   );
 }
