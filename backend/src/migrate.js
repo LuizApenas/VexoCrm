@@ -106,6 +106,10 @@ async function isAlreadyApplied(pool, filename) {
       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='chip_limit')
       AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='system_settings')
     ) AS ok`,
+    "20260824000000_add_resumo_prompt_type.sql": `SELECT (
+      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='chatbot_prompts')
+      OR EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chatbot_prompts_type_check' AND pg_get_constraintdef(oid) LIKE '%resumo%')
+    ) AS ok`,
   };
 
   const query = checks[filename];

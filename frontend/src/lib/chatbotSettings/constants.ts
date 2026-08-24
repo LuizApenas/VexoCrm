@@ -5,4 +5,5 @@ export const BACKEND_URL = "https://crm.vexoia.com";
 export const PROMPT_CONFIGS: { type: PromptType; label: string; description: string }[] = [
   { type: "padrao", label: "Prompt Padrão (SPIN)", description: "Usado em todos os atendimentos inbound. Define o fluxo completo de qualificação." },
   { type: "extrato", label: "Extrato SDR", description: "Gera o briefing enviado ao SDR quando o lead finaliza a conversa." },
+  { type: "resumo", label: "Resumo de Atendimento (Inbox)", description: "Sintetiza em até 6 linhas o objetivo, fatos estabelecidos, combinados e próximo passo do chat." },
 ];

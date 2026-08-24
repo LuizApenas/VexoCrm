@@ -559,19 +559,25 @@ export function registerChatbotRoutes(app, deps) {
       }
 
       console.log(`[summarize-chat] Resumindo chat ${chatId} (${messageTexts.length} msgs) para client ${clientId}`);
-      const insight = await summarizeChatWithAI(messageTexts, contactName || "Contato");
+      const insight = await summarizeChatWithAI(messageTexts, contactName || "Contato", {
+        clientId,
+        supabase,
+        pool: pgDatabasePool,
+      });
 
-      let summaryText = insight?.summary;
-      if (!summaryText) {
-        if (messageTexts.length > 0) {
-          const lastMsg = messageTexts[messageTexts.length - 1];
-          summaryText = `📌 Atendimento em andamento com ${contactName || "o lead"}.\n🔎 Última interação: "${lastMsg.slice(0, 100)}".\n➡️ Dar continuidade ao contato comercial e qualificar o interesse.`;
-        } else {
-          summaryText = "Conversa recente iniciada. Aguardando troca de mensagens para síntese comercial detalhada.";
-        }
+      if (!insight?.summary) {
+        const errorReason = insight?.error || "A IA não retornou um resumo válido para o histórico fornecido.";
+        console.warn(`[summarize-chat] Falha na IA para o chat ${chatId} (client: ${clientId}): ${errorReason}`);
+        return res.status(502).json({
+          success: false,
+          error: "Não foi possível gerar o resumo com IA no momento. Tente novamente.",
+          reason: errorReason,
+        });
       }
 
-      // Atualiza no banco de dados se houver lead vinculado ou insere
+      const summaryText = insight.summary;
+
+      // Atualiza no banco de dados SOMENTE quando o resumo REAL da IA foi gerado com sucesso
       if (cleanPhone && clientId && pgDatabasePool) {
         const last8 = cleanPhone.slice(-8);
         const updRes = await pgDatabasePool
@@ -610,7 +616,7 @@ export function registerChatbotRoutes(app, deps) {
       });
     } catch (error) {
       console.error("[summarize-chat] Erro ao resumir conversa:", error);
-      res.status(500).json({ error: "Falha ao gerar resumo com IA." });
+      res.status(500).json({ error: "Falha ao gerar resumo com IA.", reason: error?.message });
     }
   });
 
@@ -829,8 +835,8 @@ export function registerChatbotRoutes(app, deps) {
     const clientId = normalizeTenantKey(req.query?.clientId);
     const type = normalizeString(req.query?.type);
     if (!clientId) return sendError(res, 400, "INVALID_QUERY", "Missing clientId");
-    if (!type || !["padrao", "extrato"].includes(type)) {
-      return sendError(res, 400, "INVALID_QUERY", "type must be padrao or extrato");
+    if (!type || !["padrao", "extrato", "resumo"].includes(type)) {
+      return sendError(res, 400, "INVALID_QUERY", "type must be padrao, extrato or resumo");
     }
     try {
       const { data, error } = await supabase
@@ -867,8 +873,8 @@ export function registerChatbotRoutes(app, deps) {
     const type = normalizeString(body.type);
     const content = typeof body.content === "string" ? body.content.trim() : null;
     if (!clientId) return sendError(res, 400, "INVALID_BODY", "Missing clientId");
-    if (!type || !["padrao", "extrato"].includes(type)) {
-      return sendError(res, 400, "INVALID_BODY", "type must be padrao or extrato");
+    if (!type || !["padrao", "extrato", "resumo"].includes(type)) {
+      return sendError(res, 400, "INVALID_BODY", "type must be padrao, extrato or resumo");
     }
     if (!content) return sendError(res, 400, "INVALID_BODY", "Missing content");
     try {

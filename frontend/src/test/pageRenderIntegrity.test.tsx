@@ -110,12 +110,13 @@ function renderWithProviders(ui: React.ReactElement, { route = "/" } = {}) {
 }
 
 describe("Integridade de Renderização de Páginas e Verificação de Símbolos", () => {
-  it("PROMPT_CONFIGS está exportado e contém as configurações padrão de prompt", () => {
+  it("PROMPT_CONFIGS está exportado e contém as configurações padrão de prompt (padrao, extrato, resumo)", () => {
     expect(PROMPT_CONFIGS).toBeDefined();
     expect(Array.isArray(PROMPT_CONFIGS)).toBe(true);
-    expect(PROMPT_CONFIGS.length).toBeGreaterThanOrEqual(2);
+    expect(PROMPT_CONFIGS.length).toBeGreaterThanOrEqual(3);
     expect(PROMPT_CONFIGS.map((p) => p.type)).toContain("padrao");
     expect(PROMPT_CONFIGS.map((p) => p.type)).toContain("extrato");
+    expect(PROMPT_CONFIGS.map((p) => p.type)).toContain("resumo");
   });
 
   it("TabPrompts renderiza sem erro e exibe os cards de prompt configurados", () => {
@@ -124,6 +125,7 @@ describe("Integridade de Renderização de Páginas e Verificação de Símbolos
     // Verifica que os blocos de prompt são renderizados com os rótulos de PROMPT_CONFIGS
     expect(screen.getByText(/Prompt Padrão \(SPIN\)/i)).toBeTruthy();
     expect(screen.getByText(/Extrato SDR/i)).toBeTruthy();
+    expect(screen.getByText(/Resumo de Atendimento \(Inbox\)/i)).toBeTruthy();
     expect(screen.getByText(/Gera o briefing enviado ao SDR/i)).toBeTruthy();
   });
 
