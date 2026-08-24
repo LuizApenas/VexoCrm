@@ -99,6 +99,11 @@ export const ALL_TAB_KEYS = [
   "chatbot:teste",
   "followup",
   "followup:fila",
+  // followup:cadencias e followup:journeys ERAM lidas pela tela e NAO existiam
+  // aqui: não havia como conceder, nem marcando o módulo nem na mão. O dono
+  // marcava "Follow-up & Cadências" e a seção 2 continuava fechada.
+  "followup:cadencias",
+  "followup:journeys",
   "followup:sugestoes",
   "followup:campanhas",
   "followup:metrics",
@@ -150,6 +155,8 @@ export const TABS_HIERARCHY = [
         label: "Follow-up",
         children: [
           { key: "followup:fila", label: "Fila de Envios" },
+          { key: "followup:cadencias", label: "Cadências de Follow-up" },
+          { key: "followup:journeys", label: "Automações por Evento" },
           { key: "followup:sugestoes", label: "Sugestões de IA" },
           { key: "followup:campanhas", label: "Campanhas & Templates" },
           { key: "followup:metrics", label: "Métricas" },

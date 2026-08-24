@@ -393,6 +393,97 @@ export const MODULE_CATALOG = [
 // "banco-de-dados" saiu daqui e virou modulo vendavel (ver MODULE_CATALOG).
 // "onboarding-wizard" fica: e o Treinamento Vexo, que orienta o proprio uso do
 // sistema — tirar deixaria o cliente sem manual.
+/**
+ * Vinculo EXPLICITO entre modulo contratado e aba liberada.
+ *
+ * Havia duas fontes de verdade que nao conversavam. Marcar "Follow-up & Cadencias"
+ * grava em modulos_avulsos; a secao 2 da tela le allowed_tabs, procurando
+ * "followup:cadencias". O dono marcava e desmarcava o modulo e nada acontecia,
+ * porque sao colunas diferentes — e pior: "followup:cadencias" nem existia no
+ * catalogo de abas, entao NAO HAVIA como conceder, nem manualmente.
+ *
+ * Quinta ocorrencia da mesma familia esta semana (catalogo backend x frontend,
+ * INTERNAL_PAGE_KEYS x INTERNAL_PAGE_ORDER, os dois SELECT de n8nSettings, o
+ * SELECT do endpoint publico). Por isso o vinculo aqui e dado, nao regra
+ * espalhada, e ha teste exigindo que TODA chave usada no frontend exista no
+ * catalogo de abas — a proxima aba nova quebra o teste em vez de quebrar o cliente.
+ *
+ * As chaves saem de frontend/src/lib/tenants/constants.ts (ALL_TAB_KEYS).
+ */
+export const MODULE_TAB_KEYS = {
+  disparador_campanhas: ["campanhas"],
+  agente_inbound: [
+    "chatbot-kanban",
+    "chatbot",
+    "chatbot:geral",
+    "chatbot:template",
+    "chatbot:prompts",
+    "chatbot:teste",
+    "inbound-agents",
+  ],
+  agente_rag: ["chatbot-docs"],
+  // O modulo de cadencias concede a secao 2 (cadencias) e a operacao do
+  // follow-up. Nao concede journeys: automacao por evento e outro modulo.
+  followup: [
+    "followup",
+    "followup:fila",
+    "followup:cadencias",
+    "followup:sugestoes",
+    "followup:campanhas",
+    "followup:metrics",
+    "followup:config",
+  ],
+  followup_automations: ["followup", "followup:journeys"],
+  sdr_broadcast: ["leads", "conversas"],
+  multiplos_chips: ["conexoes", "aquecimento"],
+  origem_leads: ["leads", "inteligencia", "inteligencia:performance"],
+  antiban_groq: ["campanhas"],
+  relatorios: ["relatorios", "inteligencia", "inteligencia:performance"],
+  "banco-de-dados": ["leads"],
+};
+
+/**
+ * Abas que os modulos contratados concedem. Nunca REMOVE: desmarcar modulo pode
+ * tirar acesso que o tenant usa por outro caminho, e isso e decisao do dono.
+ */
+export function tabsForContractedModules(modulosAvulsos = []) {
+  const contratados = (Array.isArray(modulosAvulsos) ? modulosAvulsos : [])
+    .map((item) => String(item ?? "").toLowerCase().replace(/^(mod_|modulo_)/, "").trim())
+    .filter(Boolean);
+
+  const liberaTudo = contratados.includes("all") || contratados.includes("*");
+  const marcados = new Set(contratados);
+
+  const abas = [];
+  for (const modulo of MODULE_CATALOG) {
+    const casou =
+      liberaTudo || marcados.has(modulo.id) || modulo.aliases.some((alias) => marcados.has(alias));
+    if (casou) abas.push(...(MODULE_TAB_KEYS[modulo.id] || []));
+  }
+  return Array.from(new Set(abas));
+}
+
+/**
+ * allowed_tabs com as abas dos modulos contratados garantidas.
+ *
+ * ADITIVO por decisao do dono neste commit: so acrescenta. `null` significa
+ * "sem restricao" e continua null — transformar em lista seria RESTRINGIR um
+ * tenant que hoje ve tudo.
+ */
+export function ensureModuleTabs(allowedTabs, modulosAvulsos = []) {
+  if (allowedTabs === null || allowedTabs === undefined) return allowedTabs;
+  if (!Array.isArray(allowedTabs)) return allowedTabs;
+
+  const necessarias = tabsForContractedModules(modulosAvulsos);
+  if (necessarias.length === 0) return allowedTabs;
+
+  const atuais = new Set(allowedTabs);
+  const faltando = necessarias.filter((aba) => !atuais.has(aba));
+  if (faltando.length === 0) return allowedTabs;
+
+  return [...allowedTabs, ...faltando];
+}
+
 export const MODULAR_BASE_PAGES = ["dashboard", "leads", "whatsapp", "onboarding-wizard"];
 
 /**

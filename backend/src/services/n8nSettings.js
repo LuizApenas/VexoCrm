@@ -21,6 +21,7 @@
 import { supabase } from "./database.js";
 import { normalizeString } from "../textNormalize.js";
 import { defaultGroqModel } from "./llmModels.js";
+import { ensureModuleTabs } from "../access/permissionsRegistry.js";
 import { normalizeHttpUrl } from "./tenant.js";
 import { buildDefaultSegmentationConfig, sanitizeSegmentationConfig } from "../segmentation.js";
 import { isMissingSchemaError } from "./analytics.js";
@@ -260,6 +261,8 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
       ? sanitizeSegmentationConfig(body.segmentationConfig, body.chatbotModel || existing?.chatbot_model || "generico")
       : sanitizeSegmentationConfig(existing?.segmentation_config, existing?.chatbot_model || body.chatbotModel || "generico"),
     sdr_whatsapp_number: sdrWhatsappNumberProvided ? (normalizeString(body.sdrWhatsappNumber) || null) : existing?.sdr_whatsapp_number ?? null,
+    // allowed_tabs so e escrita aqui; a garantia das abas dos modulos vem logo
+    // abaixo, depois que plan_tier e modulos_avulsos ja estao resolvidos.
     allowed_tabs: allowedTabsProvided
       ? (Array.isArray(body.allowedTabs) ? body.allowedTabs : null)
       : existing?.allowed_tabs ?? null,
@@ -267,6 +270,24 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
     updated_by_uid: authAccess?.uid || null,
     updated_by_email: authAccess?.email || null,
   };
+
+  // Contratar o modulo passa a CONCEDER a aba. Eram duas fontes de verdade que
+  // nao conversavam: marcar "Follow-up & Cadencias" grava em modulos_avulsos e a
+  // secao 2 da tela le allowed_tabs. O dono marcava e desmarcava sem efeito.
+  //
+  // ADITIVO por decisao do dono: so acrescenta. Desmarcar modulo NAO tira aba —
+  // pode haver acesso legitimo por outro caminho, e tirar e decisao dele.
+  // allowed_tabs null significa "sem restricao" e continua null: virar lista
+  // aqui RESTRINGIRIA um tenant que hoje enxerga tudo.
+  const abasGarantidas = ensureModuleTabs(payload.allowed_tabs, payload.modulos_avulsos);
+  if (abasGarantidas !== payload.allowed_tabs) {
+    const novas = abasGarantidas.filter((aba) => !(payload.allowed_tabs || []).includes(aba));
+    console.info("[n8n-settings] abas concedidas pelos modulos contratados", {
+      clientId: authAccess?.clientId ?? null,
+      novas,
+    });
+    payload.allowed_tabs = abasGarantidas;
+  }
 
   if (dispatchWebhookUrlProvided) {
     const url = normalizeHttpUrl(body.dispatchWebhookUrl);
