@@ -231,6 +231,18 @@ export async function callLlmChatCompletion({
     throw lastError;
   }
 
+  // Se falhou por validação de JSON na Groq e estávamos usando response_format:
+  if (response_format && lastError && (lastError.message.includes("json_validate_failed") || lastError.message.includes("Failed to validate JSON"))) {
+    console.warn("[chatbot-ai-engine] Groq recusou response_format estrito. Reexecutando chamada em modo de texto com extração de JSON resiliente...");
+    return callLlmChatCompletion({
+      model,
+      messages,
+      temperature,
+      max_tokens,
+      response_format: null,
+    });
+  }
+
   // Fallback cruzado se todos os modelos da Groq falharem
   if (process.env.OPENAI_API_KEY) {
     console.warn("[chatbot-ai-engine] Tentando fallback para OpenAI (gpt-4o-mini)...");
@@ -624,18 +636,31 @@ export function normalizeLeadSource(source) {
   return source.trim().charAt(0).toUpperCase() + source.trim().slice(1);
 }
 
-// ─── IA conversacional (Groq) ────────────────────────────────────────────────
+// ─── IA conversacional (Groq / Providers) ────────────────────────────────────
 
-function buildJsonInstruction() {
+/**
+ * Remove blocos legados de instrução JSON do texto do usuário para não duplicar
+ * nem conflitar com o contrato oficial anexado pelo sistema.
+ */
+export function stripLegacyJsonSection(text) {
+  if (!text || typeof text !== "string") return "";
+  return text
+    .replace(/(?:\r?\n)+\s*(?:={3,}|-{3,}|═{3,})?\s*FORMATO DE RESPOSTA[\s\S]*$/i, "")
+    .trim();
+}
+
+export function buildJsonInstruction() {
   return `
 
 ═══════════════════════════════════════════════════════════════
-FORMATO DE RESPOSTA OBRIGATÓRIO — RETORNE APENAS JSON VÁLIDO
+FORMATO DE RESPOSTA OBRIGATÓRIO — RETORNE EXCLUSIVAMENTE JSON
 ═══════════════════════════════════════════════════════════════
-Sem markdown, sem texto fora do JSON. Schema obrigatório:
+Sua resposta DEVE ser um único objeto JSON válido, sem texto antes ou depois, sem blocos markdown.
+Toda a sua resposta ao usuário DEVE estar dentro da chave "mensagem".
 
+Schema JSON obrigatório:
 {
-  "mensagem": "string — texto da resposta enviada ao lead no WhatsApp",
+  "mensagem": "string — texto da sua resposta enviada ao lead no WhatsApp",
   "status_conversa": "aguardando_usuario" | "finalizado",
   "dados": { ... },   // campos coletados até agora (acumulado)
   "lead_source": "Instagram" | "Google Ads" | "Facebook Ads" | "TikTok" | "Indicação" | "Formulário" | "WhatsApp" | "Outro" | null,
@@ -803,8 +828,11 @@ export async function runChatbotAI({ systemPrompt, history, newMessages, existin
     ? `\n\nDADOS JÁ COLETADOS ATÉ AGORA:\n${JSON.stringify(existingData, null, 2)}`
     : "";
 
+  const cleanSystemPrompt = stripLegacyJsonSection(systemPrompt);
+  const finalSystemPrompt = `${cleanSystemPrompt}${dataContext}${buildJsonInstruction()}`;
+
   const messages = [
-    { role: "system", content: systemPrompt + dataContext + buildJsonInstruction() },
+    { role: "system", content: finalSystemPrompt },
     ...history,
     { role: "user", content: newMessages.join("\n") },
   ];
@@ -817,39 +845,87 @@ export async function runChatbotAI({ systemPrompt, history, newMessages, existin
     response_format: { type: "json_object" },
   });
 
-  return parseAIResponse(raw);
+  return parseAIResponse(raw, finalSystemPrompt);
 }
 
 const VALID_SPIN_FASES = new Set(["situacao", "problema", "implicacao", "necessidade"]);
 
-function parseAIResponse(raw) {
-  try {
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return {
-      mensagem: String(parsed.mensagem || ""),
-      status_conversa: parsed.status_conversa || "aguardando_usuario",
-      dados: parsed.dados || {},
-      classificacao: parsed.classificacao || "FRIO",
-      finalizado: parsed.finalizado === true,
-      spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
-    };
-  } catch {
-    const match = raw.match(/\{[\s\S]+\}/);
-    if (match) {
-      try {
-        return parseAIResponse(match[0]);
-      } catch {}
-    }
-    console.error("[chatbot-ai] Failed to parse AI response:", raw.slice(0, 200));
+export function parseAIResponse(raw, fullSystemPrompt = null) {
+  if (raw === null || raw === undefined) {
+    console.warn("[chatbot-ai] AI response is null/undefined");
     return {
       mensagem: "Desculpe, tive um problema técnico. Pode repetir?",
       status_conversa: "aguardando_usuario",
       dados: {},
+      lead_source: null,
       classificacao: "FRIO",
       finalizado: false,
       spin_fase: null,
     };
   }
+
+  // Se já for objeto parseado
+  if (typeof raw === "object") {
+    return {
+      mensagem: String(raw.mensagem || raw.message || raw.resposta || ""),
+      status_conversa: raw.status_conversa || "aguardando_usuario",
+      dados: raw.dados || {},
+      lead_source: normalizeLeadSource(raw.lead_source || raw.dados?.origem_marketing) || null,
+      classificacao: raw.classificacao || "FRIO",
+      finalizado: raw.finalizado === true,
+      spin_fase: VALID_SPIN_FASES.has(raw.spin_fase) ? raw.spin_fase : null,
+    };
+  }
+
+  const rawStr = String(raw).trim();
+
+  // 1. Tenta JSON.parse direto
+  try {
+    const parsed = JSON.parse(rawStr);
+    return {
+      mensagem: String(parsed.mensagem || parsed.message || parsed.resposta || ""),
+      status_conversa: parsed.status_conversa || "aguardando_usuario",
+      dados: parsed.dados || {},
+      lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
+      classificacao: parsed.classificacao || "FRIO",
+      finalizado: parsed.finalizado === true,
+      spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
+    };
+  } catch (_) {}
+
+  // 2. Tenta extrair JSON de blocos de markdown ou strings com delimitadores { ... }
+  const match = rawStr.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[0]);
+      return {
+        mensagem: String(parsed.mensagem || parsed.message || parsed.resposta || ""),
+        status_conversa: parsed.status_conversa || "aguardando_usuario",
+        dados: parsed.dados || {},
+        lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
+        classificacao: parsed.classificacao || "FRIO",
+        finalizado: parsed.finalizado === true,
+        spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
+      };
+    } catch (_) {}
+  }
+
+  // 3. Fallback: o modelo respondeu em texto corrido (não-JSON).
+  // Registra no log com transparência a resposta crua recebida do modelo
+  console.warn("[chatbot-ai] Resposta da LLM não é JSON. Utilizando texto diretamente na mensagem:", {
+    rawLength: rawStr.length,
+    rawPreview: rawStr.slice(0, 150),
+  });
+
+  return {
+    mensagem: rawStr,
+    status_conversa: "aguardando_usuario",
+    dados: {},
+    lead_source: null,
+    classificacao: "FRIO",
+    finalizado: false,
+    spin_fase: null,
+  };
 }
 
 // ─── Histórico de conversa ───────────────────────────────────────────────────

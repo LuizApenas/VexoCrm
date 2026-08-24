@@ -1855,7 +1855,18 @@ export function registerChatbotRoutes(app, deps) {
         },
       });
     } catch (err) {
-      sendError(res, 500, "CHATBOT_TEST_FAILED", err instanceof Error ? err.message : "Erro interno");
+      console.error("[chatbot-test] Erro no simulador:", {
+        clientId,
+        phone,
+        instanceName,
+        error: err?.message || err,
+      });
+      const detail = err instanceof Error ? err.message : "Erro desconhecido ao simular resposta do modelo";
+      res.status(502).json({
+        success: false,
+        error: `Falha ao processar resposta do modelo: ${detail}`,
+        code: "CHATBOT_TEST_FAILED",
+      });
     }
   });
   /**
