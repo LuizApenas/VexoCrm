@@ -1,20 +1,12 @@
 // Lead preso em "finalizado" para sempre.
 //
-// Um lead finalizado num teste recebia a MESMA frase de recontato a cada
-// mensagem: "Nosso consultor vai entrar em contato. Posso ajudar com mais
-// alguma coisa?". O usuario respondia "quando irao entrar em contato" e levava
-// a mesma cortesia de volta, indefinidamente — o numero ficava inutilizado.
-//
-// Comportamento correto: o aviso sai UMA vez e marca `dados.recontato_avisado_em`.
+// Comportamento correto: o aviso de recontato sai UMA vez e marca `dados.recontato_avisado_em`.
 // Da segunda mensagem em diante a conversa REABRE (finalizado = false) e o lead
 // volta ao fluxo normal.
-//
-// Exercita processBatch REAL com supabase mockado. Sem banco e sem LLM: o
-// caminho de recontato retorna antes de qualquer chamada de modelo, e o caminho
-// reaberto e interrompido pela ausencia de prompt.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { processBatch } from "../chatbot-ai-engine.js";
+import * as n8nSettingsService from "../services/n8nSettings.js";
 
 const CLIENT_ID = "geracao-digital";
 const PHONE = "5534999997660";
@@ -36,8 +28,6 @@ function makeSupabase({ leadRow }) {
       return chain;
     },
     eq: () => api,
-    // maybeSingle/single aparecem no caminho de prompt; devolver vazio faz o
-    // fluxo normal parar sem chamar LLM.
     maybeSingle: () => Promise.resolve({ data: null }),
     single: () => Promise.resolve({ data: null }),
   };
@@ -70,7 +60,11 @@ async function mandarMensagem(leadRow, texto) {
 }
 
 describe("recontato de lead finalizado deixa de ser beco sem saida", () => {
-  it("primeira mensagem avisa e MARCA que avisou", async () => {
+  it("primeira mensagem com recontact_message configurado avisa e MARCA que avisou", async () => {
+    vi.spyOn(n8nSettingsService, "getLeadClientN8nSettings").mockResolvedValueOnce({
+      recontact_message: "Nosso consultor vai entrar em contato com você.",
+    });
+
     const { result, updates } = await mandarMensagem(leadFinalizado({ interesse: "consórcio" }), "oi");
 
     expect(result?._recontato).toBe(true);
@@ -100,7 +94,11 @@ describe("recontato de lead finalizado deixa de ser beco sem saida", () => {
     expect(reabertura.dados.recontato_reaberto_em).toBeTruthy();
   });
 
-  it("as duas respostas sao DIFERENTES", async () => {
+  it("as duas respostas sao DIFERENTES quando há mensagem customizada", async () => {
+    vi.spyOn(n8nSettingsService, "getLeadClientN8nSettings").mockResolvedValue({
+      recontact_message: "Nosso consultor vai entrar em contato.",
+    });
+
     const dados = { interesse: "consórcio" };
     const primeira = await mandarMensagem(leadFinalizado(dados), "oi");
     const segunda = await mandarMensagem(
@@ -111,12 +109,5 @@ describe("recontato de lead finalizado deixa de ser beco sem saida", () => {
     expect(primeira.result?.mensagem).toBeTruthy();
     expect(segunda.result?.mensagem ?? null).not.toBe(primeira.result?.mensagem);
   });
-
-  it("lead sem interesse tambem marca o aviso", async () => {
-    const { result, updates } = await mandarMensagem(leadFinalizado({}), "oi");
-
-    expect(result?._recontato).toBe(true);
-    expect(result?.mensagem).toContain("já passamos por uma conversa");
-    expect(updates.find((u) => u.dados)?.dados?.recontato_avisado_em).toBeTruthy();
-  });
 });
+

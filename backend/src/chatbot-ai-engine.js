@@ -910,6 +910,12 @@ export async function runChatbotAI({ systemPrompt, history, newMessages, existin
 
 const VALID_SPIN_FASES = new Set(["situacao", "problema", "implicacao", "necessidade"]);
 
+function extractValidClassificacao(val) {
+  if (!val) return null;
+  const s = String(val).toUpperCase().trim();
+  return LEADS_OUTLIER_TEMPERATURE.has(s) ? s : null;
+}
+
 export function parseAIResponse(raw, fullSystemPrompt = null) {
   if (raw === null || raw === undefined) {
     console.error("[chatbot-ai] CONTRATO QUEBRADO: modelo nao devolveu conteudo algum.");
@@ -933,7 +939,7 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
       status_conversa: raw.status_conversa || "aguardando_usuario",
       dados: raw.dados || {},
       lead_source: normalizeLeadSource(raw.lead_source || raw.dados?.origem_marketing) || null,
-      classificacao: raw.classificacao || "FRIO",
+      classificacao: extractValidClassificacao(raw.classificacao),
       finalizado: raw.finalizado === true,
       spin_fase: VALID_SPIN_FASES.has(raw.spin_fase) ? raw.spin_fase : null,
     };
@@ -949,7 +955,7 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
       status_conversa: parsed.status_conversa || "aguardando_usuario",
       dados: parsed.dados || {},
       lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
-      classificacao: parsed.classificacao || "FRIO",
+      classificacao: extractValidClassificacao(parsed.classificacao),
       finalizado: parsed.finalizado === true,
       spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
     };
@@ -965,7 +971,7 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
         status_conversa: parsed.status_conversa || "aguardando_usuario",
         dados: parsed.dados || {},
         lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
-        classificacao: parsed.classificacao || "FRIO",
+        classificacao: extractValidClassificacao(parsed.classificacao),
         finalizado: parsed.finalizado === true,
         spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
       };
@@ -1068,54 +1074,36 @@ function hoursSince(isoDate) {
 }
 
 /**
- * Primeiro recontato de um lead finalizado: avisa uma vez que ja conversamos e
- * que o consultor foi acionado, e MARCA que o aviso saiu.
- *
- * A marca (`dados.recontato_avisado_em`) e o que impede a repeticao: sem ela o
- * mesmo aviso saia a cada mensagem, para sempre. Fica em `dados`, que ja e jsonb
- * e ja e escrito por este caminho — sem coluna nova.
- *
- * ATENCAO: o texto abaixo esta CHUMBADO no codigo. Nao e configuravel por
- * tenant nem por prompt, ao contrario do resto do atendimento. Ver relatorio.
+ * Primeiro recontato de um lead finalizado quando o tenant configurou recontact_message.
+ * Usa o texto literal do tenant (escolha explícita dele).
+ * A heurística local qualifyLead roda APENAS aqui (quando não há IA) e nunca sobrescreve
+ * classificação prévia vinda da IA ou do banco.
  */
-async function responderPrimeiroRecontato({
+async function responderRecontatoComTextoLiteral({
   supabase,
   leadsTable,
   clientId,
   phone,
   existing,
   dadosAntigos,
-  tenantSettings = null,
+  customMessage,
   instanceName = null,
 }) {
-  const horario = dadosAntigos.melhor_horario || null;
-  const interesse = dadosAntigos.interesse || null;
+  const classificacaoPrevia = existing?.status || existing?.lead_temperature || null;
+  const classificacaoHeuristica = classifyRecontactTemperature(dadosAntigos, { clientId, phone });
+  const classificacao = classificacaoPrevia || classificacaoHeuristica || null;
 
-  const customMessage = tenantSettings?.recontact_message?.trim();
-  const fallbackMessage = interesse
-    ? `Oi! Vi que já conversamos sobre ${interesse}. Nosso consultor vai entrar em contato com você${horario ? ` de ${horario}` : " em breve"}. Posso ajudar com mais alguma coisa?`
-    : "Oi! Vi que já passamos por uma conversa antes. Nosso consultor vai entrar em contato. Posso ajudar com mais alguma coisa?";
-
-  const msgRecontato = customMessage || fallbackMessage;
-
-  const classificacao = classifyRecontactTemperature(dadosAntigos, { clientId, phone });
-
-  console.log("[chatbot-ai] Recontact from finalized lead", {
+  console.log("[chatbot-ai] Recontact with tenant literal message", {
     phone: phone.slice(-4),
     clientId,
-    classificacaoAnterior: existing.lead_temperature ?? null,
+    classificacaoPrevia,
     classificacao,
   });
 
-  // Grava a marca do aviso JUNTO com a temperatura, numa so ida ao banco. Sem a
-  // marca, a proxima mensagem cairia de novo aqui em vez de reabrir.
   const patch = {
     dados: { ...dadosAntigos, recontato_avisado_em: new Date().toISOString() },
   };
-  if (classificacao !== existing.lead_temperature) {
-    // Persiste na MESMA coluna que este caminho le. Estava vazia porque ninguem
-    // escrevia nela por aqui. Nao toca em `temperature`/`stage` — sao da
-    // extracao de WhatsApp, outro caminho.
+  if (!classificacaoPrevia && classificacao) {
     patch.lead_temperature = classificacao;
   }
 
@@ -1143,7 +1131,7 @@ async function responderPrimeiroRecontato({
         phone,
         sender_type: "bot",
         direction: "outbound",
-        message_text: msgRecontato,
+        message_text: customMessage,
         delivered_at: now,
         created_at: now,
         instance_name: instanceName || null,
@@ -1158,13 +1146,31 @@ async function responderPrimeiroRecontato({
   }
 
   return {
-    mensagem: msgRecontato,
+    mensagem: customMessage,
     status_conversa: "finalizado",
     dados: dadosAntigos,
     classificacao,
     finalizado: true,
     _recontato: true, // sinal para o webhook notificar SDR de recontato
   };
+}
+
+export function buildRecontactInstruction({ lead = null, storedData = {}, historyText = "" } = {}) {
+  const dados = Object.keys(storedData || {}).length > 0 ? storedData : (lead?.dados || {});
+  const temp = lead?.lead_temperature || dados?.lead_temperature || "não informada";
+  const dadosResumo = JSON.stringify(dados);
+  return `
+==================================================
+CONTEXTO ESPECIAL — RECONTATO DE LEAD JÁ FINALIZADO (CONTEXTO DE RECONTATO):
+Este lead já foi qualificado e finalizado em um atendimento anterior. Ele está retomando o contato agora.
+Temperatura anterior do lead: ${temp}.
+Dados já coletados no atendimento anterior: ${dadosResumo}.
+${historyText ? `Histórico resumido:\n${historyText}\n` : ""}
+DIRETRIZES OBRIGATÓRIAS PARA ESTE RECONTATO:
+1. RECONHEÇA O HISTÓRICO: Responda de forma acolhedora, natural e personalizada, demonstrando que você se lembra do contato anterior (sem frases robóticas ou clichês engessados).
+2. NÃO RECOMECE A QUALIFICAÇÃO DO ZERO: Não refaça perguntas sobre dados que já foram informados acima.
+3. CONDUZA COM OBJETIVIDADE: Responda à nova mensagem/dúvida do lead e informe com naturalidade que a equipe/consultor dará continuidade ao atendimento se necessário.
+==================================================`;
 }
 
 export async function processBatch({
@@ -1222,11 +1228,7 @@ export async function processBatch({
   //
   // O aviso de recontato sai UMA vez. Da segunda mensagem em diante a conversa
   // REABRE e o lead volta ao atendimento normal.
-  //
-  // Antes isto era beco sem saida: `finalizado` nunca voltava para false, entao
-  // toda mensagem do lead recebia a mesma frase. Um lead finalizado num teste
-  // perguntou "quando irao entrar em contato" e levou a mesma cortesia de volta,
-  // indefinidamente — o numero ficava inutilizado.
+  let isPrimeiroRecontato = false;
   if (existing?.finalizado) {
     const dadosAntigos = existing.dados || {};
     const jaAvisadoEm = String(dadosAntigos.recontato_avisado_em ?? "").trim();
@@ -1260,16 +1262,23 @@ export async function processBatch({
       existing.finalizado = false;
       existing.dados = dadosReabertos;
     } else {
-      return await responderPrimeiroRecontato({
-        supabase,
-        leadsTable,
-        clientId,
-        phone,
-        existing,
-        dadosAntigos,
-        tenantSettings,
-        instanceName,
-      });
+      const customMessage = tenantSettings?.recontact_message?.trim();
+      if (customMessage) {
+        // Tenant configurou texto literal explícito: envia sem chamar LLM
+        return await responderRecontatoComTextoLiteral({
+          supabase,
+          leadsTable,
+          clientId,
+          phone,
+          existing,
+          dadosAntigos,
+          customMessage,
+          instanceName,
+        });
+      }
+
+      // Tenant NÃO configurou mensagem customizada: o AGENTE GERA via LLM
+      isPrimeiroRecontato = true;
     }
   }
 
@@ -1297,7 +1306,7 @@ export async function processBatch({
     : dynamicPrompt || campaignPrompt;
 
   if (!basePromptText) {
-    console.error("[chatbot-ai] PROMPT NOT FOUND in DB — chatbot silenciado", { clientId, promptType });
+    console.error("[chatbot-ai] PROMPT NOT FOUND in DB — chatbot silenciado", { clientId, promptType, isRecontact: isPrimeiroRecontato });
     return null;
   }
   if (!template) {
@@ -1343,9 +1352,24 @@ export async function processBatch({
     effectiveSystemPrompt = `${baseSystemPrompt}\n${campaignHeader}`;
   }
 
-  // ── Cenário 2: lead abandonou no meio — reengajamento após REENGAGEMENT_HOURS ──
+  // ── Contexto de Prompt Especial ──
   let systemPromptOverride = null;
-  if (existing && history.length > 0) {
+  if (isPrimeiroRecontato) {
+    // ── Cenário 1 (geração com IA): primeiro recontato de lead finalizado ──
+    const recontactBlock = buildRecontactInstruction({
+      lead: existing,
+      storedData,
+      historyText: history.map((h) => `${h.role === "user" ? "Lead" : "Bot"}: ${h.content}`).slice(-6).join("\n"),
+    });
+    systemPromptOverride = `${effectiveSystemPrompt}\n${recontactBlock}`;
+
+    console.log("[chatbot-ai] Recontact generation with AI for finalized lead", {
+      clientId,
+      phone: phone.slice(-4),
+      llmModel: activeLlmModel,
+    });
+  } else if (existing && history.length > 0) {
+    // ── Cenário 2: lead abandonou no meio — reengajamento após REENGAGEMENT_HOURS ──
     const horasInativo = hoursSince(existing.updated_at);
     if (horasInativo >= REENGAGEMENT_HOURS) {
       const ultimaPergunta = history.filter((m) => m.role === "assistant").at(-1)?.content || "";
@@ -1362,14 +1386,35 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
     }
   }
 
-  // ── Cenário 3: lead novo ou em andamento — fluxo normal ──────────────────
-  const aiResponse = await runChatbotAI({
-    systemPrompt: systemPromptOverride || effectiveSystemPrompt,
-    history,
-    newMessages: [combinedText],
-    existingData: storedData,
-    llmModel: activeLlmModel,
-  });
+  // ── Execução da IA ──────────────────
+  let aiResponse;
+  try {
+    aiResponse = await runChatbotAI({
+      systemPrompt: systemPromptOverride || effectiveSystemPrompt,
+      history,
+      newMessages: [combinedText],
+      existingData: storedData,
+      llmModel: activeLlmModel,
+    });
+  } catch (err) {
+    console.error("[chatbot-ai] FALHA AO EXECUTAR IA NO TURNO — silenciando resposta automática", {
+      clientId,
+      phone: phone.slice(-4),
+      isRecontact: isPrimeiroRecontato,
+      error: err?.message || String(err),
+    });
+    return null;
+  }
+
+  if (!aiResponse || !aiResponse.mensagem || !String(aiResponse.mensagem).trim()) {
+    console.error("[chatbot-ai] RESPOSTA VAZIA DA IA — silenciando resposta automática", {
+      clientId,
+      phone: phone.slice(-4),
+      isRecontact: isPrimeiroRecontato,
+      contratoQuebrado: aiResponse?.contratoQuebrado,
+    });
+    return null;
+  }
 
   if (aiResponse.contratoQuebrado) {
     console.error("[chatbot-ai] CONTRATO QUEBRADO neste turno — lead segue sem qualificacao nova", {
@@ -1381,10 +1426,11 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
 
   console.log("[chatbot-ai] AI response:", {
     table: leadsTable,
-    status: aiResponse.status_conversa,
+    status: isPrimeiroRecontato ? "finalizado" : aiResponse.status_conversa,
     classificacao: aiResponse.classificacao,
     contratoQuebrado: aiResponse.contratoQuebrado === true,
-    finalizado: aiResponse.finalizado,
+    finalizado: isPrimeiroRecontato ? true : aiResponse.finalizado,
+    isRecontact: isPrimeiroRecontato,
     msgPreview: aiResponse.mensagem.slice(0, 60),
     phone: phone.slice(-4),
   });
@@ -1408,37 +1454,44 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
   // Atualizar histórico
   const newHistory = appendToHistory(history, combinedText, aiResponse.mensagem);
 
+  const dadosBase = {
+    ...storedData,
+    ...aiResponse.dados,
+  };
+  if (isPrimeiroRecontato) {
+    dadosBase.recontato_avisado_em = new Date().toISOString();
+  }
+
   const dadosToSave = normalizeLeadsOutlierDados({
-    dados: {
-      ...storedData,
-      ...aiResponse.dados,
-    },
+    dados: dadosBase,
   });
 
   const payload = {
     client_id: clientId,
     telefone: phone,
-    status_conversa: aiResponse.status_conversa,
+    status_conversa: isPrimeiroRecontato ? "finalizado" : aiResponse.status_conversa,
     // classificacao null = o modelo quebrou o contrato e NAO classificou nesta
     // rodada. Preserva a classificacao anterior em vez de sobrescrever com um
     // palpite; nunca inventa valor. Ver parseAIResponse.
-    status: aiResponse.classificacao ?? existing?.status ?? null,
+    status: aiResponse.classificacao ?? existing?.status ?? existing?.lead_temperature ?? null,
     lead_source: normalizeLeadSource(aiResponse.lead_source || dadosToSave?.origem_marketing) || existing?.lead_source || null,
     spin_fase: aiResponse.spin_fase || null,
     dados: dadosToSave,
     historico: serializeHistorico(newHistory),
     mensagem: aiResponse.mensagem,
-    finalizado: aiResponse.finalizado,
+    finalizado: isPrimeiroRecontato ? true : aiResponse.finalizado,
     updated_at: new Date().toISOString(),
     // Colunas individuais de todos os campos do template (existência garantida por ensureTemplateColumns)
     ...extractIndividualColumns(dadosToSave, template?.data_fields),
   };
 
+  if (isPrimeiroRecontato && (aiResponse.classificacao || existing?.lead_temperature)) {
+    payload.lead_temperature = aiResponse.classificacao || existing.lead_temperature;
+  }
+
   // Gravacao do lead. O erro E VERIFICADO: este cliente nao lanca excecao, devolve
   // { error }. Sem conferir, uma falha de escrita some — e com ela o historico,
-  // que e o unico lugar de onde a conversa e relida no turno seguinte. O sintoma
-  // nao parece erro de banco: o agente repete a mesma pergunta para sempre,
-  // porque a cada turno ele acorda sem memoria.
+  // que e o unico lugar de onde a conversa e relida no turno seguinte.
   let persistErro = null;
   try {
     const resultado = existing?.id
@@ -1462,9 +1515,6 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
 
   // Salvar turno em lead_messages (fire-and-forget — não bloqueia resposta)
   const now = new Date().toISOString();
-  // Schema real de lead_messages: phone / sender_type / direction / message_text
-  // (as colunas lead_phone/role/content da migration 20260516 nunca aplicaram).
-  // Convenção canônica do projeto (appendLeadMessage): lead=inbound, bot=outbound.
   const leadMsgs = [
     {
       client_id: clientId,
@@ -1504,6 +1554,10 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
   // sem precisar rebuscar no banco (evita round-trip extra na finalização)
   return {
     ...aiResponse,
+    status_conversa: payload.status_conversa,
+    finalizado: payload.finalizado,
+    classificacao: payload.status,
+    _recontato: isPrimeiroRecontato,
     _history: newHistory,
     _dados: dadosToSave,
     _persistErro: persistErro ? persistErro.message || String(persistErro) : null,

@@ -1624,7 +1624,7 @@ export function registerChatbotRoutes(app, deps) {
             if (temSdr && evolutionUrl) {
               try {
                 const dados = aiResponse.dados || {};
-                const interesse = dados.interesse || "consórcio";
+                const interesse = dados.interesse || "Não informado";
                 const horario = dados.melhor_horario ? ` (preferência: ${dados.melhor_horario})` : "";
                 const recontatoMsg = [
                   `🔔 *Lead recontato — já qualificado anteriormente*`,

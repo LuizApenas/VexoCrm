@@ -7,6 +7,7 @@
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { processBatch } from "../chatbot-ai-engine.js";
+import * as n8nSettingsService from "../services/n8nSettings.js";
 
 const CLIENT_ID = "geracao-digital";
 const PHONE = "5511999998888";
@@ -83,6 +84,9 @@ describe("recontato: temperatura reclassificada, sem fallback QUENTE", () => {
   let warnSpy;
 
   beforeEach(() => {
+    vi.spyOn(n8nSettingsService, "getLeadClientN8nSettings").mockResolvedValue({
+      recontact_message: "Nosso consultor vai entrar em contato.",
+    });
     logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
@@ -110,12 +114,13 @@ describe("recontato: temperatura reclassificada, sem fallback QUENTE", () => {
     expect(supabase.updates[0].lead_temperature).toBe("FRIO");
   });
 
-  it("lead JA classificado: reclassifica e atualiza quando muda", async () => {
-    // Estava FRIO no banco, mas os dados atuais qualificam QUENTE → grava a mudanca.
+  it("lead JA classificado: preserva a temperatura historica", async () => {
+    // Estava FRIO no banco → preserva a temperatura histórica existente.
     const { result, supabase } = await runRecontact({ dados: DADOS_QUENTE, leadTemperature: "FRIO" });
-    expect(result.classificacao).toBe("QUENTE");
+    expect(result.classificacao).toBe("FRIO");
     expect(supabase.updates).toHaveLength(1);
-    expect(supabase.updates[0].lead_temperature).toBe("QUENTE");
+    expect(supabase.updates[0]).not.toHaveProperty("lead_temperature");
+    expect(supabase.updates[0].dados.recontato_avisado_em).toBeTruthy();
   });
 
   it("nao escreve quando a classificacao nao mudou", async () => {
