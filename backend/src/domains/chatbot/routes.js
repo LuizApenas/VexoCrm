@@ -1494,6 +1494,7 @@ export function registerChatbotRoutes(app, deps) {
                   described: item.described === true,
                 },
                 instanceName,
+                waMessageId: item.waMessageId || null,
               });
             }
           }
@@ -1570,6 +1571,14 @@ export function registerChatbotRoutes(app, deps) {
               classificacao: aiResponse.classificacao,
             });
 
+            let outboundWaId = null;
+            try {
+              const evoData = await evolutionResponse.json();
+              outboundWaId = evoData?.key?.id || evoData?.data?.key?.id || evoData?.messageId || null;
+            } catch {
+              // Ignora erro de parsing de json caso resposta seja texto
+            }
+
             await appendLeadMessage({
               clientId,
               phone,
@@ -1583,8 +1592,12 @@ export function registerChatbotRoutes(app, deps) {
                 conversationStatus: aiResponse.status_conversa || null,
                 finalized: aiResponse.finalizado === true,
                 recontact: aiResponse._recontato === true,
+                classificacao: aiResponse.classificacao || null,
+                dados: aiResponse.dados || {},
+                spinFase: aiResponse.spin_fase || null,
               },
               instanceName,
+              waMessageId: outboundWaId,
             });
           } else {
             const errText = await evolutionResponse.text();

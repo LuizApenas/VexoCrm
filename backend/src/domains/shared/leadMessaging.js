@@ -50,6 +50,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
     deliveredAt = null,
     meta = null,
     instanceName = null,
+    waMessageId = null,
   }) {
     if (!supabase || !clientId || !phone) return null;
 
@@ -110,7 +111,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
       }
     }
 
-    const { error } = await supabase.from("lead_messages").insert({
+    const payload = {
       client_id: clientId,
       lead_id: resolvedLeadId,
       campaign_id: resolvedCampaignId,
@@ -122,7 +123,27 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
       delivered_at: deliveredAt || new Date().toISOString(),
       meta: meta && typeof meta === "object" ? meta : {},
       instance_name: instanceName,
-    });
+      wa_message_id: waMessageId || null,
+    };
+
+    let { error } = await supabase.from("lead_messages").insert(payload);
+
+    // Se falhar por FK (23503) em campaign_id (ex.: campanha excluída ou id de outra tabela),
+    // tenta novamente com campaign_id: null para não perder a gravação da mensagem
+    let finalCampaignId = resolvedCampaignId;
+    if (error && resolvedCampaignId && (error.code === "23503" || String(error.message).includes("foreign key"))) {
+      console.warn(`[lead-messages] campaign_id '${resolvedCampaignId}' violou FK (tabela campaigns); gravando com campaign_id=null.`);
+      finalCampaignId = null;
+      const retryPayload = { ...payload, campaign_id: null };
+      const retryResult = await supabase.from("lead_messages").insert(retryPayload);
+      error = retryResult.error;
+    }
+
+    // Se for conflito de chave única (23505) em wa_message_id, é duplicata esperada: ignora
+    if (error && (error.code === "23505" || String(error.message).includes("idx_lead_messages_wa_message_id"))) {
+      console.info(`[lead-messages] wa_message_id '${waMessageId}' duplicado; insert ignorado com sucesso.`);
+      error = null;
+    }
 
     if (error && !isMissingSchemaError(error)) {
       console.warn("[lead-messages] insert failed:", error.message || error);
@@ -142,7 +163,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
       }
     }
 
-    return { leadId: resolvedLeadId, campaignId: resolvedCampaignId };
+    return { leadId: resolvedLeadId, campaignId: finalCampaignId };
   }
 
   return { appendLeadMessage, maskSecretPresence };

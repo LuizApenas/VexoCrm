@@ -566,48 +566,120 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
             ? new Date(msg.messageTimestamp * 1000) 
             : new Date();
 
-          // Check if message already exists
-          const checkRes = await pgDatabasePool.query(
-            `
-              SELECT id 
-              FROM public.lead_messages
-              WHERE client_id = $1 AND phone = $2 AND message_text = $3
-                AND created_at >= $4 AND created_at <= $5
-              LIMIT 1
-            `,
-            [
-              clientId,
-              phone,
-              messageText,
-              new Date(timestamp.getTime() - 5000),
-              new Date(timestamp.getTime() + 5000)
-            ]
-          );
+          const waMessageId = msg.key?.id ? String(msg.key.id).trim() : null;
 
-          if (checkRes.rows.length === 0) {
-            await pgDatabasePool.query(
-              `
-                INSERT INTO public.lead_messages 
-                  (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name, contact_name, is_group)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-              `,
-              [
-                clientId,
-                leadId,
-                campaignId,
-                phone,
-                fromMe ? "user" : "lead",
-                fromMe ? "outbound" : "inbound",
-                messageText,
-                timestamp,
-                timestamp,
-                JSON.stringify({}),
-                instanceName,
-                chatName || null,
-                isGroup
-              ]
-            );
-            insertedMessages++;
+          if (waMessageId) {
+            try {
+              const insertRes = await pgDatabasePool.query(
+                `
+                  INSERT INTO public.lead_messages 
+                    (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name, contact_name, is_group, wa_message_id)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                  ON CONFLICT (client_id, wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING
+                  RETURNING id
+                `,
+                [
+                  clientId,
+                  leadId,
+                  campaignId,
+                  phone,
+                  fromMe ? "user" : "lead",
+                  fromMe ? "outbound" : "inbound",
+                  messageText,
+                  timestamp,
+                  timestamp,
+                  JSON.stringify({}),
+                  instanceName,
+                  chatName || null,
+                  isGroup,
+                  waMessageId
+                ]
+              );
+              if (insertRes.rowCount > 0) {
+                insertedMessages++;
+              }
+            } catch (fkErr) {
+              // Se violar FK em campaign_id, tenta novamente com campaign_id: null
+              if (fkErr.code === "23503" || String(fkErr.message).includes("foreign key")) {
+                const retryRes = await pgDatabasePool.query(
+                  `
+                    INSERT INTO public.lead_messages 
+                      (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name, contact_name, is_group, wa_message_id)
+                    VALUES ($1, $2, NULL, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                    ON CONFLICT (client_id, wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING
+                    RETURNING id
+                  `,
+                  [
+                    clientId,
+                    leadId,
+                    phone,
+                    fromMe ? "user" : "lead",
+                    fromMe ? "outbound" : "inbound",
+                    messageText,
+                    timestamp,
+                    timestamp,
+                    JSON.stringify({}),
+                    instanceName,
+                    chatName || null,
+                    isGroup,
+                    waMessageId
+                  ]
+                );
+                if (retryRes.rowCount > 0) {
+                  insertedMessages++;
+                }
+              } else {
+                console.warn("[sync-evolution] Insert error with wa_message_id:", fkErr.message || fkErr);
+              }
+            }
+          } else {
+            // Fallback caso a mensagem não traga key.id
+            try {
+              const checkRes = await pgDatabasePool.query(
+                `
+                  SELECT id 
+                  FROM public.lead_messages
+                  WHERE client_id = $1 AND phone = $2 AND message_text = $3
+                    AND created_at >= $4 AND created_at <= $5
+                  LIMIT 1
+                `,
+                [
+                  clientId,
+                  phone,
+                  messageText,
+                  new Date(timestamp.getTime() - 5000),
+                  new Date(timestamp.getTime() + 5000)
+                ]
+              );
+
+              if (checkRes.rows.length === 0) {
+                await pgDatabasePool.query(
+                  `
+                    INSERT INTO public.lead_messages 
+                      (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name, contact_name, is_group)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                  `,
+                  [
+                    clientId,
+                    leadId,
+                    campaignId,
+                    phone,
+                    fromMe ? "user" : "lead",
+                    fromMe ? "outbound" : "inbound",
+                    messageText,
+                    timestamp,
+                    timestamp,
+                    JSON.stringify({}),
+                    instanceName,
+                    chatName || null,
+                    isGroup
+                  ]
+                );
+                insertedMessages++;
+              }
+            } catch (fallbackErr) {
+              console.warn("[sync-evolution] Fallback insert error:", fallbackErr.message || fallbackErr);
+            }
           }
         }
         syncedChats++;

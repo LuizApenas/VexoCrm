@@ -32,7 +32,14 @@ export function isFromMe(body) {
 
 export function resolveMessageId(body) {
   const bruto =
-    body?.data?.key?.id ?? body?.key?.id ?? body?.messageId ?? body?.data?.messageId ?? "";
+    body?.data?.key?.id ??
+    body?.data?.[0]?.key?.id ??
+    body?.data?.messages?.[0]?.key?.id ??
+    body?.key?.id ??
+    body?.messageId ??
+    body?.data?.messageId ??
+    body?.id ??
+    "";
   return String(bruto || "").trim();
 }
 
@@ -72,6 +79,8 @@ export function shouldIgnoreInboundEvent(body, agora = Date.now()) {
       return { ignore: true, reason: "duplicado" };
     }
     registrarId(id, agora);
+  } else if (evento === "messages.upsert") {
+    console.warn("[inbound-guard] messageId vazio no evento messages.upsert da Evolution:", JSON.stringify(body).slice(0, 200));
   }
 
   return { ignore: false, reason: null };

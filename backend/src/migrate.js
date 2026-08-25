@@ -114,6 +114,10 @@ async function isAlreadyApplied(pool, filename) {
       NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='lead_client_evolution_instances')
       OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_evolution_instances' AND column_name='connection_state')
     ) AS ok`,
+    "20260825170000_add_lead_messages_wa_message_id.sql": `SELECT (
+      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_messages' AND column_name='wa_message_id')
+      AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_lead_messages_wa_message_id')
+    ) AS ok`,
   };
 
   const query = checks[filename];

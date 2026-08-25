@@ -73,7 +73,7 @@ FORMATO DE RESPOSTA (JSON obrigatório):
     expect(parsed.mensagem).toBe("Olá! Tudo bem? Para onde você planeja viajar nas próximas férias?");
     expect(parsed.status_conversa).toBe("aguardando_usuario");
     expect(parsed.dados).toEqual({ destino: "Nordeste" });
-    expect(parsed.lead_source).toBe("Instagram");
+    expect(parsed.lead_source).toBe("organico");
     expect(parsed.classificacao).toBe("QUENTE");
     expect(parsed.spin_fase).toBe("situacao");
     expect(parsed.finalizado).toBe(false);

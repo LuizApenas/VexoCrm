@@ -13,6 +13,7 @@ import {
 import { getLeadClientN8nSettings } from "./services/n8nSettings.js";
 import { qualifyLead } from "./hardcoded-chatbot-persistence.js";
 import { LEADS_OUTLIER_TEMPERATURE } from "./services/leadImport.js";
+import { resolveMessageId } from "./services/inboundGuard.js";
 
 /**
  * Chatbot AI Engine
@@ -618,9 +619,10 @@ export async function describeImage(base64Data, mimetype = "image/jpeg", caption
 export async function resolveMessageContent(evolutionBody) {
   const type = detectMessageType(evolutionBody);
   const caption = evolutionBody?.data?.message?.imageMessage?.caption || "";
+  const waMessageId = resolveMessageId(evolutionBody) || null;
 
   if (type === "text") {
-    return { type, text: extractTextFromBody(evolutionBody) || "" };
+    return { type, text: extractTextFromBody(evolutionBody) || "", waMessageId };
   }
 
   if (type === "audio") {
@@ -630,10 +632,10 @@ export async function resolveMessageContent(evolutionBody) {
       const transcription = await transcribeAudio(base64, mimetype);
       if (transcription) {
         console.log("[chatbot-ai] Audio transcribed:", transcription.slice(0, 80));
-        return { type, text: transcription, transcribed: true };
+        return { type, text: transcription, transcribed: true, waMessageId };
       }
     }
-    return { type, text: "[áudio]", transcribed: false };
+    return { type, text: "[áudio]", transcribed: false, waMessageId };
   }
 
   if (type === "image") {
@@ -643,37 +645,120 @@ export async function resolveMessageContent(evolutionBody) {
       const description = await describeImage(base64, mimetype, caption);
       if (description) {
         console.log("[chatbot-ai] Image described:", description.slice(0, 80));
-        return { type, text: `[imagem: ${description}]${caption ? ` — legenda: "${caption}"` : ""}`, described: true };
+        return { type, text: `[imagem: ${description}]${caption ? ` — legenda: "${caption}"` : ""}`, described: true, waMessageId };
       }
     }
-    return { type, text: caption ? `[imagem] ${caption}` : "[imagem]", described: false };
+    return { type, text: caption ? `[imagem] ${caption}` : "[imagem]", described: false, waMessageId };
   }
 
-  if (type === "sticker") return { type, text: "[sticker]" };
-  if (type === "reaction") return { type, text: "[reação]" };
-  if (type === "video") return { type, text: caption ? `[vídeo] ${caption}` : "[vídeo]" };
+  if (type === "sticker") return { type, text: "[sticker]", waMessageId };
+  if (type === "reaction") return { type, text: "[reação]", waMessageId };
+  if (type === "video") return { type, text: caption ? `[vídeo] ${caption}` : "[vídeo]", waMessageId };
   if (type === "document") {
     const name = evolutionBody?.data?.message?.documentMessage?.fileName || "documento";
-    return { type, text: `[documento: ${name}]` };
+    return { type, text: `[documento: ${name}]`, waMessageId };
   }
 
-  return { type: "unknown", text: "" };
+  return { type: "unknown", text: "", waMessageId };
 }
 
 // ─── Normalização de Origem de Marketing ──────────────────────────────────────
 
+export const CANONICAL_LEAD_SOURCES = new Set([
+  "campanha",
+  "indicacao",
+  "trafego_pago",
+  "whatsapp_ads",
+  "organico",
+  "outro",
+]);
+
 export function normalizeLeadSource(source) {
   if (!source || typeof source !== "string") return null;
-  const s = source.trim().toLowerCase();
-  if (s.includes("insta")) return "Instagram";
-  if (s.includes("goog") || s.includes("gads") || s.includes("pesquisa")) return "Google Ads";
-  if (s.includes("face") || s.includes("fb")) return "Facebook Ads";
-  if (s.includes("tik") || s.includes("tt")) return "TikTok";
-  if (s.includes("indic") || s.includes("amig") || s.includes("recomenda") || s.includes("referral")) return "Indicação";
-  if (s.includes("form") || s.includes("site") || s.includes("landing")) return "Formulário";
-  if (s.includes("whats") || s.includes("zap") || s.includes("direto") || s.includes("organico") || s.includes("orgânico")) return "WhatsApp";
-  if (s.includes("campanh")) return "Campanha";
-  return source.trim().charAt(0).toUpperCase() + source.trim().slice(1);
+  const raw = source.trim();
+  if (!raw) return null;
+
+  // 1. Normalizar entrada: minúsculas, sem acento, espaços múltiplos aparados
+  const s = raw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!s) return null;
+
+  // Já é um dos 6 valores canônicos oficiais?
+  if (CANONICAL_LEAD_SOURCES.has(s)) return s;
+
+  // 2. Mapeamento para o vocabulário canônico:
+
+  // whatsapp_ads <- whatsapp ads, click to whatsapp, ctwa, zap ads
+  if (
+    s.includes("whatsapp ads") ||
+    s.includes("zap ads") ||
+    s.includes("click to whatsapp") ||
+    s.includes("ctwa")
+  ) {
+    return "whatsapp_ads";
+  }
+
+  // trafego_pago <- google ads, facebook ads, meta ads, instagram ads, tiktok ads, anuncio, ads, gads, fb ads
+  if (
+    s.includes("google ads") ||
+    s.includes("facebook ads") ||
+    s.includes("meta ads") ||
+    s.includes("instagram ads") ||
+    s.includes("tiktok ads") ||
+    s.includes("anuncio") ||
+    s.includes("gads") ||
+    s.includes("fb ads") ||
+    s.includes("trafego pago") ||
+    s.includes("trafego_pago") ||
+    s.endsWith(" ads") ||
+    s.startsWith("ads ") ||
+    s === "ads"
+  ) {
+    return "trafego_pago";
+  }
+
+  // campanha <- campanha
+  if (s.includes("campanh")) {
+    return "campanha";
+  }
+
+  // indicacao <- indicacao, amigo, recomenda, referral
+  if (
+    s.includes("indic") ||
+    s.includes("amig") ||
+    s.includes("recomenda") ||
+    s.includes("referral")
+  ) {
+    return "indicacao";
+  }
+
+  // organico <- whatsapp, instagram, tiktok, facebook, formulario, site, busca organica
+  if (
+    s.includes("whatsapp") ||
+    s.includes("zap") ||
+    s.includes("instagram") ||
+    s.includes("insta") ||
+    s.includes("tiktok") ||
+    s.includes("facebook") ||
+    s.includes("face") ||
+    s.includes("formulario") ||
+    s.includes("form") ||
+    s.includes("site") ||
+    s.includes("landing") ||
+    s.includes("busca organica") ||
+    s.includes("organico")
+  ) {
+    return "organico";
+  }
+
+  // 3. REGRA DURA: valor desconhecido resolve para 'outro' e loga em warn com o valor cru
+  console.warn(`[chatbot-ai] lead_source desconhecido '${raw}', normalizado para 'outro'.`);
+  return "outro";
 }
 
 // ─── IA conversacional (Groq / Providers) ────────────────────────────────────
@@ -1454,10 +1539,14 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
   // Atualizar histórico
   const newHistory = appendToHistory(history, combinedText, aiResponse.mensagem);
 
+  const rawLeadSource = aiResponse.lead_source || storedData?.origem_marketing || storedData?.lead_source_bruto || null;
   const dadosBase = {
     ...storedData,
     ...aiResponse.dados,
   };
+  if (rawLeadSource) {
+    dadosBase.lead_source_bruto = String(rawLeadSource).trim();
+  }
   if (isPrimeiroRecontato) {
     dadosBase.recontato_avisado_em = new Date().toISOString();
   }
@@ -1474,7 +1563,7 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
     // rodada. Preserva a classificacao anterior em vez de sobrescrever com um
     // palpite; nunca inventa valor. Ver parseAIResponse.
     status: aiResponse.classificacao ?? existing?.status ?? existing?.lead_temperature ?? null,
-    lead_source: normalizeLeadSource(aiResponse.lead_source || dadosToSave?.origem_marketing) || existing?.lead_source || null,
+    lead_source: normalizeLeadSource(rawLeadSource) || existing?.lead_source || null,
     spin_fase: aiResponse.spin_fase || null,
     dados: dadosToSave,
     historico: serializeHistorico(newHistory),
@@ -1511,43 +1600,6 @@ Continue de onde parou, coletando apenas o que ainda falta.`;
       erro: persistErro?.message || String(persistErro),
       colunasDoPayload: Object.keys(payload),
     });
-  }
-
-  // Salvar turno em lead_messages (fire-and-forget — não bloqueia resposta)
-  const now = new Date().toISOString();
-  const leadMsgs = [
-    {
-      client_id: clientId,
-      phone,
-      sender_type: "lead",
-      direction: "inbound",
-      message_text: combinedText,
-      delivered_at: now,
-      created_at: now,
-      instance_name: instanceName || null,
-    },
-    {
-      client_id: clientId,
-      phone,
-      sender_type: "bot",
-      direction: "outbound",
-      message_text: aiResponse.mensagem,
-      delivered_at: now,
-      created_at: now,
-      instance_name: instanceName || null,
-    },
-  ];
-  try {
-    const tableRef = supabase?.from ? supabase.from("lead_messages") : null;
-    if (tableRef && typeof tableRef.insert === "function") {
-      tableRef.insert(leadMsgs).then(({ error }) => {
-        if (error) console.warn("[chatbot-ai] lead_messages insert error:", error.message);
-      }).catch((err) => {
-        console.warn("[chatbot-ai] lead_messages insert error:", err?.message || err);
-      });
-    }
-  } catch (err) {
-    console.warn("[chatbot-ai] lead_messages insert error:", err?.message || err);
   }
 
   // Inclui histórico completo no retorno para o caller usar no briefing SDR
