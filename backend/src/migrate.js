@@ -7,6 +7,7 @@
 import { readdir, readFile } from "fs/promises";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { GROQ_MODELOS_MORTOS } from "./services/llmModels.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, "..", "supabase", "migrations");
@@ -118,6 +119,13 @@ async function isAlreadyApplied(pool, filename) {
       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_messages' AND column_name='wa_message_id')
       AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_lead_messages_wa_message_id')
     ) AS ok`,
+    "20260825180000_migrate_dead_llama_models_to_gpt_oss.sql": (() => {
+      const mortosIn = Array.from(GROQ_MODELOS_MORTOS).map((m) => `'${m}'`).join(", ");
+      return `SELECT (
+        NOT EXISTS (SELECT 1 FROM public.followup_companies WHERE inbound_model IN (${mortosIn}))
+        AND NOT EXISTS (SELECT 1 FROM public.lead_client_n8n_settings WHERE chatbot_llm_model IN (${mortosIn}))
+      ) AS ok`;
+    })(),
   };
 
   const query = checks[filename];
