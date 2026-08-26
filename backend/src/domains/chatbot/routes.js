@@ -47,6 +47,8 @@ import {
 import { resolveSdrTarget, resolveTenantSdrNumbers, normalizeSdrNumber } from "../../services/sdrTarget.js";
 import { resolveCampaignAgent } from "../../services/campaignAgentRouting.js";
 import { validateOutboundMessage } from "../../services/jsonExtractor.js";
+import { getCampaignStepPlan } from "../../campaign-outbound.js";
+import { normalizeCampaignPendingStepIndex } from "../../campaign/dispatch.js";
 
 export function registerChatbotRoutes(app, deps) {
   const {
@@ -1176,7 +1178,17 @@ export function registerChatbotRoutes(app, deps) {
    * Integração com chatbot hardcoded
    */
   app.post("/api/hardcoded-chat-webhook", async (req, res) => {
+    const startTime = Date.now();
     const body = req.body && typeof req.body === "object" ? req.body : {};
+
+    const responder = (statusPayload, logExtra = {}) => {
+      const duracaoMs = Date.now() - startTime;
+      console.log(`[chatbot-webhook] HTTP 200 respondido em ${duracaoMs}ms`, {
+        ...statusPayload,
+        ...logExtra,
+      });
+      res.json({ success: true, ...statusPayload });
+    };
 
     // Guarda de loop. Roda ANTES de qualquer buffering, chamada de LLM ou envio.
     // Cobre tres casos: mensagem que nos mesmos enviamos (fromMe), eco de evento
@@ -1187,7 +1199,8 @@ export function registerChatbotRoutes(app, deps) {
     // motivo: tres rodadas de depuracao se perderam porque a mensagem do lead
     // sumia em silencio e nao dava para saber em qual descarte.
     const descartar = (motivo, extra = {}) => {
-      console.log("[chatbot-webhook] descartado", { motivo, ...extra });
+      const duracaoMs = Date.now() - startTime;
+      console.log(`[chatbot-webhook] descartado (${duracaoMs}ms)`, { motivo, ...extra });
       res.json({ success: true, ignored: motivo });
     };
 
@@ -1202,7 +1215,7 @@ export function registerChatbotRoutes(app, deps) {
       motivo: guarda.reason,
     });
     if (guarda.ignore) {
-      res.json({ success: true, ignored: guarda.reason });
+      responder({ ignored: guarda.reason });
       return;
     }
 
@@ -1243,7 +1256,8 @@ export function registerChatbotRoutes(app, deps) {
     );
 
     if (!phone) {
-      console.log("[chatbot-webhook] descartado", { motivo: "missing_phone", clientId, remoteJid: rawRemoteJid });
+      const duracaoMs = Date.now() - startTime;
+      console.log(`[chatbot-webhook] descartado (${duracaoMs}ms)`, { motivo: "missing_phone", clientId, remoteJid: rawRemoteJid });
       res.json({ success: false, error: "Missing phone" });
       return;
     }
@@ -1299,6 +1313,7 @@ export function registerChatbotRoutes(app, deps) {
     let activeCampaignForLead = null;
     let campaignPromptIdOverride = null;
     let temCampanhaParaEsteTelefone = false;
+    let activeWaitCampaignToDispatch = null;
 
     try {
       const campaignReplyContext = await findCampaignReplyMatches({ clientId, phone });
@@ -1334,68 +1349,36 @@ export function registerChatbotRoutes(app, deps) {
       });
 
       if (activeWaitCampaign) {
-        // Lead aguardando resposta de disparo com waitForReply → avança sequência, silencia chatbot
-        const itemId = activeWaitCampaign.leadImportItem?.id;
-        const { isFirst } = await isFirstCampaignReply({ itemId, campaignId: activeWaitCampaign.id, supabase });
+        // Lead aguardando resposta de disparo com waitForReply: avalia se há próximo passo a enviar
+        const stepPlan = getCampaignStepPlan(activeWaitCampaign.analyticsMeta || {});
+        const steps = stepPlan.enabledSteps || [];
+        const progress = activeWaitCampaign.leadImportItem?.progress || {};
+        const nextStepIndex = normalizeCampaignPendingStepIndex(progress.nextStepIndex);
+        const hasRemainingSteps = nextStepIndex !== null && nextStepIndex < steps.length;
 
-        if (isFirst) {
-          console.log("[campaign-routing] wait_for_reply_step_first", {
-            clientId, phone: maskPhoneForLog(phone),
-            campaignId: activeWaitCampaign.id, campaignName: activeWaitCampaign.name,
-          });
-
-          supabase.from(leadsTableName(clientId))
-            .update({ lead_origin: "campaign", source_campaign_id: activeWaitCampaign.id, source_campaign_name: activeWaitCampaign.name || null, lead_source: "campanha" })
-            .eq("client_id", clientId).eq("telefone", phone)
-            .then(({ error }) => { if (error) console.warn("[chatbot-webhook] campaign lead_origin update failed:", error.message); });
+        if (hasRemainingSteps) {
+          activeWaitCampaignToDispatch = activeWaitCampaign;
         } else {
-          console.log("[campaign-routing] wait_for_reply_step subsequent", {
-            clientId, phone: maskPhoneForLog(phone),
-            campaignId: activeWaitCampaign.id, campaignName: activeWaitCampaign.name,
-          });
-        }
-
-        // Tenta avançar a sequência de disparos da campanha (enviando a próxima mensagem configurada)
-        let progression = { continued: false };
-        try {
-          progression = await continueCampaignLeadFromReply({
-            clientId, phone, repliedAt: new Date().toISOString(),
-            campaignMatch: activeWaitCampaign, replyPayload: {},
-          });
-          console.log("[campaign-routing] campaign_progression", {
-            clientId, campaignId: activeWaitCampaign.id, phone: maskPhoneForLog(phone),
-            continued: progression.continued, finalized: progression.finalized,
-            campaignFinalized: progression.campaignFinalized,
-            reason: progression.reason,
-          });
-        } catch (err) {
-          console.warn("[campaign-routing] campaign_progression_failed:", err.message);
-        }
-
-        // Se o próximo passo da campanha foi disparado com sucesso, interrompe aqui (NÃO chama a IA)
-        if (progression.continued) {
-          res.json({ success: true, status: "campaign_step_dispatched" });
-          return;
-        }
-
-        // Se a sequência de disparos acabou e a campanha possui modo "agente", aciona o prompt da campanha
-        const waitCampaignIsAgente = activeWaitCampaign.mode === "agente";
-        if (waitCampaignIsAgente && activeCampaignForLead) {
-          campaignPromptIdOverride = activeCampaignForLead.campaignPromptId || null;
-          if (!campaignPromptIdOverride) {
-            console.error("[campaign-routing] campanha agente sem campaignPromptId — silenciando", {
-              clientId, campaignId: activeWaitCampaign.id,
+          // Se a sequência de disparos acabou e a campanha possui modo "agente", aciona o prompt da campanha
+          const waitCampaignIsAgente = activeWaitCampaign.mode === "agente";
+          if (waitCampaignIsAgente && activeCampaignForLead) {
+            campaignPromptIdOverride = activeCampaignForLead.campaignPromptId || null;
+            chatbotPromptTypeOverride = "campanha";
+            if (!campaignPromptIdOverride) {
+              console.error("[campaign-routing] campanha agente sem campaignPromptId — silenciando", {
+                clientId, campaignId: activeWaitCampaign.id,
+              });
+              responder({ status: "skipped_no_campaign_prompt" }, { clientId, phone: maskPhoneForLog(phone) });
+              return;
+            }
+            console.log("[campaign-routing] wait_for_reply_agente_prompt", {
+              clientId, phone: maskPhoneForLog(phone),
+              campaignId: activeWaitCampaign.id, campaignPromptId: campaignPromptIdOverride,
             });
-            res.json({ success: true, status: "skipped_no_campaign_prompt" });
+          } else {
+            responder({ status: "skipped_disparo_only" }, { clientId, phone: maskPhoneForLog(phone) });
             return;
           }
-          console.log("[campaign-routing] wait_for_reply_agente_prompt", {
-            clientId, phone: maskPhoneForLog(phone),
-            campaignId: activeWaitCampaign.id, campaignPromptId: campaignPromptIdOverride,
-          });
-        } else {
-          res.json({ success: true, status: "skipped_disparo_only" });
-          return;
         }
       } else if (activeCampaignForLead) {
         // Lead dentro do periodo de uma campanha ativa.
@@ -1410,6 +1393,7 @@ export function registerChatbotRoutes(app, deps) {
         // atendido com o roteiro de quem procurou a empresa.
         const escolha = resolveCampaignAgent(activeCampaignForLead);
         campaignPromptIdOverride = escolha.campaignPromptId;
+        chatbotPromptTypeOverride = "campanha";
         if (escolha.configuracaoIncompleta) {
           console.error("[campaign-routing] campanha marcada como agente SEM roteiro — caindo no atendimento", {
             clientId, campaignId: activeCampaignForLead.id,
@@ -1438,6 +1422,85 @@ export function registerChatbotRoutes(app, deps) {
     }
     // ─────────────────────────────────────────────────────────────────────
 
+    // ── CAMINHO 1: DISPARO DO PRÓXIMO PASSO DE CAMPANHA (EXCLUSÃO MÚTUA ESTREITA) ──
+    if (activeWaitCampaignToDispatch) {
+      // 1. Responde 200 IMEDIATAMENTE ao Evolution (evita timeout e retry)
+      responder({ status: "campaign_step_dispatched" }, {
+        clientId,
+        phone: maskPhoneForLog(phone),
+        campaignId: activeWaitCampaignToDispatch.id,
+      });
+
+      // 2. Executa avanço da campanha e envio do passo de forma assíncrona fora do ciclo HTTP
+      (async () => {
+        try {
+          const itemId = activeWaitCampaignToDispatch.leadImportItem?.id;
+          const { isFirst } = await isFirstCampaignReply({
+            itemId,
+            campaignId: activeWaitCampaignToDispatch.id,
+            supabase,
+          });
+
+          if (isFirst) {
+            console.log("[campaign-routing] wait_for_reply_step_first", {
+              clientId, phone: maskPhoneForLog(phone),
+              campaignId: activeWaitCampaignToDispatch.id,
+              campaignName: activeWaitCampaignToDispatch.name,
+            });
+
+            await supabase
+              .from(leadsTableName(clientId))
+              .update({
+                lead_origin: "campaign",
+                source_campaign_id: activeWaitCampaignToDispatch.id,
+                source_campaign_name: activeWaitCampaignToDispatch.name || null,
+                lead_source: "campanha",
+              })
+              .eq("client_id", clientId)
+              .eq("telefone", phone)
+              .catch((err) => console.warn("[chatbot-webhook] campaign lead_origin update failed:", err?.message || err));
+          } else {
+            console.log("[campaign-routing] wait_for_reply_step subsequent", {
+              clientId, phone: maskPhoneForLog(phone),
+              campaignId: activeWaitCampaignToDispatch.id,
+              campaignName: activeWaitCampaignToDispatch.name,
+            });
+          }
+
+          const progression = await continueCampaignLeadFromReply({
+            clientId,
+            phone,
+            repliedAt: new Date().toISOString(),
+            campaignMatch: activeWaitCampaignToDispatch,
+            replyPayload: {},
+          });
+
+          console.log("[campaign-routing] campaign_progression", {
+            clientId,
+            campaignId: activeWaitCampaignToDispatch.id,
+            phone: maskPhoneForLog(phone),
+            continued: progression.continued,
+            finalized: progression.finalized,
+            campaignFinalized: progression.campaignFinalized,
+            reason: progression.reason,
+          });
+        } catch (err) {
+          console.error("[campaign-routing] ERRO CRÍTICO no avanço de passo de campanha:", {
+            clientId,
+            phone: maskPhoneForLog(phone),
+            campaignId: activeWaitCampaignToDispatch.id,
+            etapa: "continueCampaignLeadFromReply",
+            error: err?.message || err,
+            stack: err?.stack,
+          });
+        }
+      })();
+
+      // Retorna para garantir que o buffer e o chatbot IA NUNCA rodem neste turno
+      return;
+    }
+
+    // ── CAMINHO 2: CHATBOT / AGENTE IA (INBOUND OU AGENTE DE CAMPANHA) ──
     // Quem o chatbot pode atender. Sem isto, QUALQUER pessoa que escreva para o
     // numero da empresa recebe atendimento de robo — aconteceu com contato
     // pessoal do dono. Escopo padrao ('leads_only') so engaja lead conhecido do
@@ -1462,7 +1525,7 @@ export function registerChatbotRoutes(app, deps) {
     }
 
     // Responde imediatamente ao Evolution (evita timeout)
-    res.json({ success: true, status: "buffering" });
+    responder({ status: "buffering" }, { clientId, phone: maskPhoneForLog(phone) });
 
     // Detectar tipo e extrair conteúdo da mensagem (async, sem bloquear resposta)
     resolveMessageContent(body).then((messageData) => {
