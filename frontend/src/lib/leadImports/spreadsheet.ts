@@ -14,6 +14,7 @@ export interface FilterRule {
   column: string;
   operator: "equals" | "contains" | "gt" | "lt";
   value: string;
+  includeMissing?: boolean;
 }
 
 export function findHeaderRowIndex(rangeRows: unknown[][]): number {

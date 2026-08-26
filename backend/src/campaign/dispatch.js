@@ -128,8 +128,13 @@ export async function buildDispatchLeads({ clientId, importId = null, limit = nu
         // Selecao de varias planilhas na tela de disparo: uma campanha pode
         // apontar para mais de uma base importada.
         if (importId.length > 0) query = query.in("import_id", importId);
-      } else if (importId) {
-        query = query.eq("import_id", importId);
+      } else if (importId && importId !== "__all__") {
+        if (importId.includes(",")) {
+          const ids = importId.split(",").map((id) => id.trim()).filter(Boolean);
+          if (ids.length > 0) query = query.in("import_id", ids);
+        } else {
+          query = query.eq("import_id", importId);
+        }
       }
     }
 

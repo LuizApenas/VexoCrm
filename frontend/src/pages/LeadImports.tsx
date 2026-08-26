@@ -152,15 +152,168 @@ export default function LeadImports({
   const [showNumbersModal, setShowNumbersModal] = useState(false);
   const [isImportingFile, setIsImportingFile] = useState(false);
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [selectedImportId, setSelectedImportId] = useState<string>(ALL_IMPORTS_VALUE);
+  // Selecao de VARIAS planilhas. Quando tem item aqui, manda no disparo;
+  // selectedImportId cobre so os dois modos especiais (todas / CRM).
+  const [selectedImportIds, setSelectedImportIds] = useState<string[]>([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewDispatchId, setPreviewDispatchId] = useState<string | null>(null);
+  const [viewingImport, setViewingImport] = useState<LeadImportItem | null>(null);
+  const [promptDispatchId, setPromptDispatchId] = useState<string | null>(null);
+
+  // Hooks queries
+  const { data: imports = [], refetch: refetchImports } = useLeadImports(activeClientId);
+
+  const activeImportIdParam = useMemo(() => {
+    if (selectedFile) return null;
+    if (selectedImportIds.length > 0) return selectedImportIds.join(",");
+    if (selectedImportId === CRM_BASE_VALUE) return CRM_BASE_VALUE;
+    if (selectedImportId === ALL_IMPORTS_VALUE) return ALL_IMPORTS_VALUE;
+    return selectedImportId || null;
+  }, [selectedFile, selectedImportIds, selectedImportId]);
+
+  const { data: importedItemsData, isLoading: isLoadingImportedItems } = useLeadImportItems(
+    activeClientId,
+    activeImportIdParam || undefined,
+    undefined,
+    {
+      status: "imported",
+      enabled: !selectedFile && !!activeImportIdParam && activeTab === "campanha",
+    }
+  );
+
+  const sourceRows = useMemo(() => {
+    if (selectedFile) return parsedRows;
+    if (!importedItemsData?.items) return [];
+    return importedItemsData.items.map((item) => {
+      const importRecord = imports.find((imp) => imp.id === item.import_id);
+      const sourceName =
+        item.import_id === CRM_BASE_VALUE ? "Leads do CRM" : (importRecord?.source_name || "Planilha");
+      return {
+        ...(item.raw_data ?? {}),
+        ...(item.normalized_data ?? {}),
+        id: item.id,
+        import_id: item.import_id,
+        __importName: sourceName,
+        nome:
+          item.normalized_data?.nome ||
+          (item.raw_data as any)?.nome ||
+          (item.raw_data as any)?.Nome ||
+          (item.raw_data as any)?.name ||
+          "Sem nome",
+        telefone:
+          item.telefone ||
+          (item.raw_data as any)?.telefone ||
+          (item.raw_data as any)?.Telefone ||
+          "",
+      };
+    });
+  }, [selectedFile, parsedRows, importedItemsData, imports]);
+
+  const spreadsheetColumns = useMemo(() => {
+    if (sourceRows.length === 0) return [];
+    const keys = new Set<string>();
+    const reserved = new Set([
+      "id",
+      "import_id",
+      "client_id",
+      "created_at",
+      "__importName",
+      "dispatched",
+      "imported",
+      "row_number",
+      "skip_reason",
+      "raw_data",
+      "normalized_data",
+    ]);
+    for (const row of sourceRows) {
+      for (const k of Object.keys(row)) {
+        if (!reserved.has(k) && !k.startsWith("__")) keys.add(k);
+      }
+    }
+    return Array.from(keys);
+  }, [sourceRows]);
+
+  const missingColumnWarnings = useMemo(() => {
+    if (filterRules.length === 0 || sourceRows.length === 0) return [];
+    const warnings: Array<{
+      column: string;
+      missingSpreadsheetNames: string[];
+      count: number;
+      includeMissing: boolean;
+    }> = [];
+
+    const uniqueImports = Array.from(
+      new Set(sourceRows.map((r) => String(r.import_id || r.__importName || "default")))
+    );
+
+    for (const rule of filterRules) {
+      if (!rule.column) continue;
+      const missingImportNames = new Set<string>();
+      let missingLeadsCount = 0;
+
+      for (const importId of uniqueImports) {
+        const rowsOfImport = sourceRows.filter(
+          (r) => String(r.import_id || r.__importName || "default") === importId
+        );
+        const hasColumnInImport = rowsOfImport.some(
+          (r) =>
+            rule.column in r &&
+            r[rule.column] !== undefined &&
+            r[rule.column] !== null &&
+            String(r[rule.column]).trim() !== ""
+        );
+
+        if (!hasColumnInImport) {
+          const importName = String(rowsOfImport[0]?.__importName || "Planilha");
+          missingImportNames.add(importName);
+          missingLeadsCount += rowsOfImport.length;
+        }
+      }
+
+      if (missingImportNames.size > 0 && missingLeadsCount > 0) {
+        warnings.push({
+          column: rule.column,
+          missingSpreadsheetNames: Array.from(missingImportNames),
+          count: missingLeadsCount,
+          includeMissing: !!rule.includeMissing,
+        });
+      }
+    }
+
+    return warnings;
+  }, [filterRules, sourceRows]);
+
+  const handleToggleIncludeMissing = (column: string) => {
+    setFilterRules((current) =>
+      current.map((rule) =>
+        rule.column === column ? { ...rule, includeMissing: !rule.includeMissing } : rule
+      )
+    );
+  };
 
   const filteredRows = useMemo(() => {
-    if (filterRules.length === 0) return parsedRows;
-    return parsedRows.filter((row) => {
+    if (filterRules.length === 0) return sourceRows;
+    return sourceRows.filter((row) => {
       return filterRules.every((rule) => {
         if (!rule.column) return true;
+        const hasCol =
+          rule.column in row &&
+          row[rule.column] !== undefined &&
+          row[rule.column] !== null &&
+          String(row[rule.column]).trim() !== "";
+
+        if (!hasCol) {
+          // Condição 2: se a planilha não possui a coluna:
+          // Padrão (includeMissing = false): descarta.
+          // Se o usuário marcou "Incluir mesmo assim" (includeMissing = true): mantém.
+          return !!rule.includeMissing;
+        }
+
         const rawValue = row[rule.column];
         const valStr = String(rawValue ?? "").trim();
-        const ruleVal = rule.value.trim();
+        const ruleVal = (rule.value || "").trim();
 
         switch (rule.operator) {
           case "equals":
@@ -182,24 +335,28 @@ export default function LeadImports({
         }
       });
     });
-  }, [parsedRows, filterRules]);
+  }, [sourceRows, filterRules]);
 
-  const previewRows = useMemo(() => filteredRows.slice(0, 10), [filteredRows]);
+  const isMultiSpreadsheet = selectedImportIds.length > 1 || selectedImportId === ALL_IMPORTS_VALUE;
+  const previewRows = useMemo(() => filteredRows.slice(0, 15), [filteredRows]);
 
-  const spreadsheetColumns = useMemo(() => {
-    if (parsedRows.length === 0) return [];
-    return Object.keys(parsedRows[0]);
-  }, [parsedRows]);
-
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [selectedImportId, setSelectedImportId] = useState<string>(ALL_IMPORTS_VALUE);
-  // Selecao de VARIAS planilhas. Quando tem item aqui, manda no disparo;
-  // selectedImportId cobre so os dois modos especiais (todas / CRM).
-  const [selectedImportIds, setSelectedImportIds] = useState<string[]>([]);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewDispatchId, setPreviewDispatchId] = useState<string | null>(null);
-  const [viewingImport, setViewingImport] = useState<LeadImportItem | null>(null);
-  const [promptDispatchId, setPromptDispatchId] = useState<string | null>(null);
+  const parsedLeadsStats = useMemo(() => {
+    if (filteredRows.length === 0) return { total: 0, valid: 0, invalid: 0 };
+    let valid = 0;
+    filteredRows.forEach((row) => {
+      const phone =
+        getLeadField(row, ["telefone", "celular", "phone", "number", "whatsapp"]) ||
+        String(row.telefone || "");
+      if (phone && phone.replace(/\D/g, "").length >= 8) {
+        valid++;
+      }
+    });
+    return {
+      total: filteredRows.length,
+      valid,
+      invalid: filteredRows.length - valid,
+    };
+  }, [filteredRows]);
 
   // Campaign builder states
   const [editingCampaignId, setEditingCampaignId] = useLocalStorage<string | null>(`vexo_campaignId_${activeClientId}`, null);
@@ -232,7 +389,6 @@ export default function LeadImports({
   const [submittingStatus, setSubmittingStatus] = useState<string | null>(null);
 
   // Hooks queries
-  const { data: imports = [], refetch: refetchImports } = useLeadImports(activeClientId);
   const { data: campaigns = [], isLoading: loadingCampaigns, refetch: refetchCampaigns } = useCampanhas(activeClientId || undefined);
   const { data: dispatches = [], isLoading: loadingDispatches, refetch: refetchDispatches } = useAllDispatches(activeClientId || null);
   const { data: previewLeadsData, isLoading: loadingPreviewLeads } = useDispatchPreviewLeads(previewDispatchId);
@@ -421,23 +577,6 @@ export default function LeadImports({
       console.warn("Failed to load pending campaign audience:", e);
     }
   }, []);
-
-  // Statistics calculation for uploaded leads
-  const parsedLeadsStats = useMemo(() => {
-    if (filteredRows.length === 0) return { total: 0, valid: 0, invalid: 0 };
-    let valid = 0;
-    filteredRows.forEach((row) => {
-      const phone = getLeadField(row, ["telefone", "celular", "phone", "number", "whatsapp"]);
-      if (phone && phone.replace(/\D/g, "").length >= 8) {
-        valid++;
-      }
-    });
-    return {
-      total: filteredRows.length,
-      valid,
-      invalid: filteredRows.length - valid,
-    };
-  }, [filteredRows]);
 
   // Handle excel/csv parsed rows
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -872,7 +1011,12 @@ export default function LeadImports({
           segmentation: {
             filters: filterRules
               .filter((rule) => rule.column && String(rule.value ?? "").trim() !== "")
-              .map((rule) => ({ field: rule.column, operator: rule.operator, value: rule.value })),
+              .map((rule) => ({
+                field: rule.column,
+                operator: rule.operator,
+                value: rule.value,
+                includeMissing: !!rule.includeMissing,
+              })),
           },
           message: campaignSequence.find(s => s.type === "text")?.text || "",
           image: campaignSequence.find(s => s.type === "image")?.image,
@@ -915,14 +1059,7 @@ export default function LeadImports({
       if (selectedFile) {
         totalLeads = finalRowsCount;
       } else {
-        if (selectedImportIds.length > 0) {
-          totalLeads = imports
-            .filter((imp) => selectedImportIds.includes(imp.id))
-            .reduce((acc, imp) => acc + (imp.imported_rows || 0), 0);
-        } else {
-          const selectedImportRecord = imports.find(imp => imp.id === selectedImportId);
-          totalLeads = selectedImportRecord ? selectedImportRecord.imported_rows : (pendingData?.total || 0);
-        }
+        totalLeads = filteredRows.length;
       }
 
       if (batchingEnabled && totalLeads > 0) {
@@ -1359,6 +1496,11 @@ export default function LeadImports({
               previewOpen={previewOpen}
               setPreviewOpen={setPreviewOpen}
               previewRows={previewRows}
+              hasSourceRows={sourceRows.length > 0}
+              isLoadingSourceRows={isLoadingImportedItems}
+              isMultiSpreadsheet={isMultiSpreadsheet}
+              missingColumnWarnings={missingColumnWarnings}
+              onToggleIncludeMissing={handleToggleIncludeMissing}
             />
 
             <MessageSequenceStep

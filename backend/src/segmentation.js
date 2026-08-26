@@ -124,7 +124,9 @@ export function normalizeFilters(input, catalog = null) {
     const operator = SEGMENTATION_OPERATORS.includes(r.operator) ? r.operator : "equals";
     const value = typeof r.value === "number" ? r.value : normalizeString(r.value);
     if (value === null || value === "" || value === undefined) continue; // filtro vazio = sem restrição
-    out.push({ field, operator, value });
+    const filterItem = { field, operator, value };
+    if (r.includeMissing) filterItem.includeMissing = true;
+    out.push(filterItem);
   }
   return out;
 }
@@ -179,6 +181,10 @@ export function leadMatchesSegmentation(lead, fields = [], filters = []) {
     const def = catalogByField.get(filter.field);
     const type = def?.type || "category";
     const leadRaw = leadValueForField(normalizedData, filter.field, catalogByField);
+    if (leadRaw === undefined || leadRaw === null || String(leadRaw).trim() === "") {
+      if (filter.includeMissing) continue;
+      return false;
+    }
     if (!applyOperator(leadRaw, filter.operator, filter.value, type)) return false;
   }
   return true;

@@ -1634,7 +1634,7 @@ export function registerLeadsRoutes(app, deps) {
       if (importId === "__crm__") {
         query = supabase
           .from("leads")
-          .select("id, client_id, telefone, nome, tipo_cliente, created_at")
+          .select("id, client_id, telefone, nome, tipo_cliente, created_at, cidade, estado, qualificacao, faixa_consumo, status")
           .eq("client_id", clientId)
           .not("telefone", "is", null)
           .order("created_at", { ascending: false });
@@ -1653,8 +1653,15 @@ export function registerLeadsRoutes(app, deps) {
           query = query.eq("imported", false);
         }
 
-        if (importId) {
-          query = query.eq("import_id", importId);
+        if (importId && importId !== "__all__") {
+          if (importId.includes(",")) {
+            const ids = importId.split(",").map((id) => id.trim()).filter(Boolean);
+            if (ids.length > 0) {
+              query = query.in("import_id", ids);
+            }
+          } else {
+            query = query.eq("import_id", importId);
+          }
         }
       }
 
@@ -1669,7 +1676,15 @@ export function registerLeadsRoutes(app, deps) {
             client_id: item.client_id,
             row_number: index + 1,
             telefone: item.telefone,
-            normalized_data: { nome: item.nome, tipo_cliente: item.tipo_cliente },
+            normalized_data: {
+              nome: item.nome,
+              tipo_cliente: item.tipo_cliente,
+              cidade: item.cidade,
+              estado: item.estado,
+              qualificacao: item.qualificacao,
+              faixa_consumo: item.faixa_consumo,
+              status: item.status,
+            },
             imported: true,
             skip_reason: null,
             created_at: item.created_at

@@ -1,5 +1,5 @@
 import { type ChangeEvent, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { Filter, Info, Trash2, Plus, Check, ChevronDown } from "lucide-react";
+import { Filter, Info, Trash2, Plus, Check, ChevronDown, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,17 @@ interface LeadSourceStepProps {
   previewOpen: boolean;
   setPreviewOpen: Dispatch<SetStateAction<boolean>>;
   previewRows: Record<string, unknown>[];
+
+  hasSourceRows?: boolean;
+  isLoadingSourceRows?: boolean;
+  isMultiSpreadsheet?: boolean;
+  missingColumnWarnings?: Array<{
+    column: string;
+    missingSpreadsheetNames: string[];
+    count: number;
+    includeMissing: boolean;
+  }>;
+  onToggleIncludeMissing?: (column: string) => void;
 }
 
 export function LeadSourceStep({
@@ -71,6 +82,11 @@ export function LeadSourceStep({
   previewOpen,
   setPreviewOpen,
   previewRows,
+  hasSourceRows = false,
+  isLoadingSourceRows = false,
+  isMultiSpreadsheet = false,
+  missingColumnWarnings = [],
+  onToggleIncludeMissing,
 }: LeadSourceStepProps) {
   // Escolher base pronta e planilha nova sao mutuamente exclusivos.
   const clearUpload = () => {
@@ -81,6 +97,8 @@ export function LeadSourceStep({
   const totalSelectedLeads = imports
     .filter((imp) => selectedImportIds.includes(imp.id))
     .reduce((acc, imp) => acc + (imp.imported_rows || 0), 0);
+
+  const canShowFiltersAndPreview = hasSourceRows || parsedRows.length > 0;
 
   return (
     <Card className="border-border bg-card shadow-sm text-card-foreground rounded-2xl">
@@ -138,7 +156,11 @@ export function LeadSourceStep({
                       ? `${selectedImportIds.length} ${selectedImportIds.length === 1 ? "planilha selecionada" : "planilhas selecionadas"} (${totalSelectedLeads} leads)`
                       : selectedImportId === CRM_BASE_VALUE
                         ? "Todos os leads do CRM"
-                        : "Todas as bases importadas"}
+                        : selectedImportId === ALL_IMPORTS_VALUE
+                          ? "Todas as bases importadas"
+                          : imports.find(i => i.id === selectedImportId)
+                            ? `${imports.find(i => i.id === selectedImportId)?.source_name} (${imports.find(i => i.id === selectedImportId)?.imported_rows} leads)`
+                            : "Selecione uma base"}
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
                 </button>
@@ -168,7 +190,7 @@ export function LeadSourceStep({
                         Planilhas importadas
                       </p>
                       {imports.map((imp) => {
-                        const checked = selectedImportIds.includes(imp.id);
+                        const checked = selectedImportIds.includes(imp.id) || (selectedImportIds.length === 0 && selectedImportId === imp.id);
                         return (
                           <label
                             key={imp.id}
@@ -177,11 +199,14 @@ export function LeadSourceStep({
                             <Checkbox
                               checked={checked}
                               onCheckedChange={() => {
-                                setSelectedImportIds((current) =>
-                                  current.includes(imp.id)
-                                    ? current.filter((id) => id !== imp.id)
-                                    : [...current, imp.id]
-                                );
+                                setSelectedImportIds((current) => {
+                                  const already = current.includes(imp.id);
+                                  if (already) {
+                                    return current.filter((id) => id !== imp.id);
+                                  }
+                                  return [...current, imp.id];
+                                });
+                                setSelectedImportId("");
                                 clearUpload();
                               }}
                             />
@@ -200,8 +225,16 @@ export function LeadSourceStep({
           </div>
         </div>
 
+        {/* Loading state for imported spreadsheets */}
+        {isLoadingSourceRows && (
+          <div className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-6 dark:border-white/5 dark:bg-slate-900/10 flex items-center justify-center gap-2.5 text-xs text-slate-500">
+            <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+            <span>Carregando dados da base selecionada...</span>
+          </div>
+        )}
+
         {/* Dynamic Spreadsheet Filter Builder */}
-        {parsedRows.length > 0 && (
+        {!isLoadingSourceRows && canShowFiltersAndPreview && (
           <div className="rounded-xl border border-indigo-100/60 bg-indigo-50/10 p-4 dark:border-indigo-950/20 dark:bg-indigo-950/5 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
@@ -222,7 +255,7 @@ export function LeadSourceStep({
               <div className="space-y-1">
                 <p className="font-semibold">Como funciona a segmentação da planilha?</p>
                 <p>
-                  Você pode filtrar os contatos importados dinamicamente antes de realizar o envio. O sistema lê as colunas da sua planilha e permite criar regras de segmentação personalizadas.
+                  Você pode filtrar os contatos dinamicamente antes de realizar o envio. O sistema lê as colunas da base selecionada e permite criar regras de segmentação personalizadas.
                 </p>
                 <ul className="list-disc pl-4 space-y-0.5 mt-1">
                   <li><strong>Igual a:</strong> Busca exata (ex: <em>Sexo</em> igual a <em>Feminino</em>).</li>
@@ -230,76 +263,102 @@ export function LeadSourceStep({
                   <li><strong>Maior que / Menor que:</strong> Comparação numérica ou financeira (ex: <em>Valor</em> maior que <em>50000</em>).</li>
                 </ul>
                 <p className="text-muted-foreground text-[10px] mt-1">
-                  * Apenas os leads que atenderem a todas as regras ativas serão importados e inseridos na fila de disparos.
+                  * Apenas os leads que atenderem a todas as regras ativas serão inseridos na fila de disparos.
                 </p>
               </div>
             </div>
 
             <div className="space-y-2">
-              {filterRules.map((rule, idx) => (
-                <div key={idx} className="flex flex-wrap gap-2 items-center bg-white dark:bg-black/35 p-2.5 rounded-xl border border-slate-200/80 dark:border-white/5 shadow-sm">
-                  <Select
-                    value={rule.column}
-                    onValueChange={(val) => {
-                      const updated = [...filterRules];
-                      updated[idx].column = val;
-                      setFilterRules(updated);
-                    }}
-                  >
-                    <SelectTrigger className="h-9 text-xs flex-1 min-w-[120px]">
-                      <SelectValue placeholder="Coluna..." />
-                    </SelectTrigger>
-                    <SelectContent className={darkSelectContentClass}>
-                      {spreadsheetColumns.map((col) => (
-                        <SelectItem key={col} value={col} className={darkSelectItemClass}>
-                          {col}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              {filterRules.map((rule, idx) => {
+                const warning = missingColumnWarnings.find((w) => w.column === rule.column);
+                return (
+                  <div key={idx} className="space-y-2">
+                    <div className="flex flex-wrap gap-2 items-center bg-white dark:bg-black/35 p-2.5 rounded-xl border border-slate-200/80 dark:border-white/5 shadow-sm">
+                      <Select
+                        value={rule.column}
+                        onValueChange={(val) => {
+                          const updated = [...filterRules];
+                          updated[idx].column = val;
+                          setFilterRules(updated);
+                        }}
+                      >
+                        <SelectTrigger className="h-9 text-xs flex-1 min-w-[120px]">
+                          <SelectValue placeholder="Coluna..." />
+                        </SelectTrigger>
+                        <SelectContent className={darkSelectContentClass}>
+                          {spreadsheetColumns.map((col) => (
+                            <SelectItem key={col} value={col} className={darkSelectItemClass}>
+                              {col}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
 
-                  <Select
-                    value={rule.operator}
-                    onValueChange={(val: any) => {
-                      const updated = [...filterRules];
-                      updated[idx].operator = val;
-                      setFilterRules(updated);
-                    }}
-                  >
-                    <SelectTrigger className="h-9 text-xs max-w-[120px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className={darkSelectContentClass}>
-                      <SelectItem value="equals" className={darkSelectItemClass}>Igual a</SelectItem>
-                      <SelectItem value="contains" className={darkSelectItemClass}>Contém</SelectItem>
-                      <SelectItem value="gt" className={darkSelectItemClass}>Maior que</SelectItem>
-                      <SelectItem value="lt" className={darkSelectItemClass}>Menor que</SelectItem>
-                    </SelectContent>
-                  </Select>
+                      <Select
+                        value={rule.operator}
+                        onValueChange={(val: any) => {
+                          const updated = [...filterRules];
+                          updated[idx].operator = val;
+                          setFilterRules(updated);
+                        }}
+                      >
+                        <SelectTrigger className="h-9 text-xs max-w-[120px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className={darkSelectContentClass}>
+                          <SelectItem value="equals" className={darkSelectItemClass}>Igual a</SelectItem>
+                          <SelectItem value="contains" className={darkSelectItemClass}>Contém</SelectItem>
+                          <SelectItem value="gt" className={darkSelectItemClass}>Maior que</SelectItem>
+                          <SelectItem value="lt" className={darkSelectItemClass}>Menor que</SelectItem>
+                        </SelectContent>
+                      </Select>
 
-                  <Input
-                    placeholder="Valor de comparação..."
-                    value={rule.value}
-                    onChange={(e) => {
-                      const updated = [...filterRules];
-                      updated[idx].value = e.target.value;
-                      setFilterRules(updated);
-                    }}
-                    className="h-9 text-xs flex-1 min-w-[140px]"
-                  />
+                      <Input
+                        placeholder="Valor de comparação..."
+                        value={rule.value}
+                        onChange={(e) => {
+                          const updated = [...filterRules];
+                          updated[idx].value = e.target.value;
+                          setFilterRules(updated);
+                        }}
+                        className="h-9 text-xs flex-1 min-w-[140px]"
+                      />
 
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setFilterRules(filterRules.filter((_, rIdx) => rIdx !== idx));
-                    }}
-                    className="h-9 w-9 p-0 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-xl"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setFilterRules(filterRules.filter((_, rIdx) => rIdx !== idx));
+                        }}
+                        className="h-9 w-9 p-0 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-xl"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Missing column warning box for multi-spreadsheet / CRM filters */}
+                    {warning && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                          <span>
+                            <strong>{warning.count} {warning.count === 1 ? "lead" : "leads"}</strong> da planilha{" "}
+                            <em>"{warning.missingSpreadsheetNames.join(", ")}"</em> não {warning.missingSpreadsheetNames.length === 1 ? "possui" : "possuem"} a coluna{" "}
+                            <strong>"{warning.column}"</strong> e {warning.includeMissing ? "foram mantidos para disparo" : "foram excluídos pelo filtro"}.
+                          </span>
+                        </div>
+                        <label className="flex items-center gap-1.5 cursor-pointer font-semibold select-none text-xs text-amber-900 dark:text-amber-200 hover:opacity-80">
+                          <Checkbox
+                            checked={warning.includeMissing}
+                            onCheckedChange={() => onToggleIncludeMissing?.(warning.column)}
+                          />
+                          <span>Incluir mesmo assim</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
               <Button
                 type="button"
@@ -321,8 +380,8 @@ export function LeadSourceStep({
           </div>
         )}
 
-        {/* Simplified preview of uploaded leads */}
-        {parsedRows.length > 0 && (
+        {/* Simplified preview of uploaded or imported leads */}
+        {!isLoadingSourceRows && canShowFiltersAndPreview && (
           <div className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-4 dark:border-white/5 dark:bg-slate-900/10 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex gap-4">
@@ -359,6 +418,7 @@ export function LeadSourceStep({
                     <TableRow>
                       <TableHead className="h-8 py-0">Nome</TableHead>
                       <TableHead className="h-8 py-0">Telefone</TableHead>
+                      {isMultiSpreadsheet && <TableHead className="h-8 py-0">Origem / Planilha</TableHead>}
                       <TableHead className="h-8 py-0">Outras Colunas</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -367,13 +427,28 @@ export function LeadSourceStep({
                       <TableRow key={idx}>
                         <TableCell className="h-8 py-0.5 font-medium">{getLeadField(row, ["nome", "name"]) || "Sem nome"}</TableCell>
                         <TableCell className="h-8 py-0.5 font-mono">{getLeadField(row, ["telefone", "phone", "number"]) || "—"}</TableCell>
-                        <TableCell className="h-8 py-0.5 text-muted-foreground truncate max-w-[120px]">
-                          {Object.keys(row).filter(k => !["nome", "name", "telefone", "phone"].includes(k.toLowerCase())).map(k => `${k}: ${row[k]}`).join(", ") || "—"}
+                        {isMultiSpreadsheet && (
+                          <TableCell className="h-8 py-0.5">
+                            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 truncate max-w-[140px]">
+                              {String(row.__importName || "Planilha")}
+                            </span>
+                          </TableCell>
+                        )}
+                        <TableCell className="h-8 py-0.5 text-muted-foreground truncate max-w-[150px]">
+                          {Object.keys(row)
+                            .filter((k) => !["nome", "name", "telefone", "phone", "id", "import_id", "client_id", "__importName", "__importId", "__imported", "__rowNumber"].includes(k.toLowerCase()))
+                            .map((k) => `${k}: ${row[k]}`)
+                            .join(", ") || "—"}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+                {parsedLeadsStats.total > previewRows.length && (
+                  <div className="px-3 py-1.5 text-[10px] text-muted-foreground border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
+                    Mostrando amostra inicial de {previewRows.length} de {parsedLeadsStats.total} contatos filtrados da base.
+                  </div>
+                )}
               </div>
             )}
           </div>
