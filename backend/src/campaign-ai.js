@@ -150,18 +150,105 @@ function buildTechniqueContext(style = "") {
   };
 }
 
-function buildChatPayload({ taskPrompt, schemaName, schema, preferJsonObject = false }) {
-  const model = getGroqModel();
-  const basePayload = {
-    model,
+export function extractJsonFromLlmText(raw) {
+  if (!raw || typeof raw !== "string") {
+    const error = new Error("A IA da Groq retornou uma resposta vazia.");
+    error.statusCode = 502;
+    error.code = "GROQ_EMPTY_RESPONSE";
+    throw error;
+  }
+
+  let text = raw.trim();
+
+  // 1. Remove blocos <think> ... </think> emitidos por modelos de raciocínio (ex: Qwen)
+  if (text.includes("<think>")) {
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  }
+
+  // 2. Extrai conteúdo dentro de cercas de markdown ```json ... ``` ou ``` ... ```
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch) {
+    text = codeBlockMatch[1].trim();
+  }
+
+  // 3. Tenta parse direto
+  try {
+    const res = JSON.parse(text);
+    if (Array.isArray(res)) return { variants: res, rationale: "Variações geradas pela IA" };
+    return res;
+  } catch {}
+
+  // 4. Se falhar, busca o bloco mais externo { ... } ou [ ... ]
+  const objectMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  if (objectMatch) {
+    text = objectMatch[1].trim();
+  }
+
+  // 5. Sanitizações comuns de LLMs
+  let sanitized = text
+    // Aspas tipográficas / curvas
+    .replace(/[“”„‟]/g, '"')
+    .replace(/[‘’‚‛]/g, "'")
+    // Comentários JS de linha única ou bloco
+    .replace(/\/\/[^\n\r]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    // Vírgula residual antes de fechamento de array ou objeto
+    .replace(/,\s*([\]\}])/g, "$1");
+
+  try {
+    const res = JSON.parse(sanitized);
+    if (Array.isArray(res)) return { variants: res, rationale: "Variações geradas pela IA" };
+    return res;
+  } catch {}
+
+  // 6. Normaliza quebras de linha literais dentro de strings JSON
+  try {
+    const escapedNewlines = sanitized.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/gs, (match) => {
+      return match.replace(/\r?\n/g, "\\n");
+    });
+    const res = JSON.parse(escapedNewlines);
+    if (Array.isArray(res)) return { variants: res, rationale: "Variações geradas pela IA" };
+    return res;
+  } catch {}
+
+  // 7. Se ainda falhar, tenta extração cirúrgica de variants caso contenha esse array
+  const variantsArrayMatch = text.match(/"(?:variants|variacoes|variations|mensagens|messages|items)"\s*:\s*\[([\s\S]*?)\]/i);
+  if (variantsArrayMatch) {
+    const inner = variantsArrayMatch[1];
+    const itemMatches = [...inner.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
+    const extracted = itemMatches
+      .map((m) => {
+        try {
+          return JSON.parse(`"${m[1]}"`);
+        } catch {
+          return m[1].replace(/\\"/g, '"');
+        }
+      })
+      .filter(Boolean);
+
+    if (extracted.length > 0) {
+      const rationaleMatch = text.match(/"(?:rationale|explicacao|motivo)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
+      const rationale = rationaleMatch ? rationaleMatch[1] : "Variações geradas pela IA";
+      return { variants: extracted, rationale };
+    }
+  }
+
+  console.error("[campaign-ai] Falha ao extrair JSON da resposta crua:", raw);
+  const error = new Error("A IA da Groq retornou um formato JSON inválido.");
+  error.statusCode = 502;
+  error.code = "GROQ_INVALID_JSON";
+  throw error;
+}
+
+async function callGroqJson({ taskPrompt }) {
+  if (!process.env.GROQ_API_KEY && !process.env.GROQ_KEY) {
+    throw new Error("GROQ_DISABLED");
+  }
+
+  const rawContent = await callLlmChatCompletion({
+    model: getGroqModel(),
     temperature: 0.3,
-    // Medido 06/08/2026: completion real fica em ~600 tokens. O teto NAO e
-    // consumo, mas a Groq cobra do rate limit o PEDIDO (prompt +
-    // max_completion_tokens): com 3000, as 3 chamadas por geracao somavam
-    // ~12300 contra o TPM de 12000 e o ultimo lote levava 429 em silencio —
-    // o usuario recebia 13 variacoes de 25 sem ver erro nenhum. 1200 cobre o
-    // dobro do consumo real e derruba o pedido para ~2100 por chamada.
-    max_completion_tokens: 1200,
+    max_tokens: 1200,
     messages: [
       {
         role: "system",
@@ -173,65 +260,10 @@ function buildChatPayload({ taskPrompt, schemaName, schema, preferJsonObject = f
         content: taskPrompt,
       },
     ],
-  };
+  });
 
-  if (STRICT_JSON_MODELS.has(model) && !preferJsonObject) {
-    return {
-      ...basePayload,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: schemaName,
-          strict: true,
-          schema,
-        },
-      },
-    };
-  }
-
-  return {
-    ...basePayload,
-    response_format: {
-      type: "json_object",
-    },
-  };
-}
-
-async function callGroqJson({ taskPrompt, schemaName, schema, preferJsonObject = false }) {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error("GROQ_DISABLED");
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
-
-  try {
-    const response = await fetch(GROQ_BASE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify(buildChatPayload({ taskPrompt, schemaName, schema, preferJsonObject })),
-      signal: controller.signal,
-    });
-
-    const rawBody = await response.text();
-
-    if (!response.ok) {
-      throw new Error(rawBody || `Groq HTTP ${response.status}`);
-    }
-
-    const payload = JSON.parse(rawBody);
-    const content = payload?.choices?.[0]?.message?.content;
-    if (!content) {
-      throw new Error("Groq retornou uma resposta vazia.");
-    }
-
-    return JSON.parse(content);
-  } finally {
-    clearTimeout(timeout);
-  }
+  console.log("[campaign-ai] Resposta crua da IA (callGroqJson):", rawContent);
+  return extractJsonFromLlmText(rawContent);
 }
 
 export function getGroqCampaignAiStatus() {
@@ -589,11 +621,12 @@ Retorne EXCLUSIVAMENTE um objeto JSON no formato:
   "rationale": "Explicação breve das variações geradas"
 }`;
 
+  console.log("[campaign-ai] Solicitando variações de template para Groq (modelo:", defaultGroqModel(), ")");
+
   const rawContent = await callLlmChatCompletion({
     model: defaultGroqModel(),
     temperature: 0.7,
     max_tokens: 2500,
-    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
@@ -602,36 +635,10 @@ Retorne EXCLUSIVAMENTE um objeto JSON no formato:
       { role: "user", content: prompt },
     ],
   });
-  if (!rawContent) {
-    const error = new Error("A IA da Groq retornou uma resposta vazia.");
-    error.statusCode = 502;
-    error.code = "GROQ_EMPTY_RESPONSE";
-    throw error;
-  }
 
-  let parsed;
-  try {
-    const cleanedJson = (rawContent || "")
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    parsed = JSON.parse(cleanedJson);
-  } catch (err) {
-    const match = rawContent.match(/\{[\s\S]*\}/);
-    if (match) {
-      try {
-        parsed = JSON.parse(match[0]);
-      } catch {
-        // ignore
-      }
-    }
-    if (!parsed) {
-      const error = new Error("A IA da Groq retornou um formato JSON inválido.");
-      error.statusCode = 502;
-      error.code = "GROQ_INVALID_JSON";
-      throw error;
-    }
-  }
+  console.log("[campaign-ai] Resposta crua da IA (tamanho:", (rawContent || "").length, "):", rawContent);
+
+  const parsed = extractJsonFromLlmText(rawContent);
 
   const rawVariants = Array.isArray(parsed?.variants) ? parsed.variants : [];
   const normalizedBase = normalizeString(baseText);

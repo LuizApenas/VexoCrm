@@ -4,6 +4,8 @@ import {
   defaultGroqModel,
   classifyLlmHttpError,
   mensagemDeCotaEstourada,
+  filterLadderOnQuotaExceeded,
+  isHighQuotaModel,
 } from "./services/llmModels.js";
 import {
   normalizeLeadsOutlierDados,
@@ -195,7 +197,7 @@ export async function callLlmChatCompletion({
 
   // Escada vinda de services/llmModels.js — configuravel por GROQ_MODEL_LADDER e
   // com os modelos descontinuados descartados antes de gastar uma chamada neles.
-  const modelsToTry = resolveGroqLadder(model);
+  let modelsToTry = resolveGroqLadder(model);
   let lastError = null;
   let ultimaCota = null;
 
@@ -209,7 +211,11 @@ export async function callLlmChatCompletion({
     );
   }
 
-  for (const m of modelsToTry) {
+  let cursor = 0;
+  while (cursor < modelsToTry.length) {
+    const m = modelsToTry[cursor];
+    cursor++;
+
     const body = { model: m, messages, temperature, max_tokens };
     if (response_format) body.response_format = response_format;
     const res = await fetch(`${GROQ_BASE}/chat/completions`, {
@@ -237,8 +243,18 @@ export async function callLlmChatCompletion({
       console.warn(
         `[chatbot-ai-engine] COTA ESTOURADA no modelo "${m}" (HTTP ${res.status})` +
           `${diagnostico.limiteTpm ? ` — teto ${diagnostico.limiteTpm} TPM, usados ${diagnostico.usadoTpm ?? "?"}` : ""}` +
-          `${diagnostico.esperarSegundos ? `, libera em ~${diagnostico.esperarSegundos}s` : ""}. Tentando o proximo modelo da escada.`
+          `${diagnostico.esperarSegundos ? `, libera em ~${diagnostico.esperarSegundos}s` : ""}.` +
+          (!isHighQuotaModel(m)
+            ? " Pulando modelos do mesmo pool (8.000 TPM) e escalando direto para modelo de alta cota."
+            : " Tentando próximo modelo de alta cota.")
       );
+
+      // Quando a cota de 8.000 TPM estoura, descarta os demais modelos de 8.000 TPM
+      // e pula direto para modelos de alta cota (>= 70.000 TPM)
+      if (!isHighQuotaModel(m)) {
+        const remaining = filterLadderOnQuotaExceeded(m, modelsToTry.slice(cursor));
+        modelsToTry = [...modelsToTry.slice(0, cursor), ...remaining];
+      }
       continue;
     }
 
@@ -978,7 +994,6 @@ export async function runChatbotAI({ systemPrompt, history, newMessages, existin
     messages,
     temperature: 0.4,
     max_tokens: 600,
-    response_format: { type: "json_object" },
   });
 
   const resposta = parseAIResponse(raw, finalSystemPrompt);
@@ -1034,7 +1049,12 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
     };
   }
 
-  const rawStr = String(raw).trim();
+  let rawStr = String(raw).trim();
+
+  // 0. Remove blocos <think> ... </think> emitidos por modelos de raciocínio (ex: Qwen)
+  if (rawStr.includes("<think>")) {
+    rawStr = rawStr.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  }
 
   // 1. Tenta JSON.parse direto
   try {
@@ -1050,11 +1070,32 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
     };
   } catch (_) {}
 
-  // 2. Tenta extrair JSON de blocos de markdown ou strings com delimitadores { ... }
+  // 2. Extrai de bloco de código markdown ```json ... ``` ou ``` ... ```
+  const codeBlock = rawStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlock) {
+    try {
+      const parsed = JSON.parse(codeBlock[1].trim());
+      return {
+        mensagem: String(parsed.mensagem || parsed.message || parsed.resposta || ""),
+        status_conversa: parsed.status_conversa || "aguardando_usuario",
+        dados: parsed.dados || {},
+        lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
+        classificacao: extractValidClassificacao(parsed.classificacao),
+        finalizado: parsed.finalizado === true,
+        spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
+      };
+    } catch (_) {}
+  }
+
+  // 3. Tenta extrair JSON delimitado por { ... } com sanitização de aspas tipográficas e trailing commas
   const match = rawStr.match(/\{[\s\S]*\}/);
   if (match) {
+    const sanitized = match[0]
+      .replace(/[“”„‟]/g, '"')
+      .replace(/[‘’‚‛]/g, "'")
+      .replace(/,\s*([\]\}])/g, "$1");
     try {
-      const parsed = JSON.parse(match[0]);
+      const parsed = JSON.parse(sanitized);
       return {
         mensagem: String(parsed.mensagem || parsed.message || parsed.resposta || ""),
         status_conversa: parsed.status_conversa || "aguardando_usuario",

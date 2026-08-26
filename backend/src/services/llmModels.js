@@ -38,6 +38,33 @@ export const GROQ_MODEL_LADDER_PADRAO = [
   "groq/compound-mini",
 ];
 
+export const GROQ_MODEL_LIMITS = {
+  "openai/gpt-oss-120b": { tpm: 8000, rpm: 1000 },
+  "openai/gpt-oss-20b": { tpm: 8000, rpm: 1000 },
+  "qwen/qwen3.6-27b": { tpm: 8000, rpm: 1000 },
+  "qwen/qwen3.8-27b": { tpm: 8000, rpm: 1000 },
+  "groq/compound": { tpm: 70000, rpm: 250 },
+  "groq/compound-mini": { tpm: 70000, rpm: 250 },
+};
+
+export function isHighQuotaModel(modelName) {
+  const name = String(modelName || "").trim().toLowerCase();
+  return name.includes("compound") || (GROQ_MODEL_LIMITS[name]?.tpm ?? 0) >= 50000;
+}
+
+/**
+ * Quando a falha for 429 (cota estourada) em modelo de teto baixo (8.000 TPM),
+ * descarta os outros modelos de 8.000 TPM restantes e pula direto para os de alta cota (>= 70.000 TPM).
+ * Se o modelo já for de alta cota, tenta apenas outros de alta cota ainda não tentados.
+ */
+export function filterLadderOnQuotaExceeded(exhaustedModel, remainingLadder) {
+  const exhausted = String(exhaustedModel || "").trim().toLowerCase();
+  if (!isHighQuotaModel(exhausted)) {
+    return remainingLadder.filter((m) => isHighQuotaModel(m) && m !== exhausted);
+  }
+  return remainingLadder.filter((m) => m !== exhausted);
+}
+
 /** Modelos que a conta NAO tem mais. Usados so para avisar, nunca para chamar. */
 export const GROQ_MODELOS_MORTOS = new Set([
   "llama-3.3-70b-versatile",
