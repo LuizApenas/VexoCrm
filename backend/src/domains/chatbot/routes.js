@@ -46,6 +46,7 @@ import {
 } from "../../services/inboundEngagementPolicy.js";
 import { resolveSdrTarget, resolveTenantSdrNumbers, normalizeSdrNumber } from "../../services/sdrTarget.js";
 import { resolveCampaignAgent } from "../../services/campaignAgentRouting.js";
+import { validateOutboundMessage } from "../../services/jsonExtractor.js";
 
 export function registerChatbotRoutes(app, deps) {
   const {
@@ -1515,7 +1516,25 @@ export function registerChatbotRoutes(app, deps) {
             instanceName,
           });
 
-          if (!aiResponse?.mensagem) return;
+          if (!aiResponse?.mensagem || !String(aiResponse.mensagem).trim()) {
+            console.warn("[chatbot-webhook] Resposta ausente ou vazia — nenhum envio realizado.", {
+              clientId,
+              phone: maskPhoneForLog(phone),
+            });
+            return;
+          }
+
+          // GUARDA DE SAÍDA OBRIGATÓRIA: impede vazamento de JSON cru ou chaves internas para o lead
+          const outboundGuard = validateOutboundMessage(aiResponse.mensagem);
+          if (!outboundGuard.valid) {
+            console.error("[chatbot-webhook] BLOQUEIO DE SEGURANÇA: Resposta contém JSON cru ou chave interna vazada. Envio cancelado!", {
+              clientId,
+              phone: maskPhoneForLog(phone),
+              motivo: outboundGuard.reason,
+              preview: aiResponse.mensagem.slice(0, 100),
+            });
+            return;
+          }
 
           // Enviar resposta via Evolution
           // Resolve pelo chip que RECEBEU a mensagem; sem identificar, cai no default

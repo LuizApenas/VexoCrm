@@ -1,0 +1,186 @@
+// Extrator resiliente de JSON para saídas de LLM e Guarda de Saída do WhatsApp.
+// Garante que NENHUM JSON cru ou chave interna do contrato seja enviada ao lead.
+
+export const INTERNAL_CONTRACT_KEYS = [
+  "status_conversa",
+  "lead_source",
+  "spin_fase",
+  "resumo_chat",
+  "classificacao",
+  "finalizado",
+  "origem_marketing",
+  "contratoQuebrado",
+  "lead_temperature",
+  "temperatura",
+];
+
+/**
+ * Guarda de saída obrigatória: valida se o texto é seguro para envio no WhatsApp.
+ * Recusa se começar com { ou [, se contiver ``` ou chaves internas do contrato.
+ */
+export function validateOutboundMessage(text) {
+  if (text === null || text === undefined) {
+    return { valid: false, reason: "empty_null" };
+  }
+
+  const str = String(text);
+  const trimmed = str.trim();
+  if (!trimmed) {
+    return { valid: false, reason: "empty_text" };
+  }
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return { valid: false, reason: "starts_with_json_bracket" };
+  }
+
+  if (trimmed.includes("```")) {
+    return { valid: false, reason: "contains_markdown_code_block" };
+  }
+
+  // Verifica chaves internas do contrato
+  const lower = trimmed.toLowerCase();
+  for (const key of INTERNAL_CONTRACT_KEYS) {
+    if (lower.includes(key.toLowerCase())) {
+      return { valid: false, reason: `contains_internal_contract_key:${key}` };
+    }
+  }
+
+  // Verifica chaves de JSON serializado
+  if (lower.includes('"mensagem"') || lower.includes('"dados"') || lower.includes('"message"')) {
+    return { valid: false, reason: "contains_json_key_structure" };
+  }
+
+  return { valid: true, reason: null };
+}
+
+/**
+ * Extrator de JSON multi-estágio resiliente para saídas de LLM.
+ * Suporta remoção de tags de raciocínio (<think>), markdown, aspas tipográficas,
+ * vírgulas residuais, comentários JS e quebras de linha literais em strings.
+ */
+export function extractJsonFromLlmText(raw) {
+  if (raw === null || raw === undefined) {
+    const error = new Error("A IA da Groq retornou uma resposta vazia.");
+    error.statusCode = 502;
+    error.code = "GROQ_EMPTY_RESPONSE";
+    throw error;
+  }
+
+  if (typeof raw === "object") {
+    return raw;
+  }
+
+  let text = String(raw).trim();
+  if (!text) {
+    const error = new Error("A IA da Groq retornou uma resposta vazia.");
+    error.statusCode = 502;
+    error.code = "GROQ_EMPTY_RESPONSE";
+    throw error;
+  }
+
+  // 1. Remove blocos <think> ... </think> emitidos por modelos de raciocínio (ex: Qwen)
+  if (text.includes("<think>")) {
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  }
+
+  // 2. Extrai conteúdo dentro de cercas de markdown ```json ... ``` ou ``` ... ```
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch) {
+    text = codeBlockMatch[1].trim();
+  }
+
+  // 3. Tenta parse direto
+  try {
+    const res = JSON.parse(text);
+    if (res && typeof res === "object") {
+      if (Array.isArray(res)) return { variants: res, rationale: "Variações geradas pela IA" };
+      return res;
+    }
+  } catch {}
+
+  // 4. Se falhar, busca o bloco mais externo { ... } ou [ ... ]
+  const objectMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  if (objectMatch) {
+    text = objectMatch[1].trim();
+  }
+
+  // 5. Sanitizações comuns de LLMs
+  let sanitized = text
+    // Aspas tipográficas / curvas
+    .replace(/[“”„‟]/g, '"')
+    .replace(/[‘’‚‛]/g, "'")
+    // Comentários JS de linha única ou bloco
+    .replace(/\/\/[^\n\r]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    // Vírgula residual antes de fechamento de array ou objeto
+    .replace(/,\s*([\]\}])/g, "$1");
+
+  try {
+    const res = JSON.parse(sanitized);
+    if (res && typeof res === "object") {
+      if (Array.isArray(res)) return { variants: res, rationale: "Variações geradas pela IA" };
+      return res;
+    }
+  } catch {}
+
+  // 6. Normaliza quebras de linha literais dentro de strings JSON
+  try {
+    const escapedNewlines = sanitized.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/gs, (match) => {
+      return match.replace(/\r?\n/g, "\\n");
+    });
+    const res = JSON.parse(escapedNewlines);
+    if (res && typeof res === "object") {
+      if (Array.isArray(res)) return { variants: res, rationale: "Variações geradas pela IA" };
+      return res;
+    }
+  } catch {}
+
+  // 7. Extração cirúrgica de variants (para gerador de campanhas)
+  const variantsArrayMatch = text.match(/"(?:variants|variacoes|variations|mensagens|messages|items)"\s*:\s*\[([\s\S]*?)\]/i);
+  if (variantsArrayMatch) {
+    const inner = variantsArrayMatch[1];
+    const itemMatches = [...inner.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)];
+    const extracted = itemMatches
+      .map((m) => {
+        try {
+          return JSON.parse(`"${m[1]}"`);
+        } catch {
+          return m[1].replace(/\\"/g, '"');
+        }
+      })
+      .filter(Boolean);
+
+    if (extracted.length > 0) {
+      const rationaleMatch = text.match(/"(?:rationale|explicacao|motivo)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
+      const rationale = rationaleMatch ? rationaleMatch[1] : "Variações geradas pela IA";
+      return { variants: extracted, rationale };
+    }
+  }
+
+  // 8. Extração cirúrgica de mensagem (para chatbot)
+  const mensagemMatch = text.match(/"(?:mensagem|message|resposta)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
+  if (mensagemMatch) {
+    let unescapedMsg = "";
+    try {
+      unescapedMsg = JSON.parse(`"${mensagemMatch[1]}"`);
+    } catch {
+      unescapedMsg = mensagemMatch[1].replace(/\\"/g, '"').replace(/\\n/g, "\n");
+    }
+    if (unescapedMsg && typeof unescapedMsg === "string") {
+      return {
+        mensagem: unescapedMsg,
+        status_conversa: "aguardando_usuario",
+        dados: {},
+        classificacao: null,
+        finalizado: false,
+        spin_fase: null,
+      };
+    }
+  }
+
+  const error = new Error("A IA da Groq retornou um formato JSON inválido.");
+  error.statusCode = 502;
+  error.code = "GROQ_INVALID_JSON";
+  error.rawText = raw;
+  throw error;
+}

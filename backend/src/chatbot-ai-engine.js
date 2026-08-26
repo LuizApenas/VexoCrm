@@ -16,6 +16,7 @@ import { getLeadClientN8nSettings } from "./services/n8nSettings.js";
 import { qualifyLead } from "./hardcoded-chatbot-persistence.js";
 import { LEADS_OUTLIER_TEMPERATURE } from "./services/leadImport.js";
 import { resolveMessageId } from "./services/inboundGuard.js";
+import { extractJsonFromLlmText, validateOutboundMessage } from "./services/jsonExtractor.js";
 
 /**
  * Chatbot AI Engine
@@ -111,6 +112,7 @@ export async function callLlmChatCompletion({
   temperature = 0.4,
   max_tokens = 600,
   response_format = null,
+  singleModelOnly = false,
 }) {
   const chosenModel = model || defaultGroqModel();
   const provider = detectLlmProvider(chosenModel);
@@ -118,7 +120,7 @@ export async function callLlmChatCompletion({
   if (provider === "openai") {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("OPENAI_API_KEY não configurada no servidor (Easypanel)");
-    const body = { model, messages, temperature, max_tokens };
+    const body = { model: chosenModel, messages, temperature, max_tokens };
     if (response_format) body.response_format = response_format;
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -141,7 +143,7 @@ export async function callLlmChatCompletion({
       .filter((m) => m.role !== "system")
       .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }));
     const body = {
-      model,
+      model: chosenModel,
       system: systemMsg,
       messages: anthropicMessages,
       max_tokens,
@@ -167,7 +169,7 @@ export async function callLlmChatCompletion({
   if (provider === "gemini") {
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY não configurada no servidor (Easypanel)");
-    const body = { model, messages, temperature, max_tokens };
+    const body = { model: chosenModel, messages, temperature, max_tokens };
     if (response_format) body.response_format = response_format;
     const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
@@ -197,7 +199,7 @@ export async function callLlmChatCompletion({
 
   // Escada vinda de services/llmModels.js — configuravel por GROQ_MODEL_LADDER e
   // com os modelos descontinuados descartados antes de gastar uma chamada neles.
-  let modelsToTry = resolveGroqLadder(model);
+  let modelsToTry = singleModelOnly ? [chosenModel] : resolveGroqLadder(model);
   let lastError = null;
   let ultimaCota = null;
 
@@ -989,27 +991,65 @@ export async function runChatbotAI({ systemPrompt, history, newMessages, existin
     { role: "user", content: newMessages.join("\n") },
   ];
 
-  const raw = await callLlmChatCompletion({
-    model: llmModel,
-    messages,
-    temperature: 0.4,
-    max_tokens: 600,
-  });
-
-  const resposta = parseAIResponse(raw, finalSystemPrompt);
-
-  // Mensagem vazia nao pode virar silencio nem, jamais, reaproveitamento da fala
-  // anterior: a mensagem e a resposta DAQUELE turno. Marcada aqui, quem chama
-  // consegue DIZER que falhou em vez de mandar "" para o lead.
-  if (!String(resposta.mensagem || "").trim()) {
-    console.error("[chatbot-ai] MODELO NAO PRODUZIU MENSAGEM neste turno", {
-      contratoQuebrado: resposta.contratoQuebrado === true,
-      rawPreview: typeof raw === "string" ? raw.slice(0, 200) : typeof raw,
-    });
-    return { ...resposta, mensagem: "", mensagemAusente: true };
+  let modelsToTry = resolveGroqLadder(llmModel);
+  if (!modelsToTry || modelsToTry.length === 0) {
+    modelsToTry = [defaultGroqModel()];
   }
 
-  return resposta;
+  let finalResposta = null;
+  let lastError = null;
+
+  for (let i = 0; i < modelsToTry.length; i++) {
+    const currentModel = modelsToTry[i];
+    try {
+      const raw = await callLlmChatCompletion({
+        model: currentModel,
+        messages,
+        temperature: 0.4,
+        max_tokens: 600,
+        singleModelOnly: true,
+      });
+
+      const resposta = parseAIResponse(raw, finalSystemPrompt);
+
+      // Validação estrita: a mensagem NÃO pode ser vazia e DEVE passar pela guarda de saída
+      const guard = validateOutboundMessage(resposta.mensagem);
+      if (!guard.valid || !String(resposta.mensagem || "").trim()) {
+        console.warn(
+          `[chatbot-ai] Modelo "${currentModel}" gerou resposta inválida ou vazia ` +
+            `(motivo: ${guard.reason}). ` +
+            (i < modelsToTry.length - 1 ? `Tentando próximo modelo da escada: "${modelsToTry[i + 1]}"...` : "Fim da escada.")
+        );
+        continue;
+      }
+
+      // Sucesso: modelo gerou mensagem segura para o lead
+      finalResposta = resposta;
+      break;
+    } catch (err) {
+      console.warn(`[chatbot-ai] Modelo "${currentModel}" falhou na execução: ${err.message}.`);
+      lastError = err;
+    }
+  }
+
+  if (!finalResposta || !String(finalResposta.mensagem || "").trim()) {
+    console.error("[chatbot-ai] TODOS OS MODELOS DA ESCADA FALHARAM EM PRODUZIR JSON VÁLIDO. Resposta silenciada para proteger o lead.", {
+      modelosTentados: modelsToTry,
+      lastError: lastError?.message,
+    });
+    return {
+      mensagem: "",
+      mensagemAusente: true,
+      contratoQuebrado: true,
+      status_conversa: "aguardando_usuario",
+      dados: {},
+      classificacao: null,
+      finalizado: false,
+      spin_fase: null,
+    };
+  }
+
+  return finalResposta;
 }
 
 const VALID_SPIN_FASES = new Set(["situacao", "problema", "implicacao", "necessidade"]);
@@ -1028,7 +1068,6 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
       status_conversa: "aguardando_usuario",
       dados: {},
       lead_source: null,
-      // null, nao "FRIO": nenhuma classificacao foi feita.
       classificacao: null,
       finalizado: false,
       spin_fase: null,
@@ -1038,8 +1077,26 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
 
   // Se já for objeto parseado
   if (typeof raw === "object") {
+    const rawMsg = String(raw.mensagem || raw.message || raw.resposta || "");
+    const guard = validateOutboundMessage(rawMsg);
+    if (!guard.valid) {
+      console.error("[chatbot-ai] CONTRATO QUEBRADO: campo mensagem contém formato/chaves internas vazadas.", {
+        motivo: guard.reason,
+        preview: rawMsg.slice(0, 200),
+      });
+      return {
+        mensagem: "",
+        status_conversa: raw.status_conversa || "aguardando_usuario",
+        dados: raw.dados || {},
+        lead_source: normalizeLeadSource(raw.lead_source || raw.dados?.origem_marketing) || null,
+        classificacao: extractValidClassificacao(raw.classificacao),
+        finalizado: raw.finalizado === true,
+        spin_fase: VALID_SPIN_FASES.has(raw.spin_fase) ? raw.spin_fase : null,
+        contratoQuebrado: true,
+      };
+    }
     return {
-      mensagem: String(raw.mensagem || raw.message || raw.resposta || ""),
+      mensagem: rawMsg,
       status_conversa: raw.status_conversa || "aguardando_usuario",
       dados: raw.dados || {},
       lead_source: normalizeLeadSource(raw.lead_source || raw.dados?.origem_marketing) || null,
@@ -1049,82 +1106,71 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
     };
   }
 
-  let rawStr = String(raw).trim();
+  const rawStr = String(raw).trim();
 
-  // 0. Remove blocos <think> ... </think> emitidos por modelos de raciocínio (ex: Qwen)
-  if (rawStr.includes("<think>")) {
-    rawStr = rawStr.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  }
-
-  // 1. Tenta JSON.parse direto
+  // Tenta extrair JSON estruturado usando o extrator resiliente compartilhado
   try {
-    const parsed = JSON.parse(rawStr);
-    return {
-      mensagem: String(parsed.mensagem || parsed.message || parsed.resposta || ""),
-      status_conversa: parsed.status_conversa || "aguardando_usuario",
-      dados: parsed.dados || {},
-      lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
-      classificacao: extractValidClassificacao(parsed.classificacao),
-      finalizado: parsed.finalizado === true,
-      spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
-    };
+    const parsed = extractJsonFromLlmText(rawStr);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const rawMsg = String(parsed.mensagem || parsed.message || parsed.resposta || "");
+      const guard = validateOutboundMessage(rawMsg);
+      if (!guard.valid) {
+        console.error("[chatbot-ai] CONTRATO QUEBRADO: campo mensagem no JSON extraído contém formato/chaves internas vazadas.", {
+          motivo: guard.reason,
+          preview: rawMsg.slice(0, 200),
+        });
+        return {
+          mensagem: "",
+          status_conversa: parsed.status_conversa || "aguardando_usuario",
+          dados: parsed.dados || {},
+          lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
+          classificacao: extractValidClassificacao(parsed.classificacao),
+          finalizado: parsed.finalizado === true,
+          spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
+          contratoQuebrado: true,
+        };
+      }
+
+      return {
+        mensagem: rawMsg,
+        status_conversa: parsed.status_conversa || "aguardando_usuario",
+        dados: parsed.dados || {},
+        lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
+        classificacao: extractValidClassificacao(parsed.classificacao),
+        finalizado: parsed.finalizado === true,
+        spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
+      };
+    }
   } catch (_) {}
 
-  // 2. Extrai de bloco de código markdown ```json ... ``` ou ``` ... ```
-  const codeBlock = rawStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (codeBlock) {
-    try {
-      const parsed = JSON.parse(codeBlock[1].trim());
-      return {
-        mensagem: String(parsed.mensagem || parsed.message || parsed.resposta || ""),
-        status_conversa: parsed.status_conversa || "aguardando_usuario",
-        dados: parsed.dados || {},
-        lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
-        classificacao: extractValidClassificacao(parsed.classificacao),
-        finalizado: parsed.finalizado === true,
-        spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
-      };
-    } catch (_) {}
+  // Se o extrator falhou, verifica se a resposta era texto puro limpo (sem chaves nem JSON cru)
+  const plainTextGuard = validateOutboundMessage(rawStr);
+  if (plainTextGuard.valid) {
+    console.warn("[chatbot-ai] CONTRATO QUEBRADO: resposta da LLM não é JSON mas é texto puro limpo. Mensagem aproveitada, qualificação perdida.", {
+      rawLength: rawStr.length,
+      rawCompleta: rawStr.slice(0, 500),
+    });
+    return {
+      mensagem: rawStr,
+      status_conversa: "aguardando_usuario",
+      dados: {},
+      lead_source: null,
+      classificacao: null,
+      finalizado: false,
+      spin_fase: null,
+      contratoQuebrado: true,
+    };
   }
 
-  // 3. Tenta extrair JSON delimitado por { ... } com sanitização de aspas tipográficas e trailing commas
-  const match = rawStr.match(/\{[\s\S]*\}/);
-  if (match) {
-    const sanitized = match[0]
-      .replace(/[“”„‟]/g, '"')
-      .replace(/[‘’‚‛]/g, "'")
-      .replace(/,\s*([\]\}])/g, "$1");
-    try {
-      const parsed = JSON.parse(sanitized);
-      return {
-        mensagem: String(parsed.mensagem || parsed.message || parsed.resposta || ""),
-        status_conversa: parsed.status_conversa || "aguardando_usuario",
-        dados: parsed.dados || {},
-        lead_source: normalizeLeadSource(parsed.lead_source || parsed.dados?.origem_marketing) || null,
-        classificacao: extractValidClassificacao(parsed.classificacao),
-        finalizado: parsed.finalizado === true,
-        spin_fase: VALID_SPIN_FASES.has(parsed.spin_fase) ? parsed.spin_fase : null,
-      };
-    } catch (_) {}
-  }
-
-  // 3. O modelo respondeu em texto corrido. A MENSAGEM e aproveitada — o texto e
-  // do modelo, nao inventado aqui — mas a qualificacao NAO existe nesta resposta.
-  //
-  // Devolver classificacao: "FRIO" aqui seria repetir o defeito do || "QUENTE":
-  // gravar no banco uma classificacao que o modelo nunca deu, com a conversa
-  // parecendo saudavel e o briefing do dono chegando vazio. Fica null, e quem
-  // grava decide o que fazer com a ausencia.
-  console.warn("[chatbot-ai] CONTRATO QUEBRADO: resposta da LLM nao e JSON. Mensagem aproveitada, qualificacao PERDIDA nesta rodada.", {
+  // Texto cru contém JSON quebrado, chaves de contrato ou brackets: RECUSA CATEGÓRICA
+  console.error("[chatbot-ai] CONTRATO QUEBRADO: resposta da LLM é JSON malformado e vaza contrato. Mensagem descartada para proteger o lead.", {
     rawLength: rawStr.length,
-    rawCompleta: rawStr.slice(0, 2000),
-    systemPromptTemContrato: fullSystemPrompt
-      ? fullSystemPrompt.includes("FORMATO DE RESPOSTA OBRIGATÓRIO")
-      : null,
+    motivoBloqueio: plainTextGuard.reason,
+    rawPreview: rawStr.slice(0, 500),
   });
 
   return {
-    mensagem: rawStr,
+    mensagem: "",
     status_conversa: "aguardando_usuario",
     dados: {},
     lead_source: null,
