@@ -1,5 +1,7 @@
+import { defaultGroqModel } from "./services/llmModels.js";
+
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-const DEFAULT_HELPDESK_MODEL = "openai/gpt-oss-20b";
+const DEFAULT_HELPDESK_MODEL = defaultGroqModel();
 
 const SYSTEM_CONTEXT = `
 Voce e o help desk do Vexo OS, um CRM operacional com modulos de:
