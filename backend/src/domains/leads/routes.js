@@ -22,18 +22,12 @@ import {
   getLeadClientEvolutionInstances,
 } from "../../services/evolution.js";
 
-function sanitizePhoneE164(phoneInput) {
-  if (!phoneInput) return null;
-  const digits = String(phoneInput).replace(/\D/g, "");
-  if (!digits || digits.length < 8) return null;
+import { buildPhoneLookupVariants, sanitizePhone } from "../../services/leadImport.js";
 
-  if (digits.startsWith("55")) {
-    return `+${digits}`;
-  }
-  if (digits.length === 10 || digits.length === 11) {
-    return `+55${digits}`;
-  }
-  return `+${digits}`;
+function sanitizePhoneE164(phoneInput) {
+  const s = sanitizePhone(phoneInput);
+  if (!s) return null;
+  return s.startsWith("+") ? s : `+${s}`;
 }
 
 function classifyChatContent(messages, contactName) {
@@ -1395,11 +1389,13 @@ export function registerLeadsRoutes(app, deps) {
         tags: payload.tags,
       });
 
+      const variants = buildPhoneLookupVariants(phone);
+      const orFilter = variants.map((v) => `telefone.eq.${v},phone.eq.${v}`).join(",");
       const { data: item } = await supabase
         .from("leads")
         .select("*")
         .eq("client_id", clientId)
-        .or(`telefone.eq.${phone.replace(/^\+/, "")},phone.eq.${phone.replace(/^\+/, "")},telefone.eq.${phone},phone.eq.${phone}`)
+        .or(orFilter || `telefone.eq.${phone},phone.eq.${phone}`)
         .order("updated_at", { ascending: false })
         .limit(1)
         .single();
@@ -1905,11 +1901,12 @@ export function registerLeadsRoutes(app, deps) {
       }
 
       if (action === "create") {
+        const phoneVariants = buildPhoneLookupVariants(telefone);
         const { data: existingLead, error: lookupError } = await supabase
           .from(leadsTableName(clientId))
           .select("id, nome")
           .eq("client_id", clientId)
-          .eq("telefone", telefone)
+          .in("telefone", phoneVariants.length > 0 ? phoneVariants : [telefone])
           .maybeSingle();
 
         if (lookupError) {
@@ -1957,7 +1954,7 @@ export function registerLeadsRoutes(app, deps) {
               .from(leadsTableName(clientId))
               .select("id, nome")
               .eq("client_id", clientId)
-              .eq("telefone", telefone)
+              .in("telefone", phoneVariants.length > 0 ? phoneVariants : [telefone])
               .maybeSingle();
 
             if (duplicateLookupError) {
@@ -2202,7 +2199,7 @@ export function registerLeadsRoutes(app, deps) {
             .from(leadsTable)
             .update({ lead_source: "campanha", source_campaign_id: existing.source_campaign_id || campaign.id, source_campaign_name: campaign.name })
             .eq("client_id", clientId)
-            .eq("telefone", phone);
+            .in("telefone", buildPhoneLookupVariants(phone));
           updated++;
         } else {
           skipped++;

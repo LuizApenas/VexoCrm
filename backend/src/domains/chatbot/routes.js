@@ -13,7 +13,23 @@ import { createLeadMessaging, isGroupJid } from "../shared/leadMessaging.js";
 import { summarizeChatWithAI } from "../leads/chatInsight.js";
 import { applyCorsHeaders } from "../../services/corsPolicy.js";
 import { upsertLeadByPhone } from "../../services/leadUpsert.js";
+import { buildPhoneLookupVariants } from "../../services/leadImport.js";
 import { OutlierQualificationBot } from "../../hardcoded-chatbot-outlier.js";
+
+const SQL_CANONICAL_PHONE = (col) => `
+  CASE
+    WHEN ${col} LIKE '%@%' THEN ${col}
+    WHEN length(regexp_replace(${col}, '\\D', '', 'g')) = 12 AND regexp_replace(${col}, '\\D', '', 'g') ~ '^55[1-9]{2}[6-9]'
+      THEN '55' || substr(regexp_replace(${col}, '\\D', '', 'g'), 3, 2) || '9' || substr(regexp_replace(${col}, '\\D', '', 'g'), 5)
+    WHEN length(regexp_replace(${col}, '\\D', '', 'g')) = 10 AND regexp_replace(${col}, '\\D', '', 'g') ~ '^[1-9]{2}[6-9]'
+      THEN '55' || substr(regexp_replace(${col}, '\\D', '', 'g'), 1, 2) || '9' || substr(regexp_replace(${col}, '\\D', '', 'g'), 3)
+    WHEN length(regexp_replace(${col}, '\\D', '', 'g')) = 10 AND regexp_replace(${col}, '\\D', '', 'g') ~ '^[1-9]{2}[2-5]'
+      THEN '55' || regexp_replace(${col}, '\\D', '', 'g')
+    WHEN length(regexp_replace(${col}, '\\D', '', 'g')) = 11 AND regexp_replace(${col}, '\\D', '', 'g') ~ '^[1-9]{2}9'
+      THEN '55' || regexp_replace(${col}, '\\D', '', 'g')
+    ELSE regexp_replace(${col}, '\\D', '', 'g')
+  END
+`;
 import { getChatMemory } from "../../hardcoded-chatbot.js";
 import { defaultGroqModel } from "../../services/llmModels.js";
 import {
@@ -145,11 +161,12 @@ export function registerChatbotRoutes(app, deps) {
   async function briefingJaEnviado(clientId, phone) {
     if (!supabase || !clientId || !phone) return false;
     try {
+      const phoneVariants = buildPhoneLookupVariants(phone);
       const { data, error } = await supabase
         .from(leadsTableName(clientId))
         .select("dados")
         .eq("client_id", clientId)
-        .eq("telefone", phone)
+        .in("telefone", phoneVariants.length > 0 ? phoneVariants : [phone])
         .order("created_at", { ascending: false })
         .limit(1);
       if (error) {
@@ -167,11 +184,12 @@ export function registerChatbotRoutes(app, deps) {
   async function marcarBriefingEnviado(clientId, phone) {
     if (!supabase || !clientId || !phone) return;
     try {
+      const phoneVariants = buildPhoneLookupVariants(phone);
       const { data } = await supabase
         .from(leadsTableName(clientId))
         .select("id, dados")
         .eq("client_id", clientId)
-        .eq("telefone", phone)
+        .in("telefone", phoneVariants.length > 0 ? phoneVariants : [phone])
         .order("created_at", { ascending: false })
         .limit(1);
       const lead = data?.[0];
@@ -232,11 +250,12 @@ export function registerChatbotRoutes(app, deps) {
   async function telefoneEhLeadConhecido(clientId, phone) {
     if (!supabase || !clientId || !phone) return false;
     try {
+      const phoneVariants = buildPhoneLookupVariants(phone);
       const { data, error } = await supabase
         .from(leadsTableName(clientId))
         .select("id")
         .eq("client_id", clientId)
-        .eq("telefone", phone)
+        .in("telefone", phoneVariants.length > 0 ? phoneVariants : [phone])
         .limit(1);
 
       if (error) {
@@ -418,16 +437,22 @@ export function registerChatbotRoutes(app, deps) {
 
       try {
         const countQueryText = `
-          WITH latest_messages AS (
-            SELECT DISTINCT ON (phone)
-              phone
+          WITH pre_canonical AS (
+            SELECT
+              ${SQL_CANONICAL_PHONE("phone")} as canonical_phone,
+              delivered_at
             FROM public.lead_messages
             WHERE client_id = $1 ${instanceFilter}
-            ORDER BY phone, delivered_at DESC
+          ),
+          latest_messages AS (
+            SELECT DISTINCT ON (canonical_phone)
+              canonical_phone as phone
+            FROM pre_canonical
+            ORDER BY canonical_phone, delivered_at DESC
           )
           SELECT COUNT(*)::integer as total
           FROM latest_messages m
-          LEFT JOIN public."${leadsTable}" l ON l.telefone = m.phone AND l.client_id = $1
+          LEFT JOIN public."${leadsTable}" l ON ${SQL_CANONICAL_PHONE("l.telefone")} = m.phone AND l.client_id = $1
           WHERE 1=1
           ${searchFilter}
         `;
@@ -437,9 +462,10 @@ export function registerChatbotRoutes(app, deps) {
 
         const queryParamsWithPaging = [...queryParams, limit, offset];
         const queryText = `
-          WITH latest_messages AS (
-            SELECT DISTINCT ON (phone)
-              phone,
+          WITH pre_canonical AS (
+            SELECT
+              ${SQL_CANONICAL_PHONE("phone")} as canonical_phone,
+              phone as raw_phone,
               message_text,
               direction,
               delivered_at,
@@ -448,7 +474,19 @@ export function registerChatbotRoutes(app, deps) {
               is_group
             FROM public.lead_messages
             WHERE client_id = $1 ${instanceFilter}
-            ORDER BY phone, delivered_at DESC
+          ),
+          latest_messages AS (
+            SELECT DISTINCT ON (canonical_phone)
+              canonical_phone as phone,
+              raw_phone,
+              message_text,
+              direction,
+              delivered_at,
+              campaign_id,
+              contact_name,
+              is_group
+            FROM pre_canonical
+            ORDER BY canonical_phone, delivered_at DESC
           )
           SELECT
             m.phone as phone_number,
@@ -464,8 +502,8 @@ export function registerChatbotRoutes(app, deps) {
             l.lead_origin,
             l.source_campaign_id
           FROM latest_messages m
-          LEFT JOIN public."${leadsTable}" l ON l.telefone = m.phone AND l.client_id = $1
-          LEFT JOIN public.whatsapp_lid_map lm ON lm.lid = m.phone
+          LEFT JOIN public."${leadsTable}" l ON ${SQL_CANONICAL_PHONE("l.telefone")} = m.phone AND l.client_id = $1
+          LEFT JOIN public.whatsapp_lid_map lm ON lm.lid = m.phone OR lm.lid = m.raw_phone
           WHERE 1=1
           ${searchFilter}
           ORDER BY m.delivered_at DESC
@@ -690,9 +728,9 @@ export function registerChatbotRoutes(app, deps) {
       // carregadas". Aceita as duas formas: o chatId como veio e só os dígitos.
       const isJidChat = chatId.includes("@");
       const cleanPhone = isJidChat ? chatId : sanitizePhone(chatId);
-      const phoneVariants = Array.from(
-        new Set([chatId, cleanPhone, sanitizePhone(chatId)].filter(Boolean))
-      );
+      const phoneVariants = isJidChat
+        ? [chatId]
+        : Array.from(new Set([chatId, cleanPhone, ...buildPhoneLookupVariants(chatId)].filter(Boolean)));
       const queryParams = [clientId, phoneVariants, limit];
 
       let instanceFilter = "";
@@ -1457,7 +1495,7 @@ export function registerChatbotRoutes(app, deps) {
                 lead_source: "campanha",
               })
               .eq("client_id", clientId)
-              .eq("telefone", phone)
+              .in("telefone", buildPhoneLookupVariants(phone))
               .catch((err) => console.warn("[chatbot-webhook] campaign lead_origin update failed:", err?.message || err));
           } else {
             console.log("[campaign-routing] wait_for_reply_step subsequent", {
@@ -1854,11 +1892,12 @@ export function registerChatbotRoutes(app, deps) {
       }
 
       const leadsTable = leadsTableName(clientId);
+      const phoneVariants = buildPhoneLookupVariants(phone);
       const { data: encontrados, error: readError } = await supabase
         .from(leadsTable)
         .select("id, dados, finalizado")
         .eq("client_id", clientId)
-        .eq("telefone", phone)
+        .in("telefone", phoneVariants.length > 0 ? phoneVariants : [phone])
         .order("created_at", { ascending: false })
         .limit(1);
 
@@ -2118,11 +2157,12 @@ export function registerChatbotRoutes(app, deps) {
 
     try {
       // Buscar conversa mais recente
+      const phoneVariants = buildPhoneLookupVariants(phone);
       const { data: conversation, error } = await supabase
         .from(leadsTableName(clientId))
         .select("*")
         .eq("client_id", clientId)
-        .eq("telefone", phone)
+        .in("telefone", phoneVariants.length > 0 ? phoneVariants : [phone])
         .eq("finalizado", true)
         .order("created_at", { ascending: false })
         .limit(1)

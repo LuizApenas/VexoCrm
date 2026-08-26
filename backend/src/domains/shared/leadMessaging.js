@@ -1,7 +1,4 @@
-// backend/src/domains/shared/leadMessaging.js
-// Cross-domain helpers extraidos de registerAllDomainRoutes.js (movimento puro):
-// isGroupJid (pura, sem deps) + createLeadMessaging factory (appendLeadMessage,
-// maskSecretPresence) para os domínios que dependem de leads/whatsapp/campaigns.
+import { buildPhoneLookupVariants, sanitizePhone } from "../../services/leadImport.js";
 
 /**
  * Detecta JID de GRUPO / broadcast no inbound da Evolution. Resposta de lead legítima
@@ -57,6 +54,12 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
     const normalizedMessage = normalizeString(messageText);
     if (!normalizedMessage) return null;
 
+    const isJid = String(phone).includes("@");
+    const canonicalPhone = isJid ? phone : (sanitizePhone(phone) || phone);
+    const phoneVariants = isJid
+      ? [phone]
+      : Array.from(new Set([phone, canonicalPhone, ...buildPhoneLookupVariants(phone)].filter(Boolean)));
+
     // REGRA DE CANONIZAÇÃO: lead_id = SEMPRE o lead do CRM do tenant (leads.id da tabela
     // leadsTableName), nunca lead_import_items.id. campaign_id carrega a atribuição de
     // campanha (inequívoco, é o que o Dashboard usa) e PODE vir do disparo.
@@ -69,7 +72,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
           .from(leadsTableName(clientId))
           .select("id, source_campaign_id")
           .eq("client_id", clientId)
-          .eq("telefone", phone)
+          .in("telefone", phoneVariants)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -96,7 +99,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
           .from("campaign_dispatch_runs")
           .select("campaign_id, dispatch_id, sent_at, created_at")
           .eq("client_id", clientId)
-          .eq("phone", phone)
+          .in("phone", phoneVariants)
           .eq("status", "sent")
           .gte("created_at", windowStartIso)
           .order("sent_at", { ascending: false })
@@ -115,7 +118,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
       client_id: clientId,
       lead_id: resolvedLeadId,
       campaign_id: resolvedCampaignId,
-      phone,
+      phone: canonicalPhone,
       sender_type: senderType,
       direction,
       engagement_signal: engagementSignal,
@@ -157,7 +160,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
           .from(leadsTableName(clientId))
           .update({ ultima_interacao_usuario: deliveredAt || new Date().toISOString() })
           .eq("client_id", clientId)
-          .eq("telefone", phone);
+          .in("telefone", phoneVariants);
       } catch (updateError) {
         console.warn("[lead-messages] ultima_interacao_usuario update failed:", updateError?.message || updateError);
       }

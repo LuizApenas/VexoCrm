@@ -7,6 +7,7 @@ import {
   loginSchema,
   normalizeLeadContractPayload,
 } from '../validators.js';
+import { sanitizePhone } from '../services/leadImport.js';
 
 describe('Backend Security - Input Validation', () => {
   describe('Lead Schema Validation', () => {
@@ -308,7 +309,7 @@ describe('Backend Security - Input Validation', () => {
           telefone: phone,
           client_id: '550e8400-e29b-41d4-a716-446655440000',
         });
-        expect(result.telefone).toBe(phone);
+        expect(result.telefone).toBe(sanitizePhone(phone));
       });
     });
 

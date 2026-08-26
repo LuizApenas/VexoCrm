@@ -286,44 +286,89 @@ export function sanitizePhone(value) {
   if (digits.startsWith("0")) {
     digits = digits.replace(/^0+/, "");
   }
+  if (!digits) return null;
 
-  // Local/national BR numbers from spreadsheets usually arrive with 10 or 11 digits.
-  // Persist them in E.164-like format using country code 55.
-  if (digits.length === 10 || digits.length === 11) {
+  // 1. Número local de 10 dígitos (DDD [2] + 8 dígitos)
+  if (digits.length === 10) {
+    const ddd = digits.slice(0, 2);
+    const local = digits.slice(2);
+    const firstDigit = local[0];
+    // Celular que perdeu o 9: primeiro dígito é 6, 7, 8 ou 9 -> adiciona o 9 (13 dígitos)
+    if (["6", "7", "8", "9"].includes(firstDigit)) {
+      return `55${ddd}9${local}`;
+    }
+    // Fixo: primeiro dígito é 2, 3, 4 ou 5 -> mantém fixo de 8 dígitos (12 dígitos com DDI 55)
     return `55${digits}`;
   }
 
-  if (digits.length === 12 && digits.startsWith("55")) {
-    const national = digits.slice(2);
-    if (national.length === 10) {
-      return `55${national}`;
+  // 2. Número local de 11 dígitos (DDD [2] + 9 dígitos)
+  if (digits.length === 11) {
+    // Se o 3º dígito for 9 (celular BR padrão), prefixa 55 -> 13 dígitos
+    if (digits[2] === "9") {
+      return `55${digits}`;
     }
+    // Caso seja internacional de 11 dígitos (ex: EUA 1...) ou formato atípico
+    return digits;
   }
 
+  // 3. Número de 12 dígitos começando com 55 (55 + DDD [2] + 8 dígitos)
+  if (digits.length === 12 && digits.startsWith("55")) {
+    const ddd = digits.slice(2, 4);
+    const local = digits.slice(4);
+    const firstDigit = local[0];
+    // Celular que perdeu o 9: primeiro dígito local é 6, 7, 8 ou 9 -> adiciona o 9 (13 dígitos)
+    if (["6", "7", "8", "9"].includes(firstDigit)) {
+      return `55${ddd}9${local}`;
+    }
+    // Fixo (começa com 2, 3, 4, 5) -> não mexe, mantém 12 dígitos
+    return digits;
+  }
+
+  // 4. Número de 13 dígitos começando com 55 (55 + DDD [2] + 9 dígitos)
   if (digits.length === 13 && digits.startsWith("55")) {
     return digits;
   }
 
+  // 5. Números internacionais ou outros formatos -> passa intacto
   return digits;
 }
 
 export function buildPhoneLookupVariants(value) {
-  const phone = sanitizePhone(value);
-  if (!phone) return [];
+  if (!value) return [];
+  const rawStr = String(value).trim();
+  const digits = rawStr.replace(/\D/g, "");
+  if (!digits) return [];
 
-  const variants = new Set([phone]);
+  const variants = new Set();
+  variants.add(digits);
+  if (rawStr.startsWith("+")) variants.add(`+${digits}`);
 
-  if (phone.startsWith("55")) {
-    const national = phone.slice(2);
-    if (national.length === 10) {
-      variants.add(`55${national.slice(0, 2)}9${national.slice(2)}`);
-    }
-    if (national.length === 11 && national[2] === "9") {
-      variants.add(`55${national.slice(0, 2)}${national.slice(3)}`);
+  const canonical = sanitizePhone(digits);
+  if (canonical) {
+    variants.add(canonical);
+    variants.add(`+${canonical}`);
+    // Se canonical é 13 dígitos BR (55 + DDD + 9 + 8 dígitos)
+    if (canonical.length === 13 && canonical.startsWith("55")) {
+      const ddd = canonical.slice(2, 4);
+      const nineAndRest = canonical.slice(4); // 9 + 8 dígitos
+      const rest = canonical.slice(5); // 8 dígitos sem o 9
+      const without9 = `55${ddd}${rest}`; // 12 dígitos
+      variants.add(without9);
+      variants.add(`+${without9}`);
+      variants.add(`${ddd}${nineAndRest}`); // 11 dígitos local
+      variants.add(`${ddd}${rest}`); // 10 dígitos local
+      variants.add(nineAndRest); // 9 dígitos
+      variants.add(rest); // 8 dígitos
+    } else if (canonical.length === 12 && canonical.startsWith("55")) {
+      // Fixo BR (55 + DDD + 8 dígitos)
+      const ddd = canonical.slice(2, 4);
+      const rest = canonical.slice(4);
+      variants.add(`${ddd}${rest}`);
+      variants.add(rest);
     }
   }
 
-  return [...variants];
+  return Array.from(variants);
 }
 
 export function normalizePhoneToWhatsAppChatId(value) {

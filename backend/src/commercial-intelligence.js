@@ -1,3 +1,5 @@
+import { sanitizePhone } from "./services/leadImport.js";
+
 const DEFAULT_SETTINGS = {
   qualificationThreshold: 60,
   slaMinutes: 30,
@@ -28,29 +30,6 @@ function normalizeString(value) {
   if (value === null || value === undefined) return null;
   const normalized = String(value).trim();
   return normalized || null;
-}
-
-function sanitizePhone(value) {
-  const normalized = normalizeString(value);
-  if (!normalized) return null;
-  let digits = normalized.replace(/\D/g, "");
-  if (!digits) return null;
-  if (digits.startsWith("0")) {
-    digits = digits.replace(/^0+/, "");
-  }
-  if (digits.length === 10 || digits.length === 11) {
-    return `55${digits}`;
-  }
-  if (digits.length === 12 && digits.startsWith("55")) {
-    const national = digits.slice(2);
-    if (national.length === 10) {
-      return `55${national}`;
-    }
-  }
-  if (digits.length === 13 && digits.startsWith("55")) {
-    return digits;
-  }
-  return digits;
 }
 
 function safePercent(numerator, denominator) {

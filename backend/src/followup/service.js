@@ -3,6 +3,7 @@
 import crypto from "crypto";
 import { query, getSupabase } from "./db.js";
 import { getFollowupQueue } from "./queue.js";
+import { sanitizePhone } from "../services/leadImport.js";
 
 // ─── Utilitários ─────────────────────────────────────────────────────────────
 
@@ -35,13 +36,9 @@ export function verifyHmac(secret, rawBody, sigHeader) {
 }
 
 function normalizePhone(raw) {
-  if (!raw) return null;
-  const digits = String(raw).replace(/\D/g, "");
-  if (!digits) return null;
-  if (digits.startsWith("55") && digits.length >= 12) return `+${digits}`;
-  if (digits.length === 11 || digits.length === 10) return `+55${digits}`;
-  if (digits.length > 8) return `+${digits}`;
-  return null;
+  const sanitized = sanitizePhone(raw);
+  if (!sanitized) return null;
+  return sanitized.startsWith("+") ? sanitized : `+${sanitized}`;
 }
 
 function toMs(value, unit) {

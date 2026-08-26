@@ -24,6 +24,7 @@
 // Corpo do interval em si e byte-a-byte identico ao original.
 
 import { createLeadMessaging, isGroupJid } from "../shared/leadMessaging.js";
+import { buildPhoneLookupVariants } from "../../services/leadImport.js";
 import {
   dispatchCampaignSequence,
   getCampaignStepPlan,
@@ -2770,7 +2771,7 @@ export function registerCampaignsRoutes(app, deps) {
                 .from(leadsTableName(clientId))
                 .update({ lead_origin: "campaign", source_campaign_id: activeWaitCampaign.id, source_campaign_name: activeWaitCampaign.name || null, lead_source: "campanha" })
                 .eq("client_id", clientId)
-                .eq("telefone", phone);
+                .in("telefone", buildPhoneLookupVariants(phone));
             }
             fetch("http://localhost:3001/api/hardcoded-chat-webhook", {
               method: "POST",
@@ -2815,7 +2816,7 @@ export function registerCampaignsRoutes(app, deps) {
                 lead_source: "campanha",
               })
               .eq("client_id", clientId)
-              .eq("telefone", phone);
+              .in("telefone", buildPhoneLookupVariants(phone));
           }
         }
 
@@ -2888,13 +2889,13 @@ export function registerCampaignsRoutes(app, deps) {
           .from("lead_import_items")
           .update(importItemsUpdatePayload)
           .eq("client_id", clientId)
-          .eq("telefone", phone)
+          .in("telefone", buildPhoneLookupVariants(phone))
           .select("id"),
         supabase
           .from(leadsTableName(clientId))
           .update(leadsUpdatePayload)
           .eq("client_id", clientId)
-          .eq("telefone", phone)
+          .in("telefone", buildPhoneLookupVariants(phone))
           .select("id"),
       ]);
 

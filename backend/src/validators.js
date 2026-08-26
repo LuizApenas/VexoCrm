@@ -1,5 +1,6 @@
 import { body, param, validationResult, query } from 'express-validator';
 import { z } from 'zod';
+import { sanitizePhone } from './services/leadImport.js';
 
 /**
  * Middleware para manipular erros de validação
@@ -43,8 +44,7 @@ const normalizeString = (value) => {
 };
 
 const normalizePhone = (value) => {
-  const normalized = normalizeString(value);
-  return normalized ? normalized.replace(/\D/g, '') : undefined;
+  return sanitizePhone(value) ?? undefined;
 };
 
 export const normalizeLeadContractPayload = (payload = {}) => {
