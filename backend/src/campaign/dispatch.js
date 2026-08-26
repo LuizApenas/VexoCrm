@@ -1674,7 +1674,7 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
         await appendLeadMessage({
           clientId,
           campaignId: campaign.id,
-          leadId: leadImportItem?.id || null,
+          leadId: null,
           phone,
           senderType: "bot",
           direction: "outbound",

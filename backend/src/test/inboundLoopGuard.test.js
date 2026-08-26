@@ -144,6 +144,39 @@ describe("guarda de loop do webhook de entrada", () => {
     expect(resolveInboundEventName({ event: "messages.upsert" })).toBe("messages.upsert");
     expect(resolveInboundEventName({})).toBe("");
     expect(resolveMessageId({ data: { key: { id: "ABC" } } })).toBe("ABC");
+    expect(resolveMessageId({ waMessageId: "WAM123" })).toBe("WAM123");
     expect(resolveMessageId({})).toBe("");
+  });
+
+  it("encaminhamento interno sem messageId é rejeitado imediatamente", () => {
+    const efeitos = novosEfeitos();
+    const motivo = processarEvento(
+      { isInternalForward: true, clientId: "geracao-digital", phone: "5534999996397", message: "Mensagem forward" },
+      efeitos,
+      1000
+    );
+
+    expect(motivo).toBe("internal_forward_missing_id");
+    expect(efeitos.chamadasLLM).toBe(0);
+    expect(efeitos.enviosWhatsApp).toBe(0);
+  });
+
+  it("encaminhamento interno com messageId passa no 1o turno e bloqueia duplicata", () => {
+    const efeitos = novosEfeitos();
+    const payload = {
+      isInternalForward: true,
+      waMessageId: "WA_ORIG_999",
+      clientId: "geracao-digital",
+      phone: "5534999996397",
+      message: "Mensagem forward",
+    };
+
+    const primeiro = processarEvento(payload, efeitos, 1000);
+    expect(primeiro).toBeNull();
+    expect(efeitos.chamadasLLM).toBe(1);
+
+    const segundo = processarEvento(payload, efeitos, 1050);
+    expect(segundo).toBe("duplicado");
+    expect(efeitos.chamadasLLM).toBe(1);
   });
 });

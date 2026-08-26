@@ -36,6 +36,7 @@ export function resolveMessageId(body) {
     body?.data?.[0]?.key?.id ??
     body?.data?.messages?.[0]?.key?.id ??
     body?.key?.id ??
+    body?.waMessageId ??
     body?.messageId ??
     body?.data?.messageId ??
     body?.id ??
@@ -62,6 +63,22 @@ function registrarId(id, agora) {
 export function shouldIgnoreInboundEvent(body, agora = Date.now()) {
   if (isFromMe(body)) return { ignore: true, reason: "fromMe" };
 
+  const isInternalForward =
+    body?.isInternalForward === true ||
+    body?.source === "campaign-reply-webhook" ||
+    body?._internalForward === true;
+
+  const id = resolveMessageId(body);
+
+  // Payload vindo de encaminhamento interno SEM id -> REJEITAR e logar em error. É sempre bug.
+  if (isInternalForward && !id) {
+    console.error("[inbound-guard] ERRO: encaminhamento interno recebido SEM messageId — rejeitado!", {
+      clientId: body?.clientId || body?.client_id,
+      phone: body?.phone || body?.telefone,
+    });
+    return { ignore: true, reason: "internal_forward_missing_id" };
+  }
+
   // Sem event (chamada interna do proprio backend) segue o fluxo. Com event
   // diferente de messages.upsert — SEND_MESSAGE, por exemplo — nao e mensagem
   // de lead: e o eco do que nos mesmos mandamos.
@@ -72,15 +89,15 @@ export function shouldIgnoreInboundEvent(body, agora = Date.now()) {
 
   // Trava independente das duas acima: o MESMO id reprocessado nao gera segundo
   // envio, venha ele por reentrega da Evolution, retry ou caminho novo.
-  const id = resolveMessageId(body);
   if (id) {
     const visto = processados.get(id);
     if (visto !== undefined && agora - visto < TTL_MS) {
       return { ignore: true, reason: "duplicado" };
     }
     registrarId(id, agora);
-  } else if (evento === "messages.upsert") {
-    console.warn("[inbound-guard] messageId vazio no evento messages.upsert da Evolution:", JSON.stringify(body).slice(0, 200));
+  } else {
+    // Payload vindo direto da Evolution sem id: processar, mas logar em warn com o corpo do evento
+    console.warn("[inbound-guard] messageId vazio em evento de entrada:", JSON.stringify(body).slice(0, 300));
   }
 
   return { ignore: false, reason: null };

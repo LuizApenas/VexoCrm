@@ -44,6 +44,7 @@ import {
   extractTextFromBody,
   isFirstCampaignReply,
 } from "../../chatbot-ai-engine.js";
+import { resolveMessageId } from "../../services/inboundGuard.js";
 
 let _evolutionDailyUsageSchemaEnsured = false;
 let _dispatchRunsClaimSchemaEnsured = false;
@@ -1923,7 +1924,7 @@ export function registerCampaignsRoutes(app, deps) {
           await appendLeadMessage({
             clientId,
             campaignId: campaign.id,
-            leadId: lead?.id || null,
+            leadId: null,
             phone,
             senderType: "bot",
             direction: "outbound",
@@ -2710,6 +2711,8 @@ export function registerCampaignsRoutes(app, deps) {
       normalizeIsoDate(body.repliedAt ?? body.timestamp ?? body.created_at ?? body.data?.messageTimestamp) ||
       new Date().toISOString();
 
+    const rawMessageId = resolveMessageId(body) || null;
+
     if (!clientId) {
       sendError(res, 400, "INVALID_BODY", "Missing clientId");
       return;
@@ -2772,13 +2775,28 @@ export function registerCampaignsRoutes(app, deps) {
             fetch("http://localhost:3001/api/hardcoded-chat-webhook", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ clientId, phone, message: replyText, ...(modelOverride ? { modelOverride } : {}) }),
+              body: JSON.stringify({
+                clientId,
+                phone,
+                message: replyText,
+                waMessageId: rawMessageId,
+                isInternalForward: true,
+                source: "campaign-reply-webhook",
+                ...(modelOverride ? { modelOverride } : {}),
+              }),
             }).catch((err) => console.warn("[reply-webhook] chatbot_route_failed:", err.message));
           } else {
             fetch("http://localhost:3001/api/hardcoded-chat-webhook", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ clientId, phone, message: replyText }),
+              body: JSON.stringify({
+                clientId,
+                phone,
+                message: replyText,
+                waMessageId: rawMessageId,
+                isInternalForward: true,
+                source: "campaign-reply-webhook",
+              }),
             }).catch((err) => console.warn("[reply-webhook] chatbot_route_failed:", err.message));
           }
         }
@@ -2847,7 +2865,14 @@ export function registerCampaignsRoutes(app, deps) {
         fetch("http://localhost:3001/api/hardcoded-chat-webhook", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clientId, phone, message: replyText }),
+          body: JSON.stringify({
+            clientId,
+            phone,
+            message: replyText,
+            waMessageId: rawMessageId,
+            isInternalForward: true,
+            source: "campaign-reply-webhook",
+          }),
         }).catch((err) => console.warn("[reply-webhook] chatbot_route_failed:", err.message));
       }
 
