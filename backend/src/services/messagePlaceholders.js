@@ -93,3 +93,43 @@ export function applyMessagePlaceholders(text, lead = {}, phone = "", extraConte
 
   return raw;
 }
+
+/**
+ * Normaliza quebras de linha artificiais geradas no meio de frases:
+ * - \n duplo (linhas em branco) = parágrafo -> PRESERVA
+ * - \n simples no meio de frase = artefato -> converte em espaço
+ *   (se linha anterior não termina em pontuação final . ! ? : e próxima linha começa em minúscula)
+ * - nos demais casos, preserva a quebra.
+ */
+export function normalizeSentenceNewlines(raw) {
+  if (!raw || typeof raw !== "string") return "";
+
+  // Divide por quebras de parágrafo (\n\n) para isolar blocos
+  const paragraphs = raw.split(/\r?\n\s*\r?\n/);
+
+  const cleanedParagraphs = paragraphs.map((paragraph) => {
+    const lines = paragraph.split(/\r?\n/);
+    if (lines.length <= 1) return paragraph.trim();
+
+    let result = lines[0].trimEnd();
+    for (let i = 1; i < lines.length; i++) {
+      const prevLine = result.trimEnd();
+      const currentLine = lines[i].trimStart();
+
+      if (!currentLine) continue;
+
+      const lastChar = prevLine.slice(-1);
+      const endsWithPunctuation = [".", "!", "?", ":"].includes(lastChar);
+      const startsWithLowercase = /^[a-zà-ÿ0-9]/.test(currentLine);
+
+      if (!endsWithPunctuation && startsWithLowercase) {
+        result = `${result} ${currentLine}`;
+      } else {
+        result = `${result}\n${currentLine}`;
+      }
+    }
+    return result;
+  });
+
+  return cleanedParagraphs.filter(Boolean).join("\n\n");
+}

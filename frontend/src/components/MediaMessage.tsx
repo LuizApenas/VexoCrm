@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FileText, ImageOff, Loader2, Mic, MicOff, Volume2 } from "lucide-react";
 import { useMediaMessage, type MediaType } from "@/hooks/useMediaMessage";
 import { cn } from "@/lib/utils";
+import { normalizeMessageText } from "@/lib/messageFormatting";
 
 function AudioPlayer({ src, transcription }: { src: string; transcription: string | null }) {
   const [expanded, setExpanded] = useState(false);
@@ -77,7 +78,7 @@ export function MediaMessage({ messageId, hasMedia, fallbackBody, fromMe, classN
           fontWeight: 400,
         }}
       >
-        {fallbackBody || "[mensagem sem texto]"}
+        {normalizeMessageText(fallbackBody) || "[mensagem sem texto]"}
       </p>
     );
   }

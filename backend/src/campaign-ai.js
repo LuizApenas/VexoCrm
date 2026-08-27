@@ -1,6 +1,7 @@
 import { Groq } from "groq-sdk";
 import { callLlmChatCompletion } from "./chatbot-ai-engine.js";
 import { defaultGroqModel } from "./services/llmModels.js";
+import { normalizeSentenceNewlines } from "./services/messagePlaceholders.js";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 // Modelo instruct, nao de raciocinio. Medido 06/08/2026: gerar 25 variacoes e
@@ -524,6 +525,7 @@ ${varRules}
 6. SAUDAÇÕES ATEMPORAIS: Proibido "bom dia", "boa tarde", "boa noite". Use "Olá", "Oi", "Tudo bem?", ou inicie direto.
 7. SEM DUPLICATAS: Nenhuma variação pode ser idêntica à mensagem base nem a outra variação.
 8. Português do Brasil coloquial, educado e fluido.
+9. FLUXO CONTÍNUO DE FRASES: NUNCA quebre linhas no meio de uma mesma frase (ex.: quebras artificiais de ~60 caracteres). Mantenha cada frase em linha contínua. Use quebra dupla (\n\n) exclusivamente para separar parágrafos distintos.
 
 Retorne EXCLUSIVAMENTE um objeto JSON no formato:
 {
@@ -559,7 +561,7 @@ Retorne EXCLUSIVAMENTE um objeto JSON no formato:
   const seen = new Set([normalizedBase.toLowerCase()]);
 
   for (const raw of rawVariants) {
-    let v = normalizeString(raw);
+    let v = normalizeSentenceNewlines(normalizeString(raw));
     if (!v || v.length < 4) continue;
     for (const k of varKeys) {
       const singleBrace = k.replace(/^\{\{/, "{").replace(/\}\}$/, "}");
