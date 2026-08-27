@@ -10,6 +10,7 @@ export function registerFollowupQueueRoutes(app, deps) {
 
   // GET /api/followup-queue — lê followup_schedules + joins + status derivado
   app.get("/api/followup-queue", requireFirebaseAuth, async (req, res) => {
+    const tenantId = normalizeString(req.query?.tenantId || req.query?.clientId) || null;
     const companyId = normalizeString(req.query?.companyId) || null;
     const campaignId = normalizeString(req.query?.campaignId) || null;
     const status = normalizeString(req.query?.status) || null;
@@ -20,7 +21,7 @@ export function registerFollowupQueueRoutes(app, deps) {
     const rawLimit = Number.parseInt(String(req.query?.limit ?? "50"), 10);
     const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 200);
 
-    const validStatuses = ["active", "awaiting_reply", "replied", "failed", "cancelled", "converted"];
+    const validStatuses = ["active", "awaiting_reply", "replied", "failed", "cancelled", "completed", "converted"];
     if (status && !validStatuses.includes(status)) {
       return sendError(res, 400, "INVALID_QUERY", `status must be one of: ${validStatuses.join(", ")}`);
     }
@@ -29,7 +30,8 @@ export function registerFollowupQueueRoutes(app, deps) {
       const params = [];
       const filters = [];
       let idx = 1;
-      if (companyId) { params.push(companyId); filters.push(`fco.id = $${idx++}`); }
+      if (tenantId)   { params.push(tenantId);   filters.push(`fco.tenant_id = $${idx++}`); }
+      if (companyId)  { params.push(companyId);  filters.push(`fco.id = $${idx++}`); }
       if (campaignId) { params.push(campaignId); filters.push(`fc.id = $${idx++}`); }
       if (dateFrom)   { params.push(dateFrom);   filters.push(`fs.created_at >= $${idx++}`); }
       if (dateTo)     { params.push(dateTo);     filters.push(`fs.created_at <= $${idx++}`); }
@@ -51,16 +53,32 @@ export function registerFollowupQueueRoutes(app, deps) {
             fs.meeting_datetime,
             fs.created_at,
             fs.campaign_id,
+            fs.status     AS raw_status,
             fc.name       AS campaign_name,
             fc.company_id,
             fco.name      AS company_name,
+            fco.tenant_id,
+            (
+              SELECT COUNT(ft.id)
+                FROM followup_templates ft
+               WHERE ft.campaign_id = fs.campaign_id AND ft.is_active = true
+            ) AS total_steps,
             COUNT(fj.id) FILTER (WHERE fj.status = 'sent')    AS jobs_sent,
             COUNT(fj.id) FILTER (WHERE fj.status = 'failed')  AS jobs_failed,
             COUNT(fj.id) FILTER (WHERE fj.status = 'pending') AS jobs_pending,
             MAX(fj.sent_at)                                    AS last_sent_at,
+            MIN(fj.scheduled_for) FILTER (WHERE fj.status = 'pending') AS next_scheduled_for,
+            (
+              SELECT fj_err.error_log
+                FROM followup_jobs fj_err
+               WHERE fj_err.schedule_id = fs.id AND fj_err.status = 'failed'
+               ORDER BY fj_err.created_at DESC
+               LIMIT 1
+            ) AS last_error_log,
             CASE
               WHEN fs.status = 'cancelled' THEN 'cancelled'
               WHEN fs.status = 'converted' THEN 'converted'
+              WHEN fs.status = 'missing_phone' THEN 'missing_phone'
               WHEN EXISTS (
                 SELECT 1 FROM followup_replies r
                 WHERE r.company_id = fc.company_id AND r.phone = fs.phone
@@ -68,7 +86,7 @@ export function registerFollowupQueueRoutes(app, deps) {
               WHEN COUNT(fj.id) FILTER (WHERE fj.status = 'failed') > 0
                AND COUNT(fj.id) FILTER (WHERE fj.status = 'pending') = 0 THEN 'failed'
               WHEN COUNT(fj.id) FILTER (WHERE fj.status = 'sent') > 0
-               AND COUNT(fj.id) FILTER (WHERE fj.status = 'pending') = 0 THEN 'awaiting_reply'
+               AND COUNT(fj.id) FILTER (WHERE fj.status = 'pending') = 0 THEN 'completed'
               ELSE 'active'
             END AS derived_status
           FROM followup_schedules fs
@@ -76,7 +94,7 @@ export function registerFollowupQueueRoutes(app, deps) {
           JOIN followup_companies fco ON fco.id = fc.company_id
           LEFT JOIN followup_jobs fj  ON fj.schedule_id = fs.id
           ${baseWhere}
-          GROUP BY fs.id, fc.id, fco.id, fc.name, fco.name
+          GROUP BY fs.id, fc.id, fco.id, fc.name, fco.name, fco.tenant_id
         )
         SELECT *, COUNT(*) OVER() AS total_count
         FROM base
@@ -88,25 +106,39 @@ export function registerFollowupQueueRoutes(app, deps) {
       const { rows } = await fupQuery(sql, params);
       let total = rows.length > 0 ? Number(rows[0].total_count) : 0;
 
-      const items = rows.map((r) => ({
-        id:              r.id,
-        leadName:        r.lead_name,
-        phone:           r.phone,
-        origin:          r.origin,
-        companyId:       r.company_id,
-        companyName:     r.company_name,
-        campaignId:      r.campaign_id,
-        campaignName:    r.campaign_name,
-        status:          r.derived_status,
-        jobsSent:        Number(r.jobs_sent),
-        jobsFailed:      Number(r.jobs_failed),
-        jobsPending:     Number(r.jobs_pending),
-        lastSentAt:      r.last_sent_at || null,
-        meetingDatetime: r.meeting_datetime || null,
-        createdAt:       r.created_at,
-      }));
+      const items = rows.map((r) => {
+        const jobsSent = Number(r.jobs_sent) || 0;
+        const jobsFailed = Number(r.jobs_failed) || 0;
+        const jobsPending = Number(r.jobs_pending) || 0;
+        const totalSteps = Number(r.total_steps) || 1;
+        const currentStep = Math.min(totalSteps, jobsSent + (jobsPending > 0 || jobsFailed > 0 ? 1 : 0));
 
-      if (!companyId) {
+        return {
+          id:              r.id,
+          leadName:        r.lead_name,
+          phone:           r.phone,
+          origin:          r.origin,
+          companyId:       r.company_id,
+          companyName:     r.company_name,
+          tenantId:        r.tenant_id,
+          campaignId:      r.campaign_id,
+          campaignName:    r.campaign_name,
+          status:          r.derived_status,
+          rawStatus:       r.raw_status,
+          jobsSent,
+          jobsFailed,
+          jobsPending,
+          totalSteps,
+          currentStep:     currentStep || 1,
+          lastSentAt:      r.last_sent_at || null,
+          nextScheduledFor: r.next_scheduled_for || null,
+          lastErrorLog:    r.last_error_log || null,
+          meetingDatetime: r.meeting_datetime || null,
+          createdAt:       r.created_at,
+        };
+      });
+
+      if (!companyId && !tenantId) {
         const { data: crmRows, error: crmRowsError } = await supabase
           .from("lead_import_items")
           .select("id, import_id, client_id, telefone, nome, normalized_data, ultima_interacao_bot, created_at")
@@ -214,19 +246,27 @@ export function registerFollowupQueueRoutes(app, deps) {
         resolvedTemplateId = tplRows[0].id;
       }
 
+      await fupQuery(
+        `UPDATE followup_schedules SET status = 'active' WHERE id = $1`,
+        [scheduleId]
+      );
+
+      const delayMs = Math.max(0, Math.round(delayMinutes * 60 * 1000));
+      const scheduledFor = new Date(Date.now() + delayMs);
+
       const { rows: jobRows } = await fupQuery(
-        `INSERT INTO followup_jobs (schedule_id, template_id, status) VALUES ($1, $2, 'pending') RETURNING id`,
-        [scheduleId, resolvedTemplateId]
+        `INSERT INTO followup_jobs (schedule_id, template_id, status, scheduled_for) VALUES ($1, $2, 'pending', $3) RETURNING id`,
+        [scheduleId, resolvedTemplateId, scheduledFor]
       );
       const newJobId = jobRows[0].id;
 
       await getFollowupQueue().add(
         "send-followup",
         { jobId: newJobId },
-        { delay: delayMinutes * 60 * 1000, jobId: `fup-reschedule-${newJobId}` }
+        { delay: delayMs, jobId: `fup-reschedule-${newJobId}-${Date.now()}` }
       );
 
-      return res.json({ success: true, jobId: newJobId, delayMinutes });
+      return res.json({ success: true, jobId: newJobId, delayMinutes, scheduledFor });
     } catch (err) {
       sendError(res, 500, "RESCHEDULE_FAILED", err instanceof Error ? err.message : "Failed to reschedule");
     }

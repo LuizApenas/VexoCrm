@@ -8,6 +8,7 @@ export type FollowupStatus =
   | "replied"
   | "failed"
   | "cancelled"
+  | "completed"
   | "converted";
 
 export interface FollowupItem {
@@ -17,18 +18,25 @@ export interface FollowupItem {
   origin: string | null;
   companyId: string;
   companyName: string;
+  tenantId?: string;
   campaignId: string;
   campaignName: string;
   status: FollowupStatus;
+  rawStatus?: string;
   jobsSent: number;
   jobsFailed: number;
   jobsPending: number;
+  totalSteps: number;
+  currentStep: number;
   lastSentAt: string | null;
+  nextScheduledFor: string | null;
+  lastErrorLog: string | null;
   meetingDatetime: string | null;
   createdAt: string;
 }
 
 export interface FollowupQueueFilters {
+  tenantId?: string;
   companyId?: string;
   campaignId?: string;
   status?: FollowupStatus | "";
@@ -52,11 +60,12 @@ export function useFollowupQueue(filters: FollowupQueueFilters) {
       if (!token) throw new Error("Usuário não autenticado.");
 
       const params = new URLSearchParams();
-      if (filters.companyId) params.set("companyId", filters.companyId);
+      if (filters.tenantId)   params.set("tenantId", filters.tenantId);
+      if (filters.companyId)  params.set("companyId", filters.companyId);
       if (filters.campaignId) params.set("campaignId", filters.campaignId);
-      if (filters.status)    params.set("status", filters.status);
-      if (filters.dateFrom)  params.set("dateFrom", filters.dateFrom);
-      if (filters.dateTo)    params.set("dateTo", filters.dateTo);
+      if (filters.status)     params.set("status", filters.status);
+      if (filters.dateFrom)   params.set("dateFrom", filters.dateFrom);
+      if (filters.dateTo)     params.set("dateTo", filters.dateTo);
 
       const res = await fetchApi(`/api/followup-queue?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -137,6 +146,27 @@ export function useConvertToInbound() {
       });
 
       if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao converter para inbound"));
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["followup-queue"] }),
+  });
+}
+
+export function useRetryFollowupStep() {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string): Promise<void> => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+
+      const res = await fetchApi(`/api/followup-queue/${id}/reschedule`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ delayMinutes: 0 }),
+      });
+
+      if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao reenviar passo"));
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["followup-queue"] }),
   });

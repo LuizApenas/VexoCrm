@@ -14,8 +14,10 @@ import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useFupCompanies, useCreateFupCompany, useUpdateFupCompany } from "@/hooks/useFollowupAdmin";
 import { FollowUpJourneys } from "@/components/followup/FollowUpJourneys";
 import CadenceEditor from "@/components/followup/CadenceEditor";
+import { FollowupQueueTable } from "@/components/followup/FollowupQueueTable";
 import { UpsellCard } from "@/components/UpsellCard";
 import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
+import { cn } from "@/lib/utils";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MÓDULO DE FOLLOW-UP — fluxo LINEAR (redesenho). Em vez de abas soltas, uma sequência
@@ -167,6 +169,8 @@ export default function FollowupDashboard() {
     }
   }, [companies, companyId]);
 
+  const [activeTab, setActiveTab] = useState<"cadencias" | "fila">("cadencias");
+
   const activeCompany = companies.find((c) => c.id === companyId) || companies[0] || null;
   const hasCompany = companies.length > 0 || connectedInstances.length > 0;
 
@@ -228,122 +232,158 @@ export default function FollowupDashboard() {
       subtitle="Configure, do começo ao fim, como o Vexo faz o acompanhamento automático dos seus leads."
       spacing="space-y-4"
     >
-      {/* Passo 1 — Número de WhatsApp do tenant */}
-      <StepSection
-        step={1}
-        icon={<Smartphone className="h-4 w-4" />}
-        title="Número de WhatsApp"
-        subtitle="O canal conectado por onde as mensagens de follow-up são disparadas automaticamente."
-      >
-        {loadingCompanies || isAutoCreating ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-indigo-500 animate-ping" />
-            Sincronizando canais de WhatsApp conectados...
-          </div>
-        ) : connectedInstances.length === 0 ? (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-4 text-amber-900 dark:text-amber-200">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="space-y-1">
-                <p className="font-semibold text-sm">Nenhum WhatsApp conectado</p>
-                <p className="text-xs text-muted-foreground">
-                  Para ativar o envio de follow-up, conecte um número de WhatsApp em Canais & Chips.
-                </p>
-              </div>
-              <Button asChild size="sm" variant="default" className="shrink-0">
-                <Link to="/crm/chips-whatsapp">Conectar WhatsApp</Link>
-              </Button>
-            </div>
-          </div>
-        ) : connectedInstances.length === 1 ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge
-              variant="outline"
-              className="gap-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 text-sm font-semibold rounded-lg"
-            >
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              {connectedInstances[0].name}
-            </Badge>
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-              Canal ativo vinculado automaticamente para disparos de follow-up
-            </span>
-          </div>
-        ) : (
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 max-w-lg">
-            <Label className="text-xs font-semibold shrink-0">Canal de Disparo:</Label>
-            <Select value={activeInstanceName} onValueChange={handleSelectInstance}>
-              <SelectTrigger className="h-9 text-sm rounded-lg bg-background border-border/80">
-                <SelectValue placeholder="Selecione o chip de disparo" />
-              </SelectTrigger>
-              <SelectContent>
-                {connectedInstances.map((inst: any) => (
-                  <SelectItem key={inst.id || inst.name} value={inst.name} className="text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                      <span className="font-medium">{inst.name}</span>
-                      {inst.is_default && (
-                        <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1.5">
-                          Padrão
-                        </Badge>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-[11px] text-muted-foreground">
-              ({connectedInstances.length} chips disponíveis)
-            </span>
-          </div>
-        )}
-      </StepSection>
-
-      {/* Passo 2 — Cadências (núcleo, integrado com o Banco de Dados) */}
-      {isSectionAllowed("cadencias") && (
-        <StepSection
-          step={2}
-          icon={<Send className="h-4 w-4" />}
-          title="Cadências de follow-up"
-          subtitle="Monte sequências de mensagens reutilizáveis (ex.: lembretes 7d/3d/1d antes de uma data). É o que você aplica nos leads pelo Banco de Dados."
-        >
-          {hasCompany ? (
-            <CadenceEditor companyId={companyId} />
-          ) : (
-            <p className="text-xs text-muted-foreground">Cadastre o número de WhatsApp (passo 1) para criar cadências.</p>
+      {/* Navegação entre Abas do Módulo Follow-up */}
+      <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl w-fit border border-border">
+        <button
+          onClick={() => setActiveTab("cadencias")}
+          className={cn(
+            "rounded-lg px-4 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all",
+            activeTab === "cadencias"
+              ? "bg-white text-slate-900 shadow dark:bg-slate-700 dark:text-white"
+              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
           )}
-        </StepSection>
+        >
+          <Send className="h-3.5 w-3.5" />
+          Cadências de Mensagens
+        </button>
+        <button
+          onClick={() => setActiveTab("fila")}
+          className={cn(
+            "rounded-lg px-4 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all",
+            activeTab === "fila"
+              ? "bg-white text-slate-900 shadow dark:bg-slate-700 dark:text-white"
+              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          )}
+        >
+          <Zap className="h-3.5 w-3.5" />
+          Fila de Acompanhamento
+        </button>
+      </div>
+
+      {activeTab === "cadencias" && (
+        <div className="space-y-4">
+          {/* Passo 1 — Número de WhatsApp do tenant */}
+          <StepSection
+            step={1}
+            icon={<Smartphone className="h-4 w-4" />}
+            title="Número de WhatsApp"
+            subtitle="O canal conectado por onde as mensagens de follow-up são disparadas automaticamente."
+          >
+            {loadingCompanies || isAutoCreating ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="h-2 w-2 rounded-full bg-indigo-500 animate-ping" />
+                Sincronizando canais de WhatsApp conectados...
+              </div>
+            ) : connectedInstances.length === 0 ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-4 text-amber-900 dark:text-amber-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="font-semibold text-sm">Nenhum WhatsApp conectado</p>
+                    <p className="text-xs text-muted-foreground">
+                      Para ativar o envio de follow-up, conecte um número de WhatsApp em Canais & Chips.
+                    </p>
+                  </div>
+                  <Button asChild size="sm" variant="default" className="shrink-0">
+                    <Link to="/crm/chips-whatsapp">Conectar WhatsApp</Link>
+                  </Button>
+                </div>
+              </div>
+            ) : connectedInstances.length === 1 ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge
+                  variant="outline"
+                  className="gap-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 text-sm font-semibold rounded-lg"
+                >
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  {connectedInstances[0].name}
+                </Badge>
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  Canal ativo vinculado automaticamente para disparos de follow-up
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 max-w-lg">
+                <Label className="text-xs font-semibold shrink-0">Canal de Disparo:</Label>
+                <Select value={activeInstanceName} onValueChange={handleSelectInstance}>
+                  <SelectTrigger className="h-9 text-sm rounded-lg bg-background border-border/80">
+                    <SelectValue placeholder="Selecione o chip de disparo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {connectedInstances.map((inst: any) => (
+                      <SelectItem key={inst.id || inst.name} value={inst.name} className="text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          <span className="font-medium">{inst.name}</span>
+                          {inst.is_default && (
+                            <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1.5">
+                              Padrão
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-[11px] text-muted-foreground">
+                  ({connectedInstances.length} chips disponíveis)
+                </span>
+              </div>
+            )}
+          </StepSection>
+
+          {/* Passo 2 — Cadências (núcleo, integrado com o Banco de Dados) */}
+          {isSectionAllowed("cadencias") && (
+            <StepSection
+              step={2}
+              icon={<Send className="h-4 w-4" />}
+              title="Cadências de follow-up"
+              subtitle="Monte sequências de mensagens reutilizáveis (ex.: lembretes 7d/3d/1d antes de uma data). É o que você aplica nos leads pelo Banco de Dados."
+            >
+              {hasCompany ? (
+                <CadenceEditor companyId={companyId} />
+              ) : (
+                <p className="text-xs text-muted-foreground">Cadastre o número de WhatsApp (passo 1) para criar cadências.</p>
+              )}
+            </StepSection>
+          )}
+
+          {/* Passo 3 — Automações por evento (Ocultado até os emissores de eventos serem conectados no CRM) */}
+          {false as boolean && isSectionAllowed("journeys") && hasCompany && (
+            <StepSection
+              step={3}
+              icon={<Zap className="h-4 w-4" />}
+              title="Automações por evento (opcional)"
+              subtitle="Mensagens disparadas automaticamente por gatilhos: novo lead, agendamento, proposta enviada, no-show."
+              collapsible
+              defaultOpen={isAutomationsUnlocked}
+            >
+              {isAutomationsUnlocked ? (
+                <FollowUpJourneys companyId={companyId} />
+              ) : (
+                <UpsellCard
+                  title="Automações por Evento"
+                  subtitle="Exclusivo do Plano Avançado"
+                  description="Gatilhos automáticos de Novo Lead, Agendamento e No-Show são exclusivos do Plano Avançado. Automatize 100% do seu pós-venda!"
+                  moduleName="Automações por Evento (Follow-up)"
+                  benefits={[
+                    "Disparo imediato de boas-vindas para novos leads cadastrados",
+                    "Lembretes automáticos antes e depois de reuniões (Agendamento & No-Show)",
+                    "Reengajamento automático de propostas comerciais sem resposta",
+                    "Reciclagem e reativação contínua de leads inativos ou perdidos",
+                  ]}
+                >
+                  <FollowUpJourneys companyId={companyId} />
+                </UpsellCard>
+              )}
+            </StepSection>
+          )}
+        </div>
       )}
 
-      {/* Passo 3 — Automações por evento (Ocultado até os emissores de eventos serem conectados no CRM) */}
-      {/* Flag de exibição preservando código e fup_journeys conforme decisão de arquitetura */}
-      {false as boolean && isSectionAllowed("journeys") && hasCompany && (
-        <StepSection
-          step={3}
-          icon={<Zap className="h-4 w-4" />}
-          title="Automações por evento (opcional)"
-          subtitle="Mensagens disparadas automaticamente por gatilhos: novo lead, agendamento, proposta enviada, no-show."
-          collapsible
-          defaultOpen={isAutomationsUnlocked}
-        >
-          {isAutomationsUnlocked ? (
-            <FollowUpJourneys companyId={companyId} />
-          ) : (
-            <UpsellCard
-              title="Automações por Evento"
-              subtitle="Exclusivo do Plano Avançado"
-              description="Gatilhos automáticos de Novo Lead, Agendamento e No-Show são exclusivos do Plano Avançado. Automatize 100% do seu pós-venda!"
-              moduleName="Automações por Evento (Follow-up)"
-              benefits={[
-                "Disparo imediato de boas-vindas para novos leads cadastrados",
-                "Lembretes automáticos antes e depois de reuniões (Agendamento & No-Show)",
-                "Reengajamento automático de propostas comerciais sem resposta",
-                "Reciclagem e reativação contínua de leads inativos ou perdidos",
-              ]}
-            >
-              <FollowUpJourneys companyId={companyId} />
-            </UpsellCard>
-          )}
-        </StepSection>
+      {/* Aba da Fila de Acompanhamento */}
+      {activeTab === "fila" && (
+        <FollowupQueueTable companyId={companyId} tenantId={tenantId} />
       )}
     </PageShell>
   );
