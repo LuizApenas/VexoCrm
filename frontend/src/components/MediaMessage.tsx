@@ -68,7 +68,15 @@ export function MediaMessage({ messageId, hasMedia, fallbackBody, fromMe, classN
 
   if (!hasMedia) {
     return (
-      <p className={cn("whitespace-pre-wrap break-words", className)}>
+      <p
+        className={cn("whitespace-pre-wrap break-words", className)}
+        style={{
+          fontFamily: '-apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+          fontSize: "14px",
+          lineHeight: "1.35",
+          fontWeight: 400,
+        }}
+      >
         {fallbackBody || "[mensagem sem texto]"}
       </p>
     );

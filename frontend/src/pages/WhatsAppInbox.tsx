@@ -991,7 +991,7 @@ export default function WhatsAppInbox({
               <div
                 ref={messagesContainerRef}
                 onScroll={handleMessagesScroll}
-                className="flex-1 space-y-1.5 overflow-y-auto p-3 sm:p-4 bg-slate-50/70 dark:bg-slate-950/40"
+                className="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-50/70 dark:bg-slate-950/40"
               >
                 {messagesQuery.isLoading ? (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
@@ -1028,18 +1028,28 @@ export default function WhatsAppInbox({
                       const currentDayStr = item.timestamp ? new Date(item.timestamp * 1000).toDateString() : null;
                       const prevDayStr = prevItem?.timestamp ? new Date(prevItem.timestamp * 1000).toDateString() : null;
                       const showDayDivider = Boolean(currentDayStr && currentDayStr !== prevDayStr);
+                      const isSameAuthor = Boolean(
+                        prevItem &&
+                        !showDayDivider &&
+                        !prevItem.isInternalNote &&
+                        !item.isInternalNote &&
+                        prevItem.fromMe === item.fromMe
+                      );
+                      const marginTopClass = idx === 0 ? "mt-0" : showDayDivider ? "mt-2" : isSameAuthor ? "mt-[2px]" : "mt-[8px]";
 
                       return (
-                        <div key={item.id || `${item.timestamp}-${item.body}-${idx}`} className="space-y-1">
+                        <div key={item.id || `${item.timestamp}-${item.body}-${idx}`} className={marginTopClass}>
                           {showDayDivider && (
-                            <div className="my-2 flex items-center justify-center sticky top-0 z-10 pointer-events-none">
+                            <div className="my-3 flex items-center justify-center sticky top-0 z-10 pointer-events-none">
                               <span className="rounded-full border border-border/70 bg-muted/90 px-2.5 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider shadow-xs backdrop-blur-xs">
                                 {formatDaySeparator(item.timestamp)}
                               </span>
                             </div>
                           )}
                           {item.isInternalNote ? (
-                            <div className="mx-auto my-1 max-w-[min(85%,75ch)] sm:max-w-[min(75%,75ch)] rounded-xl border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200 shadow-xs">
+                            <div
+                              className="mx-auto max-w-[min(80%,900px)] rounded-xl border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200 shadow-xs"
+                            >
                               <div className="flex items-center justify-between gap-2 mb-1 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
                                 <span className="flex items-center gap-1.5">
                                   <Lock className="h-3 w-3" />
@@ -1049,33 +1059,46 @@ export default function WhatsAppInbox({
                                   {formatTimestamp(item.timestamp, true)}
                                 </span>
                               </div>
-                              <p className="whitespace-pre-wrap font-sans text-xs font-normal leading-relaxed">{item.body}</p>
+                              <p
+                                className="whitespace-pre-wrap text-xs font-normal leading-relaxed"
+                                style={{ fontFamily: '-apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif' }}
+                              >
+                                {item.body}
+                              </p>
                             </div>
                           ) : (
                             <div
                               className={cn(
-                                "relative rounded-xl px-3.5 py-2 text-[13px] font-normal leading-relaxed shadow-xs transition-colors font-sans",
-                                "max-w-[min(85%,75ch)] sm:max-w-[min(75%,75ch)]",
+                                "relative rounded-lg shadow-xs transition-colors",
+                                "max-w-[min(80%,900px)]",
                                 item.fromMe
-                                  ? "ml-auto rounded-br-xs bg-emerald-600 text-white"
-                                  : "mr-auto rounded-bl-xs border border-border/80 bg-background text-foreground"
+                                  ? "ml-auto rounded-tr-none bg-emerald-600 text-white"
+                                  : "mr-auto rounded-tl-none border border-border/80 bg-background text-foreground"
                               )}
+                              style={{
+                                maxWidth: "min(80%, 900px)",
+                                padding: "6px 9px 8px",
+                              }}
                             >
                               <MediaMessage
                                 messageId={item.id}
                                 hasMedia={item.hasMedia}
                                 fallbackBody={item.body}
                                 fromMe={item.fromMe}
-                                className="font-normal text-[13px] leading-relaxed break-words"
+                                className="font-normal select-text"
                               />
                               <div
                                 className={cn(
-                                  "mt-1 flex items-center justify-end gap-1 text-[10px] font-normal leading-none select-none font-mono opacity-80",
-                                  item.fromMe ? "text-emerald-100/90" : "text-muted-foreground"
+                                  "mt-0.5 flex items-center justify-end gap-1 text-[11px] font-normal leading-none select-none",
+                                  item.fromMe ? "text-emerald-100/75" : "text-muted-foreground/75"
                                 )}
+                                style={{
+                                  fontFamily: '-apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+                                  fontSize: "11px",
+                                }}
                               >
                                 <span>{formatTimestamp(item.timestamp)}</span>
-                                {item.fromMe && <span className="tracking-tighter">✓✓</span>}
+                                {item.fromMe && <span className="tracking-tighter text-[11px]">✓✓</span>}
                               </div>
                             </div>
                           )}
