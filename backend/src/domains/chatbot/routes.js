@@ -774,6 +774,27 @@ export function registerChatbotRoutes(app, deps) {
         }
       }
 
+      const rawAfter = normalizeString(req.query.afterTimestamp || req.query.after);
+      let afterFilter = "";
+      if (rawAfter) {
+        let afterIso = null;
+        const num = Number(rawAfter);
+        if (!Number.isNaN(num) && num > 0) {
+          const ms = num < 10000000000 ? num * 1000 : num;
+          afterIso = new Date(ms).toISOString();
+        } else {
+          const parsed = new Date(rawAfter);
+          if (!Number.isNaN(parsed.getTime())) {
+            afterIso = parsed.toISOString();
+          }
+        }
+        if (afterIso) {
+          queryParams.push(afterIso);
+          const idx = queryParams.length;
+          afterFilter = `AND COALESCE(message_timestamp, delivered_at, created_at) > $${idx}`;
+        }
+      }
+
       const queryText = `
         SELECT
           id,
@@ -787,7 +808,7 @@ export function registerChatbotRoutes(app, deps) {
           wa_message_id,
           sender_type
         FROM public.lead_messages
-        WHERE client_id = $1 AND phone = ANY($2) ${instanceFilter} ${beforeFilter}
+        WHERE client_id = $1 AND phone = ANY($2) ${instanceFilter} ${beforeFilter} ${afterFilter}
         ORDER BY COALESCE(message_timestamp, delivered_at, created_at) DESC NULLS LAST, id DESC
         LIMIT $3
       `;
@@ -854,10 +875,16 @@ export function registerChatbotRoutes(app, deps) {
         ? new Date(oldestRow.effective_timestamp).toISOString()
         : (oldestRow?.created_at ? new Date(oldestRow.created_at).toISOString() : null);
 
+      const newestRow = result.rows[0];
+      const newestTimestamp = newestRow?.effective_timestamp
+        ? new Date(newestRow.effective_timestamp).toISOString()
+        : (newestRow?.created_at ? new Date(newestRow.created_at).toISOString() : null);
+
       res.json({
         items: items.reverse(),
         hasMore: result.rows.length === limit,
         oldestTimestamp,
+        newestTimestamp,
       });
     } catch (error) {
       console.error("whatsapp database messages query error:", error);

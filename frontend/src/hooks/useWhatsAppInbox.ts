@@ -69,8 +69,28 @@ async function parseApiResponse<T>(res: Response): Promise<T> {
   throw new Error(message);
 }
 
+export function useDocumentVisibility(): boolean {
+  const [isVisible, setIsVisible] = useState(() =>
+    typeof document !== "undefined" ? document.visibilityState === "visible" : true
+  );
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handleVisibilityChange = () => {
+      setIsVisible(document.visibilityState === "visible");
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  return isVisible;
+}
+
 export function useWhatsAppChats(clientId: string | null, instanceName: string | null, enabled: boolean) {
   const { getIdToken } = useAuth();
+  const isVisible = useDocumentVisibility();
   const [olderPagesEnabled, setOlderPagesEnabled] = useState(false);
 
   useEffect(() => {
@@ -111,8 +131,9 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
     queryKey: ["whatsapp-chats", clientId, instanceName, "recent"],
     enabled: enabled && !!clientId,
     queryFn: async () => fetchChatsPage(0),
-    refetchInterval: enabled && !!clientId ? 5000 : false,
-    staleTime: 0,
+    refetchInterval: isVisible && enabled && !!clientId ? 12000 : false,
+    refetchIntervalInBackground: false,
+    staleTime: 5000,
   });
 
   const olderChatsQuery = useInfiniteQuery({
@@ -121,7 +142,7 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
     initialPageParam: 20,
     queryFn: async ({ pageParam }) => fetchChatsPage(pageParam),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextOffset : undefined),
-    staleTime: 0,
+    staleTime: 30000,
   });
 
   const olderItems = olderChatsQuery.data?.pages.flatMap((page) => page.items) ?? [];
@@ -134,7 +155,9 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
       deduped.set(item.id, item);
     }
 
-    return Array.from(deduped.values());
+    const list = Array.from(deduped.values());
+    // Reordenar por mensagem mais recente para que novas mensagens subam para o topo
+    return list.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
   }, [olderItems, recentChatsQuery.data?.items]);
 
   const total = recentChatsQuery.data?.total ?? items.length;
@@ -169,6 +192,7 @@ export interface WhatsAppMessagesPage {
   items: WhatsAppMessage[];
   hasMore: boolean;
   oldestTimestamp: string | null;
+  newestTimestamp?: string | null;
 }
 
 export function useWhatsAppMessages(
@@ -178,6 +202,8 @@ export function useWhatsAppMessages(
   enabled: boolean
 ) {
   const { getIdToken } = useAuth();
+  const isVisible = useDocumentVisibility();
+  const queryClient = useQueryClient();
 
   const fetchMessagesPage = async (beforeTimestamp: string | null): Promise<WhatsAppMessagesPage> => {
     const token = await getIdToken();
@@ -202,23 +228,31 @@ export function useWhatsAppMessages(
       items?: WhatsAppMessage[];
       hasMore?: boolean;
       oldestTimestamp?: string | null;
+      newestTimestamp?: string | null;
     }>(res);
 
     return {
       items: Array.isArray(payload.items) ? payload.items : [],
       hasMore: Boolean(payload.hasMore),
       oldestTimestamp: payload.oldestTimestamp ?? null,
+      newestTimestamp: payload.newestTimestamp ?? null,
     };
   };
 
+  const queryKey = useMemo(
+    () => ["whatsapp-messages", clientId, instanceName, chatId],
+    [clientId, instanceName, chatId]
+  );
+
   const query = useInfiniteQuery({
-    queryKey: ["whatsapp-messages", clientId, instanceName, chatId],
+    queryKey,
     enabled: enabled && !!chatId && !!clientId,
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }) => fetchMessagesPage(pageParam),
     getNextPageParam: (lastPage) => (lastPage.hasMore && lastPage.oldestTimestamp ? lastPage.oldestTimestamp : undefined),
-    refetchInterval: enabled && !!chatId && !!clientId ? 4000 : false,
-    staleTime: 0,
+    refetchInterval: false, // NUNCA refaz a consulta inteira via polling
+    refetchIntervalInBackground: false,
+    staleTime: Infinity,
   });
 
   const items = useMemo(() => {
@@ -255,6 +289,96 @@ export function useWhatsAppMessages(
     }
     return deduped;
   }, [query.data?.pages]);
+
+  // ── Polling Incremental com afterTimestamp (5 segundos) ────────────────────
+  useEffect(() => {
+    if (!enabled || !chatId || !clientId || !isVisible) return;
+
+    let isCancelled = false;
+
+    const pollIncrementalMessages = async () => {
+      if (isCancelled || typeof document === "undefined" || document.visibilityState !== "visible") {
+        return;
+      }
+
+      try {
+        const currentPages = queryClient.getQueryData<any>(queryKey)?.pages;
+        if (!currentPages || currentPages.length === 0) return;
+
+        // Encontra o timestamp mais recente entre todas as mensagens carregadas
+        const allLoaded = currentPages.flatMap((p: any) => p.items || []);
+        if (allLoaded.length === 0) return;
+
+        let maxTimeMs = 0;
+        for (const msg of allLoaded) {
+          const t = msg.effectiveTimestamp
+            ? new Date(msg.effectiveTimestamp).getTime()
+            : msg.createdAt
+            ? new Date(msg.createdAt).getTime()
+            : msg.timestamp
+            ? msg.timestamp * 1000
+            : 0;
+          if (t > maxTimeMs) maxTimeMs = t;
+        }
+
+        if (!maxTimeMs) return;
+        const afterIso = new Date(maxTimeMs).toISOString();
+
+        const token = await getIdToken();
+        if (!token || isCancelled) return;
+
+        const params = new URLSearchParams({
+          chatId: chatId || "",
+          limit: "50",
+          afterTimestamp: afterIso,
+        });
+
+        if (clientId) params.append("clientId", clientId);
+        if (instanceName) params.append("instanceName", instanceName);
+
+        const res = await fetch(`${API_BASE_URL}/api/whatsapp/messages?${params.toString()}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok || isCancelled) return;
+
+        const payload = await res.json().catch(() => null);
+        const newItems: WhatsAppMessage[] = Array.isArray(payload?.items) ? payload.items : [];
+
+        if (newItems.length > 0 && !isCancelled) {
+          queryClient.setQueryData<any>(queryKey, (oldData: any) => {
+            if (!oldData || !oldData.pages || oldData.pages.length === 0) return oldData;
+            const firstPage = oldData.pages[0];
+            const existingIds = new Set((firstPage.items || []).map((m: any) => String(m.id)));
+            const trulyNew = newItems.filter((m) => m.id && !existingIds.has(String(m.id)));
+
+            if (trulyNew.length === 0) return oldData;
+
+            const updatedFirstPage = {
+              ...firstPage,
+              items: [...(firstPage.items || []), ...trulyNew],
+            };
+
+            return {
+              ...oldData,
+              pages: [updatedFirstPage, ...oldData.pages.slice(1)],
+            };
+          });
+        }
+      } catch {
+        // Falhas silenciosas de polling em background
+      }
+    };
+
+    const intervalId = setInterval(pollIncrementalMessages, 5000);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [enabled, chatId, clientId, instanceName, isVisible, queryKey, getIdToken, queryClient]);
 
   const lastPage = query.data?.pages?.[query.data.pages.length - 1];
   const hasMore = lastPage ? lastPage.hasMore : false;
