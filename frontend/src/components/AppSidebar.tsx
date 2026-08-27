@@ -24,6 +24,12 @@ import { NavItem } from "@/components/appSidebar/NavItem";
 import { SidebarHeader } from "@/components/appSidebar/SidebarHeader";
 import { SidebarFooter } from "@/components/appSidebar/SidebarFooter";
 import { BrandCustomizer } from "@/components/appSidebar/BrandCustomizer";
+import {
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 
 export function AppSidebar() {
   const { logout, canAccessInternalPage, isAdminUser, user, accessProfile, isInternalUser } = useAuth();
@@ -155,24 +161,25 @@ export function AppSidebar() {
   const selectedPreset = COLOR_PRESETS[(color as keyof typeof COLOR_PRESETS) || "default"] || COLOR_PRESETS.default;
 
   return (
-    <aside
-      className={cn(
-        "print:hidden relative flex h-full shrink-0 flex-col overflow-hidden border-r border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,255,0.98),rgba(237,242,255,0.98))] text-slate-700 backdrop-blur-xl transition-all duration-200 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,10,34,0.98),rgba(5,6,24,0.98))] dark:text-slate-100",
-        collapsed ? "w-[74px]" : "w-[204px]"
-      )}
-      style={{
-        "--primary-from": selectedPreset.from,
-        "--primary-to": selectedPreset.to,
-        "--primary-shadow": selectedPreset.shadow,
-      } as React.CSSProperties}
-    >
-      <SidebarHeader
-        collapsed={collapsed}
-        logo={logo}
-        title={title}
-        selectedPreset={selectedPreset}
-        onOpenCustomizer={() => setIsCustomizerOpen(true)}
-      />
+    <TooltipProvider delayDuration={150}>
+      <aside
+        className={cn(
+          "print:hidden relative flex h-full shrink-0 flex-col overflow-hidden border-r border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,255,0.98),rgba(237,242,255,0.98))] text-slate-700 backdrop-blur-xl transition-all duration-200 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,10,34,0.98),rgba(5,6,24,0.98))] dark:text-slate-100",
+          collapsed ? "w-[74px]" : "w-[204px]"
+        )}
+        style={{
+          "--primary-from": selectedPreset.from,
+          "--primary-to": selectedPreset.to,
+          "--primary-shadow": selectedPreset.shadow,
+        } as React.CSSProperties}
+      >
+        <SidebarHeader
+          collapsed={collapsed}
+          logo={logo}
+          title={title}
+          selectedPreset={selectedPreset}
+          onOpenCustomizer={() => setIsCustomizerOpen(true)}
+        />
 
       <nav className="flex-1 overflow-y-auto px-2 py-3.5">
         {/* ── OPERAÇÃO ── */}
@@ -340,18 +347,31 @@ export function AppSidebar() {
 
         {/* ── Recolher sidebar ── */}
         <div className="mt-3 space-y-1">
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className={cn(
-              "flex w-full text-sm font-medium text-slate-600 transition-all hover:bg-slate-100/80 hover:text-slate-900 dark:text-sidebar-foreground dark:hover:bg-white/[0.04] dark:hover:text-foreground",
-              collapsed
-                ? "h-9 items-center justify-center rounded-xl px-0"
-                : "items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-[13px]"
-            )}
-          >
-            {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-            {!collapsed && <span>Recolher</span>}
-          </button>
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setCollapsed(false)}
+                  aria-label="Expandir menu lateral"
+                  className="flex h-9 w-full items-center justify-center rounded-xl px-0 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100/80 hover:text-slate-900 dark:text-sidebar-foreground dark:hover:bg-white/[0.04] dark:hover:text-foreground"
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={10} className="font-medium">
+                Expandir menu lateral
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={() => setCollapsed(true)}
+              aria-label="Recolher menu lateral"
+              className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-[13px] font-medium text-slate-600 transition-all hover:bg-slate-100/80 hover:text-slate-900 dark:text-sidebar-foreground dark:hover:bg-white/[0.04] dark:hover:text-foreground"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+              <span>Recolher</span>
+            </button>
+          )}
         </div>
       </nav>
 
@@ -376,5 +396,6 @@ export function AppSidebar() {
         />
       )}
     </aside>
+  </TooltipProvider>
   );
 }

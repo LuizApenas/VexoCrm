@@ -2,6 +2,11 @@ import type { ComponentType } from "react";
 import { NavLink } from "react-router-dom";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 
 function NavItem({
   item,
@@ -12,9 +17,10 @@ function NavItem({
   collapsed: boolean;
   isLocked?: boolean;
 }) {
-  return (
+  const link = (
     <NavLink
       to={item.url}
+      aria-label={item.label}
       className={({ isActive }) =>
         cn(
           "group relative flex font-medium transition-all",
@@ -64,6 +70,27 @@ function NavItem({
       )}
     </NavLink>
   );
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {link}
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={10} className="flex items-center gap-1.5 font-medium">
+          <span>{item.label}</span>
+          {isLocked && <Lock className="w-3 h-3 text-muted-foreground" />}
+          {item.badge && (
+            <span className="rounded-full bg-cyan-500/20 px-1.5 py-0.5 font-mono text-[9px] text-cyan-300">
+              {item.badge}
+            </span>
+          )}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return link;
 }
 
 export { NavItem };
