@@ -304,7 +304,7 @@ export async function processInboundWebhook(campaignId, parsedPayload) {
 export async function cancelPendingJobsForCampaign(campaignId) {
   await query(
     `UPDATE followup_jobs fj
-        SET status = 'canceled'
+        SET status = 'cancelled'
        FROM followup_schedules fs
       WHERE fj.schedule_id = fs.id
         AND fs.campaign_id = $1

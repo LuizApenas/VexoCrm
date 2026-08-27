@@ -112,9 +112,9 @@ async function processJob(job) {
     return;
   }
 
-  if (row.campaign_status === "archived" || row.schedule_status === "canceled") {
+  if (row.campaign_status === "archived" || row.schedule_status === "cancelled") {
     await query("UPDATE followup_jobs SET status='skipped' WHERE id=$1", [jobId]);
-    console.log(log, "skipped (archived/canceled)");
+    console.log(log, "skipped (archived/cancelled)");
     return;
   }
 

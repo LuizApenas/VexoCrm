@@ -86,12 +86,12 @@ export interface FupSchedule {
   lead_name: string;
   phone: string | null;
   meeting_datetime: string | null;
-  status: "active" | "canceled" | "completed" | "missing_phone";
+  status: "active" | "cancelled" | "completed" | "converted" | "missing_phone";
   origin: string | null;
   origin_source: string | null;
   origin_medium: string | null;
   origin_campaign: string | null;
-  origin_type: "utm" | "default" | null;
+  origin_type: "manual" | "utm" | "default" | null;
   created_at: string;
 }
 

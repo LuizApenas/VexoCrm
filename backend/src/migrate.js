@@ -136,7 +136,11 @@ async function isAlreadyApplied(pool, filename) {
     ) AS ok`,
     "20260827163000_fix_followup_schedules_origin_type_check.sql": `SELECT (
       NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='followup_schedules')
-      OR EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'followup_schedules_origin_type_check' AND pg_get_constraintdef(oid) LIKE '%manual%')
+      OR (
+        EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'followup_schedules_origin_type_check' AND pg_get_constraintdef(oid) LIKE '%manual%')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'followup_schedules_status_check' AND pg_get_constraintdef(oid) LIKE '%cancelled%')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'followup_jobs_status_check' AND pg_get_constraintdef(oid) LIKE '%cancelled%')
+      )
     ) AS ok`,
   };
 
