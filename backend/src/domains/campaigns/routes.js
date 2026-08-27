@@ -1468,7 +1468,7 @@ export function registerCampaignsRoutes(app, deps) {
     await pgDatabasePool.query(`
       ALTER TABLE public.campaign_dispatches
       ADD CONSTRAINT campaign_dispatches_status_check
-      CHECK (status IN ('draft', 'scheduled', 'running', 'paused', 'done', 'failed', 'cancelled'))
+      CHECK (status IN ('draft', 'scheduled', 'running', 'paused', 'done', 'failed', 'cancelled', 'interrupted'))
     `);
   }
 
@@ -1666,7 +1666,49 @@ export function registerCampaignsRoutes(app, deps) {
     });
 
     if (leads.length === 0) {
-      await db.from("campaign_dispatches").update({ status: "done", finished_at: new Date().toISOString(), updated_at: new Date().toISOString(), error_message: "Nenhum lead encontrado para o disparo." }).eq("id", dispatchId);
+      let totalSent = 0;
+      let totalFailed = 0;
+      let totalSkipped = 0;
+      if (pgDatabasePool) {
+        const countsRes = await pgDatabasePool.query(
+          `SELECT 
+             COUNT(*) FILTER (WHERE status = 'sent')::int as sent,
+             COUNT(*) FILTER (WHERE status = 'failed')::int as failed,
+             COUNT(*) FILTER (WHERE status = 'skipped')::int as skipped
+           FROM public.campaign_dispatch_runs
+           WHERE dispatch_id = $1`,
+          [dispatchId]
+        ).catch(() => ({ rows: [] }));
+        totalSent = Number(countsRes?.rows?.[0]?.sent || 0);
+        totalFailed = Number(countsRes?.rows?.[0]?.failed || 0);
+        totalSkipped = Number(countsRes?.rows?.[0]?.skipped || 0);
+      }
+      const totalProcessed = totalSent + totalFailed + totalSkipped;
+      const targetCount = Number(dispatch.target_count || 0) || totalProcessed;
+
+      if (targetCount > 0 && totalProcessed < targetCount) {
+        const pendingCount = targetCount - totalProcessed;
+        const existingMsg = dispatch.error_message || "";
+        const finalMsg = existingMsg.includes("Interrompido") || existingMsg.includes("reinício")
+          ? existingMsg
+          : `Interrompido: ${pendingCount} lead(s) pendente(s) de envio.`;
+        await db.from("campaign_dispatches").update({
+          status: "interrupted",
+          sent_count: totalSent,
+          failed_count: totalFailed,
+          error_message: finalMsg,
+          updated_at: new Date().toISOString(),
+        }).eq("id", dispatchId);
+      } else {
+        await db.from("campaign_dispatches").update({
+          status: "done",
+          sent_count: totalSent,
+          failed_count: totalFailed,
+          finished_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          error_message: null,
+        }).eq("id", dispatchId);
+      }
       return;
     }
 
@@ -2011,13 +2053,31 @@ export function registerCampaignsRoutes(app, deps) {
     // Falhas por lead já são finalizadas em tempo real via onLeadFailed (UPDATE do
     // registro de claim para status='failed'). Lead que falhou NÃO volta para a fila
     // do mesmo disparo — fica registrado para tratamento manual (endpoint /failed).
-    const failedCount = result?.summary?.failureCount ?? (leads.length - sentCount);
+    let totalSent = sentCount;
+    let totalFailed = failedCount;
+    let totalSkipped = 0;
+    if (pgDatabasePool) {
+      const countsRes = await pgDatabasePool.query(
+        `SELECT 
+           COUNT(*) FILTER (WHERE status = 'sent')::int as sent,
+           COUNT(*) FILTER (WHERE status = 'failed')::int as failed,
+           COUNT(*) FILTER (WHERE status = 'skipped')::int as skipped
+         FROM public.campaign_dispatch_runs
+         WHERE dispatch_id = $1`,
+        [dispatchId]
+      ).catch(() => ({ rows: [] }));
+      totalSent = Number(countsRes?.rows?.[0]?.sent ?? sentCount);
+      totalFailed = Number(countsRes?.rows?.[0]?.failed ?? failedCount);
+      totalSkipped = Number(countsRes?.rows?.[0]?.skipped ?? 0);
+    }
+    const totalProcessed = totalSent + totalFailed + totalSkipped;
+    const targetCount = Number(dispatch.target_count || 0) || (leads.length + totalProcessed);
 
     if (result?.summary?.allChipsExhausted) {
       await db.from("campaign_dispatches").update({
         status: "paused",
-        sent_count: sentCount,
-        failed_count: failedCount,
+        sent_count: totalSent,
+        failed_count: totalFailed,
         error_message: "Cota diaria atingida em todos os chips ativos.",
         updated_at: new Date().toISOString(),
       }).eq("id", dispatchId);
@@ -2027,9 +2087,26 @@ export function registerCampaignsRoutes(app, deps) {
     if (result?.summary?.paused) {
       await db.from("campaign_dispatches").update({
         status: "paused",
-        sent_count: sentCount,
-        failed_count: failedCount,
+        sent_count: totalSent,
+        failed_count: totalFailed,
         error_message: "Disparo pausado manualmente.",
+        updated_at: new Date().toISOString(),
+      }).eq("id", dispatchId);
+      return;
+    }
+
+    // REGRA RÍGIDA: Lote só pode ser 'done' quando TODO lead tiver um desfecho registrado
+    if (targetCount > 0 && totalProcessed < targetCount) {
+      const pendingCount = targetCount - totalProcessed;
+      const existingMsg = dispatch.error_message || "";
+      const finalMsg = existingMsg.includes("Interrompido") || existingMsg.includes("reinício")
+        ? existingMsg
+        : `Interrompido: ${pendingCount} lead(s) pendente(s) de envio.`;
+      await db.from("campaign_dispatches").update({
+        status: "interrupted",
+        sent_count: totalSent,
+        failed_count: totalFailed,
+        error_message: finalMsg,
         updated_at: new Date().toISOString(),
       }).eq("id", dispatchId);
       return;
@@ -2037,10 +2114,11 @@ export function registerCampaignsRoutes(app, deps) {
 
     await db.from("campaign_dispatches").update({
       status: "done",
-      sent_count: sentCount,
-      failed_count: failedCount,
+      sent_count: totalSent,
+      failed_count: totalFailed,
       finished_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      error_message: null,
     }).eq("id", dispatchId);
   }
 
@@ -2642,7 +2720,7 @@ export function registerCampaignsRoutes(app, deps) {
         .single();
       if (fetchErr || !dispatch) return sendError(res, 404, "DISPATCH_NOT_FOUND", "Dispatch not found");
       if (dispatch.status === "running") return sendError(res, 409, "DISPATCH_RUNNING", "Dispatch is already running");
-      if (!["draft", "scheduled", "failed", "paused"].includes(dispatch.status)) {
+      if (!["draft", "scheduled", "failed", "paused", "interrupted"].includes(dispatch.status)) {
         return sendError(res, 409, "DISPATCH_DONE", "Dispatch already completed");
       }
 

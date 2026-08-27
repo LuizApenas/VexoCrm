@@ -42,7 +42,7 @@ export interface CampaignDispatch {
   steps: CampaignSequenceStep[];
   trigger_type: "manual" | "scheduled";
   scheduled_at: string | null;
-  status: "draft" | "scheduled" | "running" | "paused" | "done" | "failed" | "cancelled";
+  status: "draft" | "scheduled" | "running" | "paused" | "done" | "failed" | "cancelled" | "interrupted";
   target_count?: number;
   sent_count: number;
   failed_count: number;
@@ -137,7 +137,8 @@ export type CampaignStatus =
   | "processing"
   | "sent"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "interrupted";
 
 export const CAMPAIGN_STATUS_LABELS: Record<CampaignStatus, string> = {
   active: "Ativa",
@@ -148,6 +149,7 @@ export const CAMPAIGN_STATUS_LABELS: Record<CampaignStatus, string> = {
   sent: "Enviada",
   failed: "Falhou",
   cancelled: "Cancelada",
+  interrupted: "Interrompido",
 };
 
 export const CAMPAIGN_STATUS_COLORS: Record<CampaignStatus, string> = {
@@ -159,6 +161,7 @@ export const CAMPAIGN_STATUS_COLORS: Record<CampaignStatus, string> = {
   sent: "border-emerald-300 bg-emerald-50 text-emerald-600 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400",
   failed: "border-rose-300 bg-rose-50 text-rose-600 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-400",
   cancelled: "border-slate-300 bg-slate-50 text-slate-400 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-500",
+  interrupted: "border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
 };
 
 export interface CampaignLead {

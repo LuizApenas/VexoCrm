@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { recoverOrphanDispatches } from "../campaign/orphanRecovery.js";
-import { buildDispatchLeads } from "../campaign/dispatch.js";
 
-describe("Recuperação de Lotes Órfãos no Startup (Opção 2 - Decisão do Dono)", () => {
+describe("Recuperação de Lotes Órfãos no Startup com Retomada Automática", () => {
   function createMockPool({ dispatches = [], runs = [] }) {
     const dispatchRows = [...dispatches];
     const runRows = [...runs];
@@ -32,7 +31,14 @@ describe("Recuperação de Lotes Órfãos no Startup (Opção 2 - Decisão do Do
           return { rows: [{ cnt }] };
         }
 
-        // 4. UPDATE claimed leads to skipped
+        // 4. COUNT failed leads
+        if (text.includes("FROM public.campaign_dispatch_runs") && text.includes("status = 'failed'")) {
+          const dispatchId = params[0];
+          const cnt = runRows.filter((r) => r.dispatch_id === dispatchId && r.status === "failed").length;
+          return { rows: [{ cnt }] };
+        }
+
+        // 5. UPDATE claimed leads to skipped
         if (text.includes("UPDATE public.campaign_dispatch_runs") && text.includes("SET status = 'skipped'")) {
           const dispatchId = params[0];
           runRows.forEach((r) => {
@@ -44,15 +50,19 @@ describe("Recuperação de Lotes Órfãos no Startup (Opção 2 - Decisão do Do
           return { rowCount: 1 };
         }
 
-        // 5. UPDATE campaign_dispatches to failed
-        if (text.includes("UPDATE public.campaign_dispatches") && text.includes("SET status = 'failed'")) {
-          const errorMsg = params[0];
-          const dispatchId = params[1];
+        // 6. UPDATE campaign_dispatches to scheduled (para retomada automática)
+        if (text.includes("UPDATE public.campaign_dispatches") && text.includes("SET status = 'scheduled'")) {
+          const sentCount = params[0];
+          const failedCount = params[1];
+          const errorMsg = params[2];
+          const dispatchId = params[3];
           const disp = dispatchRows.find((d) => d.id === dispatchId && d.status === "running");
           if (disp) {
-            disp.status = "failed";
+            disp.status = "scheduled";
+            disp.sent_count = sentCount;
+            disp.failed_count = failedCount;
             disp.error_message = errorMsg;
-            disp.finished_at = new Date().toISOString();
+            disp.finished_at = null;
             disp.updated_at = new Date().toISOString();
           }
           return { rowCount: disp ? 1 : 0 };
@@ -63,7 +73,7 @@ describe("Recuperação de Lotes Órfãos no Startup (Opção 2 - Decisão do Do
     };
   }
 
-  it("lote 'running' no boot vira 'failed' com motivo legível e explicativo", async () => {
+  it("lote 'running' no boot vira 'scheduled' para retomada automática com motivo legível e explicativo", async () => {
     const mockPool = createMockPool({
       dispatches: [
         {
@@ -87,12 +97,12 @@ describe("Recuperação de Lotes Órfãos no Startup (Opção 2 - Decisão do Do
       leadsSent: 0,
       leadsUnconfirmed: 0,
     });
-    expect(result.items[0].errorMessage).toBe(
-      "Interrompido por reinício do servidor. Clique em Disparar para continuar de onde parou — quem já recebeu não recebe de novo."
+    expect(result.items[0].errorMessage).toContain(
+      "Interrompido por reinício do servidor. Retomando automaticamente do ponto onde parou — quem já recebeu não recebe de novo."
     );
 
     const updatedDisp = mockPool.dispatchRows.find((d) => d.id === "disp-101");
-    expect(updatedDisp.status).toBe("failed");
+    expect(updatedDisp.status).toBe("scheduled");
     expect(updatedDisp.error_message).toContain("Interrompido por reinício do servidor");
   });
 
@@ -119,7 +129,7 @@ describe("Recuperação de Lotes Órfãos no Startup (Opção 2 - Decisão do Do
     expect(result.recovered).toBe(1);
     expect(result.items[0].leadsSent).toBe(1);
     expect(result.items[0].leadsUnconfirmed).toBe(1);
-    expect(result.items[0].errorMessage).toContain("1 lead(s) com envio não confirmado — interrompidos antes da confirmação");
+    expect(result.items[0].errorMessage).toContain("1 lead(s) com envio não confirmado");
 
     // O lead 'claimed' virou 'skipped'
     const lead2Run = mockPool.runRows.find((r) => r.id === "run-2");
@@ -149,7 +159,7 @@ describe("Recuperação de Lotes Órfãos no Startup (Opção 2 - Decisão do Do
     expect(mockPool.dispatchRows.find((d) => d.id === "disp-paused")?.status).toBe("paused");
   });
 
-  it("lote com 3 de 10 leads enviados: retomada manual seleciona estritamente os 7 restantes, nunca os 3 já enviados", () => {
+  it("lote com 3 de 10 leads enviados: retomada seleciona estritamente os 7 restantes, nunca os 3 já enviados", () => {
     const all10Leads = Array.from({ length: 10 }, (_, i) => ({
       id: `lead-uuid-${i + 1}`,
       client_id: "geracao-digital",

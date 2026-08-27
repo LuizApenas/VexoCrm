@@ -37,6 +37,8 @@ export function DispatchQueueTable({
   onPreviewDispatch,
   onEditDispatchPrompt,
 }: DispatchQueueTableProps) {
+  const runningDispatches = dispatches.filter((d) => d.status === "running");
+
   return (
     <Card className="border-border bg-card shadow-lg text-card-foreground rounded-2xl">
       <CardHeader className="pb-2 flex flex-row items-center justify-between">
@@ -70,6 +72,31 @@ export function DispatchQueueTable({
           <RefreshCw className="h-3 w-3 mr-1" /> Atualizar
         </Button>
       </CardHeader>
+
+      {/* ⚠️ AVISO DE DISPARO EM ANDAMENTO */}
+      {runningDispatches.length > 0 && (
+        <div className="mx-6 mb-3 p-3.5 rounded-xl border border-amber-500/40 bg-amber-500/10 dark:bg-amber-950/30 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+            </span>
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              <strong>Disparo em andamento:</strong>{" "}
+              {runningDispatches
+                .map((d) => `${d.name} (${d.sent_count ?? 0} de ${d.target_count ?? "—"} enviados)`)
+                .join(", ")}.
+              <span className="ml-1 font-normal text-amber-700 dark:text-amber-400">
+                Evite reiniciar o servidor agora para não interromper a fila.
+              </span>
+            </p>
+          </div>
+          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[10px] font-bold shrink-0">
+            Disparando
+          </Badge>
+        </div>
+      )}
+
       <CardContent className="p-0">
         {loadingDispatches ? (
           <div className="p-6 text-center text-xs text-muted-foreground animate-pulse">Carregando lotes de disparo...</div>
@@ -102,8 +129,14 @@ export function DispatchQueueTable({
                         <Badge className={cn("border text-[10px] font-semibold rounded-xl px-2 py-0.5", CAMPAIGN_STATUS_COLORS[disp.status] || "")}>
                           {CAMPAIGN_STATUS_LABELS[disp.status] || disp.status}
                         </Badge>
-                        {disp.status === "failed" && disp.error_message && (
-                          <p className="mt-1 text-[10px] text-rose-500 font-medium max-w-[220px] mx-auto leading-tight" title={disp.error_message}>
+                        {(disp.status === "failed" || disp.status === "interrupted") && disp.error_message && (
+                          <p
+                            className={cn(
+                              "mt-1 text-[10px] font-medium max-w-[240px] mx-auto leading-tight",
+                              disp.status === "interrupted" ? "text-amber-600 dark:text-amber-400" : "text-rose-500"
+                            )}
+                            title={disp.error_message}
+                          >
                             {disp.error_message}
                           </p>
                         )}
@@ -138,12 +171,12 @@ export function DispatchQueueTable({
                       </TableCell>
                       <TableCell className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {(disp.status === "draft" || disp.status === "paused" || disp.status === "failed") && (
+                          {(disp.status === "draft" || disp.status === "paused" || disp.status === "failed" || disp.status === "interrupted") && (
                             <Button
                               size="sm"
                               variant="default"
                               title={
-                                disp.status === "paused" || disp.status === "failed"
+                                disp.status === "paused" || disp.status === "failed" || disp.status === "interrupted"
                                   ? "Continua de onde parou: quem já recebeu não recebe de novo"
                                   : "Iniciar o envio deste lote"
                               }
@@ -151,7 +184,7 @@ export function DispatchQueueTable({
                               className="h-8 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs px-2.5 font-bold shadow-sm"
                             >
                               <Play className="h-3.5 w-3.5 mr-1" />{" "}
-                              {disp.status === "paused" ? "Retomar" : disp.status === "failed" ? "Disparar" : "Iniciar"}
+                              {disp.status === "paused" || disp.status === "interrupted" ? "Retomar" : disp.status === "failed" ? "Disparar" : "Iniciar"}
                             </Button>
                           )}
                           {disp.status === "running" && (
@@ -186,7 +219,7 @@ export function DispatchQueueTable({
                           >
                             <Bot className="h-3.5 w-3.5 text-indigo-500" />
                           </Button>
-                          {(disp.status === "draft" || disp.status === "failed" || disp.status === "done" || disp.status === "paused") && (
+                          {(disp.status === "draft" || disp.status === "failed" || disp.status === "done" || disp.status === "paused" || disp.status === "interrupted") && (
                             <Button
                               size="sm"
                               variant="outline"

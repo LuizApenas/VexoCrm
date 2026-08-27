@@ -117,13 +117,38 @@ export function registerInsightsRoutes(app, deps) {
     if (postgresPingDetail) {
       services.postgresPingDetail = postgresPingDetail;
     }
+    let activeDispatches = [];
+    if (pgDatabasePool) {
+      try {
+        const { rows } = await pgDatabasePool.query(`
+          SELECT d.id, d.name, d.client_id, d.sent_count, d.target_count, d.status, c.name as campaign_name
+          FROM public.campaign_dispatches d
+          LEFT JOIN public.campaigns c ON c.id = d.campaign_id
+          WHERE d.status = 'running'
+          ORDER BY d.triggered_at DESC
+        `);
+        activeDispatches = rows || [];
+      } catch {
+        activeDispatches = [];
+      }
+    }
+
     res.json({
       ok: true,
       timestamp: new Date().toISOString(),
-      // Qual codigo esta no ar. codeHash e a impressao digital de src/ — compare
-      // com `npm run codehash --prefix backend`. commit/builtAt so aparecem quando
-      // o painel passa os build-args; ausentes, o campo NAO vem, em vez de mentir
-      // "desconhecido".
+      activeDispatchesCount: activeDispatches.length,
+      activeDispatches: activeDispatches.map((d) => ({
+        id: d.id,
+        name: d.name,
+        campaignName: d.campaign_name,
+        clientId: d.client_id,
+        sentCount: d.sent_count,
+        targetCount: d.target_count,
+      })),
+      dispatchesWarning:
+        activeDispatches.length > 0
+          ? `ATENÇÃO: Existem ${activeDispatches.length} disparo(s) em andamento no momento. Evite reiniciar o servidor agora.`
+          : null,
       build: BUILD_INFO_PUBLICO(),
       uptimeSeconds: process.uptime(),
       services,
