@@ -465,6 +465,7 @@ export function registerChatbotRoutes(app, deps) {
         const queryText = `
           WITH pre_canonical AS (
             SELECT
+              id,
               ${SQL_CANONICAL_PHONE("phone")} as canonical_phone,
               phone as raw_phone,
               message_text,
@@ -481,6 +482,7 @@ export function registerChatbotRoutes(app, deps) {
           ),
           latest_messages AS (
             SELECT DISTINCT ON (canonical_phone)
+              id,
               canonical_phone as phone,
               raw_phone,
               message_text,
@@ -493,9 +495,10 @@ export function registerChatbotRoutes(app, deps) {
               contact_name,
               is_group
             FROM pre_canonical
-            ORDER BY canonical_phone, effective_timestamp DESC NULLS LAST
+            ORDER BY canonical_phone, effective_timestamp DESC NULLS LAST, id DESC
           )
           SELECT
+            m.id,
             m.phone as phone_number,
             m.message_text,
             m.direction,
@@ -516,7 +519,7 @@ export function registerChatbotRoutes(app, deps) {
           LEFT JOIN public.whatsapp_lid_map lm ON lm.lid = m.phone OR lm.lid = m.raw_phone
           WHERE 1=1
           ${searchFilter}
-          ORDER BY m.effective_timestamp DESC NULLS LAST
+          ORDER BY m.effective_timestamp DESC NULLS LAST, m.id DESC
           LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
         `;
 
@@ -785,12 +788,46 @@ export function registerChatbotRoutes(app, deps) {
           sender_type
         FROM public.lead_messages
         WHERE client_id = $1 AND phone = ANY($2) ${instanceFilter} ${beforeFilter}
-        ORDER BY COALESCE(message_timestamp, delivered_at, created_at) DESC NULLS LAST
+        ORDER BY COALESCE(message_timestamp, delivered_at, created_at) DESC NULLS LAST, id DESC
         LIMIT $3
       `;
       const result = await pgDatabasePool.query(queryText, queryParams);
 
-      let items = result.rows.map((row) => {
+      // Supressão de duplicatas históricas na leitura (reversível, sem apagar do banco):
+      // 1. Linhas com o mesmo wa_message_id
+      // 2. Linhas com mesma direção, mesmo texto (trim) e timestamp dentro de uma janela de 10s
+      const dedupedRows = [];
+      const seenWaIds = new Set();
+
+      for (const row of result.rows) {
+        if (row.wa_message_id && typeof row.wa_message_id === "string" && row.wa_message_id.trim()) {
+          const waId = row.wa_message_id.trim();
+          if (seenWaIds.has(waId)) {
+            continue;
+          }
+          seenWaIds.add(waId);
+        }
+
+        const rowTime = new Date(row.effective_timestamp || row.message_timestamp || row.delivered_at || row.created_at || 0).getTime();
+        const rowText = (row.message_text || "").trim();
+        const rowDirection = row.direction || "";
+
+        const isDuplicate = dedupedRows.some((existing) => {
+          if (existing.direction !== rowDirection) return false;
+          const existingText = (existing.message_text || "").trim();
+          if (existingText !== rowText) return false;
+          const existingTime = new Date(existing.effective_timestamp || existing.message_timestamp || existing.delivered_at || existing.created_at || 0).getTime();
+          return Math.abs(rowTime - existingTime) <= 10000;
+        });
+
+        if (isDuplicate) {
+          continue;
+        }
+
+        dedupedRows.push(row);
+      }
+
+      let items = dedupedRows.map((row) => {
         const timestampVal = row.effective_timestamp
           ? Math.floor(new Date(row.effective_timestamp).getTime() / 1000)
           : (row.created_at ? Math.floor(new Date(row.created_at).getTime() / 1000) : null);

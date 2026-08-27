@@ -35,6 +35,11 @@ export interface WhatsAppMessage {
   timestamp: number | null;
   type: string | null;
   hasMedia: boolean;
+  waMessageId?: string | null;
+  phone?: string | null;
+  direction?: string | null;
+  createdAt?: string | null;
+  messageTimestamp?: string | null;
 }
 
 interface WhatsAppChatsPage {
@@ -220,11 +225,32 @@ export function useWhatsAppMessages(
     const pages = query.data?.pages ?? [];
     const reversed = [...pages].reverse();
     const flat = reversed.flatMap((p) => p.items);
-    const seen = new Set<string>();
+    const seenIds = new Set<string>();
+    const seenWaIds = new Set<string>();
     const deduped: WhatsAppMessage[] = [];
+
     for (const m of flat) {
-      if (m.id && seen.has(m.id)) continue;
-      if (m.id) seen.add(m.id);
+      if (m.id && seenIds.has(m.id)) continue;
+      if (m.waMessageId && typeof m.waMessageId === "string" && m.waMessageId.trim()) {
+        const waId = m.waMessageId.trim();
+        if (seenWaIds.has(waId)) continue;
+        seenWaIds.add(waId);
+      }
+
+      const mTime = m.timestamp ? m.timestamp * 1000 : 0;
+      const mText = (m.body || "").trim();
+      const mFromMe = Boolean(m.fromMe);
+
+      const isFuzzyDuplicate = deduped.some((existing) => {
+        if (Boolean(existing.fromMe) !== mFromMe) return false;
+        if ((existing.body || "").trim() !== mText) return false;
+        const existingTime = existing.timestamp ? existing.timestamp * 1000 : 0;
+        return Math.abs(mTime - existingTime) <= 10000;
+      });
+
+      if (isFuzzyDuplicate) continue;
+
+      if (m.id) seenIds.add(m.id);
       deduped.push(m);
     }
     return deduped;

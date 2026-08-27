@@ -258,6 +258,7 @@ export default function WhatsAppInbox({
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
   const [hasNewUnseenMessage, setHasNewUnseenMessage] = useState(false);
+  const [showDossier, setShowDossier] = useState(true);
 
   const chatsContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -747,12 +748,12 @@ export default function WhatsAppInbox({
           description="Conecte pelo menos um chip de WhatsApp ativo em 'Chips WhatsApp' para visualizar e enviar mensagens."
         />
       ) : (
-        /* ── GRID PRINCIPAL EM 3 COLUNAS ── */
-        <div className="grid h-[calc(100vh-220px)] min-h-[650px] gap-3 lg:grid-cols-[300px_minmax(0,1fr)_320px]">
+        /* ── LAYOUT PRINCIPAL: LISTA FIXA (300px), CHAT RESPONSIVO (flex-1), DOSSIÊ COLAPSÁVEL (320px) ── */
+        <div className="flex h-[calc(100vh-220px)] min-h-[650px] gap-3">
           {/* ══════════════════════════════════════════════════════════════════════════
-              COLUNA 1: Lista de Conversas, Filtros & Busca
+              COLUNA 1: Lista de Conversas, Filtros & Busca (Largura Fixa 300px)
           ══════════════════════════════════════════════════════════════════════════ */}
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-xs">
+          <div className="w-[300px] shrink-0 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-xs">
             {/* Header com Abas de Navegação */}
             <div className="flex flex-col gap-2.5 border-b border-border/60 p-3 bg-muted/20">
               <div className="flex items-center justify-between">
@@ -920,9 +921,9 @@ export default function WhatsAppInbox({
           </div>
 
           {/* ══════════════════════════════════════════════════════════════════════════
-              COLUNA 2: Chat Central & Linha do Tempo
+              COLUNA 2: Chat Central & Linha do Tempo (Ocupa Todo o Espaço Restante)
           ══════════════════════════════════════════════════════════════════════════ */}
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-xs">
+          <div className="flex-1 min-w-0 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-xs">
             {/* Header da Conversa Ativa */}
             <div className="flex items-center justify-between border-b border-border/60 p-3 bg-muted/20">
               <div className="flex items-center gap-3 min-w-0">
@@ -964,6 +965,22 @@ export default function WhatsAppInbox({
                   >
                     <RotateCcw className={cn("h-3.5 w-3.5", reabrirPending && "animate-spin")} />
                     Reabrir Atendimento
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "h-8 gap-1.5 text-xs rounded-xl border-border/80 transition-colors",
+                      showDossier
+                        ? "bg-muted/80 text-foreground font-semibold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={() => setShowDossier((v) => !v)}
+                    title={showDossier ? "Ocultar painel lateral de informações do lead" : "Exibir painel lateral de informações do lead"}
+                  >
+                    <User className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{showDossier ? "Ocultar Lead" : "Ver Lead"}</span>
                   </Button>
                 </div>
               )}
@@ -1022,8 +1039,8 @@ export default function WhatsAppInbox({
                             </div>
                           )}
                           {item.isInternalNote ? (
-                            <div className="mx-auto my-1 max-w-[85%] sm:max-w-[70%] rounded-xl border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200 shadow-xs">
-                              <div className="flex items-center justify-between gap-2 mb-1 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                            <div className="mx-auto my-1 max-w-[min(85%,75ch)] sm:max-w-[min(75%,75ch)] rounded-xl border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200 shadow-xs">
+                              <div className="flex items-center justify-between gap-2 mb-1 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
                                 <span className="flex items-center gap-1.5">
                                   <Lock className="h-3 w-3" />
                                   Nota Interna Privada · {item.author || "Equipe"}
@@ -1032,13 +1049,13 @@ export default function WhatsAppInbox({
                                   {formatTimestamp(item.timestamp, true)}
                                 </span>
                               </div>
-                              <p className="whitespace-pre-wrap font-sans text-xs leading-relaxed">{item.body}</p>
+                              <p className="whitespace-pre-wrap font-sans text-xs font-normal leading-relaxed">{item.body}</p>
                             </div>
                           ) : (
                             <div
                               className={cn(
-                                "relative rounded-xl px-3 py-1.5 text-[13px] leading-snug shadow-xs transition-colors",
-                                "max-w-[85%] sm:max-w-[65%]",
+                                "relative rounded-xl px-3.5 py-2 text-[13px] font-normal leading-relaxed shadow-xs transition-colors font-sans",
+                                "max-w-[min(85%,75ch)] sm:max-w-[min(75%,75ch)]",
                                 item.fromMe
                                   ? "ml-auto rounded-br-xs bg-emerald-600 text-white"
                                   : "mr-auto rounded-bl-xs border border-border/80 bg-background text-foreground"
@@ -1049,11 +1066,12 @@ export default function WhatsAppInbox({
                                 hasMedia={item.hasMedia}
                                 fallbackBody={item.body}
                                 fromMe={item.fromMe}
+                                className="font-normal text-[13px] leading-relaxed break-words"
                               />
                               <div
                                 className={cn(
-                                  "mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none select-none font-mono",
-                                  item.fromMe ? "text-emerald-100/80" : "text-muted-foreground"
+                                  "mt-1 flex items-center justify-end gap-1 text-[10px] font-normal leading-none select-none font-mono opacity-80",
+                                  item.fromMe ? "text-emerald-100/90" : "text-muted-foreground"
                                 )}
                               >
                                 <span>{formatTimestamp(item.timestamp)}</span>
@@ -1178,212 +1196,230 @@ export default function WhatsAppInbox({
           </div>
 
           {/* ══════════════════════════════════════════════════════════════════════════
-              COLUNA 3: Dossiê Lateral do Lead & Copiloto
+              COLUNA 3: Dossiê Lateral do Lead & Copiloto (Largura Fixa 320px, Colapsável)
           ══════════════════════════════════════════════════════════════════════════ */}
-          <div className="flex min-h-0 flex-col overflow-y-auto rounded-2xl border border-border/80 bg-card/60 p-4 shadow-xs space-y-4">
-            {/* Card do Contato */}
-            <div className="flex flex-col items-center text-center p-3 rounded-2xl bg-muted/20 border border-border/60">
-              <ChatAvatar
-                label={matchedLead?.nome || selectedChat?.name || displayPhone}
-                picture={selectedChat?.profilePic}
-                size="lg"
-              />
-              <h3 className="mt-2 text-sm font-extrabold text-foreground truncate w-full">
-                {matchedLead?.nome || selectedChat?.name || "Lead sem nome"}
-              </h3>
-              <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
-                <Phone className="h-3 w-3" />
-                <span>{displayPhone}</span>
-                {rawPhone && (
-                  <button
-                    type="button"
-                    onClick={() => handleCopyPhone(rawPhone)}
-                    className="p-1 hover:text-foreground text-muted-foreground transition-colors"
-                    title="Copiar número"
-                  >
-                    {copiedPhone ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                  </button>
-                )}
-              </div>
-
-              {/* Origem */}
-              <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
-                <OriginBadge
-                  origin={selectedChat?.leadOrigin ?? (matchedLead ? "inbound" : null)}
-                  campaignId={selectedChat?.sourceCampaignId ?? null}
-                  campaignNames={campaignNames}
-                />
-                {matchedLead?.qualificacao && (
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "text-[10px] font-bold uppercase",
-                      matchedLead.qualificacao === "QUENTE"
-                        ? "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300"
-                        : matchedLead.qualificacao === "MORNO"
-                        ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                        : "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300"
-                    )}
-                  >
-                    {matchedLead.qualificacao === "QUENTE" ? "🔥 Quente" : matchedLead.qualificacao === "MORNO" ? "☀️ Morno" : "❄️ Frio"}
-                  </Badge>
-                )}
-              </div>
-            </div>
-
-            {/* Estágio do Funil Comercial */}
-            <div className="space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <Target className="h-3.5 w-3.5 text-indigo-500" />
-                Estágio no Funil
-              </span>
-              <div className="grid grid-cols-2 gap-1.5 text-xs">
-                {[
-                  { step: "1. Novo", active: !matchedLead || matchedLead.status === "novo" },
-                  { step: "2. Atendimento", active: matchedLead?.status === "em_atendimento" || !matchedLead?.finalizado },
-                  { step: "3. Qualificado", active: matchedLead?.qualificacao === "QUENTE" || matchedLead?.status === "qualificado" },
-                  { step: "4. Fechado", active: matchedLead?.status === "fechado" || matchedLead?.status === "ganho" },
-                ].map((s) => (
-                  <div
-                    key={s.step}
-                    className={cn(
-                      "flex items-center justify-between rounded-xl border p-2 text-[11px] font-semibold transition-colors",
-                      s.active
-                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                        : "border-border/60 bg-muted/20 text-muted-foreground"
-                    )}
-                  >
-                    <span>{s.step}</span>
-                    {s.active && <Check className="h-3 w-3 text-emerald-600" />}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Resumo Coletado pela IA */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                  <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                  Resumo Coletado pela IA
+          {showDossier && (
+            <div className="w-[320px] shrink-0 flex min-h-0 flex-col overflow-y-auto rounded-2xl border border-border/80 bg-card/60 p-4 shadow-xs space-y-4 animate-in fade-in slide-in-from-right-2 duration-150">
+              {/* Header do Dossiê com botão de fechar */}
+              <div className="flex items-center justify-between pb-1 border-b border-border/40">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <User className="h-3.5 w-3.5 text-emerald-500" />
+                  Dossiê do Lead
                 </span>
                 <button
                   type="button"
-                  disabled={isSummarizing || !selectedChatId}
-                  onClick={handleSummarizeWithAI}
-                  className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                  onClick={() => setShowDossier(false)}
+                  className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/60"
+                  title="Recolher painel do lead"
                 >
-                  {isSummarizing ? (
-                    <>
-                      <LoaderCircle className="h-3 w-3 animate-spin" />
-                      Analisando...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="h-3 w-3" />
-                      Atualizar com IA
-                    </>
-                  )}
+                  <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
-              <div className="rounded-2xl border border-border/70 bg-muted/20 p-3 space-y-2 text-xs">
-                {currentChatSummary ? (
-                  <div className="space-y-1.5 whitespace-pre-line text-foreground leading-relaxed text-[11px]">
-                    {currentChatSummary}
-                  </div>
-                ) : matchedLead && (matchedLead.interesse || matchedLead.objetivo || matchedLead.cidade || matchedLead.credito) ? (
-                  <div className="space-y-1.5">
-                    {matchedLead.interesse && (
-                      <div className="flex items-start justify-between gap-2 text-[11px]">
-                        <span className="text-muted-foreground">Interesse:</span>
-                        <span className="font-semibold text-foreground text-right">{matchedLead.interesse}</span>
-                      </div>
-                    )}
-                    {matchedLead.objetivo && (
-                      <div className="flex items-start justify-between gap-2 text-[11px]">
-                        <span className="text-muted-foreground">Objetivo:</span>
-                        <span className="font-semibold text-foreground text-right">{matchedLead.objetivo}</span>
-                      </div>
-                    )}
-                    {(matchedLead.cidade || matchedLead.estado) && (
-                      <div className="flex items-start justify-between gap-2 text-[11px]">
-                        <span className="text-muted-foreground">Localização:</span>
-                        <span className="font-semibold text-foreground text-right">
-                          {[matchedLead.cidade, matchedLead.estado].filter(Boolean).join(" - ")}
-                        </span>
-                      </div>
-                    )}
-                    {(matchedLead.credito || matchedLead.parcela || matchedLead.lance_entrada_fgts) && (
-                      <div className="flex items-start justify-between gap-2 text-[11px]">
-                        <span className="text-muted-foreground">Orçamento / Entrada:</span>
-                        <span className="font-semibold text-foreground text-right">
-                          {[matchedLead.credito, matchedLead.parcela, matchedLead.lance_entrada_fgts]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-2 space-y-2">
-                    <p className="text-muted-foreground text-[11px]">
-                      Nenhum resumo gerado para esta conversa ainda.
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={isSummarizing || !selectedChatId}
-                      onClick={handleSummarizeWithAI}
-                      className="h-7 text-[11px] rounded-lg border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 cursor-pointer"
-                    >
-                      <Sparkles className="mr-1.5 h-3 w-3 text-purple-500" />
-                      {isSummarizing ? "Gerando resumo..." : "Gerar Resumo com IA"}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
 
-            {/* Ações Rápidas do Consultor */}
-            <div className="space-y-2 pt-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <Zap className="h-3.5 w-3.5 text-amber-500" />
-                Ações Rápidas
-              </span>
-              <div className="flex flex-col gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const rawPhone = selectedChat?.id ? String(selectedChat.id).replace(/\D/g, "") : "";
-                    navigate(rawPhone ? `/crm/propostas-gd?phone=${rawPhone}` : "/crm/propostas-gd");
-                  }}
-                  className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-indigo-500/30 bg-indigo-500/5 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/15"
-                >
-                  <FileText className="mr-2 h-3.5 w-3.5 text-indigo-500" />
-                  Gerar Proposta Comercial
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate("/crm/followup")}
-                  className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15"
-                >
-                  <RefreshCw className="mr-2 h-3.5 w-3.5 text-amber-500" />
-                  Cadência de Follow-up
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate("/crm/banco-de-dados")}
-                  className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-border/80 bg-background hover:bg-muted"
-                >
-                  <Inbox className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
-                  Ver no Banco de Dados
-                </Button>
+              {/* Card do Contato */}
+              <div className="flex flex-col items-center text-center p-3 rounded-2xl bg-muted/20 border border-border/60">
+                <ChatAvatar
+                  label={matchedLead?.nome || selectedChat?.name || displayPhone}
+                  picture={selectedChat?.profilePic}
+                  size="lg"
+                />
+                <h3 className="mt-2 text-sm font-extrabold text-foreground truncate w-full">
+                  {matchedLead?.nome || selectedChat?.name || "Lead sem nome"}
+                </h3>
+                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
+                  <Phone className="h-3 w-3" />
+                  <span>{displayPhone}</span>
+                  {rawPhone && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPhone(rawPhone)}
+                      className="p-1 hover:text-foreground text-muted-foreground transition-colors"
+                      title="Copiar número"
+                    >
+                      {copiedPhone ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                    </button>
+                  )}
+                </div>
+
+                {/* Origem */}
+                <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
+                  <OriginBadge
+                    origin={selectedChat?.leadOrigin ?? (matchedLead ? "inbound" : null)}
+                    campaignId={selectedChat?.sourceCampaignId ?? null}
+                    campaignNames={campaignNames}
+                  />
+                  {matchedLead?.qualificacao && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[10px] font-bold uppercase",
+                        matchedLead.qualificacao === "QUENTE"
+                          ? "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300"
+                          : matchedLead.qualificacao === "MORNO"
+                          ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                          : "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                      )}
+                    >
+                      {matchedLead.qualificacao === "QUENTE" ? "🔥 Quente" : matchedLead.qualificacao === "MORNO" ? "☀️ Morno" : "❄️ Frio"}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Estágio do Funil Comercial */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Target className="h-3.5 w-3.5 text-indigo-500" />
+                  Estágio no Funil
+                </span>
+                <div className="grid grid-cols-2 gap-1.5 text-xs">
+                  {[
+                    { step: "1. Novo", active: !matchedLead || matchedLead.status === "novo" },
+                    { step: "2. Atendimento", active: matchedLead?.status === "em_atendimento" || !matchedLead?.finalizado },
+                    { step: "3. Qualificado", active: matchedLead?.qualificacao === "QUENTE" || matchedLead?.status === "qualificado" },
+                    { step: "4. Fechado", active: matchedLead?.status === "fechado" || matchedLead?.status === "ganho" },
+                  ].map((s) => (
+                    <div
+                      key={s.step}
+                      className={cn(
+                        "flex items-center justify-between rounded-xl border p-2 text-[11px] font-semibold transition-colors",
+                        s.active
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 shadow-xs"
+                          : "border-border/60 bg-muted/20 text-muted-foreground opacity-60"
+                      )}
+                    >
+                      <span>{s.step}</span>
+                      {s.active && <Check className="h-3 w-3 text-emerald-500" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Resumo Coletado pela IA */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                    <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                    Resumo Coletado pela IA
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isSummarizing || !selectedChatId}
+                    onClick={handleSummarizeWithAI}
+                    className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSummarizing ? (
+                      <>
+                        <LoaderCircle className="h-3 w-3 animate-spin" />
+                        Analisando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-3 w-3" />
+                        Atualizar com IA
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/20 p-3 space-y-2 text-xs">
+                  {currentChatSummary ? (
+                    <div className="space-y-1.5 whitespace-pre-line text-foreground leading-relaxed text-[11px]">
+                      {currentChatSummary}
+                    </div>
+                  ) : matchedLead && (matchedLead.interesse || matchedLead.objetivo || matchedLead.cidade || matchedLead.credito) ? (
+                    <div className="space-y-1.5">
+                      {matchedLead.interesse && (
+                        <div className="flex items-start justify-between gap-2 text-[11px]">
+                          <span className="text-muted-foreground">Interesse:</span>
+                          <span className="font-semibold text-foreground text-right">{matchedLead.interesse}</span>
+                        </div>
+                      )}
+                      {matchedLead.objetivo && (
+                        <div className="flex items-start justify-between gap-2 text-[11px]">
+                          <span className="text-muted-foreground">Objetivo:</span>
+                          <span className="font-semibold text-foreground text-right">{matchedLead.objetivo}</span>
+                        </div>
+                      )}
+                      {(matchedLead.cidade || matchedLead.estado) && (
+                        <div className="flex items-start justify-between gap-2 text-[11px]">
+                          <span className="text-muted-foreground">Localização:</span>
+                          <span className="font-semibold text-foreground text-right">
+                            {[matchedLead.cidade, matchedLead.estado].filter(Boolean).join(" - ")}
+                          </span>
+                        </div>
+                      )}
+                      {(matchedLead.credito || matchedLead.parcela || matchedLead.lance_entrada_fgts) && (
+                        <div className="flex items-start justify-between gap-2 text-[11px]">
+                          <span className="text-muted-foreground">Orçamento / Entrada:</span>
+                          <span className="font-semibold text-foreground text-right">
+                            {[matchedLead.credito, matchedLead.parcela, matchedLead.lance_entrada_fgts]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-2 space-y-2">
+                      <p className="text-muted-foreground text-[11px]">
+                        Nenhum resumo gerado para esta conversa ainda.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isSummarizing || !selectedChatId}
+                        onClick={handleSummarizeWithAI}
+                        className="h-7 text-[11px] rounded-lg border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 cursor-pointer"
+                      >
+                        <Sparkles className="mr-1.5 h-3 w-3 text-purple-500" />
+                        {isSummarizing ? "Gerando resumo..." : "Gerar Resumo com IA"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Ações Rápidas do Consultor */}
+              <div className="space-y-2 pt-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Zap className="h-3.5 w-3.5 text-amber-500" />
+                  Ações Rápidas
+                </span>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const rawPhone = selectedChat?.id ? String(selectedChat.id).replace(/\D/g, "") : "";
+                      navigate(rawPhone ? `/crm/propostas-gd?phone=${rawPhone}` : "/crm/propostas-gd");
+                    }}
+                    className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-indigo-500/30 bg-indigo-500/5 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/15"
+                  >
+                    <FileText className="mr-2 h-3.5 w-3.5 text-indigo-500" />
+                    Gerar Proposta Comercial
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate("/crm/followup")}
+                    className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15"
+                  >
+                    <RefreshCw className="mr-2 h-3.5 w-3.5 text-amber-500" />
+                    Cadência de Follow-up
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate("/crm/banco-de-dados")}
+                    className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-border/80 bg-background hover:bg-muted"
+                  >
+                    <Inbox className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                    Ver no Banco de Dados
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </PageShell>
