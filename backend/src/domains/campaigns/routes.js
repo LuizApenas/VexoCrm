@@ -1931,6 +1931,7 @@ export function registerCampaignsRoutes(app, deps) {
             direction: "outbound",
             messageText: step.text || (step.type === "image" ? `[Imagem: ${step.image?.name || "anexo"}]` : ""),
             deliveredAt: sentAt || new Date().toISOString(),
+            messageTimestamp: sentAt || new Date().toISOString(),
             instanceName: chipName,
             meta: {
               source: "campaign_dispatch",
@@ -2829,6 +2830,7 @@ export function registerCampaignsRoutes(app, deps) {
             messageText: replyText,
             campaignId: activeWaitCampaign.id,
             deliveredAt: repliedAt,
+            messageTimestamp: repliedAt || new Date().toISOString(),
             meta: {
               source: "campaign-reply-webhook",
               campaignName: activeWaitCampaign.name || null,
@@ -2925,6 +2927,7 @@ export function registerCampaignsRoutes(app, deps) {
           messageText: replyText,
           campaignId: activeWaitCampaign?.id || campaignReplyContext.matches[0]?.id || null,
           deliveredAt: repliedAt,
+          messageTimestamp: repliedAt || new Date().toISOString(),
           meta: {
             source: "campaign-reply-webhook",
             matchedCampaignCount: campaignReplyContext.matches.length,

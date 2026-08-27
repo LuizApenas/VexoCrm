@@ -573,8 +573,8 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
               const insertRes = await pgDatabasePool.query(
                 `
                   INSERT INTO public.lead_messages 
-                    (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name, contact_name, is_group, wa_message_id)
-                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                    (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, message_timestamp, meta, instance_name, contact_name, is_group, wa_message_id)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9, $10, $11, $12, $13, $14)
                   ON CONFLICT (client_id, wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING
                   RETURNING id
                 `,
@@ -604,8 +604,8 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
                 const retryRes = await pgDatabasePool.query(
                   `
                     INSERT INTO public.lead_messages 
-                      (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name, contact_name, is_group, wa_message_id)
-                    VALUES ($1, $2, NULL, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                      (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, message_timestamp, meta, instance_name, contact_name, is_group, wa_message_id)
+                    VALUES ($1, $2, NULL, $4, $5, $6, $7, NOW(), $8, $9, $10, $11, $12, $13, $14)
                     ON CONFLICT (client_id, wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING
                     RETURNING id
                   `,
@@ -640,7 +640,10 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
                   SELECT id 
                   FROM public.lead_messages
                   WHERE client_id = $1 AND phone = $2 AND message_text = $3
-                    AND created_at >= $4 AND created_at <= $5
+                    AND (
+                      (message_timestamp >= $4 AND message_timestamp <= $5)
+                      OR (created_at >= $4 AND created_at <= $5)
+                    )
                   LIMIT 1
                 `,
                 [
@@ -656,8 +659,8 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
                 await pgDatabasePool.query(
                   `
                     INSERT INTO public.lead_messages 
-                      (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, meta, instance_name, contact_name, is_group)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                      (client_id, lead_id, campaign_id, phone, sender_type, direction, message_text, created_at, delivered_at, message_timestamp, meta, instance_name, contact_name, is_group)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9, $10, $11, $12, $13)
                   `,
                   [
                     clientId,

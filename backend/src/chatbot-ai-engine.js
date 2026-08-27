@@ -639,8 +639,23 @@ export async function resolveMessageContent(evolutionBody) {
   const caption = evolutionBody?.data?.message?.imageMessage?.caption || "";
   const waMessageId = resolveMessageId(evolutionBody) || null;
 
+  const rawTs = evolutionBody?.data?.messageTimestamp ?? evolutionBody?.messageTimestamp ?? null;
+  let messageTimestamp = null;
+  if (rawTs) {
+    const num = Number(rawTs);
+    if (!Number.isNaN(num) && num > 0) {
+      const ms = num < 10000000000 ? num * 1000 : num;
+      messageTimestamp = new Date(ms).toISOString();
+    } else if (typeof rawTs === "string") {
+      const parsed = new Date(rawTs);
+      if (!Number.isNaN(parsed.getTime())) {
+        messageTimestamp = parsed.toISOString();
+      }
+    }
+  }
+
   if (type === "text") {
-    return { type, text: extractTextFromBody(evolutionBody) || "", waMessageId };
+    return { type, text: extractTextFromBody(evolutionBody) || "", waMessageId, messageTimestamp };
   }
 
   if (type === "audio") {
@@ -650,10 +665,10 @@ export async function resolveMessageContent(evolutionBody) {
       const transcription = await transcribeAudio(base64, mimetype);
       if (transcription) {
         console.log("[chatbot-ai] Audio transcribed:", transcription.slice(0, 80));
-        return { type, text: transcription, transcribed: true, waMessageId };
+        return { type, text: transcription, transcribed: true, waMessageId, messageTimestamp };
       }
     }
-    return { type, text: "[áudio]", transcribed: false, waMessageId };
+    return { type, text: "[áudio]", transcribed: false, waMessageId, messageTimestamp };
   }
 
   if (type === "image") {
@@ -663,21 +678,21 @@ export async function resolveMessageContent(evolutionBody) {
       const description = await describeImage(base64, mimetype, caption);
       if (description) {
         console.log("[chatbot-ai] Image described:", description.slice(0, 80));
-        return { type, text: `[imagem: ${description}]${caption ? ` — legenda: "${caption}"` : ""}`, described: true, waMessageId };
+        return { type, text: `[imagem: ${description}]${caption ? ` — legenda: "${caption}"` : ""}`, described: true, waMessageId, messageTimestamp };
       }
     }
-    return { type, text: caption ? `[imagem] ${caption}` : "[imagem]", described: false, waMessageId };
+    return { type, text: caption ? `[imagem] ${caption}` : "[imagem]", described: false, waMessageId, messageTimestamp };
   }
 
-  if (type === "sticker") return { type, text: "[sticker]", waMessageId };
-  if (type === "reaction") return { type, text: "[reação]", waMessageId };
-  if (type === "video") return { type, text: caption ? `[vídeo] ${caption}` : "[vídeo]", waMessageId };
+  if (type === "sticker") return { type, text: "[sticker]", waMessageId, messageTimestamp };
+  if (type === "reaction") return { type, text: "[reação]", waMessageId, messageTimestamp };
+  if (type === "video") return { type, text: caption ? `[vídeo] ${caption}` : "[vídeo]", waMessageId, messageTimestamp };
   if (type === "document") {
     const name = evolutionBody?.data?.message?.documentMessage?.fileName || "documento";
-    return { type, text: `[documento: ${name}]`, waMessageId };
+    return { type, text: `[documento: ${name}]`, waMessageId, messageTimestamp };
   }
 
-  return { type: "unknown", text: "", waMessageId };
+  return { type: "unknown", text: "", waMessageId, messageTimestamp };
 }
 
 // ─── Normalização de Origem de Marketing ──────────────────────────────────────
@@ -1309,6 +1324,7 @@ async function responderRecontatoComTextoLiteral({
         direction: "outbound",
         message_text: customMessage,
         delivered_at: now,
+        message_timestamp: now,
         created_at: now,
         instance_name: instanceName || null,
       }]).then(({ error }) => {

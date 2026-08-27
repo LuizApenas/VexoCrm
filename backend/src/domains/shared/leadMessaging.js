@@ -48,6 +48,7 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
     meta = null,
     instanceName = null,
     waMessageId = null,
+    messageTimestamp = null,
   }) {
     if (!supabase || !clientId || !phone) return null;
 
@@ -124,12 +125,21 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
       engagement_signal: engagementSignal,
       message_text: normalizedMessage,
       delivered_at: deliveredAt || new Date().toISOString(),
+      message_timestamp: messageTimestamp || deliveredAt || new Date().toISOString(),
       meta: meta && typeof meta === "object" ? meta : {},
       instance_name: instanceName,
       wa_message_id: waMessageId || null,
     };
 
     let { error } = await supabase.from("lead_messages").insert(payload);
+
+    // Se falhar por coluna message_timestamp inexistente, tenta sem ela
+    if (error && String(error.message).includes("message_timestamp")) {
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.message_timestamp;
+      const retryRes = await supabase.from("lead_messages").insert(fallbackPayload);
+      error = retryRes.error;
+    }
 
     // Se falhar por FK (23503) em campaign_id (ex.: campanha excluída ou id de outra tabela),
     // tenta novamente com campaign_id: null para não perder a gravação da mensagem

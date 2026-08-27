@@ -402,6 +402,7 @@ export function registerChatbotRoutes(app, deps) {
     // inbox nao depender da tabela de leads (mostrar nome nao pode criar lead).
     try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS contact_name TEXT;").catch(() => {}); } catch(e) {}
     try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS is_group BOOLEAN DEFAULT false;").catch(() => {}); } catch(e) {}
+    try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS message_timestamp TIMESTAMPTZ;").catch(() => {}); } catch(e) {}
 
     try {
       const search = normalizeString(_req.query.search)?.toLowerCase() || "";
@@ -440,7 +441,7 @@ export function registerChatbotRoutes(app, deps) {
           WITH pre_canonical AS (
             SELECT
               ${SQL_CANONICAL_PHONE("phone")} as canonical_phone,
-              delivered_at
+              COALESCE(message_timestamp, delivered_at, created_at) as effective_timestamp
             FROM public.lead_messages
             WHERE client_id = $1 ${instanceFilter}
           ),
@@ -448,7 +449,7 @@ export function registerChatbotRoutes(app, deps) {
             SELECT DISTINCT ON (canonical_phone)
               canonical_phone as phone
             FROM pre_canonical
-            ORDER BY canonical_phone, delivered_at DESC
+            ORDER BY canonical_phone, effective_timestamp DESC NULLS LAST
           )
           SELECT COUNT(*)::integer as total
           FROM latest_messages m
@@ -469,6 +470,9 @@ export function registerChatbotRoutes(app, deps) {
               message_text,
               direction,
               delivered_at,
+              created_at,
+              message_timestamp,
+              COALESCE(message_timestamp, delivered_at, created_at) as effective_timestamp,
               campaign_id,
               contact_name,
               is_group
@@ -482,17 +486,23 @@ export function registerChatbotRoutes(app, deps) {
               message_text,
               direction,
               delivered_at,
+              created_at,
+              message_timestamp,
+              effective_timestamp,
               campaign_id,
               contact_name,
               is_group
             FROM pre_canonical
-            ORDER BY canonical_phone, delivered_at DESC
+            ORDER BY canonical_phone, effective_timestamp DESC NULLS LAST
           )
           SELECT
             m.phone as phone_number,
             m.message_text,
             m.direction,
             m.delivered_at,
+            m.created_at,
+            m.message_timestamp,
+            m.effective_timestamp,
             m.campaign_id,
             m.contact_name,
             m.is_group,
@@ -506,13 +516,13 @@ export function registerChatbotRoutes(app, deps) {
           LEFT JOIN public.whatsapp_lid_map lm ON lm.lid = m.phone OR lm.lid = m.raw_phone
           WHERE 1=1
           ${searchFilter}
-          ORDER BY m.delivered_at DESC
+          ORDER BY m.effective_timestamp DESC NULLS LAST
           LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
         `;
 
         const result = await pgDatabasePool.query(queryText, queryParamsWithPaging);
         items = result.rows.map((row) => {
-          const timestampVal = row.delivered_at ? Math.floor(new Date(row.delivered_at).getTime() / 1000) : null;
+          const timestampVal = row.effective_timestamp ? Math.floor(new Date(row.effective_timestamp).getTime() / 1000) : null;
           return {
             id: row.phone_number,
             // contact_name (pushName do WhatsApp) tem prioridade: existe para
@@ -743,19 +753,26 @@ export function registerChatbotRoutes(app, deps) {
       const queryText = `
         SELECT
           id,
+          phone,
           message_text,
           direction,
           delivered_at,
+          created_at,
+          message_timestamp,
+          COALESCE(message_timestamp, delivered_at, created_at) as effective_timestamp,
+          wa_message_id,
           sender_type
         FROM public.lead_messages
         WHERE client_id = $1 AND phone = ANY($2) ${instanceFilter}
-        ORDER BY delivered_at DESC
+        ORDER BY COALESCE(message_timestamp, delivered_at, created_at) DESC NULLS LAST
         LIMIT $3
       `;
       const result = await pgDatabasePool.query(queryText, queryParams);
 
       let items = result.rows.map((row) => {
-        const timestampVal = row.delivered_at ? Math.floor(new Date(row.delivered_at).getTime() / 1000) : null;
+        const timestampVal = row.effective_timestamp
+          ? Math.floor(new Date(row.effective_timestamp).getTime() / 1000)
+          : (row.created_at ? Math.floor(new Date(row.created_at).getTime() / 1000) : null);
         return {
           id: String(row.id),
           body: row.message_text || "",
@@ -764,6 +781,11 @@ export function registerChatbotRoutes(app, deps) {
           author: null,
           fromMe: row.direction === "outbound",
           timestamp: timestampVal,
+          createdAt: row.created_at,
+          messageTimestamp: row.message_timestamp,
+          waMessageId: row.wa_message_id,
+          phone: row.phone,
+          direction: row.direction,
           type: "chat",
           hasMedia: false,
         };
@@ -854,6 +876,7 @@ export function registerChatbotRoutes(app, deps) {
         direction: "outbound",
         messageText: body,
         deliveredAt: new Date().toISOString(),
+        messageTimestamp: new Date().toISOString(),
         instanceName: evoInstanceName,
         meta: {
           source: "manual-inbox-reply",
@@ -1121,6 +1144,7 @@ export function registerChatbotRoutes(app, deps) {
           senderType: "lead",
           direction: "inbound",
           messageText: userMessage,
+          messageTimestamp: new Date().toISOString(),
           meta: { source: "hardcoded-chat-api" },
         });
       }
@@ -1187,6 +1211,7 @@ export function registerChatbotRoutes(app, deps) {
               messageText: response.message,
               leadId: persistResult.leadId || null,
               engagementSignal: qualification,
+              messageTimestamp: new Date().toISOString(),
               meta: {
                 source: "hardcoded-chat-api",
                 conversationStatus: memory.status || null,
@@ -1597,6 +1622,7 @@ export function registerChatbotRoutes(app, deps) {
                 },
                 instanceName,
                 waMessageId: item.waMessageId || null,
+                messageTimestamp: item.messageTimestamp || new Date().toISOString(),
               });
             }
           }
@@ -1718,6 +1744,7 @@ export function registerChatbotRoutes(app, deps) {
               },
               instanceName,
               waMessageId: outboundWaId,
+              messageTimestamp: new Date().toISOString(),
             });
           } else {
             const errText = await evolutionResponse.text();

@@ -126,6 +126,10 @@ async function isAlreadyApplied(pool, filename) {
         AND NOT EXISTS (SELECT 1 FROM public.lead_client_n8n_settings WHERE chatbot_llm_model IN (${mortosIn}))
       ) AS ok`;
     })(),
+    "20260827000000_add_lead_messages_message_timestamp.sql": `SELECT (
+      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_messages' AND column_name='message_timestamp')
+      AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_lead_messages_message_timestamp')
+    ) AS ok`,
   };
 
   const query = checks[filename];

@@ -1685,6 +1685,7 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
           direction: "outbound",
           messageText: step.text || (step.type === "image" ? `[Imagem: ${step.image?.name || "anexo"}]` : ""),
           deliveredAt: sentAt || new Date().toISOString(),
+          messageTimestamp: sentAt || new Date().toISOString(),
           instanceName: chipName,
           meta: {
             source: "campaign_reply_progression",
