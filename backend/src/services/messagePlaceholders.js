@@ -1,0 +1,95 @@
+// Serviço Central de Substituição de Variáveis / Placeholders em Mensagens de Saída.
+// Garante que NENHUM template ou variável como {{nome}} chegue crua ao lead.
+
+function normalizeString(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+/**
+ * Substitui todas as variáveis de template no texto da mensagem antes do envio ao WhatsApp.
+ * Suporta tokens case-insensitive com espaços internos opcionais:
+ * - {{nome}}, {{Nome}}, {{lead_name}}, {{cliente}}, {{name}}
+ * - {{telefone}}, {{phone}}, {{celular}}
+ * - {{scheduling_link}}, {{link}}, {{agendamento}}
+ * - {{meeting_date}}, {{meeting_time}}
+ * - Variáveis dinâmicas de planilhas e campos personalizados (normalized_data, dados)
+ *
+ * @param {string} text - Texto da mensagem com ou sem placeholders
+ * @param {object} [lead] - Objeto do lead com nome, telefone, dados, etc.
+ * @param {string} [phone] - Telefone de envio / destino
+ * @param {object} [extraContext] - Dados extras de agendamento, reunião ou campanha
+ * @returns {string} Texto com variáveis substituídas
+ */
+export function applyMessagePlaceholders(text, lead = {}, phone = "", extraContext = {}) {
+  let raw = normalizeString(text);
+  if (!raw) return raw;
+
+  const leadObj = lead && typeof lead === "object" ? lead : {};
+  const extraObj = extraContext && typeof extraContext === "object" ? extraContext : {};
+
+  // 1. Resolução de Nome: busca lead.nome, lead.name, lead.lead_name, dados.nome, normalized_data.nome
+  const rawNome =
+    normalizeString(leadObj.nome) ||
+    normalizeString(leadObj.name) ||
+    normalizeString(leadObj.lead_name) ||
+    normalizeString(leadObj.normalized_data?.nome) ||
+    normalizeString(leadObj.normalizedData?.nome) ||
+    normalizeString(leadObj.dados?.nome);
+
+  // Fallback seguro: se não houver nome cadastrado, usa "cliente"
+  const nomeResolvido = rawNome || "cliente";
+
+  // 2. Resolução de Telefone
+  const telResolvido =
+    normalizeString(phone) ||
+    normalizeString(leadObj.telefone) ||
+    normalizeString(leadObj.phone) ||
+    normalizeString(leadObj.normalized_data?.telefone) ||
+    "";
+
+  // 3. Resolução de Links e Agendamento
+  const schedulingLink =
+    normalizeString(extraObj.scheduling_link) ||
+    normalizeString(leadObj.scheduling_link) ||
+    normalizeString(leadObj.normalized_data?.scheduling_link) ||
+    normalizeString(leadObj.normalizedData?.scheduling_link) ||
+    "";
+
+  // 4. Substituições principais
+  raw = raw
+    .replace(/\{\{\s*(?:nome|name|lead_name|cliente)\s*\}\}/gi, nomeResolvido)
+    .replace(/\{\{\s*(?:telefone|phone|celular)\s*\}\}/gi, telResolvido);
+
+  if (schedulingLink) {
+    raw = raw.replace(/\{\{\s*(?:scheduling_link|link|agendamento)\s*\}\}/gi, schedulingLink);
+  }
+
+  // 5. Variáveis de reunião / follow-up
+  if (extraObj.meeting_date || leadObj.meeting_date || leadObj.meeting_datetime) {
+    const d = extraObj.meeting_datetime || leadObj.meeting_datetime ? new Date(extraObj.meeting_datetime || leadObj.meeting_datetime) : null;
+    const dateStr = extraObj.meeting_date || leadObj.meeting_date || (d ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
+    const timeStr = extraObj.meeting_time || leadObj.meeting_time || (d ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "");
+    raw = raw
+      .replace(/\{\{\s*meeting_date\s*\}\}/gi, dateStr)
+      .replace(/\{\{\s*meeting_time\s*\}\}/gi, timeStr);
+  }
+
+  // 6. Dados dinâmicos adicionais (normalized_data, dados, extraContext)
+  const customData = {
+    ...leadObj,
+    ...(leadObj.normalized_data || {}),
+    ...(leadObj.normalizedData || {}),
+    ...(leadObj.dados || {}),
+    ...extraObj,
+  };
+
+  for (const [key, value] of Object.entries(customData)) {
+    if (typeof value === "string" || typeof value === "number") {
+      const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi");
+      raw = raw.replace(regex, String(value));
+    }
+  }
+
+  return raw;
+}

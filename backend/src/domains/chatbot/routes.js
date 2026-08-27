@@ -894,6 +894,19 @@ export function registerChatbotRoutes(app, deps) {
       const webhookUrl = activeInstance.dispatch_webhook_url;
       const webhookToken = activeInstance.dispatch_webhook_token;
 
+      // Guarda de saída obrigatória: impede envio de templates com {{...}} ou tags não substituídas
+      const guard = validateOutboundMessage(body);
+      if (!guard.valid) {
+        console.error("[manual-chat] BLOQUEIO DE SEGURANÇA: Mensagem contém variável não substituída ou formato inválido. Envio cancelado!", {
+          clientId,
+          phone: cleanPhone,
+          motivo: guard.reason,
+          preview: body.slice(0, 100),
+        });
+        sendError(res, 400, "OUTBOUND_GUARD_BLOCKED", `Mensagem bloqueada pela guarda de segurança: ${guard.reason}`);
+        return;
+      }
+
       // Construct and send message payload to Evolution API
       const payload = {
         source: "vexocrm",

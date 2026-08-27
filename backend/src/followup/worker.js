@@ -11,29 +11,42 @@ import { query, getSupabase } from "./db.js";
 import { QUEUE_NAME, getRedisConnection, getFollowupQueue } from "./queue.js";
 import Groq from "groq-sdk";
 import { ResendProvider } from "../providers/ResendProvider.js";
+import { applyMessagePlaceholders } from "../services/messagePlaceholders.js";
+import { validateOutboundMessage } from "../services/jsonExtractor.js";
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 
-function renderMessage(template, { lead_name, meeting_datetime }) {
-  let msg = template;
-  const d = meeting_datetime ? new Date(meeting_datetime) : null;
-  const date = d
-    ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
-    : "";
-  const time = d
-    ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-    : "";
-  msg = msg.replace(/\{\{lead_name\}\}/gi, lead_name || "");
-  msg = msg.replace(/\{\{meeting_date\}\}/gi, date);
-  msg = msg.replace(/\{\{meeting_time\}\}/gi, time);
-  return msg;
+function renderMessage(template, { lead_name, meeting_datetime, phone = "" }) {
+  return applyMessagePlaceholders(
+    template,
+    { nome: lead_name, lead_name },
+    phone,
+    { meeting_datetime }
+  );
 }
 
 async function sendViaEvolution(instance, phone, text) {
   if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
     throw new Error("EVOLUTION_API_URL ou EVOLUTION_API_KEY não configurado.");
   }
+
+  // Guarda de saída obrigatória
+  const guard = validateOutboundMessage(text);
+  if (!guard.valid) {
+    console.error("[followup/worker] BLOQUEIO DE SEGURANÇA: Mensagem contém variável não substituída ou formato inválido. Envio cancelado!", {
+      phone,
+      instance,
+      motivo: guard.reason,
+      textoCompleto: text,
+      origem: "followup_worker",
+    });
+    const error = new Error(`[BLOQUEIO_GUARDA_SAIDA] Mensagem bloqueada: ${guard.reason}`);
+    error.code = "OUTBOUND_GUARD_BLOCKED";
+    error.reason = guard.reason;
+    throw error;
+  }
+
   const url = `${EVOLUTION_API_URL.replace(/\/$/, "")}/message/sendText/${instance}`;
   const res = await fetch(url, {
     method: "POST",

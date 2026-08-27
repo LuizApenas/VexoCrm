@@ -1,5 +1,9 @@
 import { randomUUID } from "crypto";
 import { isFilterShape, normalizeFilters } from "./segmentation.js";
+import { applyMessagePlaceholders } from "./services/messagePlaceholders.js";
+import { validateOutboundMessage } from "./services/jsonExtractor.js";
+
+export { applyMessagePlaceholders };
 
 export const DEFAULT_LEAD_DELAY_SECONDS = 2;
 export const DEFAULT_STEP_DELAY_SECONDS = 5;
@@ -10,8 +14,6 @@ const DEFAULT_STEP_FAILURE_MODE = true;
 const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 const MAX_REPLY_TIMEOUT_SECONDS = 15 * 60;
 const MAX_REPLY_POLL_INTERVAL_SECONDS = 60;
-// Teto unico de variacoes. Precisa bater com o clamp de campaign-ai.js: se
-// divergirem, a tela mostra N variacoes e o envio usa menos, em silencio.
 export const MAX_TEXT_VARIANTS = 30;
 
 function normalizeString(value) {
@@ -40,37 +42,6 @@ function normalizeTextVariants(value) {
   return Array.from(
     new Set(value.map(normalizeString).filter(Boolean))
   ).slice(0, MAX_TEXT_VARIANTS);
-}
-
-/**
- * Replace per-lead placeholders in outbound copy (Evolution text/caption).
- * Supports {{nome}} and {{telefone}} with optional spaces inside braces (case-insensitive tokens).
- */
-export function applyMessagePlaceholders(text, lead, phone) {
-  let raw = normalizeString(text);
-  if (!raw) return raw;
-  const nome = normalizeString(lead?.nome) || "cliente";
-  const tel = normalizeString(phone) || normalizeString(lead?.telefone || lead?.phone);
-  
-  raw = raw
-    .replace(/\{\{\s*nome\s*\}\}/gi, nome)
-    .replace(/\{\{\s*telefone\s*\}\}/gi, tel || "");
-
-  // Dynamic placeholders from spreadsheet columns (normalized_data)
-  const customData = {
-    ...(lead || {}),
-    ...(lead?.normalized_data || {}),
-    ...(lead?.normalizedData || {}),
-  };
-
-  for (const [key, value] of Object.entries(customData)) {
-    if (typeof value === "string" || typeof value === "number") {
-      const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\\}\\}`, "gi");
-      raw = raw.replace(regex, String(value));
-    }
-  }
-
-  return raw;
 }
 
 function hashSeed(value) {
@@ -665,6 +636,25 @@ async function postEvolutionPayload(webhookUrl, webhookToken, payload) {
   const stepWebhookUrl = resolveStepWebhookUrl(webhookUrl, payload);
   const endpointInfo = getSafeEndpointInfo(stepWebhookUrl);
 
+  const textToValidate = payload?.text || payload?.message || payload?.caption || payload?.txt || "";
+  if (textToValidate) {
+    const guard = validateOutboundMessage(textToValidate);
+    if (!guard.valid) {
+      console.error("[campaign-outbound] BLOQUEIO DE SEGURANÇA: Mensagem contém variável não substituída ou formato inválido. Envio cancelado!", {
+        phone: maskOutboundPhone(payload?.number),
+        motivo: guard.reason,
+        stepId: payload?.stepId || null,
+        endpointInfo,
+        textoCompleto: textToValidate,
+        origem: payload?.source || payload?.campaign?.name || "campanha",
+      });
+      const error = new Error(`[BLOQUEIO_GUARDA_SAIDA] Mensagem bloqueada: ${guard.reason}`);
+      error.code = "OUTBOUND_GUARD_BLOCKED";
+      error.reason = guard.reason;
+      throw error;
+    }
+  }
+
   try {
     console.info("[campaign-outbound] whatsapp_step_request", {
       type: payload?.type || null,
@@ -887,7 +877,7 @@ export async function dispatchCampaignSequence({
             await onStepDispatched({
               lead,
               phone,
-              step,
+              step: stepForPayload,
               stepIndex,
               totalSteps: enabledSteps.length,
               sentAt,

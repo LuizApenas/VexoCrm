@@ -37,6 +37,11 @@ export function validateOutboundMessage(text) {
     return { valid: false, reason: "contains_markdown_code_block" };
   }
 
+  // 4. Guarda estrita de variáveis: impede envio de templates com {{...}} ou tags não substituídas ao lead
+  if (trimmed.includes("{{") || trimmed.includes("}}") || /\{\{.*?\}\}/.test(trimmed)) {
+    return { valid: false, reason: "contains_unresolved_variable" };
+  }
+
   // Verifica chaves internas do contrato
   const lower = trimmed.toLowerCase();
   for (const key of INTERNAL_CONTRACT_KEYS) {
