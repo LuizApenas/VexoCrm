@@ -69,6 +69,13 @@ export function registerFollowupQueueRoutes(app, deps) {
             MAX(fj.sent_at)                                    AS last_sent_at,
             MIN(fj.scheduled_for) FILTER (WHERE fj.status = 'pending') AS next_scheduled_for,
             (
+              SELECT fj_msg.custom_message
+                FROM followup_jobs fj_msg
+               WHERE fj_msg.schedule_id = fs.id
+               ORDER BY fj_msg.created_at DESC
+               LIMIT 1
+            ) AS custom_message,
+            (
               SELECT fj_err.error_log
                 FROM followup_jobs fj_err
                WHERE fj_err.schedule_id = fs.id AND fj_err.status = 'failed'
@@ -123,6 +130,7 @@ export function registerFollowupQueueRoutes(app, deps) {
           tenantId:        r.tenant_id,
           campaignId:      r.campaign_id,
           campaignName:    r.campaign_name,
+          customMessage:   r.custom_message || null,
           status:          r.derived_status,
           rawStatus:       r.raw_status,
           jobsSent,
@@ -214,18 +222,29 @@ export function registerFollowupQueueRoutes(app, deps) {
     }
   });
 
-  // PATCH /api/followup-queue/:scheduleId/reschedule — cria novo job BullMQ com delay
+  // PATCH /api/followup-queue/:scheduleId/reschedule — cria novo job BullMQ com delay e cancela anterior
   app.patch("/api/followup-queue/:scheduleId/reschedule", requireFirebaseAuth, async (req, res) => {
     const scheduleId = normalizeString(req.params?.scheduleId);
     if (!scheduleId) return sendError(res, 400, "INVALID_PARAM", "Missing scheduleId");
 
     const body = req.body && typeof req.body === "object" ? req.body : {};
-    const delayMinutes = Number(body.delayMinutes);
-    const templateId = normalizeString(body.templateId) || null;
+    const rawScheduledFor = body.scheduledFor ? new Date(body.scheduledFor) : null;
+    let targetDate;
+    let delayMs;
 
-    if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
-      return sendError(res, 400, "INVALID_BODY", "delayMinutes must be a non-negative number");
+    if (rawScheduledFor && !isNaN(rawScheduledFor.getTime())) {
+      targetDate = rawScheduledFor;
+      delayMs = Math.max(0, targetDate.getTime() - Date.now());
+    } else {
+      const delayMinutes = Number(body.delayMinutes);
+      if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
+        return sendError(res, 400, "INVALID_BODY", "Must provide a valid scheduledFor or non-negative delayMinutes");
+      }
+      delayMs = Math.max(0, Math.round(delayMinutes * 60 * 1000));
+      targetDate = new Date(Date.now() + delayMs);
     }
+
+    const templateId = normalizeString(body.templateId) || null;
 
     try {
       const { rows: schedRows } = await fupQuery(
@@ -240,12 +259,16 @@ export function registerFollowupQueueRoutes(app, deps) {
       let customMessageToUse = null;
 
       if (!campaign_id) {
-        // Lembrete avulso: busca a custom_message do último job do schedule
-        const { rows: lastJobRows } = await fupQuery(
-          `SELECT custom_message FROM followup_jobs WHERE schedule_id = $1 ORDER BY created_at DESC LIMIT 1`,
-          [scheduleId]
-        );
-        customMessageToUse = lastJobRows[0]?.custom_message || null;
+        // Lembrete avulso: usa a nova mensagem se fornecida ou resgata a do último job
+        if (typeof body.customMessage === "string" && body.customMessage.trim().length > 0) {
+          customMessageToUse = body.customMessage.trim();
+        } else {
+          const { rows: lastJobRows } = await fupQuery(
+            `SELECT custom_message FROM followup_jobs WHERE schedule_id = $1 ORDER BY created_at DESC LIMIT 1`,
+            [scheduleId]
+          );
+          customMessageToUse = lastJobRows[0]?.custom_message || null;
+        }
       } else if (!resolvedTemplateId) {
         const { rows: tplRows } = await fupQuery(
           `SELECT id FROM followup_templates WHERE campaign_id = $1 AND is_active = true ORDER BY order_index ASC LIMIT 1`,
@@ -255,17 +278,20 @@ export function registerFollowupQueueRoutes(app, deps) {
         resolvedTemplateId = tplRows[0].id;
       }
 
+      // Cancela jobs pendentes anteriores no banco para garantir que o worker ignore qualquer tentativa antiga
+      await fupQuery(
+        `UPDATE followup_jobs SET status = 'cancelled' WHERE schedule_id = $1 AND status = 'pending'`,
+        [scheduleId]
+      );
+
       await fupQuery(
         `UPDATE followup_schedules SET status = 'active' WHERE id = $1`,
         [scheduleId]
       );
 
-      const delayMs = Math.max(0, Math.round(delayMinutes * 60 * 1000));
-      const scheduledFor = new Date(Date.now() + delayMs);
-
       const { rows: jobRows } = await fupQuery(
         `INSERT INTO followup_jobs (schedule_id, template_id, custom_message, status, scheduled_for) VALUES ($1, $2, $3, 'pending', $4) RETURNING id`,
-        [scheduleId, resolvedTemplateId || null, customMessageToUse, scheduledFor]
+        [scheduleId, resolvedTemplateId || null, customMessageToUse, targetDate]
       );
       const newJobId = jobRows[0].id;
 
@@ -275,13 +301,13 @@ export function registerFollowupQueueRoutes(app, deps) {
         { delay: delayMs, jobId: `fup-reschedule-${newJobId}-${Date.now()}` }
       );
 
-      return res.json({ success: true, jobId: newJobId, delayMinutes, scheduledFor });
+      return res.json({ success: true, jobId: newJobId, delayMs, scheduledFor: targetDate.toISOString() });
     } catch (err) {
       sendError(res, 500, "RESCHEDULE_FAILED", err instanceof Error ? err.message : "Failed to reschedule");
     }
   });
 
-  // PATCH /api/followup-queue/:scheduleId/discard — cancela schedule e jobs pendentes
+  // PATCH /api/followup-queue/:scheduleId/discard — cancela schedule e jobs pendentes (mantém histórico)
   app.patch("/api/followup-queue/:scheduleId/discard", requireFirebaseAuth, async (req, res) => {
     const scheduleId = normalizeString(req.params?.scheduleId);
     if (!scheduleId) return sendError(res, 400, "INVALID_PARAM", "Missing scheduleId");
@@ -301,6 +327,42 @@ export function registerFollowupQueueRoutes(app, deps) {
       return res.json({ success: true, id: scheduleId });
     } catch (err) {
       sendError(res, 500, "DISCARD_FAILED", err instanceof Error ? err.message : "Failed to discard schedule");
+    }
+  });
+
+  // DELETE /api/followup-queue/:scheduleId — exclusão permanente SOMENTE para itens nunca enviados (0 enviados)
+  app.delete("/api/followup-queue/:scheduleId", requireFirebaseAuth, async (req, res) => {
+    const scheduleId = normalizeString(req.params?.scheduleId);
+    if (!scheduleId) return sendError(res, 400, "INVALID_PARAM", "Missing scheduleId");
+
+    try {
+      const { rows: schedRows } = await fupQuery(
+        `SELECT fs.id,
+                COUNT(fj.id) FILTER (WHERE fj.status = 'sent') AS sent_count
+           FROM followup_schedules fs
+           LEFT JOIN followup_jobs fj ON fj.schedule_id = fs.id
+          WHERE fs.id = $1
+          GROUP BY fs.id`,
+        [scheduleId]
+      );
+      if (!schedRows.length) return sendError(res, 404, "NOT_FOUND", "Schedule not found");
+
+      const sentCount = Number(schedRows[0].sent_count) || 0;
+      if (sentCount > 0) {
+        return sendError(
+          res,
+          400,
+          "CANNOT_DELETE_SENT_SCHEDULE",
+          "Agendamentos que já enviaram mensagens não podem ser excluídos permanentemente, apenas cancelados."
+        );
+      }
+
+      await fupQuery(`DELETE FROM followup_jobs WHERE schedule_id = $1`, [scheduleId]);
+      await fupQuery(`DELETE FROM followup_schedules WHERE id = $1`, [scheduleId]);
+
+      return res.json({ success: true, deletedId: scheduleId });
+    } catch (err) {
+      sendError(res, 500, "DELETE_FAILED", err instanceof Error ? err.message : "Failed to delete schedule");
     }
   });
 

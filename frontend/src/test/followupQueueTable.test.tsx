@@ -68,8 +68,29 @@ vi.mock("@/hooks/useFollowupQueue", () => ({
           meetingDatetime: null,
           createdAt: "2026-08-27T16:10:00Z",
         },
+        {
+          id: "sched-3",
+          leadName: "Carlos Cancelado",
+          phone: "5511977776666",
+          origin: "manual",
+          companyId: "comp-1",
+          companyName: "Geração Digital",
+          campaignId: "camp-1",
+          campaignName: "Lembretes Reunião 7d-3d-1d",
+          status: "cancelled",
+          jobsSent: 0,
+          jobsFailed: 0,
+          jobsPending: 0,
+          totalSteps: 1,
+          currentStep: 1,
+          lastSentAt: null,
+          nextScheduledFor: null,
+          lastErrorLog: null,
+          meetingDatetime: null,
+          createdAt: "2026-08-27T16:20:00Z",
+        },
       ],
-      total: 2,
+      total: 3,
     },
     isLoading: false,
     refetch: vi.fn(),
@@ -79,6 +100,13 @@ vi.mock("@/hooks/useFollowupQueue", () => ({
   }),
   useDiscardFollowup: () => ({
     mutateAsync: vi.fn(),
+  }),
+  useDeleteFollowup: () => ({
+    mutateAsync: vi.fn(),
+  }),
+  useRescheduleFollowup: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
   }),
   useConvertToInbound: () => ({
     mutateAsync: vi.fn(),
@@ -98,6 +126,8 @@ describe("FollowupQueueTable Component", () => {
     expect(screen.getByText("5511999998888")).toBeDefined();
     expect(screen.getByText("Passo 2 de 2")).toBeDefined();
     expect(screen.getByText("Agendado")).toBeDefined();
+    // Exibe botão de Editar para agendamento ativo
+    expect(screen.getByText("Editar")).toBeDefined();
   });
 
   it("surfaces exact failure error log on failed job rows", () => {
@@ -116,5 +146,19 @@ describe("FollowupQueueTable Component", () => {
     ).toBeDefined();
     // Exibe botão de reenviar
     expect(screen.getByText("Reenviar")).toBeDefined();
+  });
+
+  it("hides cancelled and completed items by default and shows discrete counter", () => {
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <FollowupQueueTable companyId="comp-1" tenantId="geracao-digital" />
+      </QueryClientProvider>
+    );
+
+    // O item cancelado fica oculto por padrão
+    expect(screen.queryByText("Carlos Cancelado")).toBeNull();
+    // Exibe banner discreto de itens ocultos
+    expect(screen.getByText(/1 item\(ns\) cancelados ou concluídos estão ocultos nesta visualização/)).toBeDefined();
   });
 });

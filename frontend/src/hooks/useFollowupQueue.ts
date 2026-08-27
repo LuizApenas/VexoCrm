@@ -21,6 +21,7 @@ export interface FollowupItem {
   tenantId?: string;
   campaignId: string;
   campaignName: string;
+  customMessage?: string | null;
   status: FollowupStatus;
   rawStatus?: string;
   jobsSent: number;
@@ -90,10 +91,14 @@ export function useRescheduleFollowup() {
     mutationFn: async ({
       id,
       delayMinutes,
+      scheduledFor,
+      customMessage,
       templateId,
     }: {
       id: string;
-      delayMinutes: number;
+      delayMinutes?: number;
+      scheduledFor?: string;
+      customMessage?: string;
       templateId?: string;
     }): Promise<void> => {
       const token = await getIdToken();
@@ -102,7 +107,7 @@ export function useRescheduleFollowup() {
       const res = await fetchApi(`/api/followup-queue/${id}/reschedule`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ delayMinutes, templateId }),
+        body: JSON.stringify({ delayMinutes, scheduledFor, customMessage, templateId }),
       });
 
       if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao reagendar"));
@@ -126,6 +131,26 @@ export function useDiscardFollowup() {
       });
 
       if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao descartar"));
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["followup-queue"] }),
+  });
+}
+
+export function useDeleteFollowup() {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string): Promise<void> => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+
+      const res = await fetchApi(`/api/followup-queue/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao excluir agendamento permanentemente"));
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["followup-queue"] }),
   });

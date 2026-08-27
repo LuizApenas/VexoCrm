@@ -1,17 +1,17 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   AlertTriangle,
   Calendar,
-  CheckCircle2,
   Clock,
-  Filter,
-  Play,
   RefreshCw,
   RotateCcw,
   Search,
   Trash2,
   UserCheck,
   Zap,
+  Pencil,
+  Ban,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,12 +26,14 @@ import {
   useFollowupQueue,
   useRetryFollowupStep,
   useDiscardFollowup,
+  useDeleteFollowup,
   useConvertToInbound,
   type FollowupItem,
   type FollowupStatus,
 } from "@/hooks/useFollowupQueue";
 import { FOLLOWUP_STATUS_COLORS, FOLLOWUP_STATUS_LABELS } from "@/lib/followup/constants";
 import { useFupCampaigns } from "@/hooks/useFollowupAdmin";
+import { EditFollowupScheduleModal } from "./EditFollowupScheduleModal";
 
 interface FollowupQueueTableProps {
   companyId?: string;
@@ -40,10 +42,17 @@ interface FollowupQueueTableProps {
 
 export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTableProps) {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>("all");
-  const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedStatus, setSelectedStatus] = useState<string>("open");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [editingItem, setEditingItem] = useState<FollowupItem | null>(null);
 
   const { data: campaigns = [] } = useFupCampaigns(companyId);
+
+  // Se selectedStatus for 'open', não passamos status na query para que o hook traga a base e possamos calcular quantos estão ocultos
+  const backendStatusFilter =
+    selectedStatus === "all" || selectedStatus === "open"
+      ? undefined
+      : (selectedStatus as FollowupStatus);
 
   const {
     data: queueData,
@@ -53,25 +62,43 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
     companyId: companyId || undefined,
     tenantId: tenantId || undefined,
     campaignId: selectedCampaignId !== "all" ? selectedCampaignId : undefined,
-    status: selectedStatus !== "all" ? (selectedStatus as FollowupStatus) : undefined,
+    status: backendStatusFilter,
   });
 
   const retryStep = useRetryFollowupStep();
   const discardFollowup = useDiscardFollowup();
+  const deleteFollowup = useDeleteFollowup();
   const convertToInbound = useConvertToInbound();
 
   const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
 
   const items = queueData?.items || [];
 
-  const filteredItems = items.filter((item) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    const nameMatch = (item.leadName || "").toLowerCase().includes(q);
-    const phoneMatch = (item.phone || "").includes(q);
-    const campaignMatch = (item.campaignName || "").toLowerCase().includes(q);
-    return nameMatch || phoneMatch || campaignMatch;
-  });
+  // Quantidade de itens cancelados e concluídos ocultos na visualização padrão ('open')
+  const hiddenCancelledCompletedCount = useMemo(() => {
+    return items.filter((i) => i.status === "cancelled" || i.status === "completed").length;
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      // 1. Filtro de Status Oculto por padrão
+      if (selectedStatus === "open") {
+        if (item.status === "cancelled" || item.status === "completed") {
+          return false;
+        }
+      } else if (selectedStatus !== "all" && item.status !== selectedStatus) {
+        return false;
+      }
+
+      // 2. Filtro de Busca Textual
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      const nameMatch = (item.leadName || "").toLowerCase().includes(q);
+      const phoneMatch = (item.phone || "").includes(q);
+      const campaignMatch = (item.campaignName || "").toLowerCase().includes(q);
+      return nameMatch || phoneMatch || campaignMatch;
+    });
+  }, [items, selectedStatus, searchQuery]);
 
   const formatDateTime = (dateStr: string | null) => {
     if (!dateStr) return "—";
@@ -109,20 +136,52 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
     }
   };
 
+  // Cancelar (Interrompe agendamento e mantém o registro como cancelado)
   const handleDiscard = async (item: FollowupItem) => {
-    if (!confirm(`Deseja remover ${item.leadName || item.phone} desta cadência de follow-up?`)) return;
+    if (!confirm(`Deseja cancelar os disparos futuros de ${item.leadName || item.phone}? O histórico será preservado com status Cancelado.`)) return;
     try {
       setLoadingActionId(`discard-${item.id}`);
       await discardFollowup.mutateAsync(item.id);
       toast({
-        title: "Lead removido da cadência",
-        description: "Os disparos pendentes foram cancelados.",
+        title: "Agendamento cancelado",
+        description: "Os disparos pendentes foram interrompidos.",
       });
     } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Falha ao cancelar cadência",
+        title: "Falha ao cancelar agendamento",
         description: err?.message || "Ocorreu um erro ao cancelar.",
+      });
+    } finally {
+      setLoadingActionId(null);
+    }
+  };
+
+  // Excluir Permanentemente (Apenas para 0 mensagens enviadas)
+  const handleDelete = async (item: FollowupItem) => {
+    if (item.jobsSent > 0) {
+      toast({
+        variant: "destructive",
+        title: "Exclusão não permitida",
+        description: "Itens que já enviaram mensagens não podem ser apagados, apenas cancelados.",
+      });
+      return;
+    }
+
+    if (!confirm(`Excluir permanentemente o agendamento de ${item.leadName || item.phone}? Como nenhuma mensagem foi enviada, o registro será completamente removido do banco.`)) return;
+
+    try {
+      setLoadingActionId(`delete-${item.id}`);
+      await deleteFollowup.mutateAsync(item.id);
+      toast({
+        title: "Agendamento excluído",
+        description: "O registro foi permanentemente removido.",
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Falha ao excluir agendamento",
+        description: err?.message || "Ocorreu um erro ao excluir.",
       });
     } finally {
       setLoadingActionId(null);
@@ -157,7 +216,7 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
             Fila de Acompanhamento
           </CardTitle>
           <CardDescription>
-            Acompanhe em tempo real os leads inscritos nas cadências, datas de envio e eventuais falhas.
+            Acompanhe em tempo real os leads inscritos nas cadências e lembretes avulsos.
           </CardDescription>
         </div>
         <Button
@@ -205,12 +264,15 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
             </Select>
 
             <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger className="h-9 text-xs min-w-[140px]">
-                <SelectValue placeholder="Todos os Status" />
+              <SelectTrigger className="h-9 text-xs min-w-[160px]">
+                <SelectValue placeholder="Filtrar por Status" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="open" className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                  ⚡ Ativos / Em Aberto (Padrão)
+                </SelectItem>
                 <SelectItem value="all" className="text-xs">
-                  Todos os Status
+                  Todos (incluindo Cancelados)
                 </SelectItem>
                 <SelectItem value="active" className="text-xs">
                   Agendado / Ativo
@@ -235,6 +297,25 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
           </div>
         </div>
 
+        {/* Contador Discreto de Itens Ocultos */}
+        {selectedStatus === "open" && hiddenCancelledCompletedCount > 0 && (
+          <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/40 border border-border/80 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Info className="w-3.5 h-3.5 text-slate-400" />
+              {hiddenCancelledCompletedCount} item(ns) cancelados ou concluídos estão ocultos nesta visualização.
+            </span>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              onClick={() => setSelectedStatus("all")}
+              className="h-auto p-0 text-xs text-indigo-500 hover:text-indigo-600 font-semibold"
+            >
+              Exibir todos ({items.length})
+            </Button>
+          </div>
+        )}
+
         {/* Conteúdo da Tabela */}
         {loadingQueue ? (
           <div className="py-12 text-center text-xs text-muted-foreground flex flex-col items-center justify-center gap-2">
@@ -244,8 +325,8 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
         ) : filteredItems.length === 0 ? (
           <div className="py-10">
             <EmptyState
-              title="Nenhum lead na fila de follow-up"
-              description="Quando você inscrever leads em uma cadência pelo Banco de Dados, eles aparecerão aqui com a previsão exata de cada envio."
+              title="Nenhum lead na fila com os filtros selecionados"
+              description="Ajuste os filtros de status ou cadência para visualizar outros registros."
             />
           </div>
         ) : (
@@ -267,6 +348,9 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
                   const statusColor = FOLLOWUP_STATUS_COLORS[item.status] || "bg-slate-100 text-slate-700";
                   const statusLabel = FOLLOWUP_STATUS_LABELS[item.status] || item.status;
                   const isFailed = item.status === "failed" || item.jobsFailed > 0;
+                  const canEdit = (item.status === "active" || item.jobsPending > 0) && item.status !== "cancelled" && item.status !== "completed";
+                  const canCancel = item.status !== "cancelled" && item.status !== "completed";
+                  const canPermanentlyDelete = item.jobsSent === 0;
 
                   return (
                     <TableRow key={item.id} className="hover:bg-muted/20">
@@ -344,7 +428,6 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
                             {statusLabel}
                           </Badge>
 
-                          {/* REGRA DURA: Exibição explícita do motivo da falha */}
                           {isFailed && item.lastErrorLog && (
                             <div
                               className="mt-1 flex items-start gap-1 p-1.5 rounded bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-[10px] text-rose-700 dark:text-rose-300 max-w-[240px] text-left leading-tight"
@@ -360,7 +443,21 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
                       {/* Ações */}
                       <TableCell className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {/* Reenviar passo que falhou */}
+                          {/* 1. Botão Editar (SOMENTE para linhas com envio pendente/agendado) */}
+                          {canEdit && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[11px] text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 gap-1 font-medium"
+                              onClick={() => setEditingItem(item)}
+                              title="Editar horário de envio ou mensagem"
+                            >
+                              <Pencil className="h-3 w-3" />
+                              Editar
+                            </Button>
+                          )}
+
+                          {/* 2. Reenviar passo que falhou */}
                           {isFailed && (
                             <Button
                               size="sm"
@@ -375,7 +472,7 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
                             </Button>
                           )}
 
-                          {/* Converter para atendimento humano */}
+                          {/* 3. Converter para atendimento humano */}
                           {item.status !== "converted" && item.status !== "cancelled" && (
                             <Button
                               size="sm"
@@ -389,15 +486,29 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
                             </Button>
                           )}
 
-                          {/* Remover da Cadência */}
-                          {item.status !== "cancelled" && (
+                          {/* 4. Cancelar Agendamento (Interromper disparos futuros) */}
+                          {canCancel && (
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600"
+                              className="h-7 w-7 p-0 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30"
                               disabled={loadingActionId === `discard-${item.id}`}
                               onClick={() => handleDiscard(item)}
-                              title="Remover lead da cadência"
+                              title="Cancelar agendamento (interrompe disparos futuros e mantém registro como cancelado)"
+                            >
+                              <Ban className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+
+                          {/* 5. Excluir Permanentemente (SOMENTE para nunca enviados: jobsSent === 0) */}
+                          {canPermanentlyDelete && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                              disabled={loadingActionId === `delete-${item.id}`}
+                              onClick={() => handleDelete(item)}
+                              title="Excluir permanentemente (como nenhuma mensagem foi enviada, apaga do banco)"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -412,6 +523,15 @@ export function FollowupQueueTable({ companyId, tenantId }: FollowupQueueTablePr
           </div>
         )}
       </CardContent>
+
+      {/* Modal de Edição de Agendamento */}
+      <EditFollowupScheduleModal
+        open={Boolean(editingItem)}
+        onOpenChange={(open) => {
+          if (!open) setEditingItem(null);
+        }}
+        item={editingItem}
+      />
     </Card>
   );
 }
