@@ -32,10 +32,11 @@ import {
   Target,
   Puzzle,
   Bot,
+  RotateCcw,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, fetchApi, readApiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
@@ -246,6 +247,29 @@ export default function BancoDeDados() {
   const [selectedTag, setSelectedTag] = useState<string>("");
   const [selectedSource, setSelectedSource] = useState<string>("");
   const [selectedChannel, setSelectedChannel] = useState<string>("all");
+  const [knownTags, setKnownTags] = useState<string[]>([]);
+  const [knownSources, setKnownSources] = useState<string[]>([]);
+
+  // Acumula tags e origens conhecidas da base para não sumirem ao filtrar
+  useEffect(() => {
+    if (leads.length > 0) {
+      setKnownTags((prev) => {
+        const set = new Set(prev);
+        leads.forEach((l) => {
+          if (Array.isArray(l.tags)) l.tags.forEach((t) => set.add(t));
+        });
+        return Array.from(set).sort();
+      });
+      setKnownSources((prev) => {
+        const set = new Set(prev);
+        leads.forEach((l) => {
+          const src = getLeadSource(l);
+          if (src && src !== "Não informado") set.add(src);
+        });
+        return Array.from(set).sort();
+      });
+    }
+  }, [leads]);
 
   // Pagination State
   const [pageSize, setPageSize] = useState<number>(50);
@@ -949,7 +973,7 @@ export default function BancoDeDados() {
     const updatedTags = [...currentTags, tagToAdd];
     try {
       const token = await getIdToken();
-      const res = await fetch(`${API_BASE_URL}/api/leads/${leadId}`, {
+      const res = await fetchApi(`/api/leads/${leadId}`, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -958,11 +982,15 @@ export default function BancoDeDados() {
         body: JSON.stringify({ tags: updatedTags }),
       });
 
-      if (!res.ok) throw new Error("Falha ao adicionar tag.");
+      if (!res.ok) {
+        const errorMsg = await readApiErrorMessage(res, "Falha ao adicionar tag.");
+        throw new Error(errorMsg);
+      }
 
       setSelectedLead({ ...selectedLead, tags: updatedTags });
+      setKnownTags((prev) => Array.from(new Set([...prev, tagToAdd])).sort());
       setNewTagInput("");
-      fetchLeads();
+      await fetchLeads();
       toast.success(`Tag "${tagToAdd}" adicionada!`);
     } catch (err: any) {
       toast.error("Erro ao adicionar tag", { description: err.message });
@@ -976,7 +1004,7 @@ export default function BancoDeDados() {
 
     try {
       const token = await getIdToken();
-      const res = await fetch(`${API_BASE_URL}/api/leads/${leadId}`, {
+      const res = await fetchApi(`/api/leads/${leadId}`, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -985,10 +1013,14 @@ export default function BancoDeDados() {
         body: JSON.stringify({ tags: updatedTags }),
       });
 
-      if (!res.ok) throw new Error("Falha ao remover tag.");
+      if (!res.ok) {
+        const errorMsg = await readApiErrorMessage(res, "Falha ao remover tag.");
+        throw new Error(errorMsg);
+      }
 
       setSelectedLead({ ...selectedLead, tags: updatedTags });
-      fetchLeads();
+      await fetchLeads();
+      toast.success(`Tag "${tagToRemove}" removida!`);
     } catch (err: any) {
       toast.error("Erro ao remover tag", { description: err.message });
     }
@@ -1162,13 +1194,14 @@ export default function BancoDeDados() {
   };
 
   const availableSources = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(knownSources);
     leads.forEach((l) => {
       const src = getLeadSource(l);
       if (src && src !== "Não informado") set.add(src);
     });
-    return Array.from(set);
-  }, [leads]);
+    if (selectedSource) set.add(selectedSource);
+    return Array.from(set).sort();
+  }, [leads, knownSources, selectedSource]);
 
   const topSourceRanking = useMemo(() => {
     const map = new Map<string, number>();
@@ -1215,16 +1248,34 @@ export default function BancoDeDados() {
     return summary.openBudgetsCount * ticketMedio;
   }, [summary.openBudgetsCount, ticketMedio]);
 
-  // Unique tags across base
+  // Unique tags across base (preserva tags conhecidas para o dropdown nunca sumir)
   const availableTags = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(knownTags);
     leads.forEach((l) => {
       if (Array.isArray(l.tags)) {
         l.tags.forEach((t) => set.add(t));
       }
     });
-    return Array.from(set);
-  }, [leads]);
+    if (selectedTag) set.add(selectedTag);
+    return Array.from(set).sort();
+  }, [leads, knownTags, selectedTag]);
+
+  // Checagem de filtros ativos e limpador global
+  const hasActiveFilters = Boolean(
+    selectedTag ||
+    selectedSource ||
+    selectedChannel !== "all" ||
+    searchQuery.trim() ||
+    activeTab !== "all"
+  );
+
+  const handleClearAllFilters = () => {
+    setSelectedTag("");
+    setSelectedSource("");
+    setSelectedChannel("all");
+    setSearchQuery("");
+    setActiveTab("all");
+  };
 
   // Badges & Temperature Helpers
   const getStageBadge = (stage?: string | null) => {
@@ -1740,7 +1791,7 @@ export default function BancoDeDados() {
               ))}
             </select>
 
-            {availableTags.length > 0 && (
+            {(availableTags.length > 0 || selectedTag) && (
               <select
                 value={selectedTag}
                 onChange={(e) => setSelectedTag(e.target.value)}
@@ -1754,8 +1805,91 @@ export default function BancoDeDados() {
                 ))}
               </select>
             )}
+
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearAllFilters}
+                className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1 border-border"
+                title="Limpar todos os filtros"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Limpar</span>
+              </Button>
+            )}
           </div>
         </div>
+
+        {/* Indicadores de Filtros Ativos */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1">
+              <Filter className="w-3 h-3 text-indigo-500" />
+              Filtros:
+            </span>
+            {activeTab !== "all" && (
+              <Badge variant="secondary" className="gap-1 text-[11px] pr-1 bg-muted/80">
+                Estágio: {activeTab}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("all")}
+                  className="hover:text-rose-500 p-0.5 rounded"
+                  title="Remover filtro de estágio"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+            {selectedTag && (
+              <Badge variant="secondary" className="gap-1 text-[11px] pr-1 bg-muted/80">
+                Tag: {selectedTag}
+                <button
+                  type="button"
+                  onClick={() => setSelectedTag("")}
+                  className="hover:text-rose-500 p-0.5 rounded"
+                  title="Remover filtro de tag"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+            {selectedSource && (
+              <Badge variant="secondary" className="gap-1 text-[11px] pr-1 bg-muted/80">
+                Origem: {selectedSource}
+                <button
+                  type="button"
+                  onClick={() => setSelectedSource("")}
+                  className="hover:text-rose-500 p-0.5 rounded"
+                  title="Remover filtro de origem"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+            {searchQuery && (
+              <Badge variant="secondary" className="gap-1 text-[11px] pr-1 bg-muted/80">
+                Busca: "{searchQuery}"
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="hover:text-rose-500 p-0.5 rounded"
+                  title="Limpar busca"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            )}
+            <Button
+              variant="link"
+              size="sm"
+              onClick={handleClearAllFilters}
+              className="h-auto p-0 text-xs text-indigo-500 hover:text-indigo-600 underline font-medium"
+            >
+              Limpar todos
+            </Button>
+          </div>
+        )}
 
         {/* Tabela Principal */}
         <Card className="bg-card text-card-foreground border-border shadow-sm dark:bg-zinc-900/60 dark:border-zinc-800">
@@ -1774,9 +1908,20 @@ export default function BancoDeDados() {
                 </Button>
               </div>
             ) : filteredLeads.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground gap-2">
+              <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground gap-3">
                 <Database className="w-8 h-8 opacity-40" />
                 <p className="font-medium text-sm">Nenhum lead encontrado com os filtros atuais.</p>
+                {hasActiveFilters && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleClearAllFilters}
+                    className="text-xs gap-1.5 border-border hover:bg-muted"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Limpar todos os filtros
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -3000,6 +3145,12 @@ export default function BancoDeDados() {
                     placeholder="Adicionar nova tag..."
                     value={newTagInput}
                     onChange={(e) => setNewTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddTagToLead(selectedLead.id);
+                      }
+                    }}
                     className="text-xs h-8"
                   />
                   <Button

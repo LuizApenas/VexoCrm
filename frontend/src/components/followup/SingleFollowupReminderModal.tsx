@@ -110,6 +110,7 @@ export function SingleFollowupReminderModal({
   const hasValidPhone = phoneDigits.length >= 10;
 
   // Estado do formulário
+  const [selectedShortcutIndex, setSelectedShortcutIndex] = useState<number | null>(null);
   const [dateTime, setDateTime] = useState<string>(() => {
     const defaultDate = new Date(Date.now() + 60 * 60 * 1000);
     return formatLocalDateTime(defaultDate);
@@ -122,6 +123,7 @@ export function SingleFollowupReminderModal({
   useEffect(() => {
     if (open) {
       const defaultDate = new Date(Date.now() + 60 * 60 * 1000);
+      setSelectedShortcutIndex(null);
       setDateTime(formatLocalDateTime(defaultDate));
       setMessage("Olá {{nome}}, tudo bem? Passando para saber se conseguiu dar uma olhada na proposta!");
     }
@@ -269,14 +271,21 @@ export function SingleFollowupReminderModal({
             <div className="flex flex-wrap gap-1.5 pt-0.5">
               {shortcuts.map((sc, i) => {
                 const formatted = formatLocalDateTime(sc.date);
-                const isSelected = dateTime === formatted;
+                const isSelected = selectedShortcutIndex === i;
                 return (
                   <Button
                     key={i}
                     type="button"
                     variant={isSelected ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setDateTime(formatted)}
+                    onClick={() => {
+                      if (selectedShortcutIndex === i) {
+                        setSelectedShortcutIndex(null);
+                      } else {
+                        setSelectedShortcutIndex(i);
+                        setDateTime(formatted);
+                      }
+                    }}
                     className={`h-7 px-2.5 text-xs font-medium rounded-lg transition-all ${
                       isSelected
                         ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
@@ -294,7 +303,10 @@ export function SingleFollowupReminderModal({
             <input
               type="datetime-local"
               value={dateTime}
-              onChange={(e) => setDateTime(e.target.value)}
+              onChange={(e) => {
+                setSelectedShortcutIndex(null);
+                setDateTime(e.target.value);
+              }}
               className="w-full h-9 px-3 py-1.5 text-xs rounded-xl border border-input bg-background font-mono shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
 

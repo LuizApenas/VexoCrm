@@ -1416,7 +1416,13 @@ export function registerLeadsRoutes(app, deps) {
       const updates = {};
       if (req.body.stage !== undefined) updates.stage = req.body.stage;
       if (req.body.temperature !== undefined) updates.temperature = req.body.temperature;
-      if (req.body.tags !== undefined) updates.tags = req.body.tags;
+      if (req.body.tags !== undefined) {
+        updates.tags = Array.isArray(req.body.tags)
+          ? req.body.tags.map((t) => String(t).trim()).filter(Boolean)
+          : typeof req.body.tags === "string"
+          ? req.body.tags.split(",").map((t) => t.trim()).filter(Boolean)
+          : [];
+      }
       if (req.body.nome !== undefined) updates.nome = req.body.nome;
       updates.updated_at = new Date().toISOString();
 
