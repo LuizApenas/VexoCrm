@@ -56,6 +56,8 @@ function calcScheduledFor(template, triggerAt, meetingDatetime) {
   switch (template.trigger_type) {
     case "on_schedule":
       return new Date(now);
+    case "after_enrollment":
+      return new Date(now + delta);
     case "before_meeting":
       if (!meeting) return null;
       return new Date(meeting - delta);
@@ -185,14 +187,20 @@ export async function enrollLead(
   const scheduleId = schedRows[0].id;
 
   if (!phone) {
-    return { scheduleId, enqueued: 0, reason: "missing_phone" };
+    return {
+      scheduleId,
+      enqueued: 0,
+      reason: "missing_phone",
+      message: "Lead sem telefone válido.",
+      skippedSteps: [],
+    };
   }
 
   // Buscar templates ativos (os passos da cadência)
   const supabase = getSupabase();
   const { data: templates } = await supabase
     .from("followup_templates")
-    .select("id, trigger_type, trigger_value, trigger_unit, trigger_direction, order_index")
+    .select("id, name, message, trigger_type, trigger_value, trigger_unit, trigger_direction, order_index")
     .eq("campaign_id", campaign.id)
     .eq("is_active", true)
     .order("order_index", { ascending: true });
@@ -201,12 +209,37 @@ export async function enrollLead(
   const queue = getFollowupQueue();
   let enqueued = 0;
   let skippedNoDate = 0;
+  let skippedPastDate = 0;
+  const skippedSteps = [];
 
   for (const tpl of templates || []) {
     const scheduledFor = calcScheduledFor(tpl, now, meeting_datetime);
     if (!scheduledFor) {
       // Passo depende de data-alvo (ex.: antes/depois da reunião) e ela não foi informada.
       skippedNoDate++;
+      skippedSteps.push({
+        stepId: tpl.id,
+        stepName: tpl.name || `Passo ${tpl.order_index + 1}`,
+        triggerType: tpl.trigger_type,
+        reason: "no_date",
+        message: `O passo "${tpl.name || 'Passo ' + (tpl.order_index + 1)}" exige data-alvo, e nenhuma foi informada.`,
+      });
+      continue;
+    }
+
+    // Passo com horário que já caiu no passado
+    if (scheduledFor.getTime() <= now.getTime()) {
+      skippedPastDate++;
+      const timeStr = scheduledFor.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      const dateStr = scheduledFor.toLocaleDateString("pt-BR");
+      skippedSteps.push({
+        stepId: tpl.id,
+        stepName: tpl.name || `Passo ${tpl.order_index + 1}`,
+        triggerType: tpl.trigger_type,
+        scheduledFor: scheduledFor.toISOString(),
+        reason: "past_date",
+        message: `O lembrete "${tpl.name || 'Passo ' + (tpl.order_index + 1)}" cairia em ${dateStr} às ${timeStr}, que já passou. Nenhuma mensagem foi agendada.`,
+      });
       continue;
     }
 
@@ -236,7 +269,7 @@ export async function enrollLead(
     enqueued++;
   }
 
-  return { scheduleId, enqueued, skippedNoDate };
+  return { scheduleId, enqueued, skippedNoDate, skippedPastDate, skippedSteps };
 }
 
 export async function processInboundWebhook(campaignId, parsedPayload) {

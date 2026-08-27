@@ -574,17 +574,26 @@ function normalizeInstanceList(list, fallback) {
       const supabase = getSupabase();
       const { data: campaign, error: campErr } = await supabase
         .from("followup_campaigns")
-        .select("id, company_id, status, default_origin")
+        .select("id, name, company_id, status, default_origin")
         .eq("id", id)
         .maybeSingle();
-      if (campErr || !campaign) return sendErr(res, 404, "NOT_FOUND", "Cadência não encontrada");
+      if (campErr || !campaign) return sendErr(res, 404, "NOT_FOUND", "Cadência não encontrada.");
       if (campaign.status !== "active") {
-        return sendErr(res, 400, "CAMPAIGN_NOT_ACTIVE", "Ative a cadência antes de enrolar leads.");
+        const campaignName = campaign.name || "selecionada";
+        return sendErr(
+          res,
+          400,
+          "CAMPAIGN_NOT_ACTIVE",
+          `A cadência "${campaignName}" está em rascunho ou pausada. Ative-a antes de aplicar aos leads.`
+        );
       }
 
       let enrolled = 0;
       let enqueued = 0;
       let missingPhone = 0;
+      let totalSkippedNoDate = 0;
+      let totalSkippedPastDate = 0;
+      const allSkippedSteps = [];
       const errors = [];
 
       for (const raw of leads) {
@@ -598,12 +607,51 @@ function normalizeInstanceList(list, fallback) {
             meeting_datetime,
             originOverride: origin,
           });
-          enrolled++;
-          enqueued += result.enqueued || 0;
-          if (result.reason === "missing_phone") missingPhone++;
+          if (result.reason === "missing_phone") {
+            missingPhone++;
+            errors.push({ lead: lead_name, code: "MISSING_PHONE", message: "Lead sem telefone válido." });
+          } else {
+            enrolled++;
+            enqueued += result.enqueued || 0;
+            totalSkippedNoDate += result.skippedNoDate || 0;
+            totalSkippedPastDate += result.skippedPastDate || 0;
+            if (result.skippedSteps?.length) {
+              allSkippedSteps.push(...result.skippedSteps.map((s) => ({ lead: lead_name, ...s })));
+            }
+          }
         } catch (err) {
-          errors.push({ lead: lead_name, message: err instanceof Error ? err.message : String(err) });
+          const msg = err instanceof Error ? err.message : String(err);
+          let userMsg = msg;
+          if (msg.includes("Redis") || msg.includes("ECONNREFUSED") || msg.includes("connect")) {
+            userMsg = "Falha de conexão com a fila de agendamento (Redis). Tente novamente.";
+          }
+          errors.push({ lead: lead_name, code: "ENROLL_ERROR", message: userMsg });
         }
+      }
+
+      // Se nenhuma mensagem pôde ser agendada (seja por falhas, telefone ou passos no passado)
+      if (enqueued === 0) {
+        const primaryError = errors.length > 0
+          ? errors[0].message
+          : allSkippedSteps.length > 0
+            ? allSkippedSteps[0].message
+            : "Nenhuma mensagem pôde ser agendada para os leads selecionados.";
+
+        return res.status(422).json({
+          success: false,
+          enrolled,
+          enqueued: 0,
+          missingPhone,
+          failed: errors.length,
+          errors,
+          skippedNoDate: totalSkippedNoDate,
+          skippedPastDate: totalSkippedPastDate,
+          skippedSteps: allSkippedSteps,
+          error: {
+            code: errors.length > 0 ? "ENROLLMENT_FAILED" : "ALL_STEPS_SKIPPED",
+            message: primaryError,
+          },
+        });
       }
 
       return res.status(201).json({
@@ -612,7 +660,10 @@ function normalizeInstanceList(list, fallback) {
         enqueued,
         missingPhone,
         failed: errors.length,
-        errors: errors.slice(0, 10),
+        errors,
+        skippedNoDate: totalSkippedNoDate,
+        skippedPastDate: totalSkippedPastDate,
+        skippedSteps: allSkippedSteps,
       });
     } catch (err) {
       return sendErr(res, 500, "ENROLL_FAILED", err.message);
