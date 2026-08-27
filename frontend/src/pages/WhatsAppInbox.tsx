@@ -25,6 +25,7 @@ import {
   Copy,
   Check,
   ChevronRight,
+  ChevronDown,
   ShieldAlert,
   Inbox,
   User,
@@ -255,9 +256,18 @@ export default function WhatsAppInbox({
   const [inboxTab, setInboxTab] = useState<"minhas" | "fila" | "todas">("todas");
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedPhone, setCopiedPhone] = useState(false);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+  const [hasNewUnseenMessage, setHasNewUnseenMessage] = useState(false);
 
   const chatsContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const prevScrollHeightRef = useRef<number>(0);
+  const prevScrollTopRef = useRef<number>(0);
+  const isNearBottomRef = useRef<boolean>(true);
+  const lastChatIdRef = useRef<string | null>(null);
+  const lastRenderedMessageIdRef = useRef<string | null>(null);
+  const lastMessageCountRef = useRef<number>(0);
+  const isFetchingOlderRef = useRef<boolean>(false);
 
   const { selectedClientId } = useCrmClient();
   const clientId = propClientId || selectedClientId;
@@ -455,7 +465,7 @@ export default function WhatsAppInbox({
 
   useEffect(() => {
     if (selectedChatId && matchedLead) {
-      const dbSummary = matchedLead.raw_chat_summary || (matchedLead.dados as any)?.resumo_chat;
+      const dbSummary = (matchedLead as any)?.raw_chat_summary || (matchedLead.dados as any)?.resumo_chat;
       if (dbSummary && typeof dbSummary === "string" && !chatSummaries[selectedChatId]) {
         saveChatSummary(selectedChatId, dbSummary);
       }
@@ -465,7 +475,7 @@ export default function WhatsAppInbox({
   const currentChatSummary = useMemo(() => {
     if (liveSummary) return liveSummary;
     if (selectedChatId && chatSummaries[selectedChatId]) return chatSummaries[selectedChatId];
-    if (matchedLead?.raw_chat_summary) return matchedLead.raw_chat_summary;
+    if ((matchedLead as any)?.raw_chat_summary) return (matchedLead as any).raw_chat_summary;
     if ((matchedLead?.dados as any)?.resumo_chat) return String((matchedLead?.dados as any).resumo_chat);
     return null;
   }, [liveSummary, selectedChatId, chatSummaries, matchedLead]);
@@ -557,13 +567,110 @@ export default function WhatsAppInbox({
     }
   }, [canLoadInbox, chats, selectedChatId, initialPhone, setSearchParams]);
 
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior,
+    });
+    isNearBottomRef.current = true;
+    setShowScrollBottomBtn(false);
+    setHasNewUnseenMessage(false);
+  };
+
+  const handleMessagesScroll = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isNearBottom = distanceFromBottom < 100;
+    isNearBottomRef.current = isNearBottom;
+
+    if (isNearBottom) {
+      setShowScrollBottomBtn(false);
+      setHasNewUnseenMessage(false);
+    } else if (distanceFromBottom > 160) {
+      setShowScrollBottomBtn(true);
+    }
+
+    // Rolagem para cima: carregar lote anterior quando estiver a menos de 80px do topo
+    if (
+      container.scrollTop < 80 &&
+      messagesQuery.hasMore &&
+      !messagesQuery.isFetchingOlder &&
+      !isFetchingOlderRef.current
+    ) {
+      isFetchingOlderRef.current = true;
+      prevScrollHeightRef.current = container.scrollHeight;
+      prevScrollTopRef.current = container.scrollTop;
+
+      void messagesQuery.loadOlder().finally(() => {
+        setTimeout(() => {
+          isFetchingOlderRef.current = false;
+        }, 150);
+      });
+    }
+  };
+
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
 
-    requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
-    });
+    const currentChatId = selectedChatId;
+    const chatChanged = currentChatId !== lastChatIdRef.current;
+
+    // 1. Ao abrir ou trocar de conversa: rolar direto para a mensagem mais recente no fim
+    if (chatChanged) {
+      lastChatIdRef.current = currentChatId;
+      isNearBottomRef.current = true;
+      setShowScrollBottomBtn(false);
+      setHasNewUnseenMessage(false);
+      prevScrollHeightRef.current = 0;
+      prevScrollTopRef.current = 0;
+      lastMessageCountRef.current = combinedTimeline.length;
+      lastRenderedMessageIdRef.current = combinedTimeline[combinedTimeline.length - 1]?.id || null;
+
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
+      });
+      return;
+    }
+
+    // 2. Ao carregar histórico anterior no topo: preservar a posição de scroll sem saltar a tela
+    if (prevScrollHeightRef.current > 0) {
+      const heightDiff = container.scrollHeight - prevScrollHeightRef.current;
+      container.scrollTop = prevScrollTopRef.current + heightDiff;
+      prevScrollHeightRef.current = 0;
+      prevScrollTopRef.current = 0;
+      lastMessageCountRef.current = combinedTimeline.length;
+      return;
+    }
+
+    // 3. Ao chegar nova mensagem
+    const latestMessage = combinedTimeline[combinedTimeline.length - 1];
+    const latestId = latestMessage?.id || null;
+    const isNewBottomMessage = latestId && latestId !== lastRenderedMessageIdRef.current;
+
+    if (isNewBottomMessage || combinedTimeline.length > lastMessageCountRef.current) {
+      lastRenderedMessageIdRef.current = latestId;
+      lastMessageCountRef.current = combinedTimeline.length;
+
+      // Se o usuário já estava no fim ou acabou de enviar a mensagem: rolar suavemente para o fim
+      if (isNearBottomRef.current || latestMessage?.fromMe) {
+        requestAnimationFrame(() => {
+          if (container) {
+            container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+          }
+        });
+      } else {
+        // Se o usuário estiver lendo o histórico acima: NÃO puxar a tela, mostrar indicador discreto
+        setHasNewUnseenMessage(true);
+        setShowScrollBottomBtn(true);
+      }
+    }
   }, [combinedTimeline, selectedChatId]);
 
   const handleChatsScroll = () => {
@@ -594,12 +701,14 @@ export default function WhatsAppInbox({
       saveInternalNotes([...internalNotes, newNote]);
       setDraft("");
       toast.success("Nota interna salva com sucesso");
+      scrollToBottom("smooth");
       return;
     }
 
     try {
       await sendMessage.mutateAsync(trimmedDraft);
       setDraft("");
+      scrollToBottom("smooth");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao enviar mensagem.");
     }
@@ -861,84 +970,132 @@ export default function WhatsAppInbox({
             </div>
 
             {/* Linha do Tempo das Mensagens */}
-            <div
-              ref={messagesContainerRef}
-              className="flex-1 space-y-3 overflow-y-auto p-4 bg-slate-50/70 dark:bg-slate-950/40"
-            >
-              {messagesQuery.isLoading ? (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin text-emerald-500" />
-                  Carregando mensagens...
-                </div>
-              ) : !selectedChat ? (
-                <EmptyState
-                  title="Escolha uma conversa"
-                  description="Selecione um contato na coluna da esquerda para visualizar o histórico de mensagens."
-                />
-              ) : combinedTimeline.length === 0 ? (
-                <EmptyState
-                  title="Sem mensagens"
-                  description="Nenhuma mensagem registrada no banco de dados para esta conversa."
-                />
-              ) : (
-                combinedTimeline.map((item, idx) => {
-                  const prevItem = combinedTimeline[idx - 1];
-                  const currentDayStr = item.timestamp ? new Date(item.timestamp * 1000).toDateString() : null;
-                  const prevDayStr = prevItem?.timestamp ? new Date(prevItem.timestamp * 1000).toDateString() : null;
-                  const showDayDivider = Boolean(currentDayStr && currentDayStr !== prevDayStr);
+            <div className="relative flex-1 min-h-0 flex flex-col">
+              <div
+                ref={messagesContainerRef}
+                onScroll={handleMessagesScroll}
+                className="flex-1 space-y-1.5 overflow-y-auto p-3 sm:p-4 bg-slate-50/70 dark:bg-slate-950/40"
+              >
+                {messagesQuery.isLoading ? (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin text-emerald-500" />
+                    Carregando mensagens...
+                  </div>
+                ) : !selectedChat ? (
+                  <EmptyState
+                    title="Escolha uma conversa"
+                    description="Selecione um contato na coluna da esquerda para visualizar o histórico de mensagens."
+                  />
+                ) : combinedTimeline.length === 0 ? (
+                  <EmptyState
+                    title="Sem mensagens"
+                    description="Nenhuma mensagem registrada no banco de dados para esta conversa."
+                  />
+                ) : (
+                  <>
+                    {/* Indicador de carregamento de mensagens anteriores */}
+                    {messagesQuery.isFetchingOlder && (
+                      <div className="flex items-center justify-center py-2 text-xs text-muted-foreground gap-2">
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin text-emerald-500" />
+                        <span>Carregando mensagens anteriores...</span>
+                      </div>
+                    )}
+                    {!messagesQuery.hasMore && combinedTimeline.length >= 20 && (
+                      <div className="flex items-center justify-center py-2 text-[10px] text-muted-foreground/60">
+                        <span>Início do histórico da conversa</span>
+                      </div>
+                    )}
 
-                  return (
-                    <div key={item.id || `${item.timestamp}-${item.body}-${idx}`} className="space-y-2">
-                      {showDayDivider && (
-                        <div className="my-3 flex items-center justify-center">
-                          <span className="rounded-full border border-border/70 bg-muted/80 px-3 py-0.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider shadow-xs backdrop-blur-xs">
-                            {formatDaySeparator(item.timestamp)}
-                          </span>
-                        </div>
-                      )}
-                      {item.isInternalNote ? (
-                        <div
-                          className="mx-auto my-2 max-w-[85%] rounded-2xl border border-amber-400/40 bg-amber-500/10 p-3 text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200 shadow-xs"
-                        >
-                          <div className="flex items-center justify-between gap-2 mb-1.5 text-[11px] font-bold text-amber-800 dark:text-amber-300">
-                            <span className="flex items-center gap-1.5">
-                              <Lock className="h-3.5 w-3.5" />
-                              Nota Interna Privada · {item.author || "Equipe"}
-                            </span>
-                            <span className="text-[10px] font-normal text-amber-700/80 dark:text-amber-400">
-                              {formatTimestamp(item.timestamp, true)}
-                            </span>
-                          </div>
-                          <p className="whitespace-pre-wrap font-sans text-xs">{item.body}</p>
-                        </div>
-                      ) : (
-                        <div
-                          className={cn(
-                            "max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-xs leading-relaxed",
-                            item.fromMe
-                              ? "ml-auto rounded-br-xs bg-emerald-600 text-white"
-                              : "rounded-bl-xs border border-border/80 bg-background text-foreground"
+                    {combinedTimeline.map((item, idx) => {
+                      const prevItem = combinedTimeline[idx - 1];
+                      const currentDayStr = item.timestamp ? new Date(item.timestamp * 1000).toDateString() : null;
+                      const prevDayStr = prevItem?.timestamp ? new Date(prevItem.timestamp * 1000).toDateString() : null;
+                      const showDayDivider = Boolean(currentDayStr && currentDayStr !== prevDayStr);
+
+                      return (
+                        <div key={item.id || `${item.timestamp}-${item.body}-${idx}`} className="space-y-1">
+                          {showDayDivider && (
+                            <div className="my-2 flex items-center justify-center sticky top-0 z-10 pointer-events-none">
+                              <span className="rounded-full border border-border/70 bg-muted/90 px-2.5 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider shadow-xs backdrop-blur-xs">
+                                {formatDaySeparator(item.timestamp)}
+                              </span>
+                            </div>
                           )}
-                        >
-                          <MediaMessage
-                            messageId={item.id}
-                            hasMedia={item.hasMedia}
-                            fallbackBody={item.body}
-                            fromMe={item.fromMe}
-                          />
-                          <p
-                            className={cn(
-                              "mt-1 text-right text-[10px] font-mono",
-                              item.fromMe ? "text-emerald-100/85" : "text-muted-foreground"
-                            )}
-                          >
-                            {formatTimestamp(item.timestamp)} {item.fromMe ? "✓✓" : ""}
-                          </p>
+                          {item.isInternalNote ? (
+                            <div className="mx-auto my-1 max-w-[85%] sm:max-w-[70%] rounded-xl border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200 shadow-xs">
+                              <div className="flex items-center justify-between gap-2 mb-1 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                                <span className="flex items-center gap-1.5">
+                                  <Lock className="h-3 w-3" />
+                                  Nota Interna Privada · {item.author || "Equipe"}
+                                </span>
+                                <span className="text-[10px] font-normal text-amber-700/80 dark:text-amber-400">
+                                  {formatTimestamp(item.timestamp, true)}
+                                </span>
+                              </div>
+                              <p className="whitespace-pre-wrap font-sans text-xs leading-relaxed">{item.body}</p>
+                            </div>
+                          ) : (
+                            <div
+                              className={cn(
+                                "relative rounded-xl px-3 py-1.5 text-[13px] leading-snug shadow-xs transition-colors",
+                                "max-w-[85%] sm:max-w-[65%]",
+                                item.fromMe
+                                  ? "ml-auto rounded-br-xs bg-emerald-600 text-white"
+                                  : "mr-auto rounded-bl-xs border border-border/80 bg-background text-foreground"
+                              )}
+                            >
+                              <MediaMessage
+                                messageId={item.id}
+                                hasMedia={item.hasMedia}
+                                fallbackBody={item.body}
+                                fromMe={item.fromMe}
+                              />
+                              <div
+                                className={cn(
+                                  "mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none select-none font-mono",
+                                  item.fromMe ? "text-emerald-100/80" : "text-muted-foreground"
+                                )}
+                              >
+                                <span>{formatTimestamp(item.timestamp)}</span>
+                                {item.fromMe && <span className="tracking-tighter">✓✓</span>}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+
+              {/* Botão flutuante para rolar ao final / novas mensagens */}
+              {showScrollBottomBtn && (
+                <div className="absolute bottom-3 right-4 z-20">
+                  <Button
+                    size="sm"
+                    variant={hasNewUnseenMessage ? "default" : "secondary"}
+                    onClick={() => scrollToBottom("smooth")}
+                    className={cn(
+                      "h-8 gap-1.5 rounded-full px-3 text-xs font-semibold shadow-md transition-all",
+                      hasNewUnseenMessage
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-bounce"
+                        : "bg-background/95 hover:bg-background text-foreground border border-border/80 backdrop-blur-md"
+                    )}
+                  >
+                    {hasNewUnseenMessage ? (
+                      <>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>Novas mensagens</span>
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </>
+                    ) : (
+                      <>
+                        <span>Mais recentes</span>
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </>
+                    )}
+                  </Button>
+                </div>
               )}
             </div>
 

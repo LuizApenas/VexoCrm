@@ -46,4 +46,12 @@ describe("Separação de message_timestamp e created_at em lead_messages", () =>
     expect(chatbotRoutesSource).toContain("COALESCE(message_timestamp, delivered_at, created_at)");
     expect(chatbotRoutesSource).toContain("effective_timestamp DESC NULLS LAST");
   });
+
+  it("Rota /api/whatsapp/messages suporta cursor de paginação beforeTimestamp e retorna hasMore / oldestTimestamp", () => {
+    const chatbotRoutesSource = readFileSync(resolve("src/domains/chatbot/routes.js"), "utf8");
+    expect(chatbotRoutesSource).toContain("req.query.beforeTimestamp");
+    expect(chatbotRoutesSource).toContain("COALESCE(message_timestamp, delivered_at, created_at) <");
+    expect(chatbotRoutesSource).toContain("hasMore: result.rows.length === limit");
+    expect(chatbotRoutesSource).toContain("oldestTimestamp");
+  });
 });

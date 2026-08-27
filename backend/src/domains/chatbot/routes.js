@@ -750,6 +750,27 @@ export function registerChatbotRoutes(app, deps) {
         instanceFilter = `AND instance_name = ANY($${idx})`;
       }
 
+      const rawBefore = normalizeString(req.query.beforeTimestamp || req.query.before);
+      let beforeFilter = "";
+      if (rawBefore) {
+        let beforeIso = null;
+        const num = Number(rawBefore);
+        if (!Number.isNaN(num) && num > 0) {
+          const ms = num < 10000000000 ? num * 1000 : num;
+          beforeIso = new Date(ms).toISOString();
+        } else {
+          const parsed = new Date(rawBefore);
+          if (!Number.isNaN(parsed.getTime())) {
+            beforeIso = parsed.toISOString();
+          }
+        }
+        if (beforeIso) {
+          queryParams.push(beforeIso);
+          const idx = queryParams.length;
+          beforeFilter = `AND COALESCE(message_timestamp, delivered_at, created_at) < $${idx}`;
+        }
+      }
+
       const queryText = `
         SELECT
           id,
@@ -763,7 +784,7 @@ export function registerChatbotRoutes(app, deps) {
           wa_message_id,
           sender_type
         FROM public.lead_messages
-        WHERE client_id = $1 AND phone = ANY($2) ${instanceFilter}
+        WHERE client_id = $1 AND phone = ANY($2) ${instanceFilter} ${beforeFilter}
         ORDER BY COALESCE(message_timestamp, delivered_at, created_at) DESC NULLS LAST
         LIMIT $3
       `;
@@ -791,8 +812,16 @@ export function registerChatbotRoutes(app, deps) {
         };
       });
 
+      const oldestRow = result.rows[result.rows.length - 1];
+      const oldestTimestamp = oldestRow?.effective_timestamp
+        ? new Date(oldestRow.effective_timestamp).toISOString()
+        : (oldestRow?.created_at ? new Date(oldestRow.created_at).toISOString() : null);
 
-      res.json({ items: items.reverse() });
+      res.json({
+        items: items.reverse(),
+        hasMore: result.rows.length === limit,
+        oldestTimestamp,
+      });
     } catch (error) {
       console.error("whatsapp database messages query error:", error);
       sendError(res, 500, "WHATSAPP_MESSAGES_FAILED", error instanceof Error ? error.message : "Failed to fetch messages from database");

@@ -160,46 +160,91 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
   };
 }
 
-export function useWhatsAppMessages(clientId: string | null, instanceName: string | null, chatId: string | null, enabled: boolean) {
+export interface WhatsAppMessagesPage {
+  items: WhatsAppMessage[];
+  hasMore: boolean;
+  oldestTimestamp: string | null;
+}
+
+export function useWhatsAppMessages(
+  clientId: string | null,
+  instanceName: string | null,
+  chatId: string | null,
+  enabled: boolean
+) {
   const { getIdToken } = useAuth();
 
-  return useQuery({
+  const fetchMessagesPage = async (beforeTimestamp: string | null): Promise<WhatsAppMessagesPage> => {
+    const token = await getIdToken();
+    if (!token) throw new Error("Usuario nao autenticado.");
+
+    const params = new URLSearchParams({
+      chatId: chatId || "",
+      limit: "40",
+    });
+
+    if (clientId) params.append("clientId", clientId);
+    if (instanceName) params.append("instanceName", instanceName);
+    if (beforeTimestamp) params.append("beforeTimestamp", beforeTimestamp);
+
+    const res = await fetch(`${API_BASE_URL}/api/whatsapp/messages?${params.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const payload = await parseApiResponse<{
+      items?: WhatsAppMessage[];
+      hasMore?: boolean;
+      oldestTimestamp?: string | null;
+    }>(res);
+
+    return {
+      items: Array.isArray(payload.items) ? payload.items : [],
+      hasMore: Boolean(payload.hasMore),
+      oldestTimestamp: payload.oldestTimestamp ?? null,
+    };
+  };
+
+  const query = useInfiniteQuery({
     queryKey: ["whatsapp-messages", clientId, instanceName, chatId],
     enabled: enabled && !!chatId && !!clientId,
-    queryFn: async (): Promise<WhatsAppMessage[]> => {
-      const token = await getIdToken();
-      if (!token) {
-        throw new Error("Usuario nao autenticado.");
-      }
-
-      const params = new URLSearchParams({
-        chatId: chatId || "",
-        limit: "20",
-      });
-
-      if (clientId) {
-        params.append("clientId", clientId);
-      }
-      
-      if (instanceName) {
-        params.append("instanceName", instanceName);
-      }
-
-      const res = await fetch(
-        `${API_BASE_URL}/api/whatsapp/messages?${params.toString()}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const payload = await parseApiResponse<{ items?: WhatsAppMessage[] }>(res);
-      return Array.isArray(payload.items) ? payload.items : [];
-    },
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => fetchMessagesPage(pageParam),
+    getNextPageParam: (lastPage) => (lastPage.hasMore && lastPage.oldestTimestamp ? lastPage.oldestTimestamp : undefined),
     refetchInterval: enabled && !!chatId && !!clientId ? 4000 : false,
     staleTime: 0,
   });
+
+  const items = useMemo(() => {
+    const pages = query.data?.pages ?? [];
+    const reversed = [...pages].reverse();
+    const flat = reversed.flatMap((p) => p.items);
+    const seen = new Set<string>();
+    const deduped: WhatsAppMessage[] = [];
+    for (const m of flat) {
+      if (m.id && seen.has(m.id)) continue;
+      if (m.id) seen.add(m.id);
+      deduped.push(m);
+    }
+    return deduped;
+  }, [query.data?.pages]);
+
+  const lastPage = query.data?.pages?.[query.data.pages.length - 1];
+  const hasMore = lastPage ? lastPage.hasMore : false;
+
+  return {
+    ...query,
+    data: items,
+    items,
+    hasMore,
+    isFetchingOlder: query.isFetchingNextPage,
+    loadOlder: async () => {
+      if (query.hasNextPage && !query.isFetchingNextPage) {
+        await query.fetchNextPage();
+      }
+    },
+  };
 }
 
 export function useSendWhatsAppMessage(clientId: string | null, chatId: string | null) {
