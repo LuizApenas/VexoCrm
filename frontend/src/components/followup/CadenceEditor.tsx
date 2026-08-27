@@ -34,11 +34,48 @@ import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 
 type TriggerType = FupTemplate["trigger_type"];
 
-const TRIGGER_OPTIONS: { value: TriggerType; label: string; needsValue: boolean }[] = [
-  { value: "on_schedule", label: "Na entrada do lead", needsValue: false },
-  { value: "before_meeting", label: "Antes da data-alvo", needsValue: true },
-  { value: "after_meeting", label: "Depois da data-alvo", needsValue: true },
-  { value: "no_reply", label: "Após a entrada (se sem resposta)", needsValue: true },
+const TRIGGER_OPTIONS: {
+  value: TriggerType;
+  label: string;
+  shortLabel: string;
+  needsValue: boolean;
+  requiresMeetingDate?: boolean;
+}[] = [
+  {
+    value: "on_schedule",
+    label: "Na hora da inscrição (imediato)",
+    shortLabel: "na inscrição",
+    needsValue: false,
+    requiresMeetingDate: false,
+  },
+  {
+    value: "after_enrollment",
+    label: "X depois da inscrição (incondicional)",
+    shortLabel: "após inscrição",
+    needsValue: true,
+    requiresMeetingDate: false,
+  },
+  {
+    value: "no_reply",
+    label: "X depois da inscrição, se não responder",
+    shortLabel: "após inscrição (se sem resposta)",
+    needsValue: true,
+    requiresMeetingDate: false,
+  },
+  {
+    value: "before_meeting",
+    label: "X antes da data-alvo (exige data)",
+    shortLabel: "antes da data-alvo",
+    needsValue: true,
+    requiresMeetingDate: true,
+  },
+  {
+    value: "after_meeting",
+    label: "X depois da data-alvo (exige data)",
+    shortLabel: "depois da data-alvo",
+    needsValue: true,
+    requiresMeetingDate: true,
+  },
 ];
 
 function unitLabel(unit: string) {
@@ -87,7 +124,7 @@ export default function CadenceEditor({ companyId }: { companyId: string }) {
   // Form de novo passo
   const [stepName, setStepName] = useState("");
   const [stepMessage, setStepMessage] = useState("");
-  const [stepTrigger, setStepTrigger] = useState<TriggerType>("before_meeting");
+  const [stepTrigger, setStepTrigger] = useState<TriggerType>("after_enrollment");
   const [stepValue, setStepValue] = useState<number>(1);
   const [stepUnit, setStepUnit] = useState<"minutes" | "hours" | "days">("days");
 
@@ -364,7 +401,7 @@ export default function CadenceEditor({ companyId }: { companyId: string }) {
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Dica: para "vários lembretes até o dia marcado", crie passos "Antes da data-alvo" com 7, 3 e 1 dia.
+                Dica: passos que exigem data-alvo dependem de informar a data da reunião/evento ao aplicar a cadência. Para lembretes pós-cadastro (ex: 2h ou 2 dias após a entrada), use "X depois da inscrição".
               </p>
               <Button onClick={addStep} disabled={createStep.isPending || !stepMessage.trim()} className="w-full sm:w-auto">
                 {createStep.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}

@@ -134,6 +134,7 @@ async function processJob(job) {
   const text = renderMessage(rawMessage, {
     lead_name: row.lead_name,
     meeting_datetime: row.meeting_datetime,
+    phone: row.phone,
   });
 
   await sendViaEvolution(row.evolution_instance, row.phone, text);

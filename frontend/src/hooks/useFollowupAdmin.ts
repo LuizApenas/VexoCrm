@@ -70,7 +70,7 @@ export interface FupTemplate {
   campaign_id: string;
   name: string;
   message: string;
-  trigger_type: "on_schedule" | "before_meeting" | "after_meeting" | "no_reply";
+  trigger_type: "on_schedule" | "after_enrollment" | "before_meeting" | "after_meeting" | "no_reply";
   trigger_value: number;
   trigger_unit: "minutes" | "hours" | "days";
   trigger_direction: "before" | "after" | null;
