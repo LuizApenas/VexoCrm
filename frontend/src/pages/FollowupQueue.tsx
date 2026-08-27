@@ -314,8 +314,9 @@ export default function FollowupDashboard() {
         </StepSection>
       )}
 
-      {/* Passo 3 — Automações por evento (opcional) */}
-      {isSectionAllowed("journeys") && hasCompany && (
+      {/* Passo 3 — Automações por evento (Ocultado até os emissores de eventos serem conectados no CRM) */}
+      {/* Flag de exibição preservando código e fup_journeys conforme decisão de arquitetura */}
+      {false as boolean && isSectionAllowed("journeys") && hasCompany && (
         <StepSection
           step={3}
           icon={<Zap className="h-4 w-4" />}

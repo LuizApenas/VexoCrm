@@ -479,15 +479,12 @@ export function stopAutomationEngine() {
 export function startAutomationEngine() {
   if (cronTask) {
     cronTask.stop();
+    cronTask = null;
   }
-  // Executar a cada hora
-  cronTask = cron.schedule("0 * * * *", () => {
-    if (engineRunning) return;
-    engineRunning = true;
-    runAutomationEngine(false)
-      .catch((err) => console.error("[followup/engine] erro no cron de varredura:", err.message))
-      .finally(() => { engineRunning = false; });
-  });
-  console.info("[followup/engine] Motor proativo agendado (a cada 1h)");
+  // DESLIGADO: Decisão de arquitetura — a tela de moderação/aprovação de sugestões
+  // não está ativa. O agendamento periódico está desarmado para não gerar sugestões
+  // órfãs no banco nem onerar recursos desnecessariamente.
+  // cronTask = cron.schedule("0 * * * *", () => { ... });
+  console.info("[followup/engine] Motor proativo DESATIVADO (cron '0 * * * *' desarmado).");
   return { runNow: triggerAutomationRun, stop: stopAutomationEngine };
 }

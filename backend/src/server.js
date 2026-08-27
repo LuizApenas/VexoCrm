@@ -810,8 +810,8 @@ function startBackgroundServices() {
   } else {
     console.warn("[workers] REDIS_URL/REDIS_HOST não configurado — workers não iniciados.");
   }
-  // Motor proativo de sugestões (node-cron, a cada 6h)
-  startAutomationEngine();
+  // Motor proativo de sugestões DESLIGADO (Decisão do dono: sem interface de moderação no momento)
+  // startAutomationEngine();
 }
 
 // (A) Sobe o HTTP com handler de 'error'. EADDRINUSE → retry curto e limitado (cobre a
