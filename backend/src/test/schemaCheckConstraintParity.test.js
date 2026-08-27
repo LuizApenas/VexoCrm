@@ -10,6 +10,24 @@
  *   2. Decida a grafia canônica única.
  *   3. Corrija o código que escreve errado.
  *   4. Crie uma migration idempotente que normalize registros legados e atualize a constraint.
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ALCANCE REAL E LIMITES DESTE TESTE (LEIA ANTES DE CONFIAR CEGAMENTE):
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 1. O QUE ESTE TESTE COBRE:
+ *    - Ele faz varredura estática de LITERAIS explícitos passados em queries SQL
+ *      (ex.: UPDATE followup_schedules SET status = 'canceled' -> detecta a violação)
+ *      ou literais fixos em constantes mapeadas.
+ * 
+ * 2. O QUE ESTE TESTE NÃO COBRE (CASOS DINÂMICOS):
+ *    - Valores gerados em tempo de execução via funções de normalização
+ *      (ex.: normalizeLeadSource(source), sanitizeStatus(s), resolveAccessRole(r)).
+ *    - Valores originados dinamicamente de payloads de API, webhooks ou parâmetros
+ *      de requisição que não passam por validação/enum estrito antes do SQL.
+ * 
+ * PORTANTO: Sempre que criar ou modificar funções que calculam ou normalizam valores
+ * para colunas com CHECK constraint no Postgres, certifique-se de que os retornos
+ * possíveis da função pertençam ESTRITAMENTE ao conjunto definido na migration!
  */
 
 import { describe, expect, it } from "vitest";
@@ -93,11 +111,6 @@ function scanJsWriters(srcDir) {
   function checkFile(filePath) {
     const code = readFileSync(filePath, "utf8");
 
-    // 1. followup_schedules.status
-    const schedStatusMatches = code.matchAll(/(?:status\s*=\s*['"]([a-zA-Z0-9_]+)['"]|status:\s*['"]([a-zA-Z0-9_]+)['"])/gi);
-    // 2. followup_schedules.origin_type
-    const originTypeMatches = code.matchAll(/origin_type\s*(?:=|:|\?)\s*['"]([a-zA-Z0-9_]+)['"]/gi);
-    
     // Análise de literais específicos para tabelas conhecidas
     if (filePath.includes("followup/")) {
       // followup_schedules status
@@ -113,8 +126,7 @@ function scanJsWriters(srcDir) {
       }
 
       // followup_schedules origin_type
-      const originTypeTernaries = code.matchAll(/['"](manual|utm|default|[a-zA-Z0-9_]+)['"]\s*:\s*['"](manual|utm|default|[a-zA-Z0-9_]+)['"]/gi);
-      if (code.includes("origin_type =")) {
+      if (code.includes("origin_type =") || code.includes("origin_type:")) {
         const originTypeLines = code.split("\n").filter(l => l.includes("origin_type =") || l.includes("origin_type:"));
         for (const line of originTypeLines) {
           const stringLiterals = line.match(/['"]([a-zA-Z0-9_]+)['"]/g) || [];
