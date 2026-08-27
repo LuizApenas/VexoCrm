@@ -54,15 +54,15 @@ export function registerFollowupQueueRoutes(app, deps) {
             fs.created_at,
             fs.campaign_id,
             fs.status     AS raw_status,
-            fc.name       AS campaign_name,
-            fc.company_id,
+            COALESCE(fc.name, 'Avulso') AS campaign_name,
+            fs.company_id,
             fco.name      AS company_name,
             fco.tenant_id,
-            (
+            COALESCE((
               SELECT COUNT(ft.id)
                 FROM followup_templates ft
                WHERE ft.campaign_id = fs.campaign_id AND ft.is_active = true
-            ) AS total_steps,
+            ), 1) AS total_steps,
             COUNT(fj.id) FILTER (WHERE fj.status = 'sent')    AS jobs_sent,
             COUNT(fj.id) FILTER (WHERE fj.status = 'failed')  AS jobs_failed,
             COUNT(fj.id) FILTER (WHERE fj.status = 'pending') AS jobs_pending,
@@ -81,7 +81,7 @@ export function registerFollowupQueueRoutes(app, deps) {
               WHEN fs.status = 'missing_phone' THEN 'missing_phone'
               WHEN EXISTS (
                 SELECT 1 FROM followup_replies r
-                WHERE r.company_id = fc.company_id AND r.phone = fs.phone
+                WHERE r.company_id = fs.company_id AND r.phone = fs.phone
               ) THEN 'replied'
               WHEN COUNT(fj.id) FILTER (WHERE fj.status = 'failed') > 0
                AND COUNT(fj.id) FILTER (WHERE fj.status = 'pending') = 0 THEN 'failed'
@@ -90,8 +90,8 @@ export function registerFollowupQueueRoutes(app, deps) {
               ELSE 'active'
             END AS derived_status
           FROM followup_schedules fs
-          JOIN followup_campaigns fc  ON fc.id  = fs.campaign_id
-          JOIN followup_companies fco ON fco.id = fc.company_id
+          LEFT JOIN followup_campaigns fc  ON fc.id  = fs.campaign_id
+          JOIN followup_companies fco ON fco.id = fs.company_id
           LEFT JOIN followup_jobs fj  ON fj.schedule_id = fs.id
           ${baseWhere}
           GROUP BY fs.id, fc.id, fco.id, fc.name, fco.name, fco.tenant_id
@@ -237,7 +237,16 @@ export function registerFollowupQueueRoutes(app, deps) {
       const { campaign_id } = schedRows[0];
 
       let resolvedTemplateId = templateId;
-      if (!resolvedTemplateId) {
+      let customMessageToUse = null;
+
+      if (!campaign_id) {
+        // Lembrete avulso: busca a custom_message do último job do schedule
+        const { rows: lastJobRows } = await fupQuery(
+          `SELECT custom_message FROM followup_jobs WHERE schedule_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [scheduleId]
+        );
+        customMessageToUse = lastJobRows[0]?.custom_message || null;
+      } else if (!resolvedTemplateId) {
         const { rows: tplRows } = await fupQuery(
           `SELECT id FROM followup_templates WHERE campaign_id = $1 AND is_active = true ORDER BY order_index ASC LIMIT 1`,
           [campaign_id]
@@ -255,14 +264,14 @@ export function registerFollowupQueueRoutes(app, deps) {
       const scheduledFor = new Date(Date.now() + delayMs);
 
       const { rows: jobRows } = await fupQuery(
-        `INSERT INTO followup_jobs (schedule_id, template_id, status, scheduled_for) VALUES ($1, $2, 'pending', $3) RETURNING id`,
-        [scheduleId, resolvedTemplateId, scheduledFor]
+        `INSERT INTO followup_jobs (schedule_id, template_id, custom_message, status, scheduled_for) VALUES ($1, $2, $3, 'pending', $4) RETURNING id`,
+        [scheduleId, resolvedTemplateId || null, customMessageToUse, scheduledFor]
       );
       const newJobId = jobRows[0].id;
 
       await getFollowupQueue().add(
         "send-followup",
-        { jobId: newJobId },
+        { jobId: newJobId, customMessage: customMessageToUse },
         { delay: delayMs, jobId: `fup-reschedule-${newJobId}-${Date.now()}` }
       );
 
@@ -309,11 +318,11 @@ export function registerFollowupQueueRoutes(app, deps) {
 
       const { rows: infoRows } = await fupQuery(
         `SELECT fs.lead_name, fs.phone, fs.origin,
-                fc.name AS campaign_name,
+                COALESCE(fc.name, 'Avulso') AS campaign_name,
                 fco.name AS company_name, fco.webhook_url
            FROM followup_schedules fs
-           JOIN followup_campaigns fc  ON fc.id  = fs.campaign_id
-           JOIN followup_companies fco ON fco.id = fc.company_id
+           LEFT JOIN followup_campaigns fc  ON fc.id  = fs.campaign_id
+           JOIN followup_companies fco ON fco.id = fs.company_id
           WHERE fs.id = $1`,
         [scheduleId]
       );

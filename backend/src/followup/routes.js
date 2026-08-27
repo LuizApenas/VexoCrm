@@ -670,6 +670,107 @@ function normalizeInstanceList(list, fallback) {
     }
   });
 
+  // POST /api/followup/reminders — cria um lembrete avulso para 1 lead
+  // Body: { leadName, phone, scheduledFor, message, companyId?, tenantId? }
+  router.post("/reminders", async (req, res) => {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const leadName = str(body.leadName) || str(body.nome) || "Lead";
+    const rawPhone = str(body.phone) || str(body.telefone) || "";
+    const phoneDigits = rawPhone.replace(/\D/g, "");
+
+    // 1. Validação de telefone
+    if (!phoneDigits || phoneDigits.length < 10) {
+      return sendErr(res, 400, "MISSING_PHONE", "Lead sem telefone válido. Forneça um número com DDD.");
+    }
+    const cleanPhone = phoneDigits.startsWith("55") ? phoneDigits : `55${phoneDigits}`;
+
+    // 2. Validação de mensagem
+    const message = str(body.message);
+    if (!message) {
+      return sendErr(res, 400, "MISSING_MESSAGE", "A mensagem do lembrete não pode ficar em branco.");
+    }
+
+    // 3. Validação de horário no futuro
+    const scheduledFor = str(body.scheduledFor);
+    if (!scheduledFor) {
+      return sendErr(res, 400, "MISSING_DATETIME", "Defina a data e hora do lembrete.");
+    }
+    const targetDate = new Date(scheduledFor);
+    if (isNaN(targetDate.getTime())) {
+      return sendErr(res, 400, "INVALID_DATETIME", "Data e hora de agendamento inválidas.");
+    }
+    const now = Date.now();
+    if (targetDate.getTime() <= now) {
+      return sendErr(res, 400, "PAST_DATETIME", "Esse horário já passou. Escolha um momento futuro.");
+    }
+
+    try {
+      // 4. Resolver company do tenant
+      const authTenants = authorizedTenantIds(req);
+      const requestedTenantId = str(body.tenantId);
+      const tenantId = (authTenants.length > 0 && !isAdminAccess(req))
+        ? (authTenants.includes(requestedTenantId) ? requestedTenantId : authTenants[0])
+        : (requestedTenantId || "geracao-digital");
+
+      let resolvedCompanyId = str(body.companyId);
+      if (!resolvedCompanyId) {
+        const { rows: compRows } = await query(
+          `SELECT id FROM followup_companies WHERE tenant_id = $1 ORDER BY created_at ASC LIMIT 1`,
+          [tenantId]
+        );
+        if (compRows.length) {
+          resolvedCompanyId = compRows[0].id;
+        } else {
+          // Criar company padrão para o tenant se não existir
+          const { rows: newComp } = await query(
+            `INSERT INTO followup_companies (tenant_id, name) VALUES ($1, $2) RETURNING id`,
+            [tenantId, tenantId === "geracao-digital" ? "Geração Digital" : tenantId]
+          );
+          resolvedCompanyId = newComp[0].id;
+        }
+      }
+
+      // 5. Inserir followup_schedule avulso (campaign_id = NULL)
+      const { rows: schedRows } = await query(
+        `INSERT INTO followup_schedules (campaign_id, company_id, lead_name, phone, status, origin, origin_type)
+         VALUES (NULL, $1, $2, $3, 'active', 'manual', 'manual')
+         RETURNING id`,
+        [resolvedCompanyId, leadName, cleanPhone]
+      );
+      const scheduleId = schedRows[0].id;
+
+      // 6. Inserir followup_job com custom_message e template_id = NULL
+      const { rows: jobRows } = await query(
+        `INSERT INTO followup_jobs (schedule_id, template_id, custom_message, status, scheduled_for)
+         VALUES ($1, NULL, $2, 'pending', $3)
+         RETURNING id`,
+        [scheduleId, message, targetDate.toISOString()]
+      );
+      const jobId = jobRows[0].id;
+
+      // 7. Enfileirar no BullMQ com delay em milissegundos
+      const delayMs = Math.max(0, targetDate.getTime() - now);
+      await getFollowupQueue().add(
+        "send-followup",
+        { jobId, customMessage: message },
+        { delay: delayMs, jobId: `fup-reminder-${jobId}` }
+      );
+
+      return res.status(201).json({
+        success: true,
+        scheduleId,
+        jobId,
+        scheduledFor: targetDate.toISOString(),
+        delayMs,
+        leadName,
+        phone: cleanPhone,
+      });
+    } catch (err) {
+      console.error("[followup/reminders] Erro ao criar lembrete avulso:", err);
+      return sendErr(res, 500, "REMINDER_CREATE_FAILED", err.message);
+    }
+  });
+
   // ── Templates ─────────────────────────────────────────────────────────────
 
   // GET /api/followup/templates?campaignId=

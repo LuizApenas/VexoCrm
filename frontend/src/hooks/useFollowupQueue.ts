@@ -171,3 +171,42 @@ export function useRetryFollowupStep() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["followup-queue"] }),
   });
 }
+
+export interface CreateStandaloneReminderParams {
+  leadName?: string;
+  phone: string;
+  scheduledFor: string;
+  message: string;
+  companyId?: string;
+  tenantId?: string;
+}
+
+export function useCreateStandaloneReminder() {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (
+      params: CreateStandaloneReminderParams
+    ): Promise<{ success: boolean; scheduleId: string; jobId: string; scheduledFor: string }> => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+
+      const res = await fetchApi("/api/followup/reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(params),
+      });
+
+      if (!res.ok) {
+        throw new Error(await readApiErrorMessage(res, "Erro ao agendar lembrete avulso"));
+      }
+
+      return readApiJson(res, "create_reminder");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["followup-queue"] });
+    },
+  });
+}
+

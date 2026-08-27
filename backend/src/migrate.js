@@ -142,6 +142,13 @@ async function isAlreadyApplied(pool, filename) {
         AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'followup_jobs_status_check' AND pg_get_constraintdef(oid) LIKE '%cancelled%')
       )
     ) AS ok`,
+    "20260827180000_add_followup_jobs_custom_message.sql": `SELECT (
+      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='followup_jobs')
+      OR (
+        EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='followup_jobs' AND column_name='custom_message')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'followup_jobs_content_check')
+      )
+    ) AS ok`,
   };
 
   const query = checks[filename];

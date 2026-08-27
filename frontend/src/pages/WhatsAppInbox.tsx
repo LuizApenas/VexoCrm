@@ -58,6 +58,7 @@ import {
   type WhatsAppChat,
   type WhatsAppMessage,
 } from "@/hooks/useWhatsAppInbox";
+import { SingleFollowupReminderModal } from "@/components/followup/SingleFollowupReminderModal";
 import { MediaMessage } from "@/components/MediaMessage";
 
 interface InternalNote {
@@ -259,6 +260,7 @@ export default function WhatsAppInbox({
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
   const [hasNewUnseenMessage, setHasNewUnseenMessage] = useState(false);
   const [showDossier, setShowDossier] = useState(true);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
 
   const chatsContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1424,6 +1426,15 @@ export default function WhatsAppInbox({
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={() => setIsReminderModalOpen(true)}
+                    className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15"
+                  >
+                    <Clock3 className="mr-2 h-3.5 w-3.5 text-emerald-500" />
+                    Lembrar deste lead
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => navigate("/crm/followup")}
                     className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15"
                   >
@@ -1445,6 +1456,17 @@ export default function WhatsAppInbox({
           )}
         </div>
       )}
+
+      <SingleFollowupReminderModal
+        open={isReminderModalOpen}
+        onOpenChange={setIsReminderModalOpen}
+        lead={{
+          id: matchedLead?.id,
+          nome: matchedLead?.nome || selectedChat?.name || "Lead",
+          phone: rawPhone,
+        }}
+        tenantId={clientId}
+      />
     </PageShell>
   );
 }

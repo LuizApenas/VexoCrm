@@ -39,6 +39,7 @@ import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
 import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
+import { SingleFollowupReminderModal } from "@/components/followup/SingleFollowupReminderModal";
 import { PageShell } from "@/components/PageShell";
 import { UpsellCard } from "@/components/UpsellCard";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -288,6 +289,7 @@ export default function BancoDeDados() {
   // Create Manual Lead State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isFollowupModalOpen, setIsFollowupModalOpen] = useState(false);
+  const [isSingleReminderModalOpen, setIsSingleReminderModalOpen] = useState(false);
   const [newLeadName, setNewLeadName] = useState("");
   const [newLeadPhone, setNewLeadPhone] = useState("");
   const [newLeadStage, setNewLeadStage] = useState<"buyer" | "open_budget" | "inquiry" | "cold" | "lost">("cold");
@@ -1372,15 +1374,26 @@ export default function BancoDeDados() {
             </Button>
 
             {selectedLeadIds.length > 0 && (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setIsFollowupModalOpen(true)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 text-xs"
-              >
-                <CalendarClock className="w-3.5 h-3.5" />
-                Aplicar Follow-up ({selectedLeadIds.length})
-              </Button>
+              <>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => setIsFollowupModalOpen(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 text-xs"
+                >
+                  <CalendarClock className="w-3.5 h-3.5" />
+                  Aplicar Follow-up ({selectedLeadIds.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsSingleReminderModalOpen(true)}
+                  className="border-emerald-600/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 gap-1.5 text-xs font-semibold"
+                >
+                  <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                  Lembrete avulso
+                </Button>
+              </>
             )}
 
             <Button
@@ -1988,6 +2001,16 @@ export default function BancoDeDados() {
             >
               <Sparkles className="w-3.5 h-3.5" />
               Aplicar Follow-up
+            </Button>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setIsSingleReminderModalOpen(true)}
+              className="text-xs h-8 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-emerald-400 hover:text-emerald-300 font-semibold gap-1.5"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              Lembrete avulso
             </Button>
 
             <Button
@@ -2815,6 +2838,18 @@ export default function BancoDeDados() {
         leads={leads
           .filter((l) => selectedLeadIds.includes(l.id))
           .map((l) => ({ id: l.id, nome: l.nome, phone: l.phone, telefone: l.telefone }))}
+      />
+
+      {/* Modal Lembrete Avulso para Lead */}
+      <SingleFollowupReminderModal
+        open={isSingleReminderModalOpen}
+        onOpenChange={setIsSingleReminderModalOpen}
+        lead={
+          selectedLeadIds.length > 0
+            ? leads.find((l) => l.id === selectedLeadIds[0]) || null
+            : null
+        }
+        tenantId={clientId}
       />
 
       {/* Modal Cadastro Manual */}

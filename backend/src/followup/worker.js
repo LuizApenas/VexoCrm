@@ -144,7 +144,7 @@ async function processJob(job) {
   const { jobId, customMessage } = job.data;
 
   const { rows: jobRows } = await query(
-    `SELECT fj.id, fj.schedule_id, fj.template_id, fj.status as job_status,
+    `SELECT fj.id, fj.schedule_id, fj.template_id, fj.custom_message, fj.status as job_status,
             fs.lead_name, fs.phone, fs.meeting_datetime, fs.status as schedule_status,
             fs.campaign_id, fs.company_id,
             ft.message, ft.trigger_type,
@@ -173,7 +173,7 @@ async function processJob(job) {
     // Re-adiciona o mesmo payload com delay de 5 min; job atual termina sem erro
     await getFollowupQueue().add(
       "send-followup",
-      { jobId, customMessage },
+      { jobId, customMessage: customMessage || row.custom_message },
       { delay: 5 * 60 * 1000, jobId: `fup-pause-${jobId}-${Date.now()}` }
     );
     console.log(log, "campanha pausada — reagendado em 5 min");
@@ -198,7 +198,7 @@ async function processJob(job) {
     }
   }
 
-  const rawMessage = customMessage || row.message || "";
+  const rawMessage = customMessage || row.custom_message || row.message || "";
   const text = renderMessage(rawMessage, {
     lead_name: row.lead_name,
     meeting_datetime: row.meeting_datetime,
