@@ -14,8 +14,70 @@ import { ResendProvider } from "../providers/ResendProvider.js";
 import { applyMessagePlaceholders } from "../services/messagePlaceholders.js";
 import { validateOutboundMessage } from "../services/jsonExtractor.js";
 
+import {
+  getLeadClientEvolutionInstances,
+  parseEvolutionWebhookEndpoint,
+} from "../services/evolution.js";
+import { normalizeString } from "../textNormalize.js";
+
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+
+export async function resolveEvolutionInstanceForFollowup(tenantId, instanceNameOrId) {
+  if (!tenantId) {
+    throw new Error("tenant_id não informado para resolução da instância de follow-up.");
+  }
+
+  const instances = await getLeadClientEvolutionInstances(tenantId);
+  const activeInstances = Array.isArray(instances) ? instances.filter((i) => i.active !== false) : [];
+
+  if (activeInstances.length === 0) {
+    throw new Error(
+      `Nenhum WhatsApp/chip ativo conectado para o tenant '${tenantId}'. Conecte um chip em Canais & Chips.`
+    );
+  }
+
+  const alvo = normalizeString(instanceNameOrId);
+  let matched = null;
+
+  if (alvo) {
+    matched = activeInstances.find((inst) => {
+      const parsed = parseEvolutionWebhookEndpoint(inst.dispatch_webhook_url);
+      const urlInstance = parsed?.instance || null;
+      return (
+        inst.name === alvo ||
+        inst.id === alvo ||
+        urlInstance === alvo ||
+        inst.name.toLowerCase() === alvo.toLowerCase()
+      );
+    });
+  }
+
+  if (!matched) {
+    // Se não encontrou o nome exato (ex: renomeado ou slug legado), faz fallback para a instância padrão do tenant
+    matched = activeInstances.find((i) => i.is_default === true) || activeInstances[0];
+  }
+
+  if (!matched || !matched.dispatch_webhook_url) {
+    const available = activeInstances.map((i) => `"${i.name}"`).join(", ");
+    throw new Error(
+      `Instância WhatsApp '${alvo || 'padrão'}' não encontrada para o tenant '${tenantId}'. Instâncias ativas disponíveis: [${available}].`
+    );
+  }
+
+  const parsed = parseEvolutionWebhookEndpoint(matched.dispatch_webhook_url);
+  const instanceSlug = parsed?.instance || matched.name;
+  const baseUrl = parsed?.origin || process.env.EVOLUTION_API_URL;
+  const apiKey = matched.dispatch_webhook_token || process.env.EVOLUTION_API_KEY;
+
+  return {
+    instanceSlug,
+    displayName: matched.name,
+    webhookUrl: matched.dispatch_webhook_url,
+    apiKey,
+    baseUrl,
+  };
+}
 
 function renderMessage(template, { lead_name, meeting_datetime, phone = "" }) {
   return applyMessagePlaceholders(
@@ -26,9 +88,12 @@ function renderMessage(template, { lead_name, meeting_datetime, phone = "" }) {
   );
 }
 
-async function sendViaEvolution(instance, phone, text) {
-  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-    throw new Error("EVOLUTION_API_URL ou EVOLUTION_API_KEY não configurado.");
+async function sendViaEvolution({ baseUrl, apiKey, instanceSlug, phone, text }) {
+  const resolvedBaseUrl = (baseUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+  const resolvedApiKey = apiKey || process.env.EVOLUTION_API_KEY;
+
+  if (!resolvedBaseUrl || !resolvedApiKey) {
+    throw new Error("EVOLUTION_API_URL ou EVOLUTION_API_KEY não configurado no servidor.");
   }
 
   // Guarda de saída obrigatória
@@ -36,7 +101,7 @@ async function sendViaEvolution(instance, phone, text) {
   if (!guard.valid) {
     console.error("[followup/worker] BLOQUEIO DE SEGURANÇA: Mensagem contém variável não substituída ou formato inválido. Envio cancelado!", {
       phone,
-      instance,
+      instance: instanceSlug,
       motivo: guard.reason,
       textoCompleto: text,
       origem: "followup_worker",
@@ -47,25 +112,26 @@ async function sendViaEvolution(instance, phone, text) {
     throw error;
   }
 
-  const url = `${EVOLUTION_API_URL.replace(/\/$/, "")}/message/sendText/${instance}`;
+  const url = `${resolvedBaseUrl}/message/sendText/${encodeURIComponent(instanceSlug)}`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      apikey: EVOLUTION_API_KEY,
+      apikey: resolvedApiKey,
     },
     body: JSON.stringify({
       number: phone,
       text,
       options: {
-        delay: 2000,
+        delay: 1200,
         presence: "composing",
+        linkPreview: false,
       },
     }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Evolution API ${res.status}: ${body.slice(0, 200)}`);
+    throw new Error(`Evolution API ${res.status} (${instanceSlug}): ${body.slice(0, 200)}`);
   }
 }
 
@@ -83,7 +149,9 @@ async function processJob(job) {
             fs.campaign_id, fs.company_id,
             ft.message, ft.trigger_type,
             fc.status as campaign_status,
-            fco.evolution_instance
+            fco.tenant_id,
+            fco.evolution_instance,
+            fco.evolution_instances
        FROM followup_jobs       fj
        JOIN followup_schedules  fs  ON fs.id = fj.schedule_id
        LEFT JOIN followup_templates  ft  ON ft.id = fj.template_id
@@ -137,13 +205,25 @@ async function processJob(job) {
     phone: row.phone,
   });
 
-  await sendViaEvolution(row.evolution_instance, row.phone, text);
+  // Resolve a instância oficial na tabela central de chips do tenant (lead_client_evolution_instances)
+  const evoConfig = await resolveEvolutionInstanceForFollowup(
+    row.tenant_id,
+    row.evolution_instance
+  );
+
+  await sendViaEvolution({
+    baseUrl: evoConfig.baseUrl,
+    apiKey: evoConfig.apiKey,
+    instanceSlug: evoConfig.instanceSlug,
+    phone: row.phone,
+    text,
+  });
 
   await query(
     "UPDATE followup_jobs SET status='sent', sent_at=NOW() WHERE id=$1",
     [jobId]
   );
-  console.log(log, "mensagem enviada via Evolution API");
+  console.log(log, `mensagem enviada via Evolution API (${evoConfig.displayName} -> ${evoConfig.instanceSlug})`);
 }
 
 async function processEventJourneyJob(job) {
@@ -165,7 +245,7 @@ async function processEventJourneyJob(job) {
     // Buscar config da empresa
     const { data: companyData } = await supabase
       .from('followup_companies')
-      .select('evolution_instance, name')
+      .select('evolution_instance, name, tenant_id')
       .eq('id', companyId)
       .maybeSingle();
 
@@ -218,9 +298,19 @@ async function processEventJourneyJob(job) {
       console.log(log, "Email disparado com sucesso via Resend!");
     } else {
       // Fallback pra WhatsApp (Evolution)
-      if (companyData && companyData.evolution_instance && leadData.phone) {
-        await sendViaEvolution(companyData.evolution_instance, leadData.phone, finalMessage);
-        console.log(log, "WhatsApp disparado com sucesso via Evolution!");
+      if (companyData && leadData.phone) {
+        const evoConfig = await resolveEvolutionInstanceForFollowup(
+          companyData.tenant_id,
+          companyData.evolution_instance
+        );
+        await sendViaEvolution({
+          baseUrl: evoConfig.baseUrl,
+          apiKey: evoConfig.apiKey,
+          instanceSlug: evoConfig.instanceSlug,
+          phone: leadData.phone,
+          text: finalMessage,
+        });
+        console.log(log, `WhatsApp disparado com sucesso via Evolution (${evoConfig.displayName})!`);
       } else {
         console.log(log, "Faltam dados de instância ou telefone para WhatsApp.");
       }
