@@ -2226,9 +2226,250 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  // GET /api/campaigns/dispatches/:dispatchId/failed — leads falhados do disparo,
-  // exportável para planilha (?format=csv). Defeito A: failed sai do reprocesso e
-  // fica disponível para tratamento/exclusão manual.
+  function translateDispatchErrorMessage(rawError) {
+    if (!rawError) return null;
+    const s = String(rawError).trim();
+    if (s.includes('"exists":false') || s.includes('"exists": false') || s.includes('"exists":false')) {
+      return "Número não existe no WhatsApp";
+    }
+    if (s.includes("HTTP 400") || s.includes("Bad Request")) {
+      return "Número inválido ou rejeitado pelo WhatsApp";
+    }
+    if (s.includes("HTTP 404") || s.includes("Instance not found") || s.includes("desconectad")) {
+      return "Chip desconectado ou não encontrado na Evolution";
+    }
+    if (s.includes("AbortError") || s.includes("timeout") || s.includes("Timeout")) {
+      return "Tempo limite excedido ao chamar a Evolution";
+    }
+    if (s.includes("Opt-out") || s.includes("opt-out")) {
+      return "Lead solicitou não receber mensagens (Opt-out)";
+    }
+    if (s.includes("reinício do servidor") || s.includes("interrompido") || s.includes("Interrompido")) {
+      return "Envio interrompido antes da confirmação";
+    }
+    if (s.includes("HTTP 500") || s.includes("HTTP 502") || s.includes("HTTP 503")) {
+      return "Instabilidade temporária no servidor Evolution";
+    }
+    return s.length > 80 ? `${s.slice(0, 77)}...` : s;
+  }
+
+  // GET /api/campaigns/dispatches/:dispatchId/recipients — Lista completa de destinatários com status, motivo e exportação
+  app.get("/api/campaigns/dispatches/:dispatchId/recipients", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const dispatchId = normalizeString(req.params.dispatchId);
+    if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");
+
+    try {
+      const { data: dispatch, error: dispatchErr } = await supabase
+        .from("campaign_dispatches")
+        .select("id, client_id, campaign_id, name, limit_per_run, offset, steps, status, target_count")
+        .eq("id", dispatchId)
+        .maybeSingle();
+
+      if (dispatchErr || !dispatch) return sendError(res, 404, "DISPATCH_NOT_FOUND", "Dispatch not found");
+      const authorizedClientId = resolveAuthorizedClientId(req, res, dispatch.client_id);
+      if (!authorizedClientId) return;
+
+      const { data: campaign, error: campErr } = await supabase
+        .from("campaigns")
+        .select("id, name, import_id, analytics_meta")
+        .eq("id", dispatch.campaign_id)
+        .single();
+
+      if (campErr || !campaign) return sendError(res, 404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
+
+      // 1. Busca todos os leads candidatos do lote
+      const allCandidateLeads = await buildDispatchLeads({
+        clientId: authorizedClientId,
+        importId: resolveCampaignImportSelection(campaign),
+        limit: dispatch.limit_per_run,
+        offset: dispatch.offset,
+        segmentation: dispatch.steps?.[0]?.segmentation || null,
+        excludeDispatchId: null,
+      });
+
+      // 2. Busca todas as execuções registradas deste disparo em campaign_dispatch_runs
+      const { data: runsData, error: runsErr } = await supabase
+        .from("campaign_dispatch_runs")
+        .select("dispatch_id, lead_id, phone, status, error_message, claimed_at, sent_at, created_at")
+        .eq("dispatch_id", dispatchId)
+        .order("created_at", { ascending: true });
+
+      if (runsErr) throw runsErr;
+      const runs = runsData || [];
+
+      const runByLeadId = new Map();
+      const runByPhone = new Map();
+      for (const r of runs) {
+        if (r.lead_id) runByLeadId.set(r.lead_id, r);
+        if (r.phone) {
+          const clean = normalizeString(r.phone).replace(/\D/g, "");
+          if (clean) runByPhone.set(clean, r);
+        }
+      }
+
+      // 3. Monta lista detalhada de destinatários
+      const recipients = allCandidateLeads.map((lead, idx) => {
+        const cleanPhone = normalizeString(lead.telefone).replace(/\D/g, "");
+        const run = (lead.id ? runByLeadId.get(lead.id) : null) || (cleanPhone ? runByPhone.get(cleanPhone) : null);
+        const rawStatus = run ? run.status : "pending";
+        const statusLabel =
+          rawStatus === "sent"
+            ? "Enviado"
+            : rawStatus === "failed"
+            ? "Falhou"
+            : rawStatus === "skipped"
+            ? "Pulado"
+            : "Não processado";
+
+        const failureReason = run?.error_message ? translateDispatchErrorMessage(run.error_message) : null;
+        const sentAt = run?.sent_at || null;
+        const createdAt = run?.created_at || null;
+
+        return {
+          index: idx + 1,
+          leadId: lead.id || null,
+          nome: lead.nome || "Sem nome",
+          telefone: lead.telefone,
+          status: rawStatus,
+          statusLabel,
+          sentAt,
+          attemptedAt: createdAt,
+          failureReason,
+          technicalDetails: run?.error_message || null,
+          campaignName: campaign.name,
+          dispatchName: dispatch.name,
+        };
+      });
+
+      // Filtro opcional por status na query (?status=sent, ?status=failed, etc)
+      const filterStatus = normalizeString(req.query.status);
+      const filteredRecipients = filterStatus
+        ? recipients.filter((r) => r.status.toLowerCase() === filterStatus.toLowerCase())
+        : recipients;
+
+      const rawFormat = normalizeString(req.query.format);
+      if (rawFormat && rawFormat.toLowerCase() === "csv") {
+        const header = [
+          "Nome",
+          "Telefone",
+          "Status",
+          "Data e hora do envio",
+          "Motivo da falha",
+          "Campanha",
+          "Lote",
+          "Detalhe tecnico",
+        ];
+        const esc = (v) => {
+          const s = v == null ? "" : String(v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const lines = [header.join(",")];
+        for (const r of filteredRecipients) {
+          const sentDateStr = r.sentAt ? new Date(r.sentAt).toLocaleString("pt-BR") : (r.attemptedAt ? new Date(r.attemptedAt).toLocaleString("pt-BR") : "");
+          lines.push(
+            [
+              r.nome,
+              r.telefone,
+              r.statusLabel,
+              sentDateStr,
+              r.failureReason || "",
+              r.campaignName,
+              r.dispatchName,
+              r.technicalDetails || "",
+            ]
+              .map(esc)
+              .join(",")
+          );
+        }
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="destinatarios-${dispatch.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.csv"`);
+        return res.send(lines.join("\n"));
+      }
+
+      const sentCount = recipients.filter((r) => r.status === "sent").length;
+      const failedCount = recipients.filter((r) => r.status === "failed").length;
+      const skippedCount = recipients.filter((r) => r.status === "skipped").length;
+      const pendingCount = recipients.filter((r) => r.status === "pending").length;
+
+      res.json({
+        dispatchId: dispatch.id,
+        dispatchName: dispatch.name,
+        campaignName: campaign.name,
+        total: recipients.length,
+        sentCount,
+        failedCount,
+        skippedCount,
+        pendingCount,
+        items: filteredRecipients,
+      });
+    } catch (err) {
+      console.error("[dispatch-recipients] error:", err);
+      sendError(res, 500, "DISPATCH_RECIPIENTS_FAILED", err instanceof Error ? err.message : "Failed");
+    }
+  });
+
+  // POST /api/campaigns/dispatches/:dispatchId/retry-failed — Reenvia apenas os destinatários que falharam
+  app.post("/api/campaigns/dispatches/:dispatchId/retry-failed", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const dispatchId = normalizeString(req.params.dispatchId);
+    if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");
+
+    try {
+      const { data: dispatch, error: dispatchErr } = await supabase
+        .from("campaign_dispatches")
+        .select("id, client_id, campaign_id, name, status")
+        .eq("id", dispatchId)
+        .maybeSingle();
+
+      if (dispatchErr || !dispatch) return sendError(res, 404, "DISPATCH_NOT_FOUND", "Dispatch not found");
+      const authorizedClientId = resolveAuthorizedClientId(req, res, dispatch.client_id);
+      if (!authorizedClientId) return;
+
+      if (dispatch.status === "running") {
+        return sendError(res, 409, "DISPATCH_RUNNING", "O lote já está em execução");
+      }
+
+      // 1. Remove os registros 'failed' de campaign_dispatch_runs para liberar reenvio
+      const { data: deletedRuns, error: deleteErr } = await supabase
+        .from("campaign_dispatch_runs")
+        .delete()
+        .eq("dispatch_id", dispatchId)
+        .eq("status", "failed")
+        .select("id");
+
+      if (deleteErr) throw deleteErr;
+      const retriedCount = deletedRuns?.length || 0;
+
+      if (retriedCount === 0) {
+        return res.json({ success: true, message: "Nenhum lead com status de falha para reenviar.", retriedCount: 0 });
+      }
+
+      // 2. Coloca o lote em 'scheduled' para o scheduler/motor pegar ou aciona imediatamente
+      await supabase
+        .from("campaign_dispatches")
+        .update({
+          status: "scheduled",
+          scheduled_at: new Date().toISOString(),
+          trigger_type: "manual",
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", dispatchId);
+
+      res.json({
+        success: true,
+        message: `${retriedCount} lead(s) com falha liberado(s) para reenvio.`,
+        retriedCount,
+        dispatchId,
+      });
+    } catch (err) {
+      console.error("[retry-failed] error:", err);
+      sendError(res, 500, "RETRY_FAILED_ERROR", err instanceof Error ? err.message : "Failed to retry failed leads");
+    }
+  });
+
+  // GET /api/campaigns/dispatches/:dispatchId/failed — leads falhados do disparo com motivo traduzido
   app.get("/api/campaigns/dispatches/:dispatchId/failed", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const dispatchId = normalizeString(req.params.dispatchId);
@@ -2243,6 +2484,12 @@ export function registerCampaignsRoutes(app, deps) {
       const authorizedClientId = resolveAuthorizedClientId(req, res, dispatch.client_id);
       if (!authorizedClientId) return;
 
+      const { data: campaign } = await supabase
+        .from("campaigns")
+        .select("id, name, import_id, analytics_meta")
+        .eq("id", dispatch.campaign_id)
+        .single();
+
       const { data, error } = await supabase
         .from("campaign_dispatch_runs")
         .select("dispatch_id, lead_id, phone, status, error_message, claimed_at, sent_at, created_at")
@@ -2252,22 +2499,64 @@ export function registerCampaignsRoutes(app, deps) {
       if (error) throw error;
       const rows = data || [];
 
-      if (normalizeString(req.query.format).toLowerCase() === "csv") {
-        const header = ["dispatch_id", "lead_id", "telefone", "status", "error_message", "claimed_at", "sent_at", "created_at"];
+      // Mapear nomes de contatos a partir da importação se disponível
+      let nameMap = new Map();
+      if (campaign) {
+        try {
+          const leads = await buildDispatchLeads({
+            clientId: authorizedClientId,
+            importId: resolveCampaignImportSelection(campaign),
+            excludeDispatchId: null,
+          });
+          for (const l of leads) {
+            if (l.telefone) {
+              const clean = normalizeString(l.telefone).replace(/\D/g, "");
+              if (clean) nameMap.set(clean, l.nome || "Sem nome");
+            }
+          }
+        } catch {}
+      }
+
+      const formattedRows = rows.map((r) => {
+        const cleanPhone = normalizeString(r.phone).replace(/\D/g, "");
+        const nome = nameMap.get(cleanPhone) || "Sem nome";
+        const failureReason = translateDispatchErrorMessage(r.error_message);
+        return {
+          ...r,
+          nome,
+          failureReason,
+          campaignName: campaign?.name || "Campanha",
+          dispatchName: dispatch.name,
+        };
+      });
+
+      const rawFormat = normalizeString(req.query.format);
+      if (rawFormat && rawFormat.toLowerCase() === "csv") {
+        const header = ["Nome", "Telefone", "Status", "Data e hora do envio", "Motivo da falha", "Campanha", "Lote", "Detalhe tecnico"];
         const esc = (v) => {
           const s = v == null ? "" : String(v);
           return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
         };
         const lines = [header.join(",")];
-        for (const r of rows) {
-          lines.push([r.dispatch_id, r.lead_id, r.phone, r.status, r.error_message, r.claimed_at, r.sent_at, r.created_at].map(esc).join(","));
+        for (const r of formattedRows) {
+          const sentDateStr = r.sent_at ? new Date(r.sent_at).toLocaleString("pt-BR") : (r.created_at ? new Date(r.created_at).toLocaleString("pt-BR") : "");
+          lines.push([
+            r.nome,
+            r.phone,
+            "Falhou",
+            sentDateStr,
+            r.failureReason || "",
+            r.campaignName,
+            r.dispatchName,
+            r.error_message || "",
+          ].map(esc).join(","));
         }
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
-        res.setHeader("Content-Disposition", `attachment; filename="disparo-${dispatchId}-falhados.csv"`);
+        res.setHeader("Content-Disposition", `attachment; filename="falhas-${dispatch.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.csv"`);
         return res.send(lines.join("\n"));
       }
 
-      res.json({ dispatchId, dispatchName: dispatch.name, failedCount: rows.length, items: rows });
+      res.json({ dispatchId, dispatchName: dispatch.name, failedCount: formattedRows.length, items: formattedRows });
     } catch (err) {
       sendError(res, 500, "DISPATCH_FAILED_EXPORT_FAILED", err instanceof Error ? err.message : "Failed");
     }

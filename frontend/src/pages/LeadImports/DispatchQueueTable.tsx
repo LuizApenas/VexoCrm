@@ -111,7 +111,12 @@ export function DispatchQueueTable({
                 <TableRow className="border-slate-200/60 dark:border-white/5">
                   <TableHead className="px-6 py-4 text-xs font-semibold uppercase font-display">Lote / Origem</TableHead>
                   <TableHead className="px-4 py-4 text-xs font-semibold uppercase font-display text-center">Status</TableHead>
-                  <TableHead className="px-4 py-4 text-xs font-semibold uppercase font-display text-center">Progresso</TableHead>
+                  <TableHead
+                    className="px-4 py-4 text-xs font-semibold uppercase font-display text-center cursor-help"
+                    title="Soma estritamente as mensagens enviadas por este lote. O total diário do chip na aba de Chips soma todos os envios do dia (campanhas, follow-ups e atendimentos)."
+                  >
+                    Progresso do Lote ℹ️
+                  </TableHead>
                   <TableHead className="px-4 py-4 text-xs font-semibold uppercase font-display">Criado / Agendado</TableHead>
                   <TableHead className="px-6 py-4 text-xs font-semibold uppercase font-display text-right">Ações</TableHead>
                 </TableRow>
@@ -122,7 +127,13 @@ export function DispatchQueueTable({
                   return (
                     <TableRow key={disp.id} className="border-border hover:bg-muted/10">
                       <TableCell className="px-6 py-4">
-                        <p className="text-sm font-bold text-foreground">{disp.name}</p>
+                        <p
+                          className="text-sm font-bold text-foreground hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer hover:underline transition-colors"
+                          onClick={() => onPreviewDispatch(disp.id)}
+                          title="Clique para ver os destinatários e status de cada lead"
+                        >
+                          {disp.name}
+                        </p>
                         <p className="text-xs text-muted-foreground">Campanha: {(disp as any).campaign_name || "Planilha"}</p>
                       </TableCell>
                       <TableCell className="px-4 py-4 text-center">
@@ -142,15 +153,18 @@ export function DispatchQueueTable({
                         )}
                       </TableCell>
                       <TableCell className="px-4 py-4">
-                        <div className="flex flex-col items-center justify-center gap-1 w-28 mx-auto">
+                        <div
+                          className="flex flex-col items-center justify-center gap-1 w-28 mx-auto cursor-pointer group"
+                          onClick={() => onPreviewDispatch(disp.id)}
+                          title="Clique para abrir lista detalhada de destinatários"
+                        >
                           <div className="flex items-center justify-between text-[10px] font-bold w-full">
                             <span className="text-emerald-500">{disp.sent_count} ✓</span>
                             <span className="text-rose-500">{disp.failed_count} ✗</span>
                             {disp.target_count != null && (
                               <span
-                                className="text-blue-500 ml-1 cursor-pointer hover:underline"
+                                className="text-blue-500 ml-1 group-hover:underline"
                                 title="Ver leads alvo desta campanha"
-                                onClick={() => onPreviewDispatch(disp.id)}
                               >
                                 / {disp.target_count} 🎯
                               </span>
@@ -197,6 +211,16 @@ export function DispatchQueueTable({
                               <Pause className="h-3.5 w-3.5 mr-1" /> Pausar
                             </Button>
                           )}
+                          {/* Detalhes de Destinatários */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            title="Ver destinatários e status de cada lead"
+                            onClick={() => onPreviewDispatch(disp.id)}
+                            className="h-8 w-8 p-0 rounded-xl"
+                          >
+                            <Users className="h-3.5 w-3.5 text-slate-700 dark:text-white/80" />
+                          </Button>
                           {disp.failed_count > 0 && (
                             <Button
                               size="sm"

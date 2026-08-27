@@ -41,7 +41,6 @@ import {
   useTriggerDispatch,
   useUpdateDispatch,
   useAllDispatches,
-  useDispatchPreviewLeads,
   type Campaign,
   type CampaignDispatch,
   type CampaignStatus,
@@ -49,6 +48,7 @@ import {
   type CampaignImageAsset,
   type CampaignSequenceStep,
 } from "@/hooks/useCampanhas";
+import { DispatchRecipientsDialog } from "./LeadImports/DispatchRecipientsDialog";
 import {
   useConsultantSchedules,
   useCreateConsultantSchedule,
@@ -391,7 +391,6 @@ export default function LeadImports({
   // Hooks queries
   const { data: campaigns = [], isLoading: loadingCampaigns, refetch: refetchCampaigns } = useCampanhas(activeClientId || undefined);
   const { data: dispatches = [], isLoading: loadingDispatches, refetch: refetchDispatches } = useAllDispatches(activeClientId || null);
-  const { data: previewLeadsData, isLoading: loadingPreviewLeads } = useDispatchPreviewLeads(previewDispatchId);
   const {
     data: consultants = [],
     error: consultantsError,
@@ -1698,57 +1697,11 @@ export default function LeadImports({
         />
       )}
 
-      {/* Preview Leads Modal */}
-      <Dialog open={!!previewDispatchId} onOpenChange={(open) => !open && setPreviewDispatchId(null)}>
-        <DialogContent className="max-w-2xl bg-white dark:bg-slate-900 border border-border shadow-2xl rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold font-display text-foreground">Leads Alvo do Disparo</DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground">
-              {loadingPreviewLeads
-                ? "Carregando leads..."
-                : previewLeadsData
-                  ? `Mostrando ${previewLeadsData.leads.length} de ${previewLeadsData.total} leads encontrados para as regras desta campanha.`
-                  : "Nenhum lead carregado."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="max-h-[400px] overflow-y-auto mt-4 rounded-lg border border-border bg-slate-50 dark:bg-slate-900/50 p-2">
-            {loadingPreviewLeads ? (
-              <div className="flex flex-col items-center justify-center h-32 gap-3 text-muted-foreground">
-                <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
-                <p className="text-xs font-medium">Buscando leads na base...</p>
-              </div>
-            ) : previewLeadsData?.leads && previewLeadsData.leads.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-b border-border/50 hover:bg-transparent">
-                    <TableHead className="text-xs font-semibold uppercase">Nome</TableHead>
-                    <TableHead className="text-xs font-semibold uppercase text-right">Telefone</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {previewLeadsData.leads.map((l, i) => (
-                    <TableRow key={i} className="border-b border-border/20 last:border-0 hover:bg-slate-100 dark:hover:bg-slate-800">
-                      <TableCell className="font-medium text-sm">{l.nome || "—"}</TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">{l.telefone}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-32 gap-3 text-muted-foreground">
-                <p className="text-sm font-medium">Nenhum lead encontrado para os filtros configurados.</p>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="mt-2">
-            <Button onClick={() => setPreviewDispatchId(null)} variant="outline" className="w-full sm:w-auto text-xs font-bold rounded-xl">
-              Fechar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Modal Detalhado de Destinatários do Lote */}
+      <DispatchRecipientsDialog
+        dispatchId={previewDispatchId}
+        onClose={() => setPreviewDispatchId(null)}
+      />
     </PageShell>
   );
 }

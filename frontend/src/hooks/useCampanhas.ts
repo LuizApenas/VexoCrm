@@ -972,3 +972,73 @@ export function useDispatchPreviewLeads(dispatchId: string | null) {
     },
   });
 }
+
+export interface DispatchRecipientItem {
+  index: number;
+  leadId: string | null;
+  nome: string;
+  telefone: string;
+  status: "sent" | "failed" | "skipped" | "pending";
+  statusLabel: string;
+  sentAt: string | null;
+  attemptedAt: string | null;
+  failureReason: string | null;
+  technicalDetails: string | null;
+  campaignName: string;
+  dispatchName: string;
+}
+
+export interface DispatchRecipientsResponse {
+  dispatchId: string;
+  dispatchName: string;
+  campaignName: string;
+  total: number;
+  sentCount: number;
+  failedCount: number;
+  skippedCount: number;
+  pendingCount: number;
+  items: DispatchRecipientItem[];
+}
+
+export function useDispatchRecipients(dispatchId: string | null, statusFilter?: string) {
+  const { getIdToken } = useAuth();
+  return useQuery<DispatchRecipientsResponse>({
+    queryKey: ["dispatch-recipients", dispatchId, statusFilter],
+    enabled: !!dispatchId,
+    queryFn: async () => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+      const url = new URL(`${API_BASE_URL}/api/campaigns/dispatches/${dispatchId}/recipients`);
+      if (statusFilter && statusFilter !== "all") {
+        url.searchParams.set("status", statusFilter);
+      }
+      const res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao buscar destinatários"));
+      return res.json();
+    },
+  });
+}
+
+export function useRetryFailedDispatchLeads() {
+  const { getIdToken } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (dispatchId: string) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+      const res = await fetch(`${API_BASE_URL}/api/campaigns/dispatches/${dispatchId}/retry-failed`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao reenviar falhados"));
+      return res.json();
+    },
+    onSuccess: (_, dispatchId) => {
+      qc.invalidateQueries({ queryKey: ["campaign-dispatches"] });
+      qc.invalidateQueries({ queryKey: ["all-dispatches"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-recipients", dispatchId] });
+    },
+  });
+}
