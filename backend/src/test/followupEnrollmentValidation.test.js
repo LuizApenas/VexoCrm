@@ -43,4 +43,12 @@ describe("Follow-up Enrollment & after_enrollment Support", () => {
     expect(routesSource).toContain('CAMPAIGN_NOT_ACTIVE');
     expect(routesSource).toContain("está em rascunho ou pausada. Ative-a antes de aplicar");
   });
+
+  it("ensures origin_type manual and updated statuses are permitted in migration constraints", () => {
+    const migrationFix = readFileSync(resolve("supabase/migrations/20260827163000_fix_followup_schedules_origin_type_check.sql"), "utf8");
+    expect(migrationFix).toContain("followup_schedules_origin_type_check");
+    expect(migrationFix).toContain("'manual'");
+    expect(migrationFix).toContain("'cancelled'");
+    expect(migrationFix).toContain("'converted'");
+  });
 });

@@ -134,6 +134,10 @@ async function isAlreadyApplied(pool, filename) {
       NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='followup_templates')
       OR EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'followup_templates_trigger_type_check' AND pg_get_constraintdef(oid) LIKE '%after_enrollment%')
     ) AS ok`,
+    "20260827163000_fix_followup_schedules_origin_type_check.sql": `SELECT (
+      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='followup_schedules')
+      OR EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'followup_schedules_origin_type_check' AND pg_get_constraintdef(oid) LIKE '%manual%')
+    ) AS ok`,
   };
 
   const query = checks[filename];
