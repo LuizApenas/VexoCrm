@@ -12,6 +12,11 @@ import {
   hasUserPermission,
 } from "../../userAccessScope.js";
 import { buildPermissionsRegistryPayload } from "../../access/permissionsRegistry.js";
+import {
+  resolveAccessPreset,
+  describeAccessPresetAdjustment,
+  listAccessPresetKeys,
+} from "../../access/claims.js";
 
 
 // ---------------------------------------------------------------------------
@@ -236,9 +241,42 @@ export function registerAuthRoutes(app, deps) {
       const accessProfiles = await listAccessProfiles();
       const selectedProfile = resolveRequestedAccessProfile(accessProfiles, req.body?.accessPreset, role);
 
-      if (req.body?.accessPreset && !findAccessProfileByKey(accessProfiles, req.body?.accessPreset)) {
-        sendError(res, 400, "INVALID_ACCESS_PRESET", "Unsupported access preset");
+      // "Unsupported access preset" sozinho nao permite diagnostico: o gestor via a
+      // recusa sem saber qual valor foi rejeitado, e a tela reenviava o mesmo
+      // valor a cada tentativa. Agora a mensagem nomeia o recebido e os aceitos.
+      const presetPedido = req.body?.accessPreset;
+      if (presetPedido && !findAccessProfileByKey(accessProfiles, presetPedido)) {
+        const aceitos = listAccessPresetKeys();
+        console.error("[admin-users] preset de acesso rejeitado", {
+          uid,
+          role,
+          recebido: presetPedido,
+          aceitos,
+        });
+        sendError(
+          res,
+          400,
+          "INVALID_ACCESS_PRESET",
+          `Perfil de acesso "${presetPedido}" não existe. Aceitos: ${aceitos.join(", ")}.`,
+          { recebido: presetPedido, aceitos }
+        );
         return;
+      }
+
+      // O normalizador pode AJUSTAR o preset (valor desconhecido, ou perfil de
+      // outro papel). Quando ajusta, o gestor precisa saber — trocar em silencio
+      // e a familia de defeito que este repositorio ja pagou tres vezes.
+      const ajustePreset = resolveAccessPreset(presetPedido, role);
+      const avisosDeAcesso = [];
+      if (ajustePreset.ajustado) {
+        console.error("[admin-users] preset de acesso AJUSTADO", {
+          uid,
+          role,
+          recebido: ajustePreset.recebido,
+          aplicado: ajustePreset.preset,
+          motivo: ajustePreset.motivo,
+        });
+        avisosDeAcesso.push(describeAccessPresetAdjustment(ajustePreset));
       }
 
       const user = await auth.getUser(uid);
@@ -305,6 +343,9 @@ export function registerAuthRoutes(app, deps) {
 
       res.json({
         item: mapAdminUserRecord(updatedUser),
+        // Aviso quando o preset foi ajustado. A tela mostra; sem isto o gestor
+        // salva achando que gravou o perfil que escolheu.
+        ...(avisosDeAcesso.length > 0 ? { avisos: avisosDeAcesso } : {}),
       });
     } catch (error) {
       console.error("admin user access update error:", error);
@@ -357,9 +398,36 @@ export function registerAuthRoutes(app, deps) {
       const accessProfiles = await listAccessProfiles();
       const selectedProfile = resolveRequestedAccessProfile(accessProfiles, req.body?.accessPreset, role);
 
-      if (req.body?.accessPreset && !findAccessProfileByKey(accessProfiles, req.body?.accessPreset)) {
-        sendError(res, 400, "INVALID_ACCESS_PRESET", "Unsupported access preset");
+      const presetPedido = req.body?.accessPreset;
+      if (presetPedido && !findAccessProfileByKey(accessProfiles, presetPedido)) {
+        const aceitos = listAccessPresetKeys();
+        console.error("[admin-users] preset de acesso rejeitado na criacao", {
+          email: req.body?.email || null,
+          role,
+          recebido: presetPedido,
+          aceitos,
+        });
+        sendError(
+          res,
+          400,
+          "INVALID_ACCESS_PRESET",
+          `Perfil de acesso "${presetPedido}" não existe. Aceitos: ${aceitos.join(", ")}.`,
+          { recebido: presetPedido, aceitos }
+        );
         return;
+      }
+
+      const ajustePreset = resolveAccessPreset(presetPedido, role);
+      const avisosDeAcesso = [];
+      if (ajustePreset.ajustado) {
+        console.error("[admin-users] preset de acesso AJUSTADO na criacao", {
+          email: req.body?.email || null,
+          role,
+          recebido: ajustePreset.recebido,
+          aplicado: ajustePreset.preset,
+          motivo: ajustePreset.motivo,
+        });
+        avisosDeAcesso.push(describeAccessPresetAdjustment(ajustePreset));
       }
 
       console.log("[DEBUG] /api/admin/users - Payload:", req.body);
@@ -414,6 +482,7 @@ export function registerAuthRoutes(app, deps) {
 
       res.status(201).json({
         item: mapAdminUserRecord(createdUser),
+        ...(avisosDeAcesso.length > 0 ? { avisos: avisosDeAcesso } : {}),
         passwordResetLink,
         passwordResetEmailSent: passwordResetEmail.enviado,
         passwordResetEmailError: passwordResetEmail.motivo,

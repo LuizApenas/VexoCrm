@@ -390,19 +390,79 @@ export function getDefaultPresetForRole(role) {
   return "operador";
 }
 
+/**
+ * Normaliza o preset de acesso. SEMPRE devolve uma das chaves de
+ * ACCESS_PRESET_KEYS — essa e a lista correta, coerente com
+ * ACCESS_PRESET_DEFAULTS, com SYSTEM_ACCESS_PROFILES e com a tela.
+ *
+ * ANTES havia um `if (normalized) return normalized;` que devolvia QUALQUER
+ * string de volta. O resultado era um normalizador que nao normalizava: um
+ * preset desconhecido atravessava intacto, era devolvido pela API, a tela o
+ * reenviava no PATCH e so entao o validador de auth/routes.js o recusava com
+ * "Unsupported access preset" — sem dizer qual valor era. O usuario ficava
+ * preso: cada nova tentativa reenviava o mesmo valor invalido.
+ *
+ * Dois validadores no mesmo backend com regras diferentes: aqui passava tudo,
+ * la passavam 8. Agora e um so.
+ */
 export function normalizeAccessPreset(value, role = "internal") {
-  const normalized = normalizeString(value)?.toLowerCase();
+  return resolveAccessPreset(value, role).preset;
+}
 
-  if (normalized && ACCESS_PRESET_KEYS.includes(normalized)) {
-    const preset = normalized;
-    return ACCESS_PRESET_DEFAULTS[preset].role === role ? preset : getDefaultPresetForRole(role);
+/**
+ * Igual a normalizeAccessPreset, mas conta O QUE FEZ. Quem grava claim usa esta
+ * versao para poder AVISAR que trocou o valor.
+ *
+ * Trocar em silencio e a familia de defeito que este repositorio ja pagou caro
+ * (o `|| "QUENTE"`, o "FRIO" chumbado): ajustar e necessario, ajustar sem dizer
+ * nao e.
+ *
+ * @returns {{ preset: string, ajustado: boolean, recebido: string|null, motivo: string|null }}
+ */
+export function resolveAccessPreset(value, role = "internal") {
+  const bruto = normalizeString(value);
+  const normalized = bruto?.toLowerCase();
+
+  if (!normalized) {
+    return { preset: getDefaultPresetForRole(role), ajustado: false, recebido: null, motivo: null };
   }
 
-  if (normalized) {
-    return normalized;
+  if (ACCESS_PRESET_KEYS.includes(normalized)) {
+    const papelDoPreset = ACCESS_PRESET_DEFAULTS[normalized].role;
+    if (papelDoPreset === role) {
+      return { preset: normalized, ajustado: false, recebido: bruto, motivo: null };
+    }
+    // Perfil valido, mas de outro papel. Ja era reescrito antes — a diferenca e
+    // que agora o chamador consegue avisar em vez de trocar calado.
+    return {
+      preset: getDefaultPresetForRole(role),
+      ajustado: true,
+      recebido: bruto,
+      motivo: "papel_incompativel",
+    };
   }
 
-  return getDefaultPresetForRole(role);
+  // Fora das chaves conhecidas: cai no padrao do papel, e AVISA.
+  return {
+    preset: getDefaultPresetForRole(role),
+    ajustado: true,
+    recebido: bruto,
+    motivo: "preset_desconhecido",
+  };
+}
+
+/** Frase pronta para a tela, em portugues, dizendo o que foi trocado e por que. */
+export function describeAccessPresetAdjustment({ recebido, preset, motivo }) {
+  const rotulo = ACCESS_PRESET_LABELS[preset] || preset;
+  if (motivo === "papel_incompativel") {
+    return `O perfil "${recebido}" pertence a outro tipo de usuário. Foi ajustado para ${rotulo}.`;
+  }
+  return `O perfil deste usuário era "${recebido}", que não existe. Foi ajustado para ${rotulo}.`;
+}
+
+/** Chaves aceitas, para mensagens de erro e para o teste de paridade. */
+export function listAccessPresetKeys() {
+  return [...ACCESS_PRESET_KEYS];
 }
 
 export function getAccessPresetLabel(preset) {

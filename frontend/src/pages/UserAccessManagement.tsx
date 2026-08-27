@@ -194,7 +194,9 @@ function reconcileLegacyFromPermissions(
   return { internalPages: Array.from(pages), allowedViews: Array.from(views) };
 }
 type RoleFilter = "all" | ManagedRole;
-type ActionFeedbackTone = "success" | "error";
+// "warning" existe para o caso do perfil ajustado: nao e falha (o salvamento
+// funcionou) nem sucesso limpo (o valor gravado nao e o que o gestor escolheu).
+type ActionFeedbackTone = "success" | "error" | "warning";
 
 interface ActionFeedbackState {
   tone: ActionFeedbackTone;
@@ -2399,7 +2401,14 @@ export default function UserAccessManagement() {
         throw new Error(await readApiErrorMessage(res, "Nao foi possivel salvar este usuario"));
       }
 
-      const body = await readApiJson<{ item?: AdminUserRecord }>(res, "admin-user-access");
+      const body = await readApiJson<{ item?: AdminUserRecord; avisos?: string[] }>(res, "admin-user-access");
+
+      // O backend pode ter AJUSTADO o perfil (valor desconhecido, ou perfil de
+      // outro tipo de usuario). Sem mostrar, o gestor salva achando que gravou o
+      // que escolheu.
+      for (const aviso of body?.avisos ?? []) {
+        showActionFeedback({ tone: "warning", title: "Perfil de acesso ajustado", message: aviso });
+      }
 
       showActionFeedback({
         tone: "success",
@@ -2915,10 +2924,16 @@ export default function UserAccessManagement() {
                 "inline-flex w-fit rounded-full px-3 py-1 text-xs font-medium",
                 actionFeedback?.tone === "error"
                   ? "bg-destructive/10 text-destructive"
-                  : "bg-emerald-500/10 text-emerald-600"
+                  : actionFeedback?.tone === "warning"
+                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                    : "bg-emerald-500/10 text-emerald-600"
               )}
             >
-              {actionFeedback?.tone === "error" ? "Falha na acao" : "Acao concluida"}
+              {actionFeedback?.tone === "error"
+                ? "Falha na acao"
+                : actionFeedback?.tone === "warning"
+                  ? "Salvo com ajuste"
+                  : "Acao concluida"}
             </div>
             <DialogTitle>{actionFeedback?.title}</DialogTitle>
             <DialogDescription className="text-sm leading-6 text-muted-foreground">

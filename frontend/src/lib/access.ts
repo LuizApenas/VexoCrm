@@ -416,20 +416,50 @@ function getPresetFallbackKey(preset: string | null | undefined): SystemAccessPr
   return "operador";
 }
 
-export function normalizeAccessPreset(value: unknown, role: AccessRole = "internal"): AccessPreset {
-  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+/**
+ * Espelho de resolveAccessPreset em backend/src/access/claims.js. A autoridade é
+ * o backend; aqui só se decide o que desenhar. accessPresetParity.test.js falha
+ * se as duas listas divergirem.
+ *
+ * O ramo `if (normalized) return normalized;` que existia aqui devolvia qualquer
+ * string de volta — um normalizador que não normalizava. O preset desconhecido
+ * atravessava, era reenviado no PATCH e só então o backend recusava com
+ * "Unsupported access preset", sem dizer qual valor era.
+ */
+export function resolveAccessPreset(
+  value: unknown,
+  role: AccessRole = "internal"
+): { preset: AccessPreset; ajustado: boolean; recebido: string | null; motivo: string | null } {
+  const bruto = typeof value === "string" ? value.trim() : "";
+  const normalized = bruto.toLowerCase();
+
+  if (!normalized) {
+    return { preset: getDefaultPresetForRole(role), ajustado: false, recebido: null, motivo: null };
+  }
 
   if ((ACCESS_PRESET_ORDER as readonly string[]).includes(normalized)) {
     const preset = normalized as SystemAccessPreset;
-    const presetRole = PRESET_DEFAULTS[preset].role;
-    return presetRole === role ? preset : getDefaultPresetForRole(role);
+    if (PRESET_DEFAULTS[preset].role === role) {
+      return { preset, ajustado: false, recebido: bruto, motivo: null };
+    }
+    return {
+      preset: getDefaultPresetForRole(role),
+      ajustado: true,
+      recebido: bruto,
+      motivo: "papel_incompativel",
+    };
   }
 
-  if (normalized) {
-    return normalized;
-  }
+  return {
+    preset: getDefaultPresetForRole(role),
+    ajustado: true,
+    recebido: bruto,
+    motivo: "preset_desconhecido",
+  };
+}
 
-  return getDefaultPresetForRole(role);
+export function normalizeAccessPreset(value: unknown, role: AccessRole = "internal"): AccessPreset {
+  return resolveAccessPreset(value, role).preset;
 }
 
 export function buildPresetDefaults(preset: AccessPreset): PresetDefaults {
