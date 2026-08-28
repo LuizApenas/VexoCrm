@@ -442,7 +442,7 @@ export default function InboundAgentConfig() {
                           {numerosVinculados.length === 0
                             ? "Nenhum número vinculado"
                             : numerosVinculados.length === 1
-                              ? numerosVinculados[0]
+                              ? (chips.find((c) => instanceNameFromChip(c) === numerosVinculados[0] || c.name === numerosVinculados[0] || c.id === numerosVinculados[0])?.name || numerosVinculados[0])
                               : `${numerosVinculados.length} números vinculados`}
                         </span>
                         <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />

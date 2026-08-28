@@ -1276,6 +1276,16 @@ export default function LeadImports({
     setSelectedImportId(c.import_id || ALL_IMPORTS_VALUE);
     setSelectedImportIds(Array.isArray(meta.importIds) ? meta.importIds : (c.import_id ? [c.import_id] : []));
     setDispatchOptions(meta.dispatchOptions || defaultDispatchOptions);
+    if (c.campaign_prompt_id && campaignPromptsById[c.campaign_prompt_id]) {
+      setReplyAgent("campanha");
+      setCampaignAgentPrompt(campaignPromptsById[c.campaign_prompt_id]);
+    } else if (c.mode === "agente") {
+      setReplyAgent("campanha");
+      setCampaignAgentPrompt(c.campaign_prompt_id ? (campaignPromptsById[c.campaign_prompt_id] || "") : "");
+    } else {
+      setReplyAgent("atendimento");
+      setCampaignAgentPrompt("");
+    }
     setActiveTab("campanha");
     toast({ title: "Carregado para edição", description: `Edite a campanha "${c.name}" no formulário de Novo Disparo.` });
   };

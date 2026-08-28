@@ -1532,18 +1532,18 @@ export function registerChatbotRoutes(app, deps) {
           const waitCampaignIsAgente = activeWaitCampaign.mode === "agente";
           if (waitCampaignIsAgente && activeCampaignForLead) {
             campaignPromptIdOverride = activeCampaignForLead.campaignPromptId || null;
-            chatbotPromptTypeOverride = "campanha";
             if (!campaignPromptIdOverride) {
-              console.error("[campaign-routing] campanha agente sem campaignPromptId — silenciando", {
+              console.warn("[campaign-routing] campanha agente sem campaignPromptId — usando prompt padrão de atendimento", {
                 clientId, campaignId: activeWaitCampaign.id,
               });
-              responder({ status: "skipped_no_campaign_prompt" }, { clientId, phone: maskPhoneForLog(phone) });
-              return;
+              chatbotPromptTypeOverride = "padrao";
+            } else {
+              chatbotPromptTypeOverride = "campanha";
+              console.log("[campaign-routing] wait_for_reply_agente_prompt", {
+                clientId, phone: maskPhoneForLog(phone),
+                campaignId: activeWaitCampaign.id, campaignPromptId: campaignPromptIdOverride,
+              });
             }
-            console.log("[campaign-routing] wait_for_reply_agente_prompt", {
-              clientId, phone: maskPhoneForLog(phone),
-              campaignId: activeWaitCampaign.id, campaignPromptId: campaignPromptIdOverride,
-            });
           } else {
             responder({ status: "skipped_disparo_only" }, { clientId, phone: maskPhoneForLog(phone) });
             return;
@@ -1562,9 +1562,9 @@ export function registerChatbotRoutes(app, deps) {
         // atendido com o roteiro de quem procurou a empresa.
         const escolha = resolveCampaignAgent(activeCampaignForLead);
         campaignPromptIdOverride = escolha.campaignPromptId;
-        chatbotPromptTypeOverride = "campanha";
+        chatbotPromptTypeOverride = escolha.agente === AGENTE_CAMPANHA && escolha.campaignPromptId ? "campanha" : "padrao";
         if (escolha.configuracaoIncompleta) {
-          console.error("[campaign-routing] campanha marcada como agente SEM roteiro — caindo no atendimento", {
+          console.warn("[campaign-routing] campanha marcada como agente SEM roteiro — caindo no atendimento padrão", {
             clientId, campaignId: activeCampaignForLead.id,
           });
         }

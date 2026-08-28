@@ -1489,9 +1489,24 @@ export async function processBatch({
 
   // Se houver inboundPrompt (customizado por chip), ele é a base. Senão, dynamicPrompt.
   // Se nenhum dos dois existir mas houver campaignPrompt, usa campaignPrompt como fallback.
-  const basePromptText = inboundPrompt
+  let basePromptText = inboundPrompt
     ? `${inboundPrompt}${inboundSpinInstruction}`
     : dynamicPrompt || campaignPrompt;
+
+  // REGRA DE SEGURANÇA OBRIGATÓRIA: se o roteiro de campanha não for encontrado, NUNCA silencia o lead.
+  // Faz fallback imediato para o prompt padrão do tenant.
+  if (!basePromptText && (promptType === "campanha" || campaignPromptId)) {
+    console.warn("[chatbot-ai] ROTEIRO DE CAMPANHA NÃO ENCONTRADO — utilizando fallback para prompt padrão de atendimento (lead não será silenciado)", {
+      clientId,
+      promptType,
+      campaignPromptId,
+      phone: maskPhone(phone),
+    });
+    const defaultPrompt = await fetchDynamicPrompt(supabase, clientId, "padrao");
+    if (defaultPrompt) {
+      basePromptText = defaultPrompt;
+    }
+  }
 
   if (!basePromptText) {
     console.error("[chatbot-ai] PROMPT NOT FOUND in DB — chatbot silenciado", { clientId, promptType, isRecontact: isPrimeiroRecontato });

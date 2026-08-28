@@ -312,6 +312,12 @@ export function SchedulingStep({
                 />
               </div>
 
+              {!campaignAgentPrompt.trim() && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-[10px] text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                  ⚠️ <strong>Atenção:</strong> Nenhum roteiro específico foi escrito ainda. Caso este campo fique vazio, o lead que responder será atendido pelo agente padrão da empresa (sem silenciar).
+                </div>
+              )}
+
               <p className="text-[10px] text-muted-foreground leading-relaxed">
                 💡 <em>A identidade da empresa, o método SPIN e as regras de qualificação/SDR continuam ativos. Escreva aqui apenas as informações e regras específicas desta <strong>OFERTA</strong>.</em>
               </p>

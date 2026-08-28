@@ -101,6 +101,22 @@ describe("a criacao do disparo copia o roteiro em vez de apontar", () => {
   });
 });
 
+describe("fallback de segurança para evitar silenciamento de leads", () => {
+  const engineSource = readFileSync(resolve("src/chatbot-ai-engine.js"), "utf8");
+  const chatbotRoutesSource = readFileSync(resolve("src/domains/chatbot/routes.js"), "utf8");
+
+  it("motor de IA faz fallback para prompt padrão se o da campanha falhar", () => {
+    expect(engineSource).toContain("ROTEIRO DE CAMPANHA NÃO ENCONTRADO");
+    expect(engineSource).toContain('fetchDynamicPrompt(supabase, clientId, "padrao")');
+  });
+
+  it("rotas do chatbot não forçam promptType campanha quando campaignPromptId é nulo", () => {
+    expect(chatbotRoutesSource).toContain(
+      'chatbotPromptTypeOverride = escolha.agente === AGENTE_CAMPANHA && escolha.campaignPromptId ? "campanha" : "padrao"'
+    );
+  });
+});
+
 describe("migration", () => {
   it("e aditiva: coluna nullable, sem tocar dado existente", () => {
     expect(migrationSource).toContain("ADD COLUMN IF NOT EXISTS campaign_prompt_id UUID");
@@ -117,3 +133,5 @@ describe("migration", () => {
     expect(linha).toContain("idx_campaign_dispatches_prompt");
   });
 });
+
+

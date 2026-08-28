@@ -10,6 +10,8 @@
 // instância Evolution, então vários números de atendimento são várias linhas —
 // cada uma com seu próprio prompt, modelo e SPIN. Não precisou mudar schema.
 
+import { getLeadClientEvolutionInstances, parseEvolutionWebhookEndpoint } from "./evolution.js";
+
 function normalize(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -39,7 +41,38 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
     return null;
   }
 
+  let tenantInstances = [];
+  try {
+    tenantInstances = await getLeadClientEvolutionInstances(clientId);
+  } catch {
+    tenantInstances = [];
+  }
+
+  const resolveAliases = (instValue) => {
+    const raw = normalize(instValue);
+    if (!raw) return [];
+    const aliases = new Set([raw.toLowerCase()]);
+    const matched = (tenantInstances || []).find((inst) => {
+      const parsed = parseEvolutionWebhookEndpoint(inst.dispatch_webhook_url);
+      const urlInstance = parsed?.instance ? parsed.instance.toLowerCase() : null;
+      return (
+        inst.id === raw ||
+        (inst.name && inst.name.toLowerCase() === raw.toLowerCase()) ||
+        urlInstance === raw.toLowerCase()
+      );
+    });
+    if (matched) {
+      if (matched.id) aliases.add(matched.id.toLowerCase());
+      if (matched.name) aliases.add(matched.name.toLowerCase());
+      const parsed = parseEvolutionWebhookEndpoint(matched.dispatch_webhook_url);
+      if (parsed?.instance) aliases.add(parsed.instance.toLowerCase());
+    }
+    return Array.from(aliases);
+  };
+
   const wanted = normalize(instanceName);
+  const wantedAliases = wanted ? resolveAliases(wanted) : [];
+
   // Um agente pode atender VÁRIOS números (evolution_instances). A coluna antiga
   // entra como fallback para linhas anteriores à migration.
   const instancesOf = (row) => {
@@ -50,19 +83,15 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
     return nomes;
   };
 
-  // Casa pelo nome da instância. Sem casamento exato, só aceita uma linha
-  // genérica se ela for a única do tenant — nunca escolhe "alguma" linha, senão
-  // o agente de um número responderia no lugar do agente de outro.
-  // Entre linhas que atendem o mesmo número (acontece: o módulo de follow-up
-  // deixa várias linhas por instância), a que tem o agente LIGADO vence. Sem
-  // isso, qual agente atende dependia da ordem que o banco devolveu.
-  const candidatas = wanted ? data.filter((row) => instancesOf(row).includes(wanted)) : [];
+  // Casa pelo nome da instância ou apelidos resolvidos (slug da URL, ID ou display name).
+  // Sem casamento exato, só aceita uma linha genérica se ela for a única do tenant.
+  const candidatas = wanted
+    ? data.filter((row) => {
+        const rowAliases = instancesOf(row).flatMap(resolveAliases);
+        return rowAliases.some((alias) => wantedAliases.includes(alias));
+      })
+    : [];
   const byInstance = candidatas.find((row) => row.inbound_enabled === true) || candidatas[0] || null;
-  // SEM FALLBACK. Um agente so atende os numeros que o usuario marcou. Sem nome
-  // de instancia, ou sem casamento, devolve null e a mensagem cai no chatbot do
-  // tenant. As duas versoes anteriores tinham atalho ("se so existe um agente,
-  // use ele") e o resultado era o agente respondendo em chip nao marcado — o
-  // que o usuario configura na tela tem que ser o que acontece.
   if (!byInstance) return null;
   const row = byInstance;
 
