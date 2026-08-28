@@ -106,6 +106,10 @@ export interface CampaignDispatchOptions {
   waitForReply?: boolean;
   replyTimeoutSeconds?: number;
   replyPollIntervalSeconds?: number;
+  minWaitSeconds?: number;
+  maxWaitSeconds?: number;
+  dailyQuotaPerChip?: number;
+  maxRepetitionsPerTemplate?: number;
 }
 
 export type SegmentationOperator = "equals" | "contains" | "gt" | "lt";
