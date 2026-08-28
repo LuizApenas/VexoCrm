@@ -1352,13 +1352,6 @@ export async function callCampaignQualificationWebhook({
 }) {
   const settings = resolveEnvCampaignQualificationWebhookSettings(clientId);
   if (!settings?.webhookUrl || settings.invalid) {
-    logCampaignReplyFlow(settings?.invalid ? "warn" : "info", "n8n_qualification_skipped", {
-      clientId,
-      campaignId: campaign?.id || null,
-      phone: maskPhoneForLog(phone),
-      reason: settings?.invalid ? "invalid_webhook_url" : "missing_webhook_url",
-      source: settings?.source || "missing",
-    });
     return {
       called: false,
       ok: false,
