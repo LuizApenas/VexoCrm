@@ -675,7 +675,11 @@ async function postEvolutionPayload(webhookUrl, webhookToken, payload) {
 
     if (!response.ok) {
       const isConnectionClosed =
-        responseText.includes("Connection Closed") || responseText.includes("connection closed");
+        responseText.includes("Connection Closed") ||
+        responseText.includes("connection closed") ||
+        responseText.includes("Session Not Found") ||
+        responseText.includes("is not open") ||
+        response.status === 409;
       const isUnauthorized = response.status === 401 || response.status === 403;
 
       console.warn("[campaign-outbound] whatsapp_step_failed", {
@@ -701,7 +705,12 @@ async function postEvolutionPayload(webhookUrl, webhookToken, payload) {
           : `HTTP ${response.status}`;
       }
 
-      throw new Error(userMessage);
+      const error = new Error(userMessage);
+      error.isConnectionClosed = isConnectionClosed;
+      error.isUnauthorized = isUnauthorized;
+      error.statusCode = response.status;
+      error.instanceName = endpointInfo?.instance || null;
+      throw error;
     }
 
     console.info("[campaign-outbound] whatsapp_step_success", {
@@ -734,6 +743,7 @@ export async function dispatchCampaignSequence({
   chipProvider = null,
   leadDelayProvider = null,
   onLeadClaim = null,
+  onLeadClaimRollback = null,
   onLeadFailed = null,
   onLeadCheckOptout = null,
 }) {
@@ -750,6 +760,8 @@ export async function dispatchCampaignSequence({
     warnings: [],
     completedCampaign: false,
     paused: false,
+    chipDisconnected: false,
+    disconnectedChipName: null,
     allChipsExhausted: false,
   };
   const failedPhones = new Set();
@@ -898,6 +910,44 @@ export async function dispatchCampaignSequence({
           }
         }
       } catch (error) {
+        const isConnectionClosed = Boolean(
+          error?.isConnectionClosed ||
+          error?.code === "EVOLUTION_INSTANCE_NOT_OPEN" ||
+          error?.message?.includes("Connection Closed") ||
+          error?.message?.includes("connection closed") ||
+          error?.message?.includes("desconectada na Evolution")
+        );
+
+        if (isConnectionClosed) {
+          summary.chipDisconnected = true;
+          summary.disconnectedChipName = error.instanceName || activeChip?.instanceName || activeChip?.name || null;
+          summary.paused = true;
+          leadFailed = true;
+
+          console.warn("[campaign-outbound] Chip WhatsApp desconectado detectado. Abortando lote imediatamente para não queimar leads.", {
+            phone: maskOutboundPhone(phone),
+            chip: summary.disconnectedChipName,
+            error: error.message,
+          });
+
+          // Rollback do claim para que este lead NÃO fique marcado como 'failed' e volte a 'não processado'
+          if (typeof onLeadClaimRollback === "function") {
+            try {
+              await onLeadClaimRollback({ lead, phone, leadIndex, reason: "chip_disconnected" });
+            } catch {
+              /* rollback best-effort */
+            }
+          }
+          if (activeChip && typeof activeChip.release === "function") {
+            try {
+              await activeChip.release();
+            } catch {
+              /* devolução de cota best-effort */
+            }
+          }
+          break;
+        }
+
         leadFailed = true;
         failedPhones.add(phone);
         const failureReason =
@@ -913,6 +963,14 @@ export async function dispatchCampaignSequence({
           stepType: step.type,
           reason: failureReason,
         });
+
+        if (typeof onLeadFailed === "function") {
+          try {
+            await onLeadFailed({ lead, phone, reason: failureReason });
+          } catch {
+            /* callback failure handled */
+          }
+        }
 
         if (normalizedMeta.dispatchOptions.stopOnStepFailure) {
           break;

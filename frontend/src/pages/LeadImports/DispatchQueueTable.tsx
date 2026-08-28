@@ -140,11 +140,11 @@ export function DispatchQueueTable({
                         <Badge className={cn("border text-[10px] font-semibold rounded-xl px-2 py-0.5", CAMPAIGN_STATUS_COLORS[disp.status] || "")}>
                           {CAMPAIGN_STATUS_LABELS[disp.status] || disp.status}
                         </Badge>
-                        {(disp.status === "failed" || disp.status === "interrupted") && disp.error_message && (
+                        {(disp.status === "failed" || disp.status === "interrupted" || disp.status === "paused") && disp.error_message && (
                           <p
                             className={cn(
                               "mt-1 text-[10px] font-medium max-w-[240px] mx-auto leading-tight",
-                              disp.status === "interrupted" ? "text-amber-600 dark:text-amber-400" : "text-rose-500"
+                              disp.status === "interrupted" || disp.status === "paused" ? "text-amber-600 dark:text-amber-400" : "text-rose-500"
                             )}
                             title={disp.error_message}
                           >

@@ -1386,17 +1386,23 @@ export function registerCampaignsRoutes(app, deps) {
           results.push({ id: dispatch.id, campaignId: campaign.id, status: "success" });
         } catch (err) {
           console.error(`[campaign-dispatch-scheduler] failed to run dispatch ${dispatch.id}:`, err);
+          const isDisconnected = Boolean(err?.isConnectionClosed || err?.code === "EVOLUTION_INSTANCE_NOT_OPEN");
+          const targetStatus = isDisconnected ? "paused" : "failed";
+          const userFriendlyError = isDisconnected
+            ? `Pausado — chip desconectado (${err.instanceName || "WhatsApp"}). Reconecte em Conexões para retomar.`
+            : (err?.userMessage || err?.message || "Falha técnica no processamento do lote.");
+
           await supabase
             .from("campaign_dispatches")
             .update({
-              status: "failed",
-              error_message: err.message,
-              finished_at: new Date().toISOString(),
+              status: targetStatus,
+              error_message: userFriendlyError,
+              finished_at: targetStatus === "failed" ? new Date().toISOString() : null,
               updated_at: new Date().toISOString()
             })
             .eq("id", dispatch.id);
 
-          results.push({ id: dispatch.id, status: "failed", error: err.message });
+          results.push({ id: dispatch.id, status: targetStatus, error: userFriendlyError });
         }
       }
 
@@ -1781,6 +1787,46 @@ export function registerCampaignsRoutes(app, deps) {
       ? activeInstances.filter((inst) => inst.id === dispatchEvolutionInstanceId)
       : activeInstances;
 
+    if (rotationPool.length > 0) {
+      let anyOpen = false;
+      let lastClosedName = null;
+      for (const inst of rotationPool) {
+        try {
+          const health = await checkEvolutionInstanceHealth({
+            webhookUrl: inst.dispatch_webhook_url,
+            webhookToken: inst.dispatch_webhook_token,
+            context: { clientId, dispatchId, campaignId: campaign.id },
+          });
+          if (health?.state && isEvolutionOpenState(health.state)) {
+            anyOpen = true;
+          } else {
+            lastClosedName = inst.name || inst.id;
+          }
+        } catch (healthErr) {
+          lastClosedName = inst.name || inst.id;
+          console.warn("[campaign-dispatch] chip health check falhou:", {
+            chip: inst.name,
+            error: healthErr?.message || healthErr,
+          });
+        }
+      }
+
+      if (!anyOpen) {
+        const errorMsg = `Pausado — chip desconectado (${lastClosedName || "WhatsApp"}). Reconecte o chip em Conexões para retomar.`;
+        console.warn("[campaign-dispatch] Nenhum chip conectado para este disparo. Pausando lote imediatamente:", {
+          dispatchId,
+          campaignId: campaign.id,
+          errorMsg,
+        });
+        await db.from("campaign_dispatches").update({
+          status: "paused",
+          error_message: errorMsg,
+          updated_at: new Date().toISOString(),
+        }).eq("id", dispatchId);
+        return;
+      }
+    }
+
     let rotationCursor = 0;
     const chipProvider =
       rotationPool.length > 0
@@ -1914,7 +1960,23 @@ export function registerCampaignsRoutes(app, deps) {
         });
     };
 
+    const rollbackClaimLead = async ({ lead, phone }) => {
+      if (!pgDatabasePool) return;
+      if (lead?.id) {
+        await pgDatabasePool.query(
+          `DELETE FROM public.campaign_dispatch_runs WHERE dispatch_id = $1 AND lead_id = $2 AND status = 'claimed'`,
+          [dispatchId, lead.id]
+        ).catch(() => {});
+      } else if (phone) {
+        await pgDatabasePool.query(
+          `DELETE FROM public.campaign_dispatch_runs WHERE dispatch_id = $1 AND phone = $2 AND status = 'claimed'`,
+          [dispatchId, normalizeString(phone)]
+        ).catch(() => {});
+      }
+    };
+
     let sentCount = 0;
+    let failedCount = 0;
     let lastPauseCheckAt = 0;
 
     const isDispatchStillRunning = async () => {
@@ -1961,6 +2023,7 @@ export function registerCampaignsRoutes(app, deps) {
         client: { id: clientId, name: await getClientName(clientId) },
       },
       onLeadClaim: claimLead,
+      onLeadClaimRollback: rollbackClaimLead,
       onStepDispatched: async ({ lead, phone, step, sentAt, instanceName, activeChip }) => {
         try {
           const chipName = activeChip?.instanceId || activeChip?.instanceName || instanceName || null;
@@ -1988,6 +2051,7 @@ export function registerCampaignsRoutes(app, deps) {
         }
       },
       onLeadFailed: async ({ lead, reason }) => {
+        failedCount += 1;
         await finalizeLeadFailed({ lead, reason });
       },
       onLeadDispatched: async ({ lead, phone, sentAt, lastStep, lastStepIndex }) => {
@@ -2072,6 +2136,18 @@ export function registerCampaignsRoutes(app, deps) {
     }
     const totalProcessed = totalSent + totalFailed + totalSkipped;
     const targetCount = Number(dispatch.target_count || 0) || (leads.length + totalProcessed);
+
+    if (result?.summary?.chipDisconnected) {
+      const chipDesc = result.summary.disconnectedChipName || "WhatsApp";
+      await db.from("campaign_dispatches").update({
+        status: "paused",
+        sent_count: totalSent,
+        failed_count: totalFailed,
+        error_message: `Pausado — chip desconectado (${chipDesc}). Reconecte o chip em Conexões para retomar.`,
+        updated_at: new Date().toISOString(),
+      }).eq("id", dispatchId);
+      return;
+    }
 
     if (result?.summary?.allChipsExhausted) {
       await db.from("campaign_dispatches").update({
