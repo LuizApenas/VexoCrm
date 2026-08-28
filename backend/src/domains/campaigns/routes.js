@@ -25,6 +25,7 @@
 
 import { createLeadMessaging, isGroupJid } from "../shared/leadMessaging.js";
 import { buildPhoneLookupVariants } from "../../services/leadImport.js";
+import { isEvolutionOpenState } from "../../services/evolution.js";
 import {
   dispatchCampaignSequence,
   getCampaignStepPlan,
@@ -2110,8 +2111,9 @@ export function registerCampaignsRoutes(app, deps) {
         await db.from("campaign_dispatches").update({ sent_count: sentCount, updated_at: new Date().toISOString() }).eq("id", dispatchId).catch(() => {});
       },
       shouldContinue: isDispatchStillRunning,
-      chipProvider,
-      leadDelayProvider: () => 30_000 + Math.floor(Math.random() * 60_001),
+      leadDelayProvider: Number.isFinite(dispatch.dispatch_options?.leadDelaySeconds)
+        ? () => Math.max(Number(dispatch.dispatch_options.leadDelaySeconds), 0) * 1000
+        : () => 30_000 + Math.floor(Math.random() * 60_001),
     });
 
     // Falhas por lead já são finalizadas em tempo real via onLeadFailed (UPDATE do

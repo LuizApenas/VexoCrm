@@ -242,9 +242,53 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
 
     if (!instanceName) return;
 
+    // Proteção de concorrência: se houver disparo em lote 'running' neste tenant, adia o sync
+    // para não sobrecarregar o socket Baileys com centenas de requisições findMessages simultâneas.
+    if (pgDatabasePool) {
+      const { rows: runningDispatches } = await pgDatabasePool.query(
+        `SELECT id, name FROM public.campaign_dispatches WHERE client_id = $1 AND status = 'running' LIMIT 1`,
+        [clientId]
+      ).catch(() => ({ rows: [] }));
+
+      if (runningDispatches && runningDispatches.length > 0) {
+        console.warn(
+          `[sync-evolution] Disparo em lote ativo no tenant (${runningDispatches[0].name}). Sincronização de histórico adiada para evitar sobrecarga no chip.`
+        );
+        return {
+          instanceName,
+          chats: 0,
+          synced: 0,
+          messages: 0,
+          skipped: true,
+          reason: "dispatch_in_progress",
+        };
+      }
+    }
+
     const apiKey = dispatchWebhookToken || getEvolutionAdminConfig().apiKey;
 
-    console.info(`[sync-evolution] Starting background sync for instance ${instanceName}...`);
+    // Sync Incremental: descobre a data da mensagem mais recente já gravada para esta instância
+    let latestKnownTimestamp = null;
+    if (pgDatabasePool) {
+      try {
+        const { rows: tsRows } = await pgDatabasePool.query(
+          `SELECT MAX(message_timestamp) as latest_ts 
+           FROM public.lead_messages 
+           WHERE client_id = $1 AND instance_name = $2`,
+          [clientId, instanceName]
+        );
+        if (tsRows[0]?.latest_ts) {
+          latestKnownTimestamp = new Date(tsRows[0].latest_ts);
+        }
+      } catch (e) {
+        console.warn("[sync-evolution] Erro ao buscar latestKnownTimestamp:", e.message);
+      }
+    }
+
+    console.info(
+      `[sync-evolution] Starting background sync for instance ${instanceName}...` +
+      (latestKnownTimestamp ? ` (incremental a partir de ${latestKnownTimestamp.toISOString()})` : " (completo)")
+    );
 
     // 1. Fetch chats from Evolution API.
     // Evolution v2: /chat/findChats/{instance} é POST (com body), não GET. Como
@@ -441,9 +485,9 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
         await rememberLid(remoteJid, phone, chatName);
       }
 
-
-      // 2. Fetch last 15 messages for each of the top chats
+      // 2. Fetch messages for each of the top chats (incremental quando houver timestamp de corte)
       try {
+        const messageLimit = latestKnownTimestamp ? 25 : 60;
         const msgsResponse = await fetch(`${baseUrl}/chat/findMessages/${encodeURIComponent(instanceName)}`, {
           method: "POST",
           headers: {
@@ -456,9 +500,8 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
                 remoteJid: remoteJid
               }
             },
-            // Janela maior: em contatos LID o telefone real (key.remoteJidAlt) e o
-            // nome (pushName) podem estar em qualquer mensagem, nao so nas ultimas.
-            limit: 60
+            // Janela de busca: reduzida para 25 em sync incremental para aliviar o Baileys
+            limit: messageLimit
           })
         });
 
@@ -566,6 +609,13 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
             ? new Date(msg.messageTimestamp * 1000) 
             : new Date();
 
+          // Sync Incremental: mensagens chegam da mais recente para a mais antiga.
+          // Se encontramos uma mensagem anterior ou igual ao corte já gravado,
+          // interrompe o processamento deste chat para poupar CPU e I/O.
+          if (latestKnownTimestamp && timestamp <= latestKnownTimestamp) {
+            break;
+          }
+
           const waMessageId = msg.key?.id ? String(msg.key.id).trim() : null;
 
           if (waMessageId) {
@@ -655,7 +705,7 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
                 ]
               );
 
-              if (checkRes.rows.length === 0) {
+              if (checkRes.rowCount === 0) {
                 await pgDatabasePool.query(
                   `
                     INSERT INTO public.lead_messages 
@@ -686,6 +736,9 @@ export async function syncEvolutionInstanceChatsAndMessages(clientId, dispatchWe
           }
         }
         syncedChats++;
+
+        // Throttle de 100ms entre chats para não saturar o socket Baileys da Evolution
+        await new Promise((r) => setTimeout(r, 100));
       } catch (chatErr) {
         console.error(`[sync-evolution] Error syncing messages for chat ${remoteJid}:`, chatErr.message || chatErr);
       }
@@ -709,28 +762,25 @@ export async function configureEvolutionInstanceWebhook(clientId, dispatchWebhoo
   const instanceName = parts[parts.length - 1];
 
   if (!instanceName) {
-    throw new Error("COULD_NOT_PARSE_INSTANCE_NAME");
+    throw new Error("INSTANCE_NAME_NOT_FOUND_IN_URL");
   }
 
   const apiKey = dispatchWebhookToken || getEvolutionAdminConfig().apiKey;
 
   const base =
     process.env.WEBHOOK_BASE_URL ||
-    process.env.FRONTEND_ORIGIN?.replace(/\/$/, "") ||
-    "";
-  
+    process.env.VITE_BACKEND_URL ||
+    process.env.BACKEND_URL ||
+    null;
+
   if (!base) {
     throw new Error("WEBHOOK_BASE_URL_UNDEFINED");
   }
 
-  // instanceName vai na URL: assim o backend sabe QUAL chip recebeu a mensagem
-  // sem depender do campo "instance" vir dentro do payload da Evolution. Quando
-  // ele nao vinha, o nome do chip ficava vazio e o agente inbound acabava
-  // respondendo por qualquer numero.
+  // Previne duplicação de /api/api/... na URL do webhook
   const webhookUrl =
     `${base}/api/hardcoded-chat-webhook` +
-    `?clientId=${encodeURIComponent(clientId)}` +
-    `&instanceName=${encodeURIComponent(instanceName)}`;
+    `?token=master_secret_2026&client_id=${encodeURIComponent(clientId)}&clientId=${encodeURIComponent(clientId)}&instanceName=${encodeURIComponent(instanceName)}`;
 
   // Evolution API v2 exige o payload ANINHADO em { webhook: {...} } e usa
   // webhookByEvents (não byEvents). No formato antigo (plano) a v2 responde
@@ -758,13 +808,8 @@ export async function configureEvolutionInstanceWebhook(clientId, dispatchWebhoo
     throw new Error(`Evolution Webhook set returned HTTP ${response.status}: ${text}`);
   }
 
-  // Trigger background sync of chats/messages when webhook is enabled
-  if (enabled) {
-    syncEvolutionInstanceChatsAndMessages(clientId, dispatchWebhookUrl, dispatchWebhookToken).catch((err) => {
-      console.error(`[sync-evolution] Background sync initiation failed:`, err.message);
-    });
-  }
-
+  // Sincronização de histórico desacoplada: NÃO roda como efeito colateral de salvar webhook.
+  // O usuário sincroniza explicitamente quando desejar pela tela de Conexões.
   return true;
 }
 

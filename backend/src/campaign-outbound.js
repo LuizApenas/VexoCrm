@@ -964,14 +964,6 @@ export async function dispatchCampaignSequence({
           reason: failureReason,
         });
 
-        if (typeof onLeadFailed === "function") {
-          try {
-            await onLeadFailed({ lead, phone, reason: failureReason });
-          } catch {
-            /* callback failure handled */
-          }
-        }
-
         if (normalizedMeta.dispatchOptions.stopOnStepFailure) {
           break;
         }
@@ -979,10 +971,22 @@ export async function dispatchCampaignSequence({
 
       const hasNextStep = stepIndex < enabledSteps.length - 1;
       if (hasNextStep) {
-        const stepDelaySeconds = Math.max(
-          normalizeNonNegativeInteger(step.delayAfterSeconds, DEFAULT_STEP_DELAY_SECONDS),
-          2
-        );
+        const nextStep = enabledSteps[stepIndex + 1];
+        const isWithPrevious = nextStep?.triggerMode === "with_previous";
+        const explicitDelay = normalizeNonNegativeInteger(step.delayAfterSeconds, 0);
+
+        let stepDelaySeconds;
+        if (explicitDelay > 0) {
+          stepDelaySeconds = Math.max(explicitDelay, 2);
+        } else if (isWithPrevious) {
+          // Passos 'with_previous' (junto com a anterior): intervalo curto e natural de 2 a 5s para evitar burst e sinal de spam
+          stepDelaySeconds = 2 + Math.floor(Math.random() * 4);
+        } else {
+          stepDelaySeconds = Math.max(
+            normalizeNonNegativeInteger(DEFAULT_STEP_DELAY_SECONDS, 2),
+            2
+          );
+        }
         await sleep(stepDelaySeconds * 1000);
       }
     }
