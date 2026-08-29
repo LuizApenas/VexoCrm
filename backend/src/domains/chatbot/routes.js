@@ -2218,6 +2218,7 @@ export function registerChatbotRoutes(app, deps) {
         .from(leadsTableName(clientId))
         .select("id, telefone, nome, status_conversa, finalizado, dados, mensagem, lead_temperature, spin_fase, qualificacao, lead_score, created_at, updated_at, lead_origin, source_campaign_id, source_campaign_name, lead_source")
         .eq("client_id", clientId)
+        .not("status_conversa", "is", null)
         .order("updated_at", { ascending: false })
         .limit(limit);
 
@@ -2233,15 +2234,17 @@ export function registerChatbotRoutes(app, deps) {
         return;
       }
 
-      const leads = (data || []).map((row) => {
-        const dados = row.dados || {};
-        const { _currentStepId, ...collectedData } = dados;
-        return {
-          id: row.id,
-          telefone: row.telefone,
-          nome: row.nome || null,
-          statusConversa: row.status_conversa || "em_atendimento",
-          finalizado: row.finalizado || false,
+      const leads = (data || [])
+        .filter((row) => row.status_conversa !== null && row.status_conversa !== undefined)
+        .map((row) => {
+          const dados = row.dados || {};
+          const { _currentStepId, ...collectedData } = dados;
+          return {
+            id: row.id,
+            telefone: row.telefone,
+            nome: row.nome || null,
+            statusConversa: row.status_conversa,
+            finalizado: row.finalizado || false,
           currentStepId: _currentStepId || null,
           collectedData,
           mensagem: row.mensagem || null,

@@ -257,6 +257,18 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
     setEditingProposalId
   } = wizardState;
 
+  // Auto-carrega dados do lead e abre o formulário de proposta quando navega de Ações Rápidas (Conversas)
+  const location = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const phone = params.get("phone");
+    const nome = params.get("nome") || params.get("prospect");
+    if (phone || nome) {
+      setShowNewForm(true);
+      setNewProspect(nome || phone || "");
+    }
+  }, [location.search, setShowNewForm, setNewProspect]);
+
 
   // Modal de compartilhamento da proposta
   const [showSendModal, setShowSendModal] = useState<boolean>(false);

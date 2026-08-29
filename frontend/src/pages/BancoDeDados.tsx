@@ -438,6 +438,35 @@ export default function BancoDeDados() {
     fetchLeads();
   }, [clientId, activeTab, selectedTag]);
 
+  // Auto-localiza e abre o Drawer do lead quando navegado a partir de Ações Rápidas (Conversas)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const targetLeadId = params.get("leadId");
+    const targetPhone = params.get("phone") ? params.get("phone")?.replace(/\D/g, "") : null;
+
+    if (!targetLeadId && !targetPhone) return;
+
+    if (selectedLead && (selectedLead.id === targetLeadId || (targetPhone && selectedLead.telefone?.replace(/\D/g, "").includes(targetPhone)))) {
+      return;
+    }
+
+    if (leads.length > 0) {
+      const match = leads.find((l) => {
+        if (targetLeadId && l.id === targetLeadId) return true;
+        if (targetPhone) {
+          const lDigits = (l.telefone || l.phone || "").replace(/\D/g, "");
+          return lDigits === targetPhone || lDigits.endsWith(targetPhone) || targetPhone.endsWith(lDigits);
+        }
+        return false;
+      });
+
+      if (match) {
+        setSelectedLead(match);
+        setIsDetailSheetOpen(true);
+      }
+    }
+  }, [leads, selectedLead]);
+
   // Reseta seleções, drawer de detalhes e modais ao alternar de empresa (tenant)
   useEffect(() => {
     setSelectedLeadIds([]);

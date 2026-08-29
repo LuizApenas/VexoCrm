@@ -59,7 +59,9 @@ import {
   type WhatsAppMessage,
 } from "@/hooks/useWhatsAppInbox";
 import { SingleFollowupReminderModal } from "@/components/followup/SingleFollowupReminderModal";
+import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
 import { MediaMessage } from "@/components/MediaMessage";
+import { API_BASE_URL } from "@/lib/api";
 
 interface InternalNote {
   id: string;
@@ -254,13 +256,14 @@ export default function WhatsAppInbox({
   const [selectedInstanceNames, setSelectedInstanceNames] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [compositionMode, setCompositionMode] = useState<"whatsapp" | "internal_note">("whatsapp");
-  const [inboxTab, setInboxTab] = useState<"minhas" | "fila" | "todas">("todas");
+  const [inboxTab, setInboxTab] = useState<"minhas" | "fila" | "aguardando" | "todas">("todas");
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
   const [hasNewUnseenMessage, setHasNewUnseenMessage] = useState(false);
   const [showDossier, setShowDossier] = useState(true);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [isApplyFollowupModalOpen, setIsApplyFollowupModalOpen] = useState(false);
 
   const chatsContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -396,12 +399,20 @@ export default function WhatsAppInbox({
     );
   }, [selectedChat, leads]);
 
+  // Contagem de conversas onde a última mensagem é do lead (aguardando nossa resposta)
+  const awaitingReplyCount = useMemo(
+    () => chats.filter((c) => Boolean(c.lastMessage && !c.lastMessage.fromMe)).length,
+    [chats]
+  );
+
   // Filtro de Conversas por Abas e Busca
   const filteredChats = useMemo(() => {
     let result = chats;
 
     if (inboxTab === "fila") {
       result = result.filter((c) => c.unreadCount > 0 || !c.lastMessage?.fromMe);
+    } else if (inboxTab === "aguardando") {
+      result = result.filter((c) => Boolean(c.lastMessage && !c.lastMessage.fromMe));
     } else if (inboxTab === "minhas") {
       result = result.filter((c) => c.lastMessage?.fromMe);
     }
@@ -556,7 +567,16 @@ export default function WhatsAppInbox({
 
     if (initialPhone) {
       const digits = initialPhone.replace(/\D/g, "");
-      const match = chats.find((chat) => chat.id.replace(/@.*/, "") === digits);
+      const match = chats.find((chat) => {
+        const cDigits = String(chat.id || "").replace(/@.*/, "").replace(/\D/g, "");
+        if (!cDigits || !digits) return false;
+        return (
+          cDigits === digits ||
+          cDigits.endsWith(digits) ||
+          digits.endsWith(cDigits) ||
+          cDigits.slice(-8) === digits.slice(-8)
+        );
+      });
       if (match) {
         setSelectedChatId(match.id);
         setSearchParams({}, { replace: true });
@@ -768,8 +788,8 @@ export default function WhatsAppInbox({
                 </span>
               </div>
 
-              {/* Abas Minhas | Fila | Todas */}
-              <div className="grid grid-cols-3 gap-1 rounded-xl bg-background p-1 border border-border/70 text-xs">
+              {/* Abas Minhas | Fila | Aguardando | Todas */}
+              <div className="grid grid-cols-4 gap-1 rounded-xl bg-background p-1 border border-border/70 text-[11px]">
                 <button
                   type="button"
                   onClick={() => setInboxTab("minhas")}
@@ -793,6 +813,31 @@ export default function WhatsAppInbox({
                   )}
                 >
                   Fila
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInboxTab("aguardando")}
+                  className={cn(
+                    "rounded-lg py-1 font-semibold transition-all text-center flex items-center justify-center gap-0.5",
+                    inboxTab === "aguardando"
+                      ? "bg-amber-600 text-white shadow-xs"
+                      : "text-amber-700 dark:text-amber-400 hover:text-foreground"
+                  )}
+                  title="Leads que responderam e estão aguardando nossa resposta"
+                >
+                  <span>Espera</span>
+                  {awaitingReplyCount > 0 && (
+                    <span
+                      className={cn(
+                        "rounded-full px-1 text-[9px] font-bold leading-tight",
+                        inboxTab === "aguardando"
+                          ? "bg-white text-amber-800"
+                          : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                      )}
+                    >
+                      {awaitingReplyCount}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -906,6 +951,12 @@ export default function WhatsAppInbox({
                           {chat.unreadCount > 0 && (
                             <span className="rounded-full bg-emerald-500 px-1.5 py-0.2 text-[9px] font-extrabold text-white">
                               {chat.unreadCount}
+                            </span>
+                          )}
+                          {chat.lastMessage && !chat.lastMessage.fromMe && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-300">
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                              Aguardando resposta
                             </span>
                           )}
                           <OriginBadge
@@ -1416,7 +1467,11 @@ export default function WhatsAppInbox({
                     size="sm"
                     onClick={() => {
                       const rawPhone = selectedChat?.id ? String(selectedChat.id).replace(/\D/g, "") : "";
-                      navigate(rawPhone ? `/crm/propostas-gd?phone=${rawPhone}` : "/crm/propostas-gd");
+                      const prospectName = matchedLead?.nome || selectedChat?.name || "";
+                      const params = new URLSearchParams();
+                      if (rawPhone) params.set("phone", rawPhone);
+                      if (prospectName) params.set("nome", prospectName);
+                      navigate(`/crm/propostas-gd?${params.toString()}`);
                     }}
                     className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-indigo-500/30 bg-indigo-500/5 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/15"
                   >
@@ -1435,16 +1490,22 @@ export default function WhatsAppInbox({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => navigate("/crm/followup")}
+                    onClick={() => setIsApplyFollowupModalOpen(true)}
                     className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15"
                   >
                     <RefreshCw className="mr-2 h-3.5 w-3.5 text-amber-500" />
-                    Cadência de Follow-up
+                    Adicionar a uma cadência
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => navigate("/crm/banco-de-dados")}
+                    onClick={() => {
+                      const rawPhone = selectedChat?.id ? String(selectedChat.id).replace(/\D/g, "") : "";
+                      const params = new URLSearchParams();
+                      if (matchedLead?.id) params.set("leadId", matchedLead.id);
+                      if (rawPhone) params.set("phone", rawPhone);
+                      navigate(`/crm/banco-de-dados?${params.toString()}`);
+                    }}
                     className="w-full justify-start h-8 text-xs font-semibold rounded-xl border-border/80 bg-background hover:bg-muted"
                   >
                     <Inbox className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
@@ -1466,6 +1527,22 @@ export default function WhatsAppInbox({
           phone: rawPhone,
         }}
         tenantId={clientId}
+      />
+
+      <ApplyFollowupModal
+        open={isApplyFollowupModalOpen}
+        onOpenChange={setIsApplyFollowupModalOpen}
+        clientId={clientId || ""}
+        leads={[
+          {
+            id: matchedLead?.id || "",
+            nome: matchedLead?.nome || selectedChat?.name || "Lead",
+            phone: rawPhone,
+            telefone: rawPhone,
+          },
+        ]}
+        apiBase={API_BASE_URL}
+        getToken={getIdToken}
       />
     </PageShell>
   );
