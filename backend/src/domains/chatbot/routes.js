@@ -2198,15 +2198,19 @@ export function registerChatbotRoutes(app, deps) {
   /**
    * GET /api/hardcoded-chat-leads
    * Lista leads do chatbot hardcoded para o Kanban
-   * Retorna por status_conversa e step atual
+   * Deriva o status a partir dos FATOS observados em lead_messages:
+   * - Finalizados: finalizado = true ou status_conversa = 'finalizado'
+   * - Em Atendimento: não finalizado E existe ao menos 1 mensagem do lead (inbound)
+   * - Aguardando Resposta: não finalizado E existe mensagem nossa (outbound) E nenhuma do lead
+   * - Ignorado (não aparece): nenhuma mensagem em nenhuma direção
    */
   app.get("/api/hardcoded-chat-leads", requireFirebaseAuth, async (req, res) => {
     if (!ensureDb(res)) return;
 
     const clientId = normalizeTenantKey(req.query.clientId ?? req.query.client_id);
-    const statusFilter = req.query.status || null; // em_atendimento | finalizado | all
-    const limitRaw = Number.parseInt(String(req.query.limit || "100"), 10);
-    const limit = Math.min(Number.isNaN(limitRaw) ? 100 : limitRaw, 500);
+    const statusFilter = req.query.status || null; // em_atendimento | finalizado | aguardando_usuario | all
+    const limitRaw = Number.parseInt(String(req.query.limit || "200"), 10);
+    const limit = Math.min(Number.isNaN(limitRaw) ? 200 : limitRaw, 500);
 
     if (!clientId) {
       sendError(res, 400, "INVALID_QUERY", "Missing clientId");
@@ -2214,61 +2218,141 @@ export function registerChatbotRoutes(app, deps) {
     }
 
     try {
-      let query = supabase
-        .from(leadsTableName(clientId))
-        .select("id, telefone, nome, status_conversa, finalizado, dados, mensagem, lead_temperature, spin_fase, qualificacao, lead_score, created_at, updated_at, lead_origin, source_campaign_id, source_campaign_name, lead_source")
-        .eq("client_id", clientId)
-        .not("status_conversa", "is", null)
-        .order("updated_at", { ascending: false })
-        .limit(limit);
+      const leadsTable = leadsTableName(clientId);
+      let rows = [];
 
-      if (statusFilter && statusFilter !== "all") {
-        query = query.eq("status_conversa", statusFilter);
+      if (pgDatabasePool) {
+        const queryText = `
+          WITH message_stats AS (
+            SELECT
+              ${SQL_CANONICAL_PHONE("phone")} as canonical_phone,
+              COUNT(*) FILTER (WHERE direction = 'outbound') as outbound_count,
+              COUNT(*) FILTER (WHERE direction = 'inbound') as inbound_count,
+              MAX(COALESCE(message_timestamp, delivered_at, created_at)) as last_message_at
+            FROM public.lead_messages
+            WHERE client_id = $1 AND phone NOT LIKE '%@g.us'
+            GROUP BY ${SQL_CANONICAL_PHONE("phone")}
+          ),
+          latest_msg AS (
+            SELECT DISTINCT ON (${SQL_CANONICAL_PHONE("phone")})
+              ${SQL_CANONICAL_PHONE("phone")} as canonical_phone,
+              message_text,
+              direction,
+              COALESCE(message_timestamp, delivered_at, created_at) as effective_timestamp
+            FROM public.lead_messages
+            WHERE client_id = $1 AND phone NOT LIKE '%@g.us'
+            ORDER BY ${SQL_CANONICAL_PHONE("phone")}, COALESCE(message_timestamp, delivered_at, created_at) DESC NULLS LAST, id DESC
+          )
+          SELECT
+            l.id,
+            COALESCE(l.telefone, ms.canonical_phone) as telefone,
+            l.nome,
+            l.status_conversa,
+            l.finalizado,
+            l.dados,
+            COALESCE(l.mensagem, lm.message_text) as mensagem,
+            l.lead_temperature,
+            l.spin_fase,
+            l.qualificacao,
+            l.lead_score,
+            l.created_at,
+            COALESCE(ms.last_message_at, l.updated_at, l.created_at) as updated_at,
+            l.lead_origin,
+            l.source_campaign_id,
+            l.source_campaign_name,
+            l.lead_source,
+            COALESCE(ms.outbound_count, 0)::integer as outbound_count,
+            COALESCE(ms.inbound_count, 0)::integer as inbound_count
+          FROM message_stats ms
+          FULL OUTER JOIN public."${leadsTable}" l ON ${SQL_CANONICAL_PHONE("l.telefone")} = ms.canonical_phone AND l.client_id = $1
+          LEFT JOIN latest_msg lm ON lm.canonical_phone = COALESCE(ms.canonical_phone, ${SQL_CANONICAL_PHONE("l.telefone")})
+          WHERE (l.client_id = $1 OR l.client_id IS NULL)
+            AND (
+              l.finalizado = true
+              OR l.status_conversa = 'finalizado'
+              OR COALESCE(ms.outbound_count, 0) > 0
+              OR COALESCE(ms.inbound_count, 0) > 0
+            )
+          ORDER BY COALESCE(ms.last_message_at, l.updated_at, l.created_at) DESC NULLS LAST
+          LIMIT $2;
+        `;
+        const result = await pgDatabasePool.query(queryText, [clientId, limit]);
+        rows = result.rows || [];
+      } else {
+        const { data, error } = await supabase
+          .from(leadsTable)
+          .select("id, telefone, nome, status_conversa, finalizado, dados, mensagem, lead_temperature, spin_fase, qualificacao, lead_score, created_at, updated_at, lead_origin, source_campaign_id, source_campaign_name, lead_source")
+          .eq("client_id", clientId)
+          .limit(limit);
+        if (error) throw error;
+        rows = data || [];
       }
 
-      const { data, error } = await query;
-
-      if (error) {
-        console.error("[hardcoded-chat-leads] Query error:", error);
-        sendError(res, 500, "DB_ERROR", error.message);
-        return;
-      }
-
-      const leads = (data || [])
-        .filter((row) => row.status_conversa !== null && row.status_conversa !== undefined)
+      const allLeads = rows
         .map((row) => {
-          const dados = row.dados || {};
+          const finalizado = Boolean(row.finalizado || row.status_conversa === "finalizado");
+          const outboundCount = Number(row.outbound_count ?? (row.mensagem ? 1 : 0));
+          const inboundCount = Number(row.inbound_count ?? 0);
+
+          let derivedStatus = null;
+          if (finalizado) {
+            derivedStatus = "finalizado";
+          } else if (inboundCount > 0) {
+            derivedStatus = "em_atendimento";
+          } else if (outboundCount > 0) {
+            derivedStatus = "aguardando_usuario";
+          } else if (row.status_conversa === "aguardando_usuario" || row.status_conversa === "em_atendimento") {
+            derivedStatus = row.status_conversa;
+          }
+
+          if (!derivedStatus) {
+            return null;
+          }
+
+          if (row.status_conversa && row.status_conversa !== derivedStatus) {
+            console.warn(
+              `[chatbot-kanban] Divergência detectada para lead ${row.id || "sem-id"} (${row.telefone}): status_conversa no banco = '${row.status_conversa}', fato derivado = '${derivedStatus}' (outbound=${outboundCount}, inbound=${inboundCount})`
+            );
+          }
+
+          const dados = typeof row.dados === "object" && row.dados !== null ? row.dados : {};
           const { _currentStepId, ...collectedData } = dados;
+
           return {
-            id: row.id,
+            id: row.id || `msg-${row.telefone}`,
             telefone: row.telefone,
             nome: row.nome || null,
-            statusConversa: row.status_conversa,
-            finalizado: row.finalizado || false,
-          currentStepId: _currentStepId || null,
-          collectedData,
-          mensagem: row.mensagem || null,
-          leadTemperature: row.lead_temperature || null,
-          spinFase: row.spin_fase || null,
-          qualificacao: row.qualificacao || null,
-          leadScore: row.lead_score || null,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          leadOrigin: row.lead_origin || null,
-          sourceCampaignId: row.source_campaign_id || null,
-          sourceCampaignName: row.source_campaign_name || null,
-          leadSource: row.lead_source || null,
-        };
-      });
+            statusConversa: derivedStatus,
+            finalizado,
+            currentStepId: _currentStepId || null,
+            collectedData,
+            mensagem: row.mensagem || null,
+            leadTemperature: row.lead_temperature || null,
+            spinFase: row.spin_fase || null,
+            qualificacao: row.qualificacao || null,
+            leadScore: row.lead_score || null,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            leadOrigin: row.lead_origin || null,
+            sourceCampaignId: row.source_campaign_id || null,
+            sourceCampaignName: row.source_campaign_name || null,
+            leadSource: row.lead_source || null,
+          };
+        })
+        .filter(Boolean);
 
-      // Agrupar por status para facilitar o Kanban
+      const filteredLeads = (statusFilter && statusFilter !== "all")
+        ? allLeads.filter((l) => l.statusConversa === statusFilter)
+        : allLeads;
+
       const kanban = {
-        em_atendimento: leads.filter((l) => l.statusConversa === "em_atendimento"),
-        finalizado: leads.filter((l) => l.statusConversa === "finalizado"),
-        total: leads.length,
+        aguardando_usuario: allLeads.filter((l) => l.statusConversa === "aguardando_usuario"),
+        em_atendimento: allLeads.filter((l) => l.statusConversa === "em_atendimento"),
+        finalizado: allLeads.filter((l) => l.statusConversa === "finalizado"),
+        total: allLeads.length,
       };
 
-      res.json({ success: true, leads, kanban });
+      res.json({ success: true, leads: filteredLeads, kanban });
     } catch (err) {
       console.error("[hardcoded-chat-leads] Error:", err);
       sendError(res, 500, "SERVER_ERROR", err.message);

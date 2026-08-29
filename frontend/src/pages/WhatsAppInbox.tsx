@@ -62,6 +62,7 @@ import { SingleFollowupReminderModal } from "@/components/followup/SingleFollowu
 import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
 import { MediaMessage } from "@/components/MediaMessage";
 import { API_BASE_URL } from "@/lib/api";
+import { sanitizePhone } from "@/lib/phone";
 
 interface InternalNote {
   id: string;
@@ -383,18 +384,13 @@ export default function WhatsAppInbox({
   // Lead correspondente do banco de dados (Dossiê)
   const matchedLead = useMemo<LeadRow | null>(() => {
     if (!selectedChat) return null;
-    const rawId = String(selectedChat.id || "");
-    const cleanChatPhone = rawId.replace(/\D/g, "");
-    if (!cleanChatPhone) return null;
+    const chatCanonical = sanitizePhone(selectedChat.id);
+    if (!chatCanonical) return null;
 
     return (
       leads.find((l) => {
-        const cleanLeadPhone = (l.telefone || "").replace(/\D/g, "");
-        if (!cleanLeadPhone) return false;
-        return (
-          cleanChatPhone.endsWith(cleanLeadPhone.slice(-8)) ||
-          cleanLeadPhone.endsWith(cleanChatPhone.slice(-8))
-        );
+        const leadCanonical = sanitizePhone(l.telefone || l.phone);
+        return Boolean(leadCanonical && leadCanonical === chatCanonical);
       }) || null
     );
   }, [selectedChat, leads]);
@@ -566,19 +562,19 @@ export default function WhatsAppInbox({
     }
 
     if (initialPhone) {
-      const digits = initialPhone.replace(/\D/g, "");
-      const match = chats.find((chat) => {
-        const cDigits = String(chat.id || "").replace(/@.*/, "").replace(/\D/g, "");
-        if (!cDigits || !digits) return false;
-        return (
-          cDigits === digits ||
-          cDigits.endsWith(digits) ||
-          digits.endsWith(cDigits) ||
-          cDigits.slice(-8) === digits.slice(-8)
-        );
-      });
+      const targetCanonical = sanitizePhone(initialPhone);
+      const match = targetCanonical
+        ? chats.find((chat) => sanitizePhone(chat.id) === targetCanonical)
+        : null;
+
       if (match) {
         setSelectedChatId(match.id);
+        setSearchParams({}, { replace: true });
+        return;
+      } else {
+        // Se após canonicalizar não houver match nos chats, NÃO selecione nada
+        // e mostre a lista (evita abrir a conversa de outra pessoa)
+        setSelectedChatId(null);
         setSearchParams({}, { replace: true });
         return;
       }

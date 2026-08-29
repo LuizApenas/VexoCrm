@@ -39,6 +39,7 @@ import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { API_BASE_URL, fetchApi, readApiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { resolveTenantPlan, hasFeatureUnlocked } from "@/lib/planTier";
+import { sanitizePhone } from "@/lib/phone";
 import ApplyFollowupModal from "@/components/followup/ApplyFollowupModal";
 import { SingleFollowupReminderModal } from "@/components/followup/SingleFollowupReminderModal";
 import { PageShell } from "@/components/PageShell";
@@ -442,20 +443,25 @@ export default function BancoDeDados() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const targetLeadId = params.get("leadId");
-    const targetPhone = params.get("phone") ? params.get("phone")?.replace(/\D/g, "") : null;
+    const targetPhone = params.get("phone");
+    const targetCanonical = targetPhone ? sanitizePhone(targetPhone) : null;
 
-    if (!targetLeadId && !targetPhone) return;
+    if (!targetLeadId && !targetCanonical) return;
 
-    if (selectedLead && (selectedLead.id === targetLeadId || (targetPhone && selectedLead.telefone?.replace(/\D/g, "").includes(targetPhone)))) {
+    if (
+      selectedLead &&
+      (selectedLead.id === targetLeadId ||
+        (targetCanonical && sanitizePhone(selectedLead.telefone || selectedLead.phone) === targetCanonical))
+    ) {
       return;
     }
 
     if (leads.length > 0) {
       const match = leads.find((l) => {
         if (targetLeadId && l.id === targetLeadId) return true;
-        if (targetPhone) {
-          const lDigits = (l.telefone || l.phone || "").replace(/\D/g, "");
-          return lDigits === targetPhone || lDigits.endsWith(targetPhone) || targetPhone.endsWith(lDigits);
+        if (targetCanonical) {
+          const lCanonical = sanitizePhone(l.telefone || l.phone);
+          return Boolean(lCanonical && lCanonical === targetCanonical);
         }
         return false;
       });
