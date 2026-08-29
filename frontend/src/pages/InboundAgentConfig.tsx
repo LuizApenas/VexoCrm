@@ -145,9 +145,10 @@ export default function InboundAgentConfig() {
       setSdrTransferEnabled(activeCompany.sdr_transfer_enabled ?? false);
       setSpinFields(activeCompany.inbound_spin_fields ?? []);
       setInboundWebhookUrl(activeCompany.inbound_webhook_url ?? "");
-      const lista = Array.isArray(activeCompany.evolution_instances) && activeCompany.evolution_instances.length > 0
+      const isPlaceholder = activeCompany.id === PLACEHOLDER_COMPANY_ID;
+      const lista = !isPlaceholder && Array.isArray(activeCompany.evolution_instances) && activeCompany.evolution_instances.length > 0
         ? activeCompany.evolution_instances
-        : (activeCompany.evolution_instance ? [activeCompany.evolution_instance] : []);
+        : (!isPlaceholder && activeCompany.evolution_instance ? [activeCompany.evolution_instance] : []);
       setNumerosVinculados(lista);
       setInboundRole(activeCompany.inbound_role === "qualificador" ? "qualificador" : "atendimento");
     }
@@ -456,20 +457,37 @@ export default function InboundAgentConfig() {
                           </p>
                         )}
                         {chips.map((chip) => {
-                          const inst = instanceNameFromChip(chip);
-                          const marcado = numerosVinculados.includes(inst);
+                          const inst = instanceNameFromChip(chip) || chip.name || chip.id || "";
+                          const marcado = numerosVinculados.some(
+                            (v) => v === inst || v === chip.name || v === chip.id
+                          );
+                          const toggleItem = () => {
+                            setNumerosVinculados((atual) => {
+                              const jaMarcado = atual.some(
+                                (v) => v === inst || v === chip.name || v === chip.id
+                              );
+                              if (jaMarcado) {
+                                return atual.filter(
+                                  (v) => v !== inst && v !== chip.name && v !== chip.id
+                                );
+                              }
+                              return [...atual, inst];
+                            });
+                          };
+
                           return (
-                            <label key={chip.id || chip.name || inst} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent">
+                            <div
+                              key={chip.id || chip.name || inst}
+                              onClick={toggleItem}
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent select-none"
+                            >
                               <Checkbox
                                 checked={marcado}
-                                onCheckedChange={() =>
-                                  setNumerosVinculados((atual) =>
-                                    atual.includes(inst) ? atual.filter((i) => i !== inst) : [...atual, inst]
-                                  )
-                                }
+                                onCheckedChange={toggleItem}
+                                onClick={(e) => e.stopPropagation()}
                               />
                               <span className="truncate">{chip.name}</span>
-                            </label>
+                            </div>
                           );
                         })}
                       </div>

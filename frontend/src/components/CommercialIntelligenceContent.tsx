@@ -289,26 +289,26 @@ export function CommercialIntelligenceContent({ clientId }: { clientId: string }
 
   const attributionByChannel = useMemo(() => {
     const map: Record<string, { total: number; qualified: number; revenue: number }> = {
-      "📸 Instagram": { total: 0, qualified: 0, revenue: 0 },
-      "🔍 Google Ads": { total: 0, qualified: 0, revenue: 0 },
+      "📢 Campanha": { total: 0, qualified: 0, revenue: 0 },
+      "🌱 Orgânico": { total: 0, qualified: 0, revenue: 0 },
+      "🎯 Tráfego Pago": { total: 0, qualified: 0, revenue: 0 },
+      "📱 WhatsApp Ads": { total: 0, qualified: 0, revenue: 0 },
       "🤝 Indicação": { total: 0, qualified: 0, revenue: 0 },
-      "🎵 TikTok": { total: 0, qualified: 0, revenue: 0 },
-      "📘 Facebook Ads": { total: 0, qualified: 0, revenue: 0 },
-      "📝 Formulário": { total: 0, qualified: 0, revenue: 0 },
-      "💬 WhatsApp": { total: 0, qualified: 0, revenue: 0 },
-      "🌐 Outros": { total: 0, qualified: 0, revenue: 0 },
+      "💬 Extração WhatsApp": { total: 0, qualified: 0, revenue: 0 },
+      "🌐 Outro": { total: 0, qualified: 0, revenue: 0 },
+      "Origem desconhecida": { total: 0, qualified: 0, revenue: 0 },
     };
 
     realLeads.forEach((lead) => {
-      const src = (lead.lead_source || lead.dados?.origem_marketing || lead.dados?.origem || lead.origem || "").toLowerCase();
-      let key = "🌐 Outros";
-      if (src.includes("instagram")) key = "📸 Instagram";
-      else if (src.includes("google")) key = "🔍 Google Ads";
-      else if (src.includes("indica") || src.includes("referral")) key = "🤝 Indicação";
-      else if (src.includes("tiktok")) key = "🎵 TikTok";
-      else if (src.includes("facebook")) key = "📘 Facebook Ads";
-      else if (src.includes("form") || src.includes("site")) key = "📝 Formulário";
-      else if (src.includes("whatsapp")) key = "💬 WhatsApp";
+      const src = String(lead.lead_source || lead.dados?.origem_marketing || lead.dados?.origem || lead.origem || "").trim().toLowerCase();
+      let key = "Origem desconhecida";
+      if (src === "campanha") key = "📢 Campanha";
+      else if (src === "organico") key = "🌱 Orgânico";
+      else if (src === "trafego_pago") key = "🎯 Tráfego Pago";
+      else if (src === "whatsapp_ads") key = "📱 WhatsApp Ads";
+      else if (src === "indicacao") key = "🤝 Indicação";
+      else if (src === "extracao_whatsapp") key = "💬 Extração WhatsApp";
+      else if (src === "outro") key = "🌐 Outro";
 
       map[key].total += 1;
       const isQual = lead.stage === "buyer" || lead.stage === "open_budget" || lead.temperature === "hot" || lead.temperature === "warm";

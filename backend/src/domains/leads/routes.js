@@ -1147,6 +1147,12 @@ export function registerLeadsRoutes(app, deps) {
             temperature: classification.temperature,
             tags: Array.isArray(classification.tags) ? classification.tags : [],
             extracted_from_wa: true,
+            lead_source: "extracao_whatsapp",
+            dados: {
+              origem: "WhatsApp Extração",
+              lead_source_bruto: "WhatsApp Extração",
+              origem_marketing: "extracao_whatsapp",
+            },
             raw_chat_summary: classification.summary,
             last_interaction_at: lastInteractionAt || new Date().toISOString(),
           });
@@ -1177,6 +1183,12 @@ export function registerLeadsRoutes(app, deps) {
             temperature: "cold",
             tags: ["agenda-whatsapp"],
             extracted_from_wa: true,
+            lead_source: "extracao_whatsapp",
+            dados: {
+              origem: "WhatsApp Agenda",
+              lead_source_bruto: "WhatsApp Agenda",
+              origem_marketing: "extracao_whatsapp",
+            },
           });
           addressBookCount++;
         } catch (insErr) {
@@ -1413,18 +1425,27 @@ export function registerLeadsRoutes(app, deps) {
     if (!id) return sendError(res, 400, "MISSING_ID", "ID do lead ausente");
 
     try {
-      const updates = {};
-      if (req.body.stage !== undefined) updates.stage = req.body.stage;
-      if (req.body.temperature !== undefined) updates.temperature = req.body.temperature;
+      let tagsArray = undefined;
       if (req.body.tags !== undefined) {
-        updates.tags = Array.isArray(req.body.tags)
+        tagsArray = Array.isArray(req.body.tags)
           ? req.body.tags.map((t) => String(t).trim()).filter(Boolean)
           : typeof req.body.tags === "string"
           ? req.body.tags.split(",").map((t) => t.trim()).filter(Boolean)
           : [];
       }
+
+      const updates = {};
+      if (req.body.stage !== undefined) updates.stage = req.body.stage;
+      if (req.body.temperature !== undefined) updates.temperature = req.body.temperature;
       if (req.body.nome !== undefined) updates.nome = req.body.nome;
       updates.updated_at = new Date().toISOString();
+
+      if (tagsArray !== undefined && pgDatabasePool) {
+        await pgDatabasePool.query(
+          `UPDATE public.leads SET tags = $1, updated_at = now() WHERE id = $2`,
+          [tagsArray, id]
+        );
+      }
 
       const { data, error } = await supabase
         .from("leads")
@@ -1483,22 +1504,14 @@ export function registerLeadsRoutes(app, deps) {
           .in("id", leadIds);
       }
 
-      if (addTag) {
-        const { data: currentLeads } = await supabase
-          .from("leads")
-          .select("id, tags")
-          .eq("client_id", clientId)
-          .in("id", leadIds);
-
-        for (const item of currentLeads || []) {
-          const currentTags = Array.isArray(item.tags) ? item.tags : [];
-          if (!currentTags.includes(addTag)) {
-            await supabase
-              .from("leads")
-              .update({ tags: [...currentTags, addTag], updated_at: new Date().toISOString() })
-              .eq("id", item.id);
-          }
-        }
+      if (addTag && pgDatabasePool) {
+        await pgDatabasePool.query(
+          `UPDATE public.leads 
+           SET tags = ARRAY(SELECT DISTINCT unnest(array_append(COALESCE(tags, ARRAY[]::text[]), $1))),
+               updated_at = now()
+           WHERE client_id = $2 AND id = ANY($3::uuid[])`,
+          [addTag, clientId, leadIds]
+        );
       }
 
       res.json({ success: true, updatedCount: leadIds.length });

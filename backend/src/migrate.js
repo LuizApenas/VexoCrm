@@ -61,6 +61,7 @@ async function isAlreadyApplied(pool, filename) {
     "20260508000001_drop_conta_energia_from_leads_outlier.sql": `SELECT TRUE AS ok`,
     "20260508120000_add_campaigns_phones_column.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='campaigns' AND column_name='phones') AS ok`,
     // Novas migrations — verificam se coluna já existe
+    "20260829160000_add_extracao_whatsapp_to_lead_source_check.sql": `SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'leads_lead_source_check' AND pg_get_constraintdef(oid) LIKE '%extracao_whatsapp%') AS ok`,
     "20260805060000_n8n_settings_chatbot_instances.sql": `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='chatbot_instances') AS ok`,
     // Sentinela cobre o efeito COMPLETO (coluna E indice). Uma sentinela que testa
     // menos do que a migration faz pode marca-la como aplicada sem ter rodado —

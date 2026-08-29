@@ -167,6 +167,20 @@ export const MARKETING_CHANNELS = [
   },
 ];
 
+export const CANONICAL_LEAD_SOURCES: Record<string, { label: string; badgeClass: string; icon: string }> = {
+  campanha: { label: "Campanha", badgeClass: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30", icon: "📢" },
+  organico: { label: "Orgânico", badgeClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30", icon: "🌱" },
+  trafego_pago: { label: "Tráfego Pago", badgeClass: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30", icon: "🎯" },
+  whatsapp_ads: { label: "WhatsApp Ads", badgeClass: "bg-green-500/15 text-green-700 dark:text-green-300 border-green-500/30", icon: "📱" },
+  indicacao: { label: "Indicação", badgeClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30", icon: "🤝" },
+  extracao_whatsapp: { label: "Extração WhatsApp", badgeClass: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30", icon: "💬" },
+  outro: { label: "Outro", badgeClass: "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30", icon: "🌐" },
+  instagram: { label: "Instagram", badgeClass: "bg-pink-500/15 text-pink-700 dark:text-pink-300 border-pink-500/30", icon: "📸" },
+  "google ads": { label: "Google Ads", badgeClass: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30", icon: "🔍" },
+  "facebook ads": { label: "Facebook Ads", badgeClass: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30", icon: "📘" },
+  tiktok: { label: "TikTok", badgeClass: "bg-zinc-500/15 text-zinc-900 dark:text-zinc-100 border-zinc-500/30", icon: "🎵" },
+};
+
 export function getLeadSource(lead?: LeadIntelligenceItem | null): string {
   if (!lead) return "Não informado";
   if (Array.isArray(lead.tags)) {
@@ -180,24 +194,36 @@ export function getLeadSource(lead?: LeadIntelligenceItem | null): string {
 
 export function getLeadMarketingChannelId(lead?: LeadIntelligenceItem | null): string {
   const s = (getLeadSource(lead) || "").toLowerCase().trim();
-  if (s.includes("insta")) return "instagram";
-  if (s.includes("goog") || s.includes("gads") || s.includes("pesquisa")) return "google";
-  if (s.includes("face") || s.includes("fb") || s.includes("messenger")) return "facebook";
-  if (s.includes("tik") || s.includes("tt")) return "tiktok";
-  if (s.includes("indic") || s.includes("amig") || s.includes("recomenda") || s.includes("referral")) return "indicacao";
+  if (s === "instagram" || s.startsWith("insta")) return "instagram";
+  if (s === "google ads" || s.includes("google") || s.includes("gads") || s.includes("pesquisa")) return "google";
+  if (s === "facebook ads" || s.includes("facebook") || s.includes("face") || s.includes("messenger")) return "facebook";
+  if (s === "tiktok" || s.includes("tiktok") || s.startsWith("tt")) return "tiktok";
+  if (s === "indicacao" || s.includes("indica") || s.includes("amigo") || s.includes("referral")) return "indicacao";
   return "whatsapp_outros";
 }
 
-export function renderSourceBadge(sourceStr?: string | null) {
-  const s = (sourceStr || "").toLowerCase();
-  if (s.includes("instagram")) return <Badge className="bg-pink-500/15 text-pink-700 dark:text-pink-300 border-pink-500/30">📸 Instagram</Badge>;
-  if (s.includes("google")) return <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30">🔍 Google Ads</Badge>;
-  if (s.includes("facebook")) return <Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30">📘 Facebook Ads</Badge>;
-  if (s.includes("tiktok")) return <Badge className="bg-zinc-500/15 text-zinc-900 dark:text-zinc-100 border-zinc-500/30">🎵 TikTok</Badge>;
-  if (s.includes("indica") || s.includes("referral")) return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">🤝 Indicação</Badge>;
-  if (s.includes("form") || s.includes("site")) return <Badge className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30">📝 Formulário</Badge>;
-  if (s.includes("whatsapp")) return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">💬 WhatsApp</Badge>;
-  return <Badge variant="outline" className="text-slate-600 dark:text-slate-300 text-[11px]">{sourceStr || "Não informado"}</Badge>;
+export function renderSourceBadge(sourceKey?: string | null) {
+  const key = String(sourceKey || "").trim().toLowerCase();
+  if (!key || key === "não informado" || key === "nao informado") {
+    return (
+      <Badge variant="outline" className="text-slate-500 dark:text-slate-400 text-[11px]">
+        Origem desconhecida
+      </Badge>
+    );
+  }
+  const config = CANONICAL_LEAD_SOURCES[key];
+  if (config) {
+    return (
+      <Badge className={config.badgeClass}>
+        {config.icon} {config.label}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="text-slate-500 dark:text-slate-400 text-[11px]">
+      {sourceKey}
+    </Badge>
+  );
 }
 
 export default function BancoDeDados() {

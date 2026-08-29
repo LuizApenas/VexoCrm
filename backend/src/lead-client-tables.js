@@ -105,7 +105,7 @@ export async function ensureLeadClientTable(pgClientOrPool, tenantId, schemaType
       status_conversa TEXT CHECK (status_conversa IS NULL OR status_conversa IN ('aguardando_usuario', 'em_atendimento', 'finalizado')),
       source_campaign_id UUID REFERENCES public.campaigns(id) ON DELETE SET NULL,
       source_campaign_name TEXT,
-      lead_source TEXT CHECK (lead_source IS NULL OR lead_source IN ('campanha', 'organico', 'trafego_pago', 'whatsapp_ads', 'indicacao', 'outro')),
+      lead_source TEXT CHECK (lead_source IS NULL OR lead_source IN ('campanha', 'organico', 'trafego_pago', 'whatsapp_ads', 'indicacao', 'outro', 'extracao_whatsapp')),
       lead_score NUMERIC(8, 2),
       potential_contract_value NUMERIC(14, 2),
       first_contact_at TIMESTAMPTZ,

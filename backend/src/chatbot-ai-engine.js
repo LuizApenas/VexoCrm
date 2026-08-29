@@ -770,6 +770,17 @@ export function normalizeLeadSource(source) {
     return "indicacao";
   }
 
+  // extracao_whatsapp <- extracao_whatsapp, extracao, extraido
+  if (
+    s === "extracao_whatsapp" ||
+    s.includes("extracao") ||
+    s.includes("extraido") ||
+    s.includes("extração") ||
+    s.includes("extraído")
+  ) {
+    return "extracao_whatsapp";
+  }
+
   // organico <- whatsapp, instagram, tiktok, facebook, formulario, site, busca organica
   if (
     s.includes("whatsapp") ||
