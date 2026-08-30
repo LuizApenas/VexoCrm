@@ -1,0 +1,127 @@
+[
+  {
+    "description": "Celular BR 13 dígitos com DDI 55 e 9",
+    "input": "5534997817660",
+    "expected": "5534997817660"
+  },
+  {
+    "description": "Celular BR 13 dígitos com prefixo +",
+    "input": "+5534997817660",
+    "expected": "5534997817660"
+  },
+  {
+    "description": "Celular BR 11 dígitos local (DDD + 9 + 8 dígitos)",
+    "input": "34997817660",
+    "expected": "5534997817660"
+  },
+  {
+    "description": "Celular BR formatado com máscara padrão",
+    "input": "(34) 99781-7660",
+    "expected": "5534997817660"
+  },
+  {
+    "description": "Celular BR 12 dígitos com DDI 55 sem o nono dígito (inicia em 9)",
+    "input": "553497817660",
+    "expected": "5534997817660"
+  },
+  {
+    "description": "Celular BR 12 dígitos com DDI 55 sem o nono dígito (inicia em 8)",
+    "input": "553488112233",
+    "expected": "5534988112233"
+  },
+  {
+    "description": "Celular BR 12 dígitos com DDI 55 sem o nono dígito (inicia em 7)",
+    "input": "553477112233",
+    "expected": "5534977112233"
+  },
+  {
+    "description": "Celular BR 12 dígitos com DDI 55 sem o nono dígito (inicia em 6)",
+    "input": "553466112233",
+    "expected": "5534966112233"
+  },
+  {
+    "description": "Celular BR 10 dígitos local sem o nono dígito (inicia em 9)",
+    "input": "3497817660",
+    "expected": "5534997817660"
+  },
+  {
+    "description": "Celular BR 10 dígitos local formatado sem o nono dígito",
+    "input": "(34) 9781-7660",
+    "expected": "5534997817660"
+  },
+  {
+    "description": "Celular BR 10 dígitos local sem o nono dígito (inicia em 8)",
+    "input": "3488112233",
+    "expected": "5534988112233"
+  },
+  {
+    "description": "Telefone fixo BR 12 dígitos com DDI 55 (inicia em 3)",
+    "input": "553432211234",
+    "expected": "553432211234"
+  },
+  {
+    "description": "Telefone fixo BR 12 dígitos com DDI 55 (inicia em 2)",
+    "input": "551123456789",
+    "expected": "551123456789"
+  },
+  {
+    "description": "Telefone fixo BR 12 dígitos com DDI 55 (inicia em 4)",
+    "input": "553440028922",
+    "expected": "553440028922"
+  },
+  {
+    "description": "Telefone fixo BR 12 dígitos com DDI 55 (inicia em 5)",
+    "input": "553455112233",
+    "expected": "553455112233"
+  },
+  {
+    "description": "Telefone fixo BR 10 dígitos local (inicia em 3)",
+    "input": "3432211234",
+    "expected": "553432211234"
+  },
+  {
+    "description": "Telefone fixo BR 10 dígitos local formatado",
+    "input": "(34) 3221-1234",
+    "expected": "553432211234"
+  },
+  {
+    "description": "Número internacional EUA (+1)",
+    "input": "+1 415 555 2671",
+    "expected": "14155552671"
+  },
+  {
+    "description": "Número internacional Portugal (+351)",
+    "input": "+351 912 345 678",
+    "expected": "351912345678"
+  },
+  {
+    "description": "Número internacional Reino Unido (+44)",
+    "input": "447911123456",
+    "expected": "447911123456"
+  },
+  {
+    "description": "Entrada vazia",
+    "input": "",
+    "expected": null
+  },
+  {
+    "description": "Entrada nula",
+    "input": null,
+    "expected": null
+  },
+  {
+    "description": "Entrada apenas espaços",
+    "input": "   ",
+    "expected": null
+  },
+  {
+    "description": "Entrada sem dígitos",
+    "input": "---",
+    "expected": null
+  },
+  {
+    "description": "Celular BR com zero à esquerda de longa distância",
+    "input": "034997817660",
+    "expected": "5534997817660"
+  }
+]
