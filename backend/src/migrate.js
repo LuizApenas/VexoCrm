@@ -175,6 +175,14 @@ async function isAlreadyApplied(pool, filename) {
           AND data_type = 'jsonb'
       )
     ) AS ok`,
+    "20260831180000_add_auto_resume_to_campaign_dispatches_trigger_type.sql": `SELECT (
+      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='campaign_dispatches')
+      OR EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'campaign_dispatches_trigger_type_check' AND pg_get_constraintdef(oid) LIKE '%auto_resume%')
+    ) AS ok`,
+    "20260831190000_seed_generico_chatbot_template.sql": `SELECT (
+      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='chatbot_templates')
+      OR EXISTS (SELECT 1 FROM public.chatbot_templates WHERE template_key = 'generico' AND client_id IS NULL)
+    ) AS ok`,
   };
 
   const query = checks[filename];

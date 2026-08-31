@@ -84,7 +84,8 @@ describe("contrato quebrado no turno", () => {
 
 describe("o que PODE ser preservado do turno anterior", () => {
   const fonte = readFileSync(resolve("src/chatbot-ai-engine.js"), "utf8");
-  const payload = fonte.slice(fonte.indexOf("const payload = {"), fonte.indexOf("if (existing?.id)"));
+  const payloadStartIndex = fonte.indexOf("const payload = {");
+  const payload = fonte.slice(payloadStartIndex, fonte.indexOf("let persistErro = null;", payloadStartIndex));
 
   it("classificacao anterior e preservada — e estado do lead, esta certo", () => {
     expect(payload).toContain("aiResponse.classificacao ?? existing?.status");

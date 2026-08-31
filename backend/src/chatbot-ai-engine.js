@@ -17,6 +17,7 @@ import { qualifyLead } from "./hardcoded-chatbot-persistence.js";
 import { LEADS_OUTLIER_TEMPERATURE } from "./services/leadImport.js";
 import { resolveMessageId } from "./services/inboundGuard.js";
 import { extractJsonFromLlmText, validateOutboundMessage } from "./services/jsonExtractor.js";
+import { maskPhoneForLog } from "./services/tenant.js";
 
 /**
  * Chatbot AI Engine
@@ -890,36 +891,144 @@ async function fetchCampaignPromptById(supabase, id) {
   }
 }
 
-/**
- * Busca template do banco por templateKey, com fallback para builtin (client_id IS NULL).
- * Retorna { data_fields, required_fields, classification, agent_name, agent_role } ou null.
- */
-async function fetchTemplate(supabase, clientId, templateKey) {
-  if (!supabase || !templateKey) return null;
-  try {
-    const cols = "template_key, display_name, agent_name, agent_role, data_fields, required_fields, classification";
+export const DEFAULT_BUILTIN_TEMPLATES = {
+  generico: {
+    template_key: "generico",
+    display_name: "Atendimento Geral / Vendas",
+    agent_name: "Consultor",
+    agent_role: "Consultor de Atendimento e Qualificação Comercial",
+    data_fields: [
+      { key: "interesse", label: "Interesse", description: "Produto ou serviço de interesse", required: true },
+      { key: "objetivo", label: "Objetivo", description: "Objetivo principal do lead", required: false },
+      { key: "cidade", label: "Cidade", description: "Cidade do lead", required: false },
+      { key: "estado", label: "Estado", description: "Estado (UF)", required: false },
+      { key: "prazo", label: "Prazo", description: "Quando deseja começar ou comprar", required: false },
+      { key: "melhor_horario", label: "Melhor Horário", description: "Melhor momento para contato", required: false },
+    ],
+    required_fields: ["interesse"],
+    classification: {
+      quente: "Interesse claro com prazo definido",
+      morno: "Interesse demonstrado mas tirando dúvidas",
+      frio: "Sem interesse ou curioso sem prazo",
+    },
+    is_builtin: true,
+  },
+  outlier: {
+    template_key: "outlier",
+    display_name: "Outlier Consórcios",
+    agent_name: "Áureo",
+    agent_role: "SDR da Outlier Consórcios",
+    data_fields: [
+      { key: "interesse", label: "Interesse", description: "Imóvel, veículo, investimento, empresa, carta contemplada", required: true },
+      { key: "objetivo", label: "Objetivo", description: "Morar, investir, trabalho, patrimônio", required: true },
+      { key: "cidade", label: "Cidade", description: "Cidade do lead", required: true },
+      { key: "estado", label: "Estado", description: "Estado (UF)", required: true },
+      { key: "credito_faixa", label: "Faixa de Crédito", description: "Valor aproximado desejado", required: true },
+      { key: "parcela", label: "Parcela", description: "Parcela mensal confortável", required: false },
+      { key: "prazo", label: "Prazo", description: "Logo, próximos meses, com calma", required: true },
+      { key: "lance_entrada_fgts", label: "FGTS / Lance", description: "Tem lance, entrada ou FGTS disponível?", required: true },
+      { key: "melhor_horario", label: "Melhor Horário", description: "Manhã, tarde ou noite", required: true },
+    ],
+    required_fields: ["interesse", "objetivo", "cidade", "estado", "credito_faixa", "prazo", "lance_entrada_fgts", "melhor_horario"],
+    classification: {
+      quente: "Objetivo claro, prazo curto, crédito e parcela informados",
+      morno: "Interesse real mas pesquisando ou faltam dados",
+      frio: "Curioso sem prazo, sem valor, pouca intenção",
+    },
+    is_builtin: true,
+  },
+  infinie: {
+    template_key: "infinie",
+    display_name: "Infinie Energia Solar",
+    agent_name: "Lara",
+    agent_role: "SDR da Infinie Energia Solar",
+    data_fields: [
+      { key: "tipo", label: "Tipo de Instalação", description: "Residência, empresa, rural, condomínio", required: true },
+      { key: "cidade", label: "Cidade", description: "Cidade do lead", required: true },
+      { key: "estado", label: "Estado", description: "Estado (UF)", required: true },
+      { key: "conta_luz_faixa", label: "Conta de Luz", description: "Valor médio mensal da conta de energia", required: true },
+      { key: "tipo_instalacao", label: "Local de Instalação", description: "Telhado, solo, estacionamento", required: false },
+      { key: "prazo", label: "Prazo", description: "Previsão de implementação", required: true },
+      { key: "melhor_horario", label: "Melhor Horário", description: "Manhã, tarde ou noite", required: true },
+    ],
+    required_fields: ["tipo", "cidade", "estado", "conta_luz_faixa", "prazo", "melhor_horario"],
+    classification: {
+      quente: "Tipo definido, conta informada, prazo curto",
+      morno: "Interesse real mas pesquisando ou faltam dados",
+      frio: "Curioso sem prazo, sem valor, pouca intenção",
+    },
+    is_builtin: true,
+  },
+  nexus: {
+    template_key: "nexus",
+    display_name: "Nexus Investimentos",
+    agent_name: "Vítor",
+    agent_role: "SDR da Nexus Investimentos",
+    data_fields: [
+      { key: "interesse", label: "Produto de interesse", description: "Fundo de renda fixa, multimercado, ações, previdência, CDB", required: true },
+      { key: "objetivo", label: "Objetivo financeiro", description: "Aposentadoria, reserva de emergência, patrimônio, crescimento", required: true },
+      { key: "cidade", label: "Cidade", description: "Cidade do lead", required: true },
+      { key: "estado", label: "Estado", description: "Estado (UF)", required: true },
+      { key: "volume", label: "Capital disponível", description: "Ex: 50k-100k", required: true },
+      { key: "prazo", label: "Horizonte de investimento", description: "Curto, médio, longo prazo", required: true },
+      { key: "perfil_risco", label: "Perfil de risco", description: "Conservador, moderado, arrojado", required: true },
+      { key: "melhor_horario", label: "Melhor horário", description: "Manhã, tarde ou noite", required: true },
+    ],
+    required_fields: ["interesse", "objetivo", "volume", "prazo", "perfil_risco", "melhor_horario"],
+    classification: {
+      quente: "volume alto, prazo definido, objetivo claro",
+      morno: "interesse real, sem volume ou sem urgência",
+      frio: "curiosidade sem capital definido",
+    },
+    is_builtin: true,
+  },
+};
 
-    if (clientId) {
+/**
+ * Busca template do banco por templateKey, com fallback para builtin (client_id IS NULL)
+ * e fallback final em memória para DEFAULT_BUILTIN_TEMPLATES.
+ * Retorna { data_fields, required_fields, classification, agent_name, agent_role } garantido.
+ */
+export async function fetchTemplate(supabase, clientId, templateKey) {
+  const normalizedKey = String(templateKey || "generico").trim().toLowerCase();
+  const cols = "template_key, display_name, agent_name, agent_role, data_fields, required_fields, classification";
+
+  if (supabase) {
+    try {
+      if (clientId) {
+        const { data } = await supabase
+          .from("chatbot_templates")
+          .select(cols)
+          .eq("template_key", normalizedKey)
+          .eq("client_id", clientId)
+          .maybeSingle();
+        if (data) return data;
+      }
+
+      // Fallback para builtin no banco (client_id IS NULL)
       const { data } = await supabase
         .from("chatbot_templates")
         .select(cols)
-        .eq("template_key", templateKey)
-        .eq("client_id", clientId)
+        .eq("template_key", normalizedKey)
+        .is("client_id", null)
         .maybeSingle();
       if (data) return data;
+    } catch (err) {
+      console.warn("[chatbot-ai] Falha ao consultar chatbot_templates no banco:", err?.message || err);
     }
-
-    // Fallback para builtin (client_id IS NULL)
-    const { data } = await supabase
-      .from("chatbot_templates")
-      .select(cols)
-      .eq("template_key", templateKey)
-      .is("client_id", null)
-      .maybeSingle();
-    return data || null;
-  } catch {
-    return null;
   }
+
+  // Fallback para catálogo embutido
+  if (DEFAULT_BUILTIN_TEMPLATES[normalizedKey]) {
+    return DEFAULT_BUILTIN_TEMPLATES[normalizedKey];
+  }
+
+  console.warn("[chatbot-ai] TEMPLATE NOT FOUND in DB or catalog, applying fallback to 'generico'", {
+    clientId,
+    requestedTemplateKey: templateKey,
+  });
+
+  return DEFAULT_BUILTIN_TEMPLATES.generico;
 }
 
 /**
@@ -1224,6 +1333,41 @@ export function appendToHistory(history, userText, assistantText) {
   ];
 }
 
+/**
+ * Freio contra loop com menus/bots automáticos:
+ * Se as últimas `threshold` mensagens recebidas de um mesmo contato forem idênticas,
+ * detecta loop para parar o ciclo infinito sem gastar chamadas de IA.
+ */
+export function checkBotLoop(storedHistorico = [], currentIncomingText = "", threshold = 3) {
+  if (!currentIncomingText || !currentIncomingText.trim()) {
+    return { isLoop: false, count: 0, reason: null };
+  }
+  const normalizedIncoming = currentIncomingText.trim().toLowerCase();
+
+  const userHistory = (storedHistorico || [])
+    .filter((h) => h && h.role === "user" && typeof h.content === "string")
+    .map((h) => h.content.trim().toLowerCase());
+
+  userHistory.push(normalizedIncoming);
+
+  // Conta quantas mensagens consecutivas no final são idênticas à mensagem atual
+  let consecutiveCount = 0;
+  for (let i = userHistory.length - 1; i >= 0; i--) {
+    if (userHistory[i] === normalizedIncoming) {
+      consecutiveCount++;
+    } else {
+      break;
+    }
+  }
+
+  const isLoop = consecutiveCount >= threshold;
+  return {
+    isLoop,
+    count: consecutiveCount,
+    reason: isLoop ? `${consecutiveCount} mensagens idênticas consecutivas detectadas (loop com bot/menu)` : null,
+  };
+}
+
 // ─── Engine completo: processar batch de mensagens ───────────────────────────
 
 /**
@@ -1488,6 +1632,52 @@ export async function processBatch({
 
   const history = buildHistory(storedHistorico);
 
+  // ── Cenário 0: Freio contra Loop de Robô / Mensagens Idênticas Repetidas ──
+  const loopCheck = checkBotLoop(storedHistorico, combinedText, 3);
+  if (loopCheck.isLoop) {
+    console.warn("[chatbot-ai] FREIO DE LOOP ATIVADO: contato enviou 3 mensagens idênticas consecutivas (possível menu/bot automático). IA silenciada para atenção humana.", {
+      clientId,
+      phone: maskPhoneForLog(phone),
+      textPreview: combinedText.slice(0, 100),
+    });
+
+    const updatedDados = {
+      ...(existing?.dados || {}),
+      precisa_atencao_humana: true,
+      motivo_atencao_humana: "Mensagens idênticas repetidas (loop com bot/menu automático)",
+      bot_loop_detected_at: new Date().toISOString(),
+    };
+
+    if (existing?.id) {
+      await supabase
+        .from(leadsTable)
+        .update({
+          dados: updatedDados,
+          status_conversa: "em_atendimento",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id)
+        .eq("client_id", clientId);
+
+      const newHistory = appendToHistory(history, combinedText, "[Freio de Loop: Atendimento pausado por mensagens repetidas. Aguardando atenção humana.]");
+      await supabase
+        .from(leadsTable)
+        .update({ historico: serializeHistorico(newHistory) })
+        .eq("id", existing.id)
+        .eq("client_id", clientId);
+    }
+
+    return {
+      mensagem: "",
+      status_conversa: "em_atendimento",
+      dados: updatedDados,
+      lead_source: existing?.lead_source || null,
+      classificacao: existing?.status || null,
+      finalizado: false,
+      loopDetected: true,
+    };
+  }
+
   // Busca prompt padrão do tenant, prompt da campanha (se houver) e template em paralelo
   const promptType = promptTypeOverride || (effectivePersonaModel.startsWith("campanha_") ? "campanha" : "padrao");
   const baseModelKey = effectivePersonaModel.startsWith("campanha_") ? effectivePersonaModel.replace("campanha_", "") : effectivePersonaModel;
@@ -1511,7 +1701,7 @@ export async function processBatch({
       clientId,
       promptType,
       campaignPromptId,
-      phone: maskPhone(phone),
+      phone: maskPhoneForLog(phone),
     });
     const defaultPrompt = await fetchDynamicPrompt(supabase, clientId, "padrao");
     if (defaultPrompt) {

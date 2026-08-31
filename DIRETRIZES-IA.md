@@ -143,7 +143,18 @@ outras rotas quebravam por schema). O sintoma sumiu do console, a causa continuo
 
 ---
 
-## 7. Checklist final (cole mentalmente antes de dizer "pronto")
+## 8. CHECK constraints: verificar SEMPRE antes de gravar valor novo
+
+**Incidente:** Múltiplas violações consecutivas de `CHECK constraint` derrubaram operações em produção e o boot-recovery de lotes órfãos (ex: `trigger_type = 'auto_resume'`, `origin_type = 'manual'`, `followup_jobs_content`, `access preset`, `lead_source`).
+
+**Regra obrigatória:**
+- Toda vez que o backend for gravar, atualizar ou fazer fallback de um valor em uma coluna com `CHECK constraint`, é **obrigatório consultar a definição da constraint** no banco ou nos arquivos de migration antes de alterar o código.
+- Se o novo valor for legítimo (ex: novo trigger_type ou status), a migration que atualiza a constraint (`DROP CONSTRAINT IF EXISTS ... ADD CONSTRAINT ... CHECK (...)`) deve ser incluída e registrada em `migrate.js` **no mesmíssimo commit** da alteração do código.
+- Nunca assuma que uma coluna aceita qualquer string sem validar se existe `CHECK constraint` associada.
+
+---
+
+## 9. Checklist final (cole mentalmente antes de dizer "pronto")
 
 - [ ] Confirmei qual backend/banco a produção usa (health + vercel.json + VITE_API_BASE_URL).
 - [ ] `node --check` passou em todos os `.js` backend alterados.
@@ -152,6 +163,7 @@ outras rotas quebravam por schema). O sintoma sumiu do console, a causa continuo
 - [ ] Não adicionei tabela/seed/rotina de migração desnecessária.
 - [ ] Não escondi erro com catch vazio.
 - [ ] Se mexi em schema: confirmei coluna/índice no catálogo (não confiei no "OK" do `IF NOT EXISTS`).
+- [ ] Se gravei valor em coluna com CHECK: confirmei a constraint e inclui migration no mesmo commit.
 - [ ] Testei a rota/tela afetada de verdade e tenho o resultado.
 - [ ] `git add` só dos arquivos certos; branch e remote conferidos.
 - [ ] Avisei o usuário se precisa **Deploy** no Easypanel (backend não sobe no push).

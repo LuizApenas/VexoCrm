@@ -14,9 +14,66 @@ export const INTERNAL_CONTRACT_KEYS = [
   "temperatura",
 ];
 
+export const REASONING_TAGS = [
+  "<think",
+  "</think",
+  "<thinking",
+  "</thinking",
+  "<thought",
+  "</thought",
+  "<reflection",
+  "</reflection",
+];
+
+export const REASONING_MARKERS = [
+  "thinking process",
+  "here's a thinking",
+  "here is a thinking",
+  "let me analyze",
+  "let me think",
+  "let me craft",
+  "let's analyze",
+  "let's check the json",
+  "**analyze",
+  "**thinking",
+  "**plan",
+  "refining for arthur",
+  "refining for",
+  "final polish:",
+  "final polish",
+  "draft:",
+  "draft :",
+  "plan:",
+  "classification:",
+  "this looks like a copy-paste",
+  "my instructions say to act as",
+  "the user keeps sending",
+  "i need to address the fact",
+  "i must maintain the persona",
+  "previous attempts to ask",
+  "let's stick to the rule",
+];
+
+export const ENGLISH_REASONING_PATTERNS = [
+  /\bthe user\b/i,
+  /\bthis looks like\b/i,
+  /\bhowever, my instructions\b/i,
+  /\bprevious attempts\b/i,
+  /\bi will try to\b/i,
+  /\bi need to\b/i,
+  /\bi must maintain\b/i,
+  /\blet's check\b/i,
+  /\buser input is identical\b/i,
+  /\bhere's a\b/i,
+];
+
+export const MAX_OUTBOUND_MESSAGE_LENGTH = 1500;
+
 /**
  * Guarda de saída obrigatória: valida se o texto é seguro para envio no WhatsApp.
- * Recusa se começar com { ou [, se contiver ``` ou chaves internas do contrato.
+ * Recusa se começar com { ou [, se contiver ```, chaves internas do contrato,
+ * tags/marcadores de raciocínio de LLM (<think>), tamanho excessivo (>1500 chars)
+ * ou dump de raciocínio em inglês.
  */
 export function validateOutboundMessage(text) {
   if (text === null || text === undefined) {
@@ -29,6 +86,11 @@ export function validateOutboundMessage(text) {
     return { valid: false, reason: "empty_text" };
   }
 
+  // Teto de tamanho para mensagens de WhatsApp
+  if (trimmed.length > MAX_OUTBOUND_MESSAGE_LENGTH) {
+    return { valid: false, reason: "message_exceeds_max_length" };
+  }
+
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
     return { valid: false, reason: "starts_with_json_bracket" };
   }
@@ -37,20 +99,45 @@ export function validateOutboundMessage(text) {
     return { valid: false, reason: "contains_markdown_code_block" };
   }
 
-  // 4. Guarda estrita de variáveis: impede envio de templates com {{...}} ou tags não substituídas ao lead
+  // Guarda estrita de variáveis: impede envio de templates com {{...}} ou tags não substituídas ao lead
   if (trimmed.includes("{{") || trimmed.includes("}}") || /\{\{.*?\}\}/.test(trimmed)) {
     return { valid: false, reason: "contains_unresolved_variable" };
   }
 
-  // Verifica chaves internas do contrato
+  // 1. Tags de raciocínio de modelo (DeepSeek/Qwen/etc.)
   const lower = trimmed.toLowerCase();
+  for (const tag of REASONING_TAGS) {
+    if (lower.includes(tag)) {
+      return { valid: false, reason: `contains_reasoning_tag:${tag}` };
+    }
+  }
+
+  // 2. Marcadores textuais de raciocínio do modelo
+  for (const marker of REASONING_MARKERS) {
+    if (lower.includes(marker)) {
+      return { valid: false, reason: `contains_reasoning_marker:${marker}` };
+    }
+  }
+
+  // 3. Raciocínio em inglês vazado em fluxo pt-BR
+  let englishPatternMatches = 0;
+  for (const pattern of ENGLISH_REASONING_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      englishPatternMatches++;
+    }
+  }
+  if (englishPatternMatches >= 2) {
+    return { valid: false, reason: "contains_foreign_reasoning_dump" };
+  }
+
+  // 4. Verifica chaves internas do contrato
   for (const key of INTERNAL_CONTRACT_KEYS) {
     if (lower.includes(key.toLowerCase())) {
       return { valid: false, reason: `contains_internal_contract_key:${key}` };
     }
   }
 
-  // Verifica chaves de JSON serializado
+  // 5. Verifica chaves de JSON serializado
   if (lower.includes('"mensagem"') || lower.includes('"dados"') || lower.includes('"message"')) {
     return { valid: false, reason: "contains_json_key_structure" };
   }
@@ -83,9 +170,9 @@ export function extractJsonFromLlmText(raw) {
     throw error;
   }
 
-  // 1. Remove blocos <think> ... </think> emitidos por modelos de raciocínio (ex: Qwen)
-  if (text.includes("<think>")) {
-    text = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  // 1. Remove blocos <think> ... </think> ou <thinking> ... </thinking> emitidos por modelos de raciocínio
+  if (text.includes("<think") || text.includes("<thinking")) {
+    text = text.replace(/<(?:think|thinking)>[\s\S]*?(?:<\/(?:think|thinking)>|$)/gi, "").trim();
   }
 
   // 2. Extrai conteúdo dentro de cercas de markdown ```json ... ``` ou ``` ... ```
