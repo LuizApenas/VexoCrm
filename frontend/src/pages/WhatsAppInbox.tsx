@@ -376,10 +376,27 @@ export default function WhatsAppInbox({
   const { getIdToken } = useAuth();
   const [reabrirPending, setReabrirPending] = useState(false);
 
-  const selectedChat = useMemo(
-    () => chats.find((chat) => chat.id === selectedChatId) || null,
-    [chats, selectedChatId]
-  );
+  const selectedChat = useMemo(() => {
+    if (!selectedChatId) return null;
+    const found = chats.find((chat) => chat.id === selectedChatId);
+    if (found) return found;
+
+    const chatCanonical = sanitizePhone(selectedChatId);
+    const matchingLead = leads.find((l) => sanitizePhone(l.telefone || l.phone) === chatCanonical);
+
+    return {
+      id: selectedChatId,
+      name: matchingLead?.nome || matchingLead?.name || selectedChatId,
+      profilePic: null,
+      isGroup: false,
+      unreadCount: 0,
+      timestamp: 0,
+      archived: false,
+      pinned: false,
+      muted: false,
+      lastMessage: null,
+    };
+  }, [chats, selectedChatId, leads]);
 
   // Lead correspondente do banco de dados (Dossiê)
   const matchedLead = useMemo<LeadRow | null>(() => {
@@ -556,32 +573,25 @@ export default function WhatsAppInbox({
       return;
     }
 
-    if (!chats.length) {
-      if (selectedChatId) setSelectedChatId(null);
-      return;
-    }
-
     if (initialPhone) {
       const targetCanonical = sanitizePhone(initialPhone);
-      const match = targetCanonical
-        ? chats.find((chat) => sanitizePhone(chat.id) === targetCanonical)
-        : null;
-
-      if (match) {
-        setSelectedChatId(match.id);
+      if (targetCanonical) {
+        const match = chats.find((chat) => sanitizePhone(chat.id) === targetCanonical);
+        if (match) {
+          setSelectedChatId(match.id);
+        } else {
+          // Se o chat não estiver entre os recentes paginados (ex: lead finalizado / conversa antiga),
+          // seleciona o targetCanonical diretamente para disparar o carregamento das mensagens e dossiê
+          setSelectedChatId(targetCanonical);
+        }
         setSearchParams({}, { replace: true });
         return;
       } else {
-        // Se após canonicalizar não houver match nos chats, NÃO selecione nada
-        // e mostre a lista (evita abrir a conversa de outra pessoa)
-        setSelectedChatId(null);
         setSearchParams({}, { replace: true });
-        return;
       }
     }
 
-    const hasSelectedChat = chats.some((chat) => chat.id === selectedChatId);
-    if (!selectedChatId || !hasSelectedChat) {
+    if (!selectedChatId && chats.length > 0) {
       setSelectedChatId(chats[0].id);
     }
   }, [canLoadInbox, chats, selectedChatId, initialPhone, setSearchParams]);

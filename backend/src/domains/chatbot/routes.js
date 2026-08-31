@@ -2209,8 +2209,6 @@ export function registerChatbotRoutes(app, deps) {
 
     const clientId = normalizeTenantKey(req.query.clientId ?? req.query.client_id);
     const statusFilter = req.query.status || null; // em_atendimento | finalizado | aguardando_usuario | all
-    const limitRaw = Number.parseInt(String(req.query.limit || "200"), 10);
-    const limit = Math.min(Number.isNaN(limitRaw) ? 200 : limitRaw, 500);
 
     if (!clientId) {
       sendError(res, 400, "INVALID_QUERY", "Missing clientId");
@@ -2245,7 +2243,7 @@ export function registerChatbotRoutes(app, deps) {
           )
           SELECT
             l.id,
-            COALESCE(l.telefone, ms.canonical_phone) as telefone,
+            l.telefone,
             l.nome,
             l.status_conversa,
             l.finalizado,
@@ -2263,27 +2261,26 @@ export function registerChatbotRoutes(app, deps) {
             l.lead_source,
             COALESCE(ms.outbound_count, 0)::integer as outbound_count,
             COALESCE(ms.inbound_count, 0)::integer as inbound_count
-          FROM message_stats ms
-          FULL OUTER JOIN public."${leadsTable}" l ON ${SQL_CANONICAL_PHONE("l.telefone")} = ms.canonical_phone AND l.client_id = $1
-          LEFT JOIN latest_msg lm ON lm.canonical_phone = COALESCE(ms.canonical_phone, ${SQL_CANONICAL_PHONE("l.telefone")})
-          WHERE (l.client_id = $1 OR l.client_id IS NULL)
+          FROM public."${leadsTable}" l
+          LEFT JOIN message_stats ms ON ms.canonical_phone = ${SQL_CANONICAL_PHONE("l.telefone")}
+          LEFT JOIN latest_msg lm ON lm.canonical_phone = ${SQL_CANONICAL_PHONE("l.telefone")}
+          WHERE l.client_id = $1
+            AND l.telefone IS NOT NULL
             AND (
               l.finalizado = true
               OR l.status_conversa = 'finalizado'
               OR COALESCE(ms.outbound_count, 0) > 0
               OR COALESCE(ms.inbound_count, 0) > 0
             )
-          ORDER BY COALESCE(ms.last_message_at, l.updated_at, l.created_at) DESC NULLS LAST
-          LIMIT $2;
+          ORDER BY COALESCE(ms.last_message_at, l.updated_at, l.created_at) DESC NULLS LAST;
         `;
-        const result = await pgDatabasePool.query(queryText, [clientId, limit]);
+        const result = await pgDatabasePool.query(queryText, [clientId]);
         rows = result.rows || [];
       } else {
         const { data, error } = await supabase
           .from(leadsTable)
           .select("id, telefone, nome, status_conversa, finalizado, dados, mensagem, lead_temperature, spin_fase, qualificacao, lead_score, created_at, updated_at, lead_origin, source_campaign_id, source_campaign_name, lead_source")
-          .eq("client_id", clientId)
-          .limit(limit);
+          .eq("client_id", clientId);
         if (error) throw error;
         rows = data || [];
       }

@@ -122,4 +122,46 @@ describe("Chatbot Kanban — Derivação de Status por Fatos Observados", () => 
 
     warnSpy.mockRestore();
   });
+
+  it("conversa em lead_messages SEM lead correspondente em public.leads (chats pessoais/LIDs do chip) NÃO entra no Kanban", () => {
+    // Simula a junção SQL com filtro estrito em public.leads (319 chats de histórico do chip)
+    const publicLeads = [
+      { id: "lead-crm-1", telefone: "5534997817660", nome: "Cliente Potencial A", finalizado: false },
+      { id: "lead-crm-2", telefone: "5534988112233", nome: "Cliente Potencial B", finalizado: false },
+    ];
+
+    const leadMessages = [
+      { phone: "5534997817660", direction: "outbound", message_text: "Olá!" },
+      { phone: "5534988112233", direction: "inbound", message_text: "Tenho interesse" },
+      // Chats pessoais do chip / estabelecimentos / LIDs sem lead no CRM (ex: Garage Pub, Bluefit, 107246071587049@lid)
+      { phone: "5534998723435", direction: "inbound", message_text: "Garage Pub cardápio" },
+      { phone: "107246071587049@lid", direction: "inbound", message_text: "Ok" },
+      { phone: "1234567890123@g.us", direction: "inbound", message_text: "Mensagem do grupo" },
+    ];
+
+    // O backend faz FROM public.leads l LEFT JOIN message_stats ms ... WHERE l.client_id = $1
+    // Portanto apenas leads em public.leads são processados
+    const leadMap = new Map(publicLeads.map(l => [l.telefone, l]));
+
+    const kanbanRows = leadMessages
+      .map((msg) => {
+        const lead = leadMap.get(msg.phone);
+        if (!lead) return null; // Ignora chats que não pertencem a leads do CRM
+        return {
+          id: lead.id,
+          telefone: lead.telefone,
+          nome: lead.nome,
+          statusConversa: msg.direction === "inbound" ? "em_atendimento" : "aguardando_usuario",
+        };
+      })
+      .filter(Boolean);
+
+    // Garante que chats pessoais e LIDs NÃO viram cards no Kanban
+    expect(kanbanRows.length).toBe(2);
+    expect(kanbanRows.some((r) => r.id === "lead-crm-1")).toBe(true);
+    expect(kanbanRows.some((r) => r.id === "lead-crm-2")).toBe(true);
+    expect(kanbanRows.some((r) => r.telefone === "5534998723435")).toBe(false);
+    expect(kanbanRows.some((r) => r.telefone.includes("@lid"))).toBe(false);
+    expect(kanbanRows.some((r) => r.telefone.includes("@g.us"))).toBe(false);
+  });
 });
