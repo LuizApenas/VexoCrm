@@ -146,6 +146,24 @@ export function validateOutboundMessage(text) {
 }
 
 /**
+ * Remove blocos de raciocínio de LLMs (<think>...</think>, <thinking>...</thinking>, etc.)
+ * Trata tags fechadas e não-fechadas no início da resposta.
+ */
+export function stripReasoningBlocks(raw) {
+  if (raw === null || raw === undefined) return "";
+  let text = String(raw).trim();
+  if (
+    text.includes("<think") ||
+    text.includes("<thinking") ||
+    text.includes("<thought") ||
+    text.includes("<reflection")
+  ) {
+    text = text.replace(/<(?:think|thinking|thought|reflection)>[\s\S]*?(?:<\/(?:think|thinking|thought|reflection)>|$)/gi, "").trim();
+  }
+  return text;
+}
+
+/**
  * Extrator de JSON multi-estágio resiliente para saídas de LLM.
  * Suporta remoção de tags de raciocínio (<think>), markdown, aspas tipográficas,
  * vírgulas residuais, comentários JS e quebras de linha literais em strings.
@@ -171,9 +189,7 @@ export function extractJsonFromLlmText(raw) {
   }
 
   // 1. Remove blocos <think> ... </think> ou <thinking> ... </thinking> emitidos por modelos de raciocínio
-  if (text.includes("<think") || text.includes("<thinking")) {
-    text = text.replace(/<(?:think|thinking)>[\s\S]*?(?:<\/(?:think|thinking)>|$)/gi, "").trim();
-  }
+  text = stripReasoningBlocks(text);
 
   // 2. Extrai conteúdo dentro de cercas de markdown ```json ... ``` ou ``` ... ```
   const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);

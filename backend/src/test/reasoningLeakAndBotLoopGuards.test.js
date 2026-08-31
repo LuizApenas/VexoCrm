@@ -59,7 +59,22 @@ Here's a thinking process that leads to the suggested response:
     expect(result.reason).toBe("message_exceeds_max_length");
   });
 
-  it("parseAIResponse com dump de <think> descarta a mensagem em vez de vazar para o cliente", () => {
+  it("parseAIResponse no incidente real limpa o bloco <think> e entrega a mensagem legítima ao invés de silenciar", () => {
+    const parsed = parseAIResponse(REAL_INCIDENT_FIXTURE);
+    expect(parsed.mensagem).toBe("Olá! Aqui é a Lara da Sonhare Viagens. Parece que você enviou uma mensagem de outro atendimento por engano. 😊 Como posso te ajudar com suas viagens ou planejamento de férias hoje?");
+    expect(parsed.mensagem).not.toContain("<think>");
+    expect(parsed.mensagem).not.toContain("Arantes Imóveis");
+    expect(parsed.contratoQuebrado).toBe(true);
+  });
+
+  it("teto de 1500 caracteres é aplicado ao texto JÁ LIMPO (dump longo de think + mensagem curta passa com sucesso)", () => {
+    const hugeThinkingBlock = "<think>\n" + "A".repeat(2500) + "\n</think>\nOlá, tudo bem? Como posso te ajudar?";
+    const parsed = parseAIResponse(hugeThinkingBlock);
+    expect(parsed.mensagem).toBe("Olá, tudo bem? Como posso te ajudar?");
+    expect(parsed.contratoQuebrado).toBe(true);
+  });
+
+  it("parseAIResponse com dump EXCLUSIVO de <think> descarta a mensagem em vez de vazar para o cliente", () => {
     const parsed = parseAIResponse(RAW_LEAK_ONLY_THINKING);
     expect(parsed.mensagem).toBe("");
     expect(parsed.contratoQuebrado).toBe(true);
@@ -84,11 +99,10 @@ Thinking about user query...
 });
 
 describe("ITEM 2 — Catálogo de Templates e Fallback Resiliente", () => {
-  it("DEFAULT_BUILTIN_TEMPLATES contém os templates essenciais, incluindo 'generico'", () => {
+  it("DEFAULT_BUILTIN_TEMPLATES contém exclusivamente 'generico' e não ex-clientes", () => {
     expect(DEFAULT_BUILTIN_TEMPLATES).toHaveProperty("generico");
-    expect(DEFAULT_BUILTIN_TEMPLATES).toHaveProperty("outlier");
-    expect(DEFAULT_BUILTIN_TEMPLATES).toHaveProperty("infinie");
-    expect(DEFAULT_BUILTIN_TEMPLATES).toHaveProperty("nexus");
+    expect(DEFAULT_BUILTIN_TEMPLATES).not.toHaveProperty("outlier");
+    expect(DEFAULT_BUILTIN_TEMPLATES).not.toHaveProperty("infinie");
     expect(DEFAULT_BUILTIN_TEMPLATES.generico.template_key).toBe("generico");
     expect(DEFAULT_BUILTIN_TEMPLATES.generico.data_fields.length).toBeGreaterThan(0);
   });

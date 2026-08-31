@@ -16,7 +16,7 @@ import { getLeadClientN8nSettings } from "./services/n8nSettings.js";
 import { qualifyLead } from "./hardcoded-chatbot-persistence.js";
 import { LEADS_OUTLIER_TEMPERATURE } from "./services/leadImport.js";
 import { resolveMessageId } from "./services/inboundGuard.js";
-import { extractJsonFromLlmText, validateOutboundMessage } from "./services/jsonExtractor.js";
+import { extractJsonFromLlmText, validateOutboundMessage, stripReasoningBlocks } from "./services/jsonExtractor.js";
 import { maskPhoneForLog } from "./services/tenant.js";
 
 /**
@@ -913,75 +913,6 @@ export const DEFAULT_BUILTIN_TEMPLATES = {
     },
     is_builtin: true,
   },
-  outlier: {
-    template_key: "outlier",
-    display_name: "Outlier Consórcios",
-    agent_name: "Áureo",
-    agent_role: "SDR da Outlier Consórcios",
-    data_fields: [
-      { key: "interesse", label: "Interesse", description: "Imóvel, veículo, investimento, empresa, carta contemplada", required: true },
-      { key: "objetivo", label: "Objetivo", description: "Morar, investir, trabalho, patrimônio", required: true },
-      { key: "cidade", label: "Cidade", description: "Cidade do lead", required: true },
-      { key: "estado", label: "Estado", description: "Estado (UF)", required: true },
-      { key: "credito_faixa", label: "Faixa de Crédito", description: "Valor aproximado desejado", required: true },
-      { key: "parcela", label: "Parcela", description: "Parcela mensal confortável", required: false },
-      { key: "prazo", label: "Prazo", description: "Logo, próximos meses, com calma", required: true },
-      { key: "lance_entrada_fgts", label: "FGTS / Lance", description: "Tem lance, entrada ou FGTS disponível?", required: true },
-      { key: "melhor_horario", label: "Melhor Horário", description: "Manhã, tarde ou noite", required: true },
-    ],
-    required_fields: ["interesse", "objetivo", "cidade", "estado", "credito_faixa", "prazo", "lance_entrada_fgts", "melhor_horario"],
-    classification: {
-      quente: "Objetivo claro, prazo curto, crédito e parcela informados",
-      morno: "Interesse real mas pesquisando ou faltam dados",
-      frio: "Curioso sem prazo, sem valor, pouca intenção",
-    },
-    is_builtin: true,
-  },
-  infinie: {
-    template_key: "infinie",
-    display_name: "Infinie Energia Solar",
-    agent_name: "Lara",
-    agent_role: "SDR da Infinie Energia Solar",
-    data_fields: [
-      { key: "tipo", label: "Tipo de Instalação", description: "Residência, empresa, rural, condomínio", required: true },
-      { key: "cidade", label: "Cidade", description: "Cidade do lead", required: true },
-      { key: "estado", label: "Estado", description: "Estado (UF)", required: true },
-      { key: "conta_luz_faixa", label: "Conta de Luz", description: "Valor médio mensal da conta de energia", required: true },
-      { key: "tipo_instalacao", label: "Local de Instalação", description: "Telhado, solo, estacionamento", required: false },
-      { key: "prazo", label: "Prazo", description: "Previsão de implementação", required: true },
-      { key: "melhor_horario", label: "Melhor Horário", description: "Manhã, tarde ou noite", required: true },
-    ],
-    required_fields: ["tipo", "cidade", "estado", "conta_luz_faixa", "prazo", "melhor_horario"],
-    classification: {
-      quente: "Tipo definido, conta informada, prazo curto",
-      morno: "Interesse real mas pesquisando ou faltam dados",
-      frio: "Curioso sem prazo, sem valor, pouca intenção",
-    },
-    is_builtin: true,
-  },
-  nexus: {
-    template_key: "nexus",
-    display_name: "Nexus Investimentos",
-    agent_name: "Vítor",
-    agent_role: "SDR da Nexus Investimentos",
-    data_fields: [
-      { key: "interesse", label: "Produto de interesse", description: "Fundo de renda fixa, multimercado, ações, previdência, CDB", required: true },
-      { key: "objetivo", label: "Objetivo financeiro", description: "Aposentadoria, reserva de emergência, patrimônio, crescimento", required: true },
-      { key: "cidade", label: "Cidade", description: "Cidade do lead", required: true },
-      { key: "estado", label: "Estado", description: "Estado (UF)", required: true },
-      { key: "volume", label: "Capital disponível", description: "Ex: 50k-100k", required: true },
-      { key: "prazo", label: "Horizonte de investimento", description: "Curto, médio, longo prazo", required: true },
-      { key: "perfil_risco", label: "Perfil de risco", description: "Conservador, moderado, arrojado", required: true },
-      { key: "melhor_horario", label: "Melhor horário", description: "Manhã, tarde ou noite", required: true },
-    ],
-    required_fields: ["interesse", "objetivo", "volume", "prazo", "perfil_risco", "melhor_horario"],
-    classification: {
-      quente: "volume alto, prazo definido, objetivo claro",
-      morno: "interesse real, sem volume ou sem urgência",
-      frio: "curiosidade sem capital definido",
-    },
-    is_builtin: true,
-  },
 };
 
 /**
@@ -1212,7 +1143,7 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
 
   // Se já for objeto parseado
   if (typeof raw === "object") {
-    const rawMsg = String(raw.mensagem || raw.message || raw.resposta || "");
+    const rawMsg = stripReasoningBlocks(raw.mensagem || raw.message || raw.resposta || "");
     const guard = validateOutboundMessage(rawMsg);
     if (!guard.valid) {
       console.error("[chatbot-ai] CONTRATO QUEBRADO: campo mensagem contém formato/chaves internas vazadas.", {
@@ -1247,7 +1178,7 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
   try {
     const parsed = extractJsonFromLlmText(rawStr);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const rawMsg = String(parsed.mensagem || parsed.message || parsed.resposta || "");
+      const rawMsg = stripReasoningBlocks(parsed.mensagem || parsed.message || parsed.resposta || "");
       const guard = validateOutboundMessage(rawMsg);
       if (!guard.valid) {
         console.error("[chatbot-ai] CONTRATO QUEBRADO: campo mensagem no JSON extraído contém formato/chaves internas vazadas.", {
@@ -1278,15 +1209,16 @@ export function parseAIResponse(raw, fullSystemPrompt = null) {
     }
   } catch (_) {}
 
-  // Se o extrator falhou, verifica se a resposta era texto puro limpo (sem chaves nem JSON cru)
-  const plainTextGuard = validateOutboundMessage(rawStr);
+  // Se o extrator falhou (resposta não é JSON), limpa blocos de raciocínio primeiro e valida o texto limpo
+  const cleanedPlainText = stripReasoningBlocks(rawStr);
+  const plainTextGuard = validateOutboundMessage(cleanedPlainText);
   if (plainTextGuard.valid) {
     console.warn("[chatbot-ai] CONTRATO QUEBRADO: resposta da LLM não é JSON mas é texto puro limpo. Mensagem aproveitada, qualificação perdida.", {
-      rawLength: rawStr.length,
-      rawCompleta: rawStr.slice(0, 500),
+      rawLength: cleanedPlainText.length,
+      rawCompleta: cleanedPlainText.slice(0, 500),
     });
     return {
-      mensagem: rawStr,
+      mensagem: cleanedPlainText,
       status_conversa: "aguardando_usuario",
       dados: {},
       lead_source: null,

@@ -398,24 +398,38 @@ export default function WhatsAppInbox({
     };
   }, [chats, selectedChatId, leads]);
 
+  // Mapa de Leads indexado por telefone canônico para busca rápida em O(1)
+  const leadsByPhone = useMemo(() => {
+    const map = new Map<string, LeadRow>();
+    for (const lead of leads) {
+      const canonical = sanitizePhone(lead.telefone || (lead as any).phone);
+      if (canonical) {
+        map.set(canonical, lead);
+      }
+    }
+    return map;
+  }, [leads]);
+
   // Lead correspondente do banco de dados (Dossiê)
   const matchedLead = useMemo<LeadRow | null>(() => {
     if (!selectedChat) return null;
     const chatCanonical = sanitizePhone(selectedChat.id);
     if (!chatCanonical) return null;
+    return leadsByPhone.get(chatCanonical) || null;
+  }, [selectedChat, leadsByPhone]);
 
-    return (
-      leads.find((l) => {
-        const leadCanonical = sanitizePhone(l.telefone || l.phone);
-        return Boolean(leadCanonical && leadCanonical === chatCanonical);
-      }) || null
-    );
-  }, [selectedChat, leads]);
-
-  // Contagem de conversas onde a última mensagem é do lead (aguardando nossa resposta)
+  // Contagem de conversas onde a última mensagem é do lead OU o robô identificou que precisa de atenção humana
   const awaitingReplyCount = useMemo(
-    () => chats.filter((c) => Boolean(c.lastMessage && !c.lastMessage.fromMe)).length,
-    [chats]
+    () =>
+      chats.filter((c) => {
+        const cPhone = sanitizePhone(c.id);
+        const lead = cPhone ? leadsByPhone.get(cPhone) : null;
+        const precisaAtencao = Boolean(
+          lead?.dados?.precisa_atencao_humana || (lead as any)?.precisa_atencao_humana
+        );
+        return precisaAtencao || Boolean(c.lastMessage && !c.lastMessage.fromMe);
+      }).length,
+    [chats, leadsByPhone]
   );
 
   // Filtro de Conversas por Abas e Busca
@@ -423,9 +437,23 @@ export default function WhatsAppInbox({
     let result = chats;
 
     if (inboxTab === "fila") {
-      result = result.filter((c) => c.unreadCount > 0 || !c.lastMessage?.fromMe);
+      result = result.filter((c) => {
+        const cPhone = sanitizePhone(c.id);
+        const lead = cPhone ? leadsByPhone.get(cPhone) : null;
+        const precisaAtencao = Boolean(
+          lead?.dados?.precisa_atencao_humana || (lead as any)?.precisa_atencao_humana
+        );
+        return precisaAtencao || c.unreadCount > 0 || !c.lastMessage?.fromMe;
+      });
     } else if (inboxTab === "aguardando") {
-      result = result.filter((c) => Boolean(c.lastMessage && !c.lastMessage.fromMe));
+      result = result.filter((c) => {
+        const cPhone = sanitizePhone(c.id);
+        const lead = cPhone ? leadsByPhone.get(cPhone) : null;
+        const precisaAtencao = Boolean(
+          lead?.dados?.precisa_atencao_humana || (lead as any)?.precisa_atencao_humana
+        );
+        return precisaAtencao || Boolean(c.lastMessage && !c.lastMessage.fromMe);
+      });
     } else if (inboxTab === "minhas") {
       result = result.filter((c) => c.lastMessage?.fromMe);
     }
@@ -441,7 +469,7 @@ export default function WhatsAppInbox({
     }
 
     return result;
-  }, [chats, inboxTab, searchQuery]);
+  }, [chats, inboxTab, searchQuery, leadsByPhone]);
 
   const handleReabrirAtendimento = async () => {
     if (!selectedChat || !clientId) return;
@@ -920,7 +948,16 @@ export default function WhatsAppInbox({
                       ? "Grupo WhatsApp"
                       : "Número não disponível"
                     : `+${rawId}`;
-                  const isSelected = chat.id === selectedChatId;
+                  const cPhone = sanitizePhone(chat.id);
+                  const lead = cPhone ? leadsByPhone.get(cPhone) : null;
+                  const precisaAtencao = Boolean(
+                    lead?.dados?.precisa_atencao_humana || (lead as any)?.precisa_atencao_humana
+                  );
+                  const motivoAtencao = String(
+                    lead?.dados?.motivo_atencao_humana ||
+                      (lead as any)?.motivo_atencao_humana ||
+                      "Atenção humana solicitada"
+                  );
 
                   return (
                     <button
@@ -929,7 +966,8 @@ export default function WhatsAppInbox({
                       onClick={() => setSelectedChatId(chat.id)}
                       className={cn(
                         "flex w-full items-start gap-3 p-3 text-left transition-all hover:bg-muted/50 cursor-pointer",
-                        isSelected && "bg-emerald-500/10 border-l-4 border-l-emerald-500 pl-2.5"
+                        isSelected && "bg-emerald-500/10 border-l-4 border-l-emerald-500 pl-2.5",
+                        precisaAtencao && !isSelected && "bg-rose-500/5 border-l-2 border-l-rose-500 pl-2.5"
                       )}
                     >
                       <ChatAvatar label={chat.name || phoneLabel} picture={chat.profilePic} size="md" />
@@ -939,7 +977,11 @@ export default function WhatsAppInbox({
                           <p
                             className={cn(
                               "truncate text-xs font-bold",
-                              isSelected ? "text-emerald-700 dark:text-emerald-300" : "text-foreground"
+                              isSelected
+                                ? "text-emerald-700 dark:text-emerald-300"
+                                : precisaAtencao
+                                ? "text-rose-700 dark:text-rose-300"
+                                : "text-foreground"
                             )}
                           >
                             {chat.name || phoneLabel}
@@ -959,7 +1001,16 @@ export default function WhatsAppInbox({
                               {chat.unreadCount}
                             </span>
                           )}
-                          {chat.lastMessage && !chat.lastMessage.fromMe && (
+                          {precisaAtencao && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 text-[9px] font-bold text-rose-700 dark:text-rose-300"
+                              title={`Atenção humana necessária: ${motivoAtencao}`}
+                            >
+                              <ShieldAlert className="h-2.5 w-2.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                              <span>Atenção Humana</span>
+                            </span>
+                          )}
+                          {chat.lastMessage && !chat.lastMessage.fromMe && !precisaAtencao && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-300">
                               <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                               Aguardando resposta
@@ -1346,6 +1397,24 @@ export default function WhatsAppInbox({
                     </Badge>
                   )}
                 </div>
+
+                {Boolean(matchedLead?.dados?.precisa_atencao_humana || (matchedLead as any)?.precisa_atencao_humana) && (
+                  <div className="w-full mt-2.5 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-left flex items-start gap-2">
+                    <ShieldAlert className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold text-rose-700 dark:text-rose-300">
+                        Atenção Humana Necessária (IA Pausada)
+                      </p>
+                      <p className="text-[10px] text-rose-600/90 dark:text-rose-300/90 leading-tight mt-0.5">
+                        {String(
+                          matchedLead?.dados?.motivo_atencao_humana ||
+                            (matchedLead as any)?.motivo_atencao_humana ||
+                            "Mensagens idênticas repetidas detectadas (loop com bot/menu automático)"
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Estágio do Funil Comercial */}
