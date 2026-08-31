@@ -1405,26 +1405,6 @@ export function registerChatbotRoutes(app, deps) {
       body.clientId ?? body.client_id ?? req.query.clientId ?? req.query.client_id
     ) || "outlier";
 
-    // Verificar se chatbot está habilitado para este tenant.
-    //
-    // `catch (() => null)` engolia o erro e a falha de LEITURA ficava
-    // indistinguivel de "nao configurado": o numero do SDR sumia e o log dizia
-    // "no SDR number configured" com o numero salvo na tela. Falha de leitura
-    // agora aparece no log e e sinalizada, como manda a §4 das diretrizes.
-    let tenantSettingsReadFailed = false;
-    const tenantSettings = await getLeadClientN8nSettings(clientId).catch((err) => {
-      tenantSettingsReadFailed = true;
-      console.error("[chatbot-webhook] falha ao ler settings do tenant", {
-        clientId,
-        error: err?.message || String(err),
-      });
-      return null;
-    });
-    if (tenantSettings && tenantSettings.chatbot_enabled === false) {
-      descartar("chatbot_disabled", { clientId });
-      return;
-    }
-
     const phone = sanitizePhone(
       body.phone || body.telefone || body.remoteJid ||
       body.data?.key?.remoteJid || body.senderJid
@@ -1439,77 +1419,47 @@ export function registerChatbotRoutes(app, deps) {
 
     const instanceName = body.instance || body.instanceName || req.query.instanceName || req.query.instance || null;
 
-    // Agente inbound configurado na tela "Agente IA → Inbound", por NUMERO.
-    // Sem linha configurada, inboundConfig e null e o comportamento antigo
-    // (prompt e modelo do tenant) segue valendo — nada muda para quem ja usa.
-    const inboundConfig = await resolveInboundAgentConfig({ supabase, clientId, instanceName }).catch((err) => {
-      console.warn("[chatbot-webhook] falha ao resolver agente inbound:", err?.message || err);
-      return null;
-    });
+    // Detectar tipo e extrair conteúdo da mensagem
+    let messageData = null;
+    try {
+      messageData = await resolveMessageContent(body);
+    } catch (err) {
+      console.error("[chatbot-webhook] resolveMessageContent error:", err?.message || err);
+    }
 
-    if (inboundConfig && !inboundConfig.enabled) {
-      descartar("inbound_disabled", { clientId, instanceName });
+    if (!messageData || !messageData.text) {
+      descartar("empty_message", { type: messageData?.type, phone: maskPhoneForLog(phone) });
       return;
     }
 
-    // Chips explicitamente vinculados ao chatbot do tenant (aba Configuracoes).
-    // Lista vazia = comportamento antigo (atende qualquer chip sem agente
-    // inbound). Com a lista preenchida, chip de fora nao e atendido — o vinculo
-    // deixa de ser "o que sobrou" e passa a ser o que o usuario marcou.
-    if (!inboundConfig) {
-      const chipsDoChatbot = Array.isArray(tenantSettings?.chatbot_instances)
-        ? tenantSettings.chatbot_instances.map((v) => String(v ?? "").trim()).filter(Boolean)
-        : [];
-      const chipAtual = String(instanceName || "").trim();
-      if (chipsDoChatbot.length > 0) {
-        // O mesmo chip tem TRES nomes: o amigavel, o id, e o ultimo segmento da URL
-        // de disparo. A tela grava o da URL (TabGeral: nomeInstancia), e o webhook
-        // manda body.instance. resolveInstanceNameAliases reconcilia os tres.
-        const allTenantInstances = (await getLeadClientEvolutionInstances(clientId).catch(() => [])) || [];
-        const aliasesDoChip = (await resolveInstanceNameAliases(clientId, chipAtual).catch(() => null)) || [];
-        const nomesDoChipAtual = new Set([chipAtual, ...aliasesDoChip].filter(Boolean));
-
-        // Expande também todos os aliases das instâncias marcadas
-        const nomesMarcadosExpandidos = new Set(chipsDoChatbot);
-        for (const inst of allTenantInstances) {
-          const urlName = inst.dispatch_webhook_url?.split("/").filter(Boolean).pop();
-          if (chipsDoChatbot.includes(inst.id) || chipsDoChatbot.includes(inst.name) || (urlName && chipsDoChatbot.includes(urlName))) {
-            if (inst.id) nomesMarcadosExpandidos.add(inst.id);
-            if (inst.name) nomesMarcadosExpandidos.add(inst.name);
-            if (urlName) nomesMarcadosExpandidos.add(urlName);
-          }
-        }
-
-        const vinculado = Array.from(nomesDoChipAtual).some((nome) => nomesMarcadosExpandidos.has(nome));
-        if (!chipAtual || !vinculado) {
-          // Proteção anti-apagão: se NENHUM dos chips marcados existe nas instâncias ativas do tenant
-          // (lista órfã decorrente de renomeação ou substituição de chip), não descarta o lead ao vivo.
-          const hasAnyValidConfiguredChip = allTenantInstances.some((inst) => {
-            const urlName = inst.dispatch_webhook_url?.split("/").filter(Boolean).pop();
-            return chipsDoChatbot.some((m) => m === inst.id || m === inst.name || (urlName && m === urlName));
-          });
-
-          if (!hasAnyValidConfiguredChip && allTenantInstances.length > 0) {
-            console.warn("[chatbot-webhook] chips_marcados_orfaos: nenhum chip ativo do tenant casa com a lista marcada. Atendendo pelo chip ativo para evitar descarte de lead:", {
-              clientId,
-              chipAtual,
-              chipsMarcados: chipsDoChatbot,
-              instanciasAtivas: allTenantInstances.map((i) => i.name || i.id),
-            });
-          } else {
-            descartar("chip_nao_vinculado", {
-              clientId,
-              chipAtual: chipAtual || null,
-              aliasesDoChipAtual: Array.from(nomesDoChipAtual),
-              chipsMarcados: chipsDoChatbot,
-            });
-            return;
-          }
-        }
-      }
+    // ── ETAPA 3: GRAVAÇÃO DA MENSAGEM RECEBIDA (SEMPRE, INDEPENDENTE DA IA) ──
+    // Toda mensagem recebida de lead é gravada em lead_messages e reflete no Inbox
+    // (Conversas) imediatamente, antes de qualquer decisão sobre avanço de campanha ou IA.
+    // Idempotência garantida via wa_message_id.
+    try {
+      await appendLeadMessage({
+        clientId,
+        phone,
+        senderType: "lead",
+        direction: "inbound",
+        messageText: messageData.text,
+        meta: {
+          source: "hardcoded-chat-webhook",
+          messageType: messageData.type || null,
+          transcribed: messageData.transcribed === true,
+          described: messageData.described === true,
+        },
+        instanceName,
+        waMessageId: messageData.waMessageId || null,
+        messageTimestamp: messageData.messageTimestamp || new Date().toISOString(),
+      });
+    } catch (msgErr) {
+      console.warn("[chatbot-webhook] falha ao gravar mensagem inbound em lead_messages:", msgErr?.message || msgErr);
     }
 
-    // ── Campaign routing ─────────────────────────────────────────────────
+    // ── ETAPA 4: CAMPAIGN ROUTING (AVANÇA PASSO DE CAMPANHA, SE HOUVER) ──
+    // Se o lead respondeu a uma campanha com passo pós-resposta (waitForReply),
+    // avança o fluxo da campanha INDEPENDENTEMENTE do agente de IA estar ligado ou desligado.
     let chatbotPromptTypeOverride = null; // "campanha" | "padrao" | null
     let activeCampaignForLead = null;
     let campaignPromptIdOverride = null;
@@ -1522,13 +1472,7 @@ export function registerChatbotRoutes(app, deps) {
       activeCampaignForLead = campaignReplyContext.activePeriodCampaign;
       temCampanhaParaEsteTelefone = (campaignReplyContext.matches?.length ?? 0) > 0;
 
-      // Por que este lead caiu (ou nao) no fluxo de resposta. Sem isto, "nao
-      // disparou" e indistinguivel de "progresso sem waitForReply" e de "lead
-      // nao encontrado em nenhuma campanha".
-      // O progresso tem de sair do MATCH, nao de activeWaitCampaign: activeWaitCampaign
-      // e processingWaitForReplyMatches[0], que so existe quando o progresso ja esta
-      // pendente. Ler dali era circular — quando emProcessamento e 0 o log dizia null
-      // sem distinguir "item nao encontrado" de "item sem progresso gravado".
+      // Por que este lead caiu (ou nao) no fluxo de resposta.
       const candidato = campaignReplyContext.waitForReplyMatches[0] || campaignReplyContext.matches[0] || null;
       const progressoConsultado = candidato?.leadImportItem?.progress ?? null;
       console.log("[campaign-routing] contexto", {
@@ -1539,8 +1483,6 @@ export function registerChatbotRoutes(app, deps) {
         emProcessamento: campaignReplyContext.processingWaitForReplyMatches.length,
         campanhaCandidata: candidato?.id ?? null,
         matchSource: candidato?.matchSource ?? null,
-        // null aqui = a linha de lead_import_items nao foi encontrada para este
-        // telefone; preenchido = achou o item, o progresso e que nao tem a campanha.
         leadImportItemId: candidato?.leadImportItem?.id ?? null,
         temProgresso: progressoConsultado !== null,
         progressWaitForReply: progressoConsultado?.waitForReply ?? null,
@@ -1582,16 +1524,6 @@ export function registerChatbotRoutes(app, deps) {
           }
         }
       } else if (activeCampaignForLead) {
-        // Lead dentro do periodo de uma campanha ativa.
-        //
-        // DOIS CEREBROS NO MESMO NUMERO, escolhidos pelo CONTEXTO:
-        //   campanha ativa COM roteiro proprio -> agente da campanha
-        //   qualquer outro caso               -> agente de atendimento (inbound)
-        //
-        // O gatilho e o roteiro existir (campaignPromptId), nao o `mode`. Assim
-        // uma campanha antiga — que tem campaign_prompt_id nulo — continua
-        // EXATAMENTE como hoje, e o lead que respondeu a um disparo para de ser
-        // atendido com o roteiro de quem procurou a empresa.
         const escolha = resolveCampaignAgent(activeCampaignForLead);
         campaignPromptIdOverride = escolha.campaignPromptId;
         chatbotPromptTypeOverride = escolha.agente === AGENTE_CAMPANHA && escolha.campaignPromptId ? "campanha" : "padrao";
@@ -1611,7 +1543,6 @@ export function registerChatbotRoutes(app, deps) {
           endsAt: activeCampaignForLead.endsAt,
         });
       } else {
-        // Sem campanha ativa no período → agente de atendimento (inbound)
         console.log("[campaign-routing] agente escolhido", {
           clientId, phone: maskPhoneForLog(phone),
           agente: "atendimento",
@@ -1621,7 +1552,6 @@ export function registerChatbotRoutes(app, deps) {
     } catch (err) {
       console.warn("[chatbot-webhook] campaign routing check failed, continuing normal flow:", err.message);
     }
-    // ─────────────────────────────────────────────────────────────────────
 
     // ── CAMINHO 1: DISPARO DO PRÓXIMO PASSO DE CAMPANHA (EXCLUSÃO MÚTUA ESTREITA) ──
     if (activeWaitCampaignToDispatch) {
@@ -1702,14 +1632,84 @@ export function registerChatbotRoutes(app, deps) {
     }
 
     // ── CAMINHO 2: CHATBOT / AGENTE IA (INBOUND OU AGENTE DE CAMPANHA) ──
-    // Quem o chatbot pode atender. Sem isto, QUALQUER pessoa que escreva para o
-    // numero da empresa recebe atendimento de robo — aconteceu com contato
-    // pessoal do dono. Escopo padrao ('leads_only') so engaja lead conhecido do
-    // tenant ou telefone vindo de campanha; desconhecido fica em silencio, para
-    // atendimento humano.
+    // SÓ AQUI CONSULTA SE O AGENTE DE IA ESTÁ HABILITADO.
+    // O toggle "chatbot_enabled" significa estritamente se o robô responde sozinho ou não.
+    let tenantSettingsReadFailed = false;
+    const tenantSettings = await getLeadClientN8nSettings(clientId).catch((err) => {
+      tenantSettingsReadFailed = true;
+      console.error("[chatbot-webhook] falha ao ler settings do tenant", {
+        clientId,
+        error: err?.message || String(err),
+      });
+      return null;
+    });
+
+    if (tenantSettings && tenantSettings.chatbot_enabled === false) {
+      descartar("chatbot_disabled", { clientId, phone: maskPhoneForLog(phone) });
+      return;
+    }
+
+    // Agente inbound configurado na tela "Agente IA → Inbound", por NUMERO.
+    const inboundConfig = await resolveInboundAgentConfig({ supabase, clientId, instanceName }).catch((err) => {
+      console.warn("[chatbot-webhook] falha ao resolver agente inbound:", err?.message || err);
+      return null;
+    });
+
+    if (inboundConfig && !inboundConfig.enabled) {
+      descartar("inbound_disabled", { clientId, instanceName });
+      return;
+    }
+
+    // Chips explicitamente vinculados ao chatbot do tenant (aba Configuracoes).
+    if (!inboundConfig) {
+      const chipsDoChatbot = Array.isArray(tenantSettings?.chatbot_instances)
+        ? tenantSettings.chatbot_instances.map((v) => String(v ?? "").trim()).filter(Boolean)
+        : [];
+      const chipAtual = String(instanceName || "").trim();
+      if (chipsDoChatbot.length > 0) {
+        const allTenantInstances = (await getLeadClientEvolutionInstances(clientId).catch(() => [])) || [];
+        const aliasesDoChip = (await resolveInstanceNameAliases(clientId, chipAtual).catch(() => null)) || [];
+        const nomesDoChipAtual = new Set([chipAtual, ...aliasesDoChip].filter(Boolean));
+
+        const nomesMarcadosExpandidos = new Set(chipsDoChatbot);
+        for (const inst of allTenantInstances) {
+          const urlName = inst.dispatch_webhook_url?.split("/").filter(Boolean).pop();
+          if (chipsDoChatbot.includes(inst.id) || chipsDoChatbot.includes(inst.name) || (urlName && chipsDoChatbot.includes(urlName))) {
+            if (inst.id) nomesMarcadosExpandidos.add(inst.id);
+            if (inst.name) nomesMarcadosExpandidos.add(inst.name);
+            if (urlName) nomesMarcadosExpandidos.add(urlName);
+          }
+        }
+
+        const vinculado = Array.from(nomesDoChipAtual).some((nome) => nomesMarcadosExpandidos.has(nome));
+        if (!chipAtual || !vinculado) {
+          const hasAnyValidConfiguredChip = allTenantInstances.some((inst) => {
+            const urlName = inst.dispatch_webhook_url?.split("/").filter(Boolean).pop();
+            return chipsDoChatbot.some((m) => m === inst.id || m === inst.name || (urlName && m === urlName));
+          });
+
+          if (!hasAnyValidConfiguredChip && allTenantInstances.length > 0) {
+            console.warn("[chatbot-webhook] chips_marcados_orfaos: nenhum chip ativo do tenant casa com a lista marcada. Atendendo pelo chip ativo para evitar descarte de lead:", {
+              clientId,
+              chipAtual,
+              chipsMarcados: chipsDoChatbot,
+              instanciasAtivas: allTenantInstances.map((i) => i.name || i.id),
+            });
+          } else {
+            descartar("chip_nao_vinculado", {
+              clientId,
+              chipAtual: chipAtual || null,
+              aliasesDoChipAtual: Array.from(nomesDoChipAtual),
+              chipsMarcados: chipsDoChatbot,
+            });
+            return;
+          }
+        }
+      }
+    }
+
+    // Quem o chatbot pode atender. Escopo padrão ('leads_only') só engaja lead conhecido do tenant ou campanha.
     const escopoInbound = resolveInboundScope(tenantSettings);
-    // O numero do SDR e barrado SEMPRE, inclusive no escopo "all": o briefing
-    // que chega nele nao pode virar conversa de lead.
     const telefoneEhSdr = resolveTenantSdrNumbers(tenantSettings).includes(normalizeSdrNumber(phone));
     if (escopoInbound !== INBOUND_SCOPE_ALL || telefoneEhSdr) {
       const leadConhecido = telefoneEhSdr ? false : await telefoneEhLeadConhecido(clientId, phone);
@@ -1728,42 +1728,15 @@ export function registerChatbotRoutes(app, deps) {
     // Responde imediatamente ao Evolution (evita timeout)
     responder({ status: "buffering" }, { clientId, phone: maskPhoneForLog(phone) });
 
-    // Detectar tipo e extrair conteúdo da mensagem (async, sem bloquear resposta)
-    resolveMessageContent(body).then((messageData) => {
-      if (!messageData.text) {
-        console.log("[chatbot-webhook] Empty message, skipping", { type: messageData.type, phone: maskPhoneForLog(phone) });
-        return;
-      }
+    console.log("[chatbot-webhook] Buffering", {
+      clientId,
+      type: messageData.type,
+      phone: maskPhoneForLog(phone),
+      preview: messageData.text.slice(0, 60),
+    });
 
-      console.log("[chatbot-webhook] Buffering", {
-        clientId,
-        type: messageData.type,
-        phone: maskPhoneForLog(phone),
-        preview: messageData.text.slice(0, 60),
-      });
-
-      bufferMessage(clientId, phone, messageData, async (messages) => {
-        try {
-          for (const item of messages) {
-            if (item?.text) {
-              await appendLeadMessage({
-                clientId,
-                phone,
-                senderType: "lead",
-                direction: "inbound",
-                messageText: item.text,
-                meta: {
-                  source: "hardcoded-chat-webhook",
-                  messageType: item.type || null,
-                  transcribed: item.transcribed === true,
-                  described: item.described === true,
-                },
-                instanceName,
-                waMessageId: item.waMessageId || null,
-                messageTimestamp: item.messageTimestamp || new Date().toISOString(),
-              });
-            }
-          }
+    bufferMessage(clientId, phone, messageData, async (messages) => {
+      try {
 
           const chatbotModel = body.modelOverride || tenantSettings?.chatbot_model;
           const promptType = chatbotPromptTypeOverride || "padrao";
@@ -2039,10 +2012,7 @@ export function registerChatbotRoutes(app, deps) {
           console.error("[chatbot-webhook] processBatch error:", err.message);
         }
       });
-    }).catch((err) => {
-      console.error("[chatbot-webhook] resolveMessageContent error:", err.message);
     });
-  });
   /**
    * POST /api/chatbot-test — endpoint síncrono para simulador de conversa no painel
    * Processa a mensagem diretamente (sem buffer, sem Evolution) e retorna a resposta da IA.
