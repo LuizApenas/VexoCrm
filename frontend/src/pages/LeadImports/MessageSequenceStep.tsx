@@ -1,5 +1,5 @@
 import { useRef, type ChangeEvent, type RefObject } from "react";
-import { ArrowDown, ArrowUp, ImagePlus, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ImagePlus, Info, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -205,16 +205,49 @@ export function MessageSequenceStep({
               {/* AI Variations inline trigger */}
               {step.type === "text" && (
                 <div className="border-t border-slate-100 dark:border-white/5 pt-2 space-y-2">
+                  {step.triggerMode === "after_reply" && (
+                    <div className="flex items-start gap-1.5 text-[10px] text-amber-700 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/20 p-2 rounded-lg border border-amber-200/60 dark:border-amber-900/30">
+                      <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        Variações têm pouco efeito aqui: esta etapa sai uma por vez, só para quem respondeu. Elas valem no disparo inicial, que sai para muita gente na mesma janela.
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      disabled={isGeneratingVariants}
-                      onClick={() => onGenerateVariants(step.id, step.text)}
-                      className="text-[11px] font-bold text-violet-500 hover:text-violet-600 flex items-center gap-1 bg-violet-50 dark:bg-violet-950/20 px-2 py-1 rounded-md"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      {isGeneratingVariants ? "Processando..." : "🤖 Gerar Variações Humanizadas (Evitar Spam)"}
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        disabled={isGeneratingVariants}
+                        onClick={() => onGenerateVariants(step.id, step.text)}
+                        className="text-[11px] font-bold text-violet-500 hover:text-violet-600 flex items-center gap-1 bg-violet-50 dark:bg-violet-950/20 px-2 py-1 rounded-md"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        {isGeneratingVariants ? "Processando..." : "🤖 Gerar Variações Humanizadas (Evitar Spam)"}
+                      </button>
+
+                      {step.textVariants && step.textVariants.length > 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const count = step.textVariants?.length || 0;
+                            if (count === 0) return;
+                            const msg = count === 1 ? "Remover a variação?" : `Remover as ${count} variações?`;
+                            if (window.confirm(msg)) {
+                              updateCampaignStep(step.id, { textVariants: [] });
+                            }
+                          }}
+                          className="h-7 text-[11px] text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 gap-1 px-2"
+                          title="Limpar todas as variações desta etapa"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Limpar todas
+                        </Button>
+                      )}
+                    </div>
+
                     <div className="flex items-center gap-1.5">
                       <label className="text-[10px] font-bold uppercase text-slate-500">Quantidade</label>
                       <Input
@@ -260,19 +293,57 @@ export function MessageSequenceStep({
 
                   {step.textVariants && step.textVariants.length > 0 && (
                     <div className="rounded-lg border border-violet-100 bg-violet-50/20 p-2.5 dark:border-violet-900/10 dark:bg-violet-950/5 space-y-2">
-                      <p className="text-[10px] font-bold text-violet-600 dark:text-violet-400">Variações Alternativas Ativas:</p>
-                      <div className="grid gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-bold text-violet-600 dark:text-violet-400">
+                          Variações Alternativas Ativas ({step.textVariants.length}):
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const count = step.textVariants?.length || 0;
+                            if (count === 0) return;
+                            const msg = count === 1 ? "Remover a variação?" : `Remover as ${count} variações?`;
+                            if (window.confirm(msg)) {
+                              updateCampaignStep(step.id, { textVariants: [] });
+                            }
+                          }}
+                          className="text-[10px] font-semibold text-rose-500 hover:text-rose-600 hover:underline flex items-center gap-1"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Limpar todas ({step.textVariants.length})
+                        </button>
+                      </div>
+                      <div className="grid gap-2">
                         {step.textVariants.map((variant, vIdx) => (
-                          <textarea
-                            key={vIdx}
-                            value={variant}
-                            onChange={(e) => {
-                              const updatedVariants = [...(step.textVariants || [])];
-                              updatedVariants[vIdx] = e.target.value;
-                              updateCampaignStep(step.id, { textVariants: updatedVariants });
-                            }}
-                            className="w-full rounded border border-slate-200 bg-white/80 p-2 text-[10px] dark:border-white/5 dark:bg-black/30 font-sans min-h-[44px] resize-y"
-                          />
+                          <div key={vIdx} className="flex items-start gap-1.5 group">
+                            <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 pt-2 shrink-0 w-4 text-right">
+                              {vIdx + 1}.
+                            </span>
+                            <textarea
+                              value={variant}
+                              onChange={(e) => {
+                                const updatedVariants = [...(step.textVariants || [])];
+                                updatedVariants[vIdx] = e.target.value;
+                                updateCampaignStep(step.id, { textVariants: updatedVariants });
+                              }}
+                              className="w-full rounded border border-slate-200 bg-white/80 p-2 text-[10px] dark:border-white/5 dark:bg-black/30 font-sans min-h-[44px] resize-y focus:border-violet-400 focus:outline-none"
+                              placeholder={`Variação ${vIdx + 1}...`}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const updatedVariants = (step.textVariants || []).filter((_, idx) => idx !== vIdx);
+                                updateCampaignStep(step.id, { textVariants: updatedVariants });
+                              }}
+                              className="h-8 w-8 p-0 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 shrink-0"
+                              title={`Remover variação ${vIdx + 1}`}
+                              aria-label={`Remover variação ${vIdx + 1}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         ))}
                       </div>
                     </div>
