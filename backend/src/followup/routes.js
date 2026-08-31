@@ -16,6 +16,8 @@ import { getAnalytics } from "./analyticsService.js";
 import { getFollowupQueue } from "./queue.js";
 import { triggerAutomationRun } from "./automationEngine.js";
 import { defaultGroqModel } from "../services/llmModels.js";
+import { adjustDateToSendWindow, resolveSendWindowConfig } from "../services/sendWindow.js";
+import { getLeadClientN8nSettings } from "../services/n8nSettings.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -730,7 +732,12 @@ function normalizeInstanceList(list, fallback) {
         }
       }
 
-      // 5. Inserir followup_schedule avulso (campaign_id = NULL)
+      // 5. Ajustar data de acordo com a janela de envio permitida do tenant
+      const tenantSettings = await getLeadClientN8nSettings(tenantId);
+      const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+      const effectiveDate = adjustDateToSendWindow(targetDate, sendWindowConfig);
+
+      // 6. Inserir followup_schedule avulso (campaign_id = NULL)
       const { rows: schedRows } = await query(
         `INSERT INTO followup_schedules (campaign_id, company_id, lead_name, phone, status, origin, origin_type)
          VALUES (NULL, $1, $2, $3, 'active', 'manual', 'manual')
@@ -739,17 +746,17 @@ function normalizeInstanceList(list, fallback) {
       );
       const scheduleId = schedRows[0].id;
 
-      // 6. Inserir followup_job com custom_message e template_id = NULL
+      // 7. Inserir followup_job com custom_message e template_id = NULL
       const { rows: jobRows } = await query(
         `INSERT INTO followup_jobs (schedule_id, template_id, custom_message, status, scheduled_for)
          VALUES ($1, NULL, $2, 'pending', $3)
          RETURNING id`,
-        [scheduleId, message, targetDate.toISOString()]
+        [scheduleId, message, effectiveDate.toISOString()]
       );
       const jobId = jobRows[0].id;
 
-      // 7. Enfileirar no BullMQ com delay em milissegundos
-      const delayMs = Math.max(0, targetDate.getTime() - now);
+      // 8. Enfileirar no BullMQ com delay em milissegundos
+      const delayMs = Math.max(0, effectiveDate.getTime() - now);
       await getFollowupQueue().add(
         "send-followup",
         { jobId, customMessage: message },
@@ -760,7 +767,7 @@ function normalizeInstanceList(list, fallback) {
         success: true,
         scheduleId,
         jobId,
-        scheduledFor: targetDate.toISOString(),
+        scheduledFor: effectiveDate.toISOString(),
         delayMs,
         leadName,
         phone: cleanPhone,

@@ -101,4 +101,23 @@ describe("paridade de resolucao de settings e merge de evolution instances", () 
     expect(res.webhookUrl).toBeNull();
     expect(res.source).toBe("tenant_settings_missing");
   });
+
+  it("maskN8nSettings preserva e preenche colunas de send_window com defaults", () => {
+    const masked = maskN8nSettings({
+      client_id: "tenant-teste",
+      send_window_start: "09:00",
+      send_window_end: "18:00",
+      send_window_days: ["mon", "wed", "fri"],
+      send_window_timezone: "America/Manaus",
+      send_window_enabled: true,
+      agent_replies_outside_window: false,
+    });
+
+    expect(masked.send_window_start).toBe("09:00");
+    expect(masked.send_window_end).toBe("18:00");
+    expect(masked.send_window_days).toEqual(["mon", "wed", "fri"]);
+    expect(masked.send_window_timezone).toBe("America/Manaus");
+    expect(masked.send_window_enabled).toBe(true);
+    expect(masked.agent_replies_outside_window).toBe(false);
+  });
 });

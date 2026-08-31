@@ -62,6 +62,18 @@ export interface LeadClientN8nSettingsPayload {
   modulosAvulsos?: string[];
   degustacao_expira_em?: string | null;
   degustacaoExpiraEm?: string | null;
+  send_window_start?: string;
+  sendWindowStart?: string;
+  send_window_end?: string;
+  sendWindowEnd?: string;
+  send_window_days?: string[];
+  sendWindowDays?: string[];
+  send_window_timezone?: string;
+  sendWindowTimezone?: string;
+  send_window_enabled?: boolean;
+  sendWindowEnabled?: boolean;
+  agent_replies_outside_window?: boolean;
+  agentRepliesOutsideWindow?: boolean;
 }
 
 export interface LeadClientEvolutionInstancePayload {
@@ -131,6 +143,12 @@ export interface LeadClientN8nSettingsSummary {
   /** Destinos do briefing. Substitui o campo único; os dois convivem no deploy. */
   sdr_whatsapp_numbers?: string[];
   evolution_instances?: LeadClientEvolutionInstance[];
+  send_window_start?: string;
+  send_window_end?: string;
+  send_window_days?: string[];
+  send_window_timezone?: string;
+  send_window_enabled?: boolean;
+  agent_replies_outside_window?: boolean;
   updated_at: string | null;
   updated_by_email?: string | null;
   allowed_tabs?: string[] | null;

@@ -1,11 +1,12 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Wifi, Flame, ShieldAlert, Activity } from "lucide-react";
+import { Wifi, Flame, ShieldAlert, Activity, Clock } from "lucide-react";
 import Conexoes from "./Conexoes";
 import Aquecimento from "./Aquecimento";
 import EvolutionAdmin from "./EvolutionAdmin";
 import { ChipsHealthReport } from "@/components/chips/ChipsHealthReport";
+import { SendWindowSettings } from "@/components/chips/SendWindowSettings";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { canUseChipsPage, chipLimitFor, chipLimitLabel } from "@/lib/chipLimit";
@@ -104,7 +105,7 @@ export default function ChipsWhatsapp() {
 
           <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
             <div className="border-b border-slate-200 dark:border-white/10 pb-2">
-              <TabsList className="flex w-full max-w-xl bg-muted border border-border h-10 p-1">
+              <TabsList className="flex w-full max-w-2xl bg-muted border border-border h-10 p-1">
                 {hasConexoes && (
                   <TabsTrigger value="conexoes" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
                     <Wifi className="h-3.5 w-3.5 mr-1.5" />
@@ -115,6 +116,12 @@ export default function ChipsWhatsapp() {
                   <TabsTrigger value="saude" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
                     <Activity className="h-3.5 w-3.5 mr-1.5 text-emerald-500" />
                     Saúde & Volume
+                  </TabsTrigger>
+                )}
+                {hasConexoes && (
+                  <TabsTrigger value="horarios" className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground">
+                    <Clock className="h-3.5 w-3.5 mr-1.5 text-primary" />
+                    Horários de Envio
                   </TabsTrigger>
                 )}
                 {hasAquecimento && (
@@ -147,6 +154,19 @@ export default function ChipsWhatsapp() {
                   ) : (
                     <div className="p-8 text-center text-muted-foreground text-sm">
                       Selecione uma empresa para visualizar o relatório de saúde dos chips.
+                    </div>
+                  )}
+                </ErrorBoundary>
+              </TabsContent>
+            )}
+            {hasConexoes && (
+              <TabsContent value="horarios" className="mt-4 focus-visible:outline-none focus-visible:ring-0">
+                <ErrorBoundary>
+                  {crmClient?.selectedClient ? (
+                    <SendWindowSettings tenant={crmClient.selectedClient} />
+                  ) : (
+                    <div className="p-8 text-center text-muted-foreground text-sm">
+                      Selecione uma empresa para configurar os horários de envio.
                     </div>
                   )}
                 </ErrorBoundary>

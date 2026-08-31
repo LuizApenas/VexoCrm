@@ -47,6 +47,11 @@ import {
   isFirstCampaignReply,
 } from "../../chatbot-ai-engine.js";
 import { resolveMessageId } from "../../services/inboundGuard.js";
+import {
+  isWithinSendWindow,
+  getNextSendWindowOpening,
+  resolveSendWindowConfig,
+} from "../../services/sendWindow.js";
 
 let _evolutionDailyUsageSchemaEnsured = false;
 let _dispatchRunsClaimSchemaEnsured = false;
@@ -1332,8 +1337,8 @@ export function registerCampaignsRoutes(app, deps) {
     try {
       const { data: dispatches, error: fetchErr } = await supabase
         .from("campaign_dispatches")
-        .select("id, campaign_id, client_id, name, steps, trigger_type, scheduled_at, status, evolution_instance_id, limit_per_run, offset")
-        .eq("status", "scheduled")
+        .select("id, campaign_id, client_id, name, steps, trigger_type, scheduled_at, status, evolution_instance_id, limit_per_run, offset, error_message")
+        .in("status", ["scheduled", "paused"])
         .lte("scheduled_at", now)
         .order("scheduled_at", { ascending: true })
         .limit(limit);
@@ -1346,6 +1351,20 @@ export function registerCampaignsRoutes(app, deps) {
       const results = [];
       for (const dispatch of dispatches) {
         try {
+          // Se estiver pausado por motivo diferente da janela (ex: chip desconectado), não tenta retomar sozinho
+          if (dispatch.status === "paused" && !String(dispatch.error_message || "").includes("fora da janela de envio")) {
+            continue;
+          }
+
+          const tenantSettings = await getLeadClientN8nSettings(dispatch.client_id);
+          const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+
+          // Verifica se está dentro da janela de envio permitida do tenant
+          if (!isWithinSendWindow(new Date(), sendWindowConfig)) {
+            // Permanece aguardando abertura da janela
+            continue;
+          }
+
           const { data: campaign, error: campErr } = await supabase
             .from("campaigns")
             .select("id, name, client_id, import_id, limit_per_run, analytics_meta, webhook_url, webhook_token")
@@ -1356,20 +1375,17 @@ export function registerCampaignsRoutes(app, deps) {
             throw new Error(campErr?.message || "Campaign not found");
           }
 
-          // CLAIM ATOMICO DO DISPARO. O UPDATE precisa carregar `status = scheduled`:
-          // sem isso, entre o SELECT (status=scheduled) e este UPDATE existe uma janela
-          // em que o proximo ciclo do scheduler (60s) pega o MESMO disparo e roda uma
-          // segunda vez em paralelo. Foi o que reenviou o passo 1 ao mesmo lead as
-          // 19:50, 20:21, 02:08 e 10:58. Se nenhuma linha voltar, outro worker ja pegou.
+          // CLAIM ATOMICO DO DISPARO
           const { data: claimed, error: claimErr } = await supabase
             .from("campaign_dispatches")
             .update({
               status: "running",
+              error_message: null,
               triggered_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             })
             .eq("id", dispatch.id)
-            .eq("status", "scheduled")
+            .in("status", ["scheduled", "paused"])
             .select("id");
 
           if (claimErr) throw claimErr;
@@ -1996,7 +2012,37 @@ export function registerCampaignsRoutes(app, deps) {
         return true;
       }
 
-      return current?.status === "running";
+      if (current?.status !== "running") {
+        return false;
+      }
+
+      // Checa se a janela de envio permitida do tenant fechou durante o processamento do lote
+      try {
+        const tenantSettings = await getLeadClientN8nSettings(clientId);
+        const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+        if (!isWithinSendWindow(new Date(), sendWindowConfig)) {
+          const pauseMsg = `Pausado — fora da janela de envio (${sendWindowConfig.start}–${sendWindowConfig.end}). Retomará automaticamente na próxima janela.`;
+          console.info("[campaign-dispatch] Janela de envio fechou durante a execução do lote. Pausando lote:", {
+            dispatchId,
+            campaignId: campaign.id,
+            clientId,
+            pauseMsg,
+          });
+          await db
+            .from("campaign_dispatches")
+            .update({
+              status: "paused",
+              error_message: pauseMsg,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", dispatchId);
+          return false;
+        }
+      } catch (err) {
+        console.warn("[campaign-dispatch] erro ao verificar janela de envio durante lote:", err?.message || err);
+      }
+
+      return true;
     };
 
     const result = await dispatchCampaignSequence({

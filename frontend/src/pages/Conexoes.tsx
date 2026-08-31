@@ -1,6 +1,7 @@
 import { Wifi } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { EvolutionChipsPanel } from "@/components/EvolutionChipsPanel";
+import { SendWindowSettings } from "@/components/chips/SendWindowSettings";
 import { PageShell } from "@/components/PageShell";
 import { useLeadClients } from "@/hooks/useLeadClients";
 import { useOptionalCrmClient } from "@/hooks/useCrmClient";
@@ -16,7 +17,7 @@ export default function Conexoes() {
     <PageShell
       title="Conexões de WhatsApp"
       subtitle="Monitore os chips de WhatsApp conectados, cotas diárias, estado de aquecimento e pareamento."
-      spacing="space-y-4"
+      spacing="space-y-6"
       compactHero
     >
       {isLoading && (
@@ -34,7 +35,10 @@ export default function Conexoes() {
       )}
 
       {!isLoading && activeTenant && (
-        <EvolutionChipsPanel tenant={activeTenant} />
+        <div className="space-y-6">
+          <EvolutionChipsPanel tenant={activeTenant} />
+          <SendWindowSettings tenant={activeTenant} />
+        </div>
       )}
     </PageShell>
   );

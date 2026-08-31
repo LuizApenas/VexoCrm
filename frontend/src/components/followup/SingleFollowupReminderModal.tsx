@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCreateStandaloneReminder } from "@/hooks/useFollowupQueue";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { formatSendWindowNotice } from "@/lib/sendWindow";
 
 export interface LeadReminderTarget {
   id?: string;
@@ -140,6 +142,13 @@ export function SingleFollowupReminderModal({
   }, [dateTime]);
 
   const isPast = Boolean(targetDate && targetDate.getTime() <= Date.now());
+
+  const crmClient = useOptionalCrmClient();
+  const sendWindowNotice = useMemo(() => {
+    if (!targetDate || isPast) return null;
+    const settings = crmClient?.selectedClient?.n8n_settings;
+    return formatSendWindowNotice(targetDate, settings);
+  }, [targetDate, isPast, crmClient?.selectedClient?.n8n_settings]);
 
   // Cálculo da prévia do texto substituído
   const previewText = useMemo(() => {
@@ -315,6 +324,14 @@ export function SingleFollowupReminderModal({
               <div className="flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-950/30 p-2 rounded-lg border border-rose-200 dark:border-rose-900/50">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>Esse horário já passou. Escolha um momento futuro.</span>
+              </div>
+            )}
+
+            {/* Aviso de Horário Fora da Janela de Envio */}
+            {!isPast && sendWindowNotice && (
+              <div className="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300 bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/30">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>{sendWindowNotice.message}</span>
               </div>
             )}
           </div>

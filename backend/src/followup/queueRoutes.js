@@ -4,6 +4,8 @@
 
 import { query as fupQuery } from "./db.js";
 import { getFollowupQueue } from "./queue.js";
+import { adjustDateToSendWindow, resolveSendWindowConfig } from "../services/sendWindow.js";
+import { getLeadClientN8nSettings } from "../services/n8nSettings.js";
 
 export function registerFollowupQueueRoutes(app, deps) {
   const { normalizeString, requireFirebaseAuth, sendError, supabase } = deps;
@@ -248,12 +250,19 @@ export function registerFollowupQueueRoutes(app, deps) {
 
     try {
       const { rows: schedRows } = await fupQuery(
-        `SELECT fs.id, fs.campaign_id FROM followup_schedules fs WHERE fs.id = $1`,
+        `SELECT fs.id, fs.campaign_id, fco.tenant_id
+           FROM followup_schedules fs
+           JOIN followup_companies fco ON fco.id = fs.company_id
+          WHERE fs.id = $1`,
         [scheduleId]
       );
       if (!schedRows.length) return sendError(res, 404, "NOT_FOUND", "Schedule not found");
 
-      const { campaign_id } = schedRows[0];
+      const { campaign_id, tenant_id } = schedRows[0];
+      const tenantSettings = await getLeadClientN8nSettings(tenant_id || "geracao-digital");
+      const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+      const effectiveDate = adjustDateToSendWindow(targetDate, sendWindowConfig);
+      delayMs = Math.max(0, effectiveDate.getTime() - Date.now());
 
       let resolvedTemplateId = templateId;
       let customMessageToUse = null;
@@ -291,7 +300,7 @@ export function registerFollowupQueueRoutes(app, deps) {
 
       const { rows: jobRows } = await fupQuery(
         `INSERT INTO followup_jobs (schedule_id, template_id, custom_message, status, scheduled_for) VALUES ($1, $2, $3, 'pending', $4) RETURNING id`,
-        [scheduleId, resolvedTemplateId || null, customMessageToUse, targetDate]
+        [scheduleId, resolvedTemplateId || null, customMessageToUse, effectiveDate]
       );
       const newJobId = jobRows[0].id;
 
@@ -301,7 +310,7 @@ export function registerFollowupQueueRoutes(app, deps) {
         { delay: delayMs, jobId: `fup-reschedule-${newJobId}-${Date.now()}` }
       );
 
-      return res.json({ success: true, jobId: newJobId, delayMs, scheduledFor: targetDate.toISOString() });
+      return res.json({ success: true, jobId: newJobId, delayMs, scheduledFor: effectiveDate.toISOString() });
     } catch (err) {
       sendError(res, 500, "RESCHEDULE_FAILED", err instanceof Error ? err.message : "Failed to reschedule");
     }

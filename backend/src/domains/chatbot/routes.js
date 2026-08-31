@@ -65,6 +65,10 @@ import { resolveCampaignAgent } from "../../services/campaignAgentRouting.js";
 import { validateOutboundMessage } from "../../services/jsonExtractor.js";
 import { getCampaignStepPlan } from "../../campaign-outbound.js";
 import { normalizeCampaignPendingStepIndex } from "../../campaign/dispatch.js";
+import {
+  isWithinSendWindow,
+  resolveSendWindowConfig,
+} from "../../services/sendWindow.js";
 
 export function registerChatbotRoutes(app, deps) {
   const {
@@ -1765,6 +1769,21 @@ export function registerChatbotRoutes(app, deps) {
               phone: maskPhoneForLog(phone),
               motivo: outboundGuard.reason,
               preview: aiResponse.mensagem.slice(0, 100),
+            });
+            return;
+          }
+
+          // Janela de Horário Permitido: Checa se o tenant desativou o toggle "Agente responde fora da janela"
+          const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+          if (!sendWindowConfig.agentRepliesOutsideWindow && !isWithinSendWindow(new Date(), sendWindowConfig)) {
+            console.info("[chatbot-webhook] Resposta do agente bloqueada: fora da janela de envio e toggle 'Agente responde fora da janela' está desativado", {
+              clientId,
+              phone: maskPhoneForLog(phone),
+              sendWindowConfig: {
+                start: sendWindowConfig.start,
+                end: sendWindowConfig.end,
+                timezone: sendWindowConfig.timezone,
+              },
             });
             return;
           }

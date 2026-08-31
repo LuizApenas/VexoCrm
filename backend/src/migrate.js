@@ -150,6 +150,17 @@ async function isAlreadyApplied(pool, filename) {
         AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'followup_jobs_content_check')
       )
     ) AS ok`,
+    "20260831160000_add_send_window_settings.sql": `SELECT (
+      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='lead_client_n8n_settings')
+      OR (
+        EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='send_window_start')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='send_window_end')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='send_window_days')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='send_window_timezone')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='send_window_enabled')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='agent_replies_outside_window')
+      )
+    ) AS ok`,
   };
 
   const query = checks[filename];

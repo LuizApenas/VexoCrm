@@ -4,6 +4,8 @@ import crypto from "crypto";
 import { query, getSupabase } from "./db.js";
 import { getFollowupQueue } from "./queue.js";
 import { sanitizePhone } from "../services/leadImport.js";
+import { adjustDateToSendWindow, resolveSendWindowConfig } from "../services/sendWindow.js";
+import { getLeadClientN8nSettings } from "../services/n8nSettings.js";
 
 // ─── Utilitários ─────────────────────────────────────────────────────────────
 
@@ -205,6 +207,19 @@ export async function enrollLead(
     .eq("is_active", true)
     .order("order_index", { ascending: true });
 
+  let tenantId = "geracao-digital";
+  if (campaign.company_id) {
+    const { rows: compRows } = await query(
+      `SELECT tenant_id FROM followup_companies WHERE id = $1 LIMIT 1`,
+      [campaign.company_id]
+    );
+    if (compRows.length && compRows[0].tenant_id) {
+      tenantId = compRows[0].tenant_id;
+    }
+  }
+  const tenantSettings = await getLeadClientN8nSettings(tenantId);
+  const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+
   const now = new Date();
   const queue = getFollowupQueue();
   let enqueued = 0;
@@ -227,8 +242,8 @@ export async function enrollLead(
       continue;
     }
 
-    // Passo com horário que já caiu no passado
-    if (scheduledFor.getTime() <= now.getTime()) {
+    // Passo com horário que já caiu no passado (apenas para gatilhos baseados em evento passado, ex: before_meeting)
+    if (scheduledFor.getTime() <= now.getTime() && tpl.trigger_type !== "on_schedule" && tpl.trigger_type !== "after_enrollment") {
       skippedPastDate++;
       const timeStr = scheduledFor.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
       const dateStr = scheduledFor.toLocaleDateString("pt-BR");
@@ -243,13 +258,16 @@ export async function enrollLead(
       continue;
     }
 
-    const delay = Math.max(0, scheduledFor.getTime() - Date.now());
+    // Aplica a janela de envio permitida do tenant (ex: se cair às 21h ou fim de semana, move para a próxima abertura)
+    const effectiveScheduledFor = adjustDateToSendWindow(scheduledFor, sendWindowConfig);
+
+    const delay = Math.max(0, effectiveScheduledFor.getTime() - Date.now());
 
     // Inserir job no banco
     const { rows: jobRows } = await query(
       `INSERT INTO followup_jobs (schedule_id, template_id, status, scheduled_for)
        VALUES ($1,$2,'pending',$3) RETURNING id`,
-      [scheduleId, tpl.id, scheduledFor.toISOString()]
+      [scheduleId, tpl.id, effectiveScheduledFor.toISOString()]
     );
     const jobDbId = jobRows[0].id;
 

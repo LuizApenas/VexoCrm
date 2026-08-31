@@ -35,7 +35,7 @@ import {
 import { isMaskedSecretPlaceholder, getRequestBearerToken, sendError } from "./httpInfra.js";
 
 export const N8N_SETTINGS_SELECT_FIELDS =
-  "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, chip_limit, degustacao_expira_em, updated_at, updated_by_uid, updated_by_email";
+  "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_instances, chatbot_inbound_scope, recontact_message, sdr_whatsapp_numbers, agent_name, segmentation_config, sdr_whatsapp_number, allowed_tabs, plan_tier, modulos_avulsos, chip_limit, degustacao_expira_em, send_window_start, send_window_end, send_window_days, send_window_timezone, send_window_enabled, agent_replies_outside_window, updated_at, updated_by_uid, updated_by_email";
 
 export function resolveSingleLeadClientSettings(rawRow, instances = []) {
   const masked = rawRow ? maskN8nSettings(rawRow) : null;
@@ -70,6 +70,12 @@ export function maskN8nSettings(row) {
       sdr_whatsapp_numbers: [],
       segmentation_config: buildDefaultSegmentationConfig("outlier"),
       sdr_whatsapp_number: null,
+      send_window_start: "08:00",
+      send_window_end: "20:00",
+      send_window_days: ["mon", "tue", "wed", "thu", "fri"],
+      send_window_timezone: "America/Sao_Paulo",
+      send_window_enabled: true,
+      agent_replies_outside_window: true,
       updated_at: null,
     };
   }
@@ -104,6 +110,14 @@ export function maskN8nSettings(row) {
     degustacao_expira_em: row.degustacao_expira_em || null,
     // Override do limite de chips deste tenant. NULL = usa a regra do plano.
     chip_limit: row.chip_limit === null || row.chip_limit === undefined ? null : Number(row.chip_limit),
+    send_window_start: row.send_window_start || "08:00",
+    send_window_end: row.send_window_end || "20:00",
+    send_window_days: Array.isArray(row.send_window_days) && row.send_window_days.length > 0
+      ? row.send_window_days
+      : ["mon", "tue", "wed", "thu", "fri"],
+    send_window_timezone: row.send_window_timezone || "America/Sao_Paulo",
+    send_window_enabled: row.send_window_enabled !== false,
+    agent_replies_outside_window: row.agent_replies_outside_window !== false,
     // Preserva a lista de instâncias já mascarada por maskEvolutionInstance (server.js:1717).
     // Sem isso a whitelist cortava o campo e a UI mostrava "0 instâncias".
     evolution_instances: Array.isArray(row.evolution_instances) ? row.evolution_instances : [],
@@ -213,6 +227,12 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
   const planTierProvided = Object.prototype.hasOwnProperty.call(body, "planTier") || Object.prototype.hasOwnProperty.call(body, "plan_tier");
   const modulosAvulsosProvided = Object.prototype.hasOwnProperty.call(body, "modulosAvulsos") || Object.prototype.hasOwnProperty.call(body, "modulos_avulsos");
   const degustacaoExpiraEmProvided = Object.prototype.hasOwnProperty.call(body, "degustacaoExpiraEm") || Object.prototype.hasOwnProperty.call(body, "degustacao_expira_em");
+  const sendWindowStartProvided = Object.prototype.hasOwnProperty.call(body, "sendWindowStart") || Object.prototype.hasOwnProperty.call(body, "send_window_start");
+  const sendWindowEndProvided = Object.prototype.hasOwnProperty.call(body, "sendWindowEnd") || Object.prototype.hasOwnProperty.call(body, "send_window_end");
+  const sendWindowDaysProvided = Object.prototype.hasOwnProperty.call(body, "sendWindowDays") || Object.prototype.hasOwnProperty.call(body, "send_window_days");
+  const sendWindowTimezoneProvided = Object.prototype.hasOwnProperty.call(body, "sendWindowTimezone") || Object.prototype.hasOwnProperty.call(body, "send_window_timezone");
+  const sendWindowEnabledProvided = Object.prototype.hasOwnProperty.call(body, "sendWindowEnabled") || Object.prototype.hasOwnProperty.call(body, "send_window_enabled");
+  const agentRepliesOutsideWindowProvided = Object.prototype.hasOwnProperty.call(body, "agentRepliesOutsideWindow") || Object.prototype.hasOwnProperty.call(body, "agent_replies_outside_window");
 
   const payload = {
     active: activeProvided ? body.active !== false : existing?.active ?? true,
@@ -263,6 +283,32 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
       ? sanitizeSegmentationConfig(body.segmentationConfig, body.chatbotModel || existing?.chatbot_model || "generico")
       : sanitizeSegmentationConfig(existing?.segmentation_config, existing?.chatbot_model || body.chatbotModel || "generico"),
     sdr_whatsapp_number: sdrWhatsappNumberProvided ? (normalizeString(body.sdrWhatsappNumber) || null) : existing?.sdr_whatsapp_number ?? null,
+    send_window_start: sendWindowStartProvided
+      ? (typeof (body.sendWindowStart ?? body.send_window_start) === "string" && /^\d{1,2}:\d{2}$/.test((body.sendWindowStart ?? body.send_window_start).trim())
+          ? (body.sendWindowStart ?? body.send_window_start).trim().padStart(5, "0")
+          : "08:00")
+      : existing?.send_window_start ?? "08:00",
+    send_window_end: sendWindowEndProvided
+      ? (typeof (body.sendWindowEnd ?? body.send_window_end) === "string" && /^\d{1,2}:\d{2}$/.test((body.sendWindowEnd ?? body.send_window_end).trim())
+          ? (body.sendWindowEnd ?? body.send_window_end).trim().padStart(5, "0")
+          : "20:00")
+      : existing?.send_window_end ?? "20:00",
+    send_window_days: sendWindowDaysProvided
+      ? (Array.isArray(body.sendWindowDays ?? body.send_window_days)
+          ? (body.sendWindowDays ?? body.send_window_days).map((d) => String(d).toLowerCase().slice(0, 3)).filter(Boolean)
+          : ["mon", "tue", "wed", "thu", "fri"])
+      : existing?.send_window_days ?? ["mon", "tue", "wed", "thu", "fri"],
+    send_window_timezone: sendWindowTimezoneProvided
+      ? (typeof (body.sendWindowTimezone ?? body.send_window_timezone) === "string" && (body.sendWindowTimezone ?? body.send_window_timezone).trim()
+          ? (body.sendWindowTimezone ?? body.send_window_timezone).trim()
+          : "America/Sao_Paulo")
+      : existing?.send_window_timezone ?? "America/Sao_Paulo",
+    send_window_enabled: sendWindowEnabledProvided
+      ? (body.sendWindowEnabled ?? body.send_window_enabled) !== false && (body.sendWindowEnabled ?? body.send_window_enabled) !== "false"
+      : existing?.send_window_enabled ?? true,
+    agent_replies_outside_window: agentRepliesOutsideWindowProvided
+      ? (body.agentRepliesOutsideWindow ?? body.agent_replies_outside_window) !== false && (body.agentRepliesOutsideWindow ?? body.agent_replies_outside_window) !== "false"
+      : existing?.agent_replies_outside_window ?? true,
     // allowed_tabs so e escrita aqui; a garantia das abas dos modulos vem logo
     // abaixo, depois que plan_tier e modulos_avulsos ja estao resolvidos.
     allowed_tabs: allowedTabsProvided

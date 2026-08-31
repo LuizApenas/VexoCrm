@@ -19,6 +19,12 @@ import {
   parseEvolutionWebhookEndpoint,
 } from "../services/evolution.js";
 import { normalizeString } from "../textNormalize.js";
+import {
+  isWithinSendWindow,
+  getNextSendWindowOpening,
+  resolveSendWindowConfig,
+} from "../services/sendWindow.js";
+import { getLeadClientN8nSettings } from "../services/n8nSettings.js";
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
@@ -178,6 +184,36 @@ async function processJob(job) {
     );
     console.log(log, "campanha pausada — reagendado em 5 min");
     return;
+  }
+
+  // Validação da janela de envio permitida do tenant
+  if (row.tenant_id) {
+    try {
+      const tenantSettings = await getLeadClientN8nSettings(row.tenant_id);
+      const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+      if (!isWithinSendWindow(new Date(), sendWindowConfig)) {
+        const nextOpening = getNextSendWindowOpening(new Date(), sendWindowConfig);
+        const delay = Math.max(1000, nextOpening.getTime() - Date.now());
+
+        await query("UPDATE followup_jobs SET scheduled_for=$1 WHERE id=$2", [
+          nextOpening.toISOString(),
+          jobId,
+        ]);
+
+        await getFollowupQueue().add(
+          "send-followup",
+          { jobId, customMessage: customMessage || row.custom_message },
+          { delay, jobId: `fup-window-${jobId}-${nextOpening.getTime()}` }
+        );
+        console.log(
+          log,
+          `fora da janela de envio (${sendWindowConfig.start}–${sendWindowConfig.end}) — reagendado para ${nextOpening.toISOString()}`
+        );
+        return;
+      }
+    } catch (wErr) {
+      console.warn("[followup/worker] erro ao checar janela de envio:", wErr?.message || wErr);
+    }
   }
 
   if (row.campaign_status === "archived" || row.schedule_status === "cancelled") {

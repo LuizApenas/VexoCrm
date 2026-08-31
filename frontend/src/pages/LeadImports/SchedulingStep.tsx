@@ -1,5 +1,5 @@
-import { type Dispatch, type SetStateAction } from "react";
-import { Archive, Bot, Clock3, FilePlus2, Pause, Play, Plus, Trash2, Zap } from "lucide-react";
+import { type Dispatch, type SetStateAction, useMemo } from "react";
+import { AlertTriangle, Archive, Bot, Clock3, FilePlus2, Pause, Play, Plus, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { InfoTip } from "@/components/InfoTip";
 import { cn } from "@/lib/utils";
+import { useOptionalCrmClient } from "@/hooks/useCrmClient";
+import { formatSendWindowNotice } from "@/lib/sendWindow";
 import type { CampaignDispatchOptions } from "@/hooks/useCampanhas";
 import { isConsultantPermissionError } from "@/hooks/useConsultantSchedules";
 import type {
@@ -113,6 +115,16 @@ export function SchedulingStep({
   onCancelEdit,
   onNovaCampanha,
 }: SchedulingStepProps) {
+  const crmClient = useOptionalCrmClient();
+
+  const sendWindowNotice = useMemo(() => {
+    if (newTriggerType !== "scheduled" || !newScheduledAt) return null;
+    const d = new Date(newScheduledAt);
+    if (isNaN(d.getTime())) return null;
+    const settings = crmClient?.selectedClient?.n8n_settings;
+    return formatSendWindowNotice(d, settings);
+  }, [newTriggerType, newScheduledAt, crmClient?.selectedClient?.n8n_settings]);
+
   return (
     <Card className="border-border bg-card shadow-sm text-card-foreground rounded-2xl">
       <CardHeader className="pb-3">
@@ -472,6 +484,12 @@ export function SchedulingStep({
                 onChange={(e) => setNewScheduledAt(e.target.value)}
                 className="h-10 text-xs rounded-xl"
               />
+              {sendWindowNotice && (
+                <div className="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/30">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>{sendWindowNotice.message}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
