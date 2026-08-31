@@ -275,12 +275,23 @@ export function validateLeadsOutlierRecord(record, indexLabel = "") {
 
   return { row };
 }
-export function sanitizePhone(value) {
+export function sanitizePhone(value, defaultDdd = null) {
   const normalized = normalizeString(value);
   if (!normalized) return null;
 
+  // 0. Barrar IDs e JIDs de grupo do WhatsApp (@g.us, @broadcast, -group)
+  const low = normalized.toLowerCase();
+  if (low.includes("@g.us") || low.includes("@broadcast") || low.includes("-group")) {
+    return null;
+  }
+
   let digits = normalized.replace(/\D/g, "");
   if (!digits) return null;
+
+  // Identificador de grupo: números com 15 ou mais dígitos (ex: IDs de grupo de 18 dígitos: 120363049633060243)
+  if (digits.length >= 15) {
+    return null;
+  }
 
   // Remove common Brazilian long-distance prefix if present.
   if (digits.startsWith("0")) {
@@ -288,7 +299,32 @@ export function sanitizePhone(value) {
   }
   if (!digits) return null;
 
-  // 1. Número local de 10 dígitos (DDD [2] + 8 dígitos)
+  const cleanDdd = defaultDdd ? String(defaultDdd).replace(/\D/g, "").slice(0, 2) : null;
+  const hasValidDefaultDdd = cleanDdd && cleanDdd.length === 2;
+
+  // 1. Números curtos de 8 ou 9 dígitos (sem DDD e sem DDI)
+  if (digits.length === 8 || digits.length === 9) {
+    if (hasValidDefaultDdd) {
+      const local = digits;
+      if (digits.length === 8) {
+        const firstDigit = local[0];
+        // Celular que perdeu o 9: primeiro dígito é 6, 7, 8 ou 9 -> adiciona o 9 (13 dígitos com DDI 55)
+        if (["6", "7", "8", "9"].includes(firstDigit)) {
+          return `55${cleanDdd}9${local}`;
+        }
+        // Fixo: primeiro dígito é 2, 3, 4 ou 5 -> mantém fixo de 8 dígitos (12 dígitos com DDI 55)
+        return `55${cleanDdd}${local}`;
+      }
+      if (digits.length === 9) {
+        // Celular de 9 dígitos -> adiciona DDI 55 + DDD -> 13 dígitos
+        return `55${cleanDdd}${local}`;
+      }
+    }
+    // Sem DDD informado, NÃO tenta adivinhar. Retorna null para marcar como incompleto
+    return null;
+  }
+
+  // 2. Número local de 10 dígitos (DDD [2] + 8 dígitos)
   if (digits.length === 10) {
     const ddd = digits.slice(0, 2);
     const local = digits.slice(2);
@@ -301,7 +337,7 @@ export function sanitizePhone(value) {
     return `55${digits}`;
   }
 
-  // 2. Número local de 11 dígitos (DDD [2] + 9 dígitos)
+  // 3. Número local de 11 dígitos (DDD [2] + 9 dígitos)
   if (digits.length === 11) {
     // Se o 3º dígito for 9 (celular BR padrão), prefixa 55 -> 13 dígitos
     if (digits[2] === "9") {
@@ -311,7 +347,7 @@ export function sanitizePhone(value) {
     return digits;
   }
 
-  // 3. Número de 12 dígitos começando com 55 (55 + DDD [2] + 8 dígitos)
+  // 4. Número de 12 dígitos começando com 55 (55 + DDD [2] + 8 dígitos)
   if (digits.length === 12 && digits.startsWith("55")) {
     const ddd = digits.slice(2, 4);
     const local = digits.slice(4);
@@ -324,13 +360,17 @@ export function sanitizePhone(value) {
     return digits;
   }
 
-  // 4. Número de 13 dígitos começando com 55 (55 + DDD [2] + 9 dígitos)
+  // 5. Número de 13 dígitos começando com 55 (55 + DDD [2] + 9 dígitos)
   if (digits.length === 13 && digits.startsWith("55")) {
     return digits;
   }
 
-  // 5. Números internacionais ou outros formatos -> passa intacto
-  return digits;
+  // 6. Formatos internacionais válidos (10 a 14 dígitos) -> passa intacto
+  if (digits.length >= 10 && digits.length < 15) {
+    return digits;
+  }
+
+  return null;
 }
 
 export function buildPhoneLookupVariants(value) {
@@ -548,27 +588,27 @@ export function pickRowValue(row, aliases) {
   return null;
 }
 
-export function normalizeImportedLead(row, clientId) {
-  const telefone = sanitizePhone(
-    pickRowValue(row, [
-      "telefone",
-      "telefones",
-      "fone",
-      "fones",
-      "celular",
-      "celulares",
-      "whatsapp",
-      "whatsapps",
-      "phone",
-      "phones",
-      "numero",
-      "numeros",
-      "numero_telefone",
-      "numero_telefones",
-      "telefone_whatsapp",
-      "telefones_whatsapp",
-    ])
-  );
+export function normalizeImportedLead(row, clientId, defaultDdd = null) {
+  const rawTelefone = pickRowValue(row, [
+    "telefone",
+    "telefones",
+    "fone",
+    "fones",
+    "celular",
+    "celulares",
+    "whatsapp",
+    "whatsapps",
+    "phone",
+    "phones",
+    "numero",
+    "numeros",
+    "numero_telefone",
+    "numero_telefones",
+    "telefone_whatsapp",
+    "telefones_whatsapp",
+  ]);
+
+  const telefone = sanitizePhone(rawTelefone, defaultDdd);
 
   const nome = normalizeString(
     pickRowValue(row, ["nome", "name", "cliente", "contato", "lead", "responsavel"])
@@ -617,6 +657,9 @@ export function normalizeImportedLead(row, clientId) {
     status,
     data_hora: dataHora,
     qualificacao,
+    dados: {
+      telefone_bruto: rawTelefone !== null && rawTelefone !== undefined ? String(rawTelefone).trim() : null,
+    },
   };
 }
 

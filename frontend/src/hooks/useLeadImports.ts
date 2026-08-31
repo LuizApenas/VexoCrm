@@ -35,6 +35,7 @@ interface CreateLeadImportPayload {
   sourceName: string;
   sourceType: string;
   rows: Record<string, unknown>[];
+  defaultDdd?: string;
 }
 
 interface CreateLeadImportResponse {

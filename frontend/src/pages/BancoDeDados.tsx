@@ -341,11 +341,32 @@ export default function BancoDeDados() {
   // Import Modal State (Excel .xlsx/.xls + CSV)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importDefaultDdd, setImportDefaultDdd] = useState<string>("34");
+  const [importRawRows, setImportRawRows] = useState<Record<string, unknown>[]>([]);
+  const [importMapping, setImportMapping] = useState<{ telefone: string | null; nome: string | null }>({ telefone: null, nome: null });
+  const [showImportAuditModal, setShowImportAuditModal] = useState(false);
   const [importTagInput, setImportTagInput] = useState<string>("");
   const [importParsedRows, setImportParsedRows] = useState<Record<string, unknown>[]>([]);
   const [importSanitizePreview, setImportSanitizePreview] = useState<{ validCount: number; invalidCount: number }>({
     validCount: 0,
     invalidCount: 0,
+  });
+  const [importAuditStats, setImportAuditStats] = useState<{
+    total: number;
+    valid: number;
+    intactCount: number;
+    completedCount: number;
+    incompleteCount: number;
+    completedList: Array<{ original: string; result: string }>;
+    incompleteList: Array<{ original: string; reason: string }>;
+  }>({
+    total: 0,
+    valid: 0,
+    intactCount: 0,
+    completedCount: 0,
+    incompleteCount: 0,
+    completedList: [],
+    incompleteList: [],
   });
   const [isUploadingImport, setIsUploadingImport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -606,6 +627,77 @@ export default function BancoDeDados() {
     }
   };
 
+  const recalculateImportStats = (rows: Record<string, unknown>[], mapping: { telefone: string | null; nome: string | null }, ddd: string) => {
+    const cleanDdd = ddd ? ddd.replace(/\D/g, "").slice(0, 2) : null;
+    let intactCount = 0;
+    let completedCount = 0;
+    let incompleteCount = 0;
+    const completedList: Array<{ original: string; result: string }> = [];
+    const incompleteList: Array<{ original: string; reason: string }> = [];
+
+    const normalizedRows = rows.map((row) => {
+      const newRow: Record<string, unknown> = { ...row };
+      const rawPhone = String(row[mapping.telefone || "telefone"] || row.phone || row.celular || row.whatsapp || "").trim();
+      const rawDigits = rawPhone.replace(/\D/g, "");
+      const sanitized = sanitizePhone(rawPhone, cleanDdd);
+
+      if (sanitized) {
+        newRow.telefone = sanitized.startsWith("+") ? sanitized : `+${sanitized}`;
+        const isAlreadyComplete =
+          (rawDigits.length === 12 && rawDigits.startsWith("55") && sanitized === rawDigits) ||
+          (rawDigits.length === 13 && rawDigits.startsWith("55") && sanitized === rawDigits) ||
+          (rawDigits.length >= 10 && rawDigits.length < 15 && !rawDigits.startsWith("55") && sanitized === rawDigits);
+
+        if (isAlreadyComplete) {
+          intactCount++;
+        } else {
+          completedCount++;
+          if (completedList.length < 500) {
+            completedList.push({ original: rawPhone, result: newRow.telefone as string });
+          }
+        }
+      } else {
+        incompleteCount++;
+        let reason = "Formato inválido";
+        if (rawDigits.length === 8 || rawDigits.length === 9) {
+          reason = cleanDdd ? "Telefone incompleto" : "Faltou informar o DDD padrão";
+        } else if (rawDigits.length >= 15 || rawPhone.includes("@g.us")) {
+          reason = "Identificador de grupo do WhatsApp bloqueado";
+        } else if (!rawDigits) {
+          reason = "Sem telefone";
+        }
+        if (incompleteList.length < 500) {
+          incompleteList.push({ original: rawPhone || "(vazio)", reason });
+        }
+      }
+
+      if (mapping.nome && row[mapping.nome]) {
+        newRow.nome = String(row[mapping.nome]).trim();
+      }
+      return newRow;
+    });
+
+    setImportParsedRows(normalizedRows.filter((r) => !!r.telefone));
+    setImportSanitizePreview({ validCount: intactCount + completedCount, invalidCount: incompleteCount });
+    setImportAuditStats({
+      total: rows.length,
+      valid: intactCount + completedCount,
+      intactCount,
+      completedCount,
+      incompleteCount,
+      completedList,
+      incompleteList,
+    });
+  };
+
+  const handleDefaultDddChange = (newDdd: string) => {
+    const clean = newDdd.replace(/\D/g, "").slice(0, 2);
+    setImportDefaultDdd(clean);
+    if (importRawRows.length > 0) {
+      recalculateImportStats(importRawRows, importMapping, clean);
+    }
+  };
+
   // Parse Excel (.xlsx, .xls) or CSV File for Import
   const handleImportFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -619,28 +711,9 @@ export default function BancoDeDados() {
     try {
       const rows = await parseSpreadsheetFile(file);
       const mapping = detectSpreadsheetColumns(rows);
-      let valid = 0;
-      let invalid = 0;
-
-      const normalizedRows = rows.map((row) => {
-        const newRow: Record<string, unknown> = { ...row };
-        const rawPhone = String(row[mapping.telefone || "telefone"] || row.phone || row.celular || row.whatsapp || "").trim();
-        const digits = rawPhone.replace(/\D/g, "");
-
-        if (digits && digits.length >= 8) {
-          valid++;
-          newRow.telefone = digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
-        } else {
-          invalid++;
-        }
-        if (mapping.nome && row[mapping.nome]) {
-          newRow.nome = String(row[mapping.nome]).trim();
-        }
-        return newRow;
-      });
-
-      setImportParsedRows(normalizedRows);
-      setImportSanitizePreview({ validCount: valid, invalidCount: invalid });
+      setImportRawRows(rows);
+      setImportMapping(mapping);
+      recalculateImportStats(rows, mapping, importDefaultDdd);
     } catch (err: any) {
       toast.error("Erro ao ler arquivo da planilha", { description: err.message || "Formato não suportado." });
     }
@@ -667,7 +740,12 @@ export default function BancoDeDados() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ clientId, rows: importParsedRows, importTags }),
+        body: JSON.stringify({
+          clientId,
+          rows: importParsedRows,
+          importTags,
+          defaultDdd: importDefaultDdd || undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -683,6 +761,7 @@ export default function BancoDeDados() {
       setIsImportModalOpen(false);
       setImportFile(null);
       setImportParsedRows([]);
+      setImportRawRows([]);
       fetchLeads();
     } catch (err: any) {
       toast.error("Erro na importação da planilha", { description: err.message });
@@ -2431,6 +2510,20 @@ export default function BancoDeDados() {
 
             {importFile && (
               <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-indigo-100 bg-indigo-50/40 dark:border-indigo-900/30 dark:bg-indigo-950/20 text-xs">
+                  <div>
+                    <label className="font-semibold text-foreground">DDD padrão para números sem DDD:</label>
+                    <p className="text-[10px] text-muted-foreground">Números com 8 ou 9 dígitos serão completados com este DDD e DDI 55.</p>
+                  </div>
+                  <Input
+                    placeholder="34"
+                    maxLength={2}
+                    value={importDefaultDdd}
+                    onChange={(e) => handleDefaultDddChange(e.target.value)}
+                    className="h-8 w-16 text-xs text-center font-mono font-bold border-indigo-200 bg-white dark:bg-slate-900"
+                  />
+                </div>
+
                 <div>
                   <label className="text-xs font-semibold text-foreground flex items-center gap-1">
                     <TagIcon className="w-3.5 h-3.5 text-indigo-500" /> Tag de Origem / Tags Personalizadas
@@ -2446,14 +2539,34 @@ export default function BancoDeDados() {
                   </p>
                 </div>
 
-                <div className="bg-muted/40 border border-border rounded-md p-3 text-xs space-y-1">
-                  <p className="font-medium text-emerald-600 dark:text-emerald-400">
-                    ✓ {importSanitizePreview.validCount} contatos validados no padrão +55...
-                  </p>
-                  {importSanitizePreview.invalidCount > 0 && (
-                    <p className="text-amber-600 dark:text-amber-400">
-                      ⚠ {importSanitizePreview.invalidCount} registros sem fone válido (serão ignorados).
-                    </p>
+                <div className="bg-muted/40 border border-border rounded-md p-3 text-xs space-y-2">
+                  <div className="space-y-1">
+                    {importAuditStats.completedCount > 0 ? (
+                      <p className="font-medium text-emerald-600 dark:text-emerald-400">
+                        ⚡ {importAuditStats.completedCount} números serão completados com {importDefaultDdd ? `DDD ${importDefaultDdd} e ` : ""}DDI 55.
+                      </p>
+                    ) : (
+                      <p className="font-medium text-emerald-600 dark:text-emerald-400">
+                        ✓ {importAuditStats.valid} contatos válidos no padrão +55...
+                      </p>
+                    )}
+                    {importAuditStats.incompleteCount > 0 && (
+                      <p className="text-amber-600 dark:text-amber-400">
+                        ⚠ {importAuditStats.incompleteCount} números ficaram incompletos e não serão importados.
+                      </p>
+                    )}
+                  </div>
+
+                  {(importAuditStats.completedCount > 0 || importAuditStats.incompleteCount > 0) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowImportAuditModal(true)}
+                      className="h-6 px-0 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >
+                      🔍 Ver lista dos completados (original → resultado) e incompletos
+                    </Button>
                   )}
                 </div>
               </div>
@@ -2471,6 +2584,83 @@ export default function BancoDeDados() {
             >
               {isUploadingImport ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : null}
               Processar e Importar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Detalhes da Auditoria de Números na Importação */}
+      <Dialog open={showImportAuditModal} onOpenChange={setShowImportAuditModal}>
+        <DialogContent className="sm:max-w-xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
+              Auditoria de Telefones da Planilha
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Veja exatamente como cada número será tratado antes de salvar no Banco de Dados.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 flex-1 overflow-y-auto min-h-0 text-xs">
+            {importAuditStats.completedCount > 0 && (
+              <div className="space-y-2">
+                <p className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Números Completados com Sucesso ({importAuditStats.completedList.length}):
+                </p>
+                <div className="rounded-lg border border-border bg-background overflow-hidden max-h-48 overflow-y-auto">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-muted/50 font-semibold border-b border-border sticky top-0">
+                      <tr>
+                        <th className="p-2">Original na Planilha</th>
+                        <th className="p-2">Resultado Higienizado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border font-mono">
+                      {importAuditStats.completedList.map((item, i) => (
+                        <tr key={i} className="hover:bg-muted/20">
+                          <td className="p-2 text-muted-foreground">{item.original}</td>
+                          <td className="p-2 text-emerald-600 dark:text-emerald-400 font-bold">{item.result}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {importAuditStats.incompleteCount > 0 && (
+              <div className="space-y-2">
+                <p className="font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  Números Incompletos / Descartados ({importAuditStats.incompleteList.length}):
+                </p>
+                <div className="rounded-lg border border-border bg-background overflow-hidden max-h-48 overflow-y-auto">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-muted/50 font-semibold border-b border-border sticky top-0">
+                      <tr>
+                        <th className="p-2">Original na Planilha</th>
+                        <th className="p-2">Motivo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border font-mono">
+                      {importAuditStats.incompleteList.map((item, i) => (
+                        <tr key={i} className="hover:bg-muted/20">
+                          <td className="p-2 text-rose-500 font-medium">{item.original}</td>
+                          <td className="p-2 text-muted-foreground font-sans">{item.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button size="sm" onClick={() => setShowImportAuditModal(false)} className="text-xs">
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

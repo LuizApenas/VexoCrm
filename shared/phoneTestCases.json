@@ -123,5 +123,60 @@
     "description": "Celular BR com zero à esquerda de longa distância",
     "input": "034997817660",
     "expected": "5534997817660"
+  },
+  {
+    "description": "Telefone 8 dígitos celular completado com DDD informado 34 e DDI 55 (adiciona 9)",
+    "input": "98622270",
+    "defaultDdd": "34",
+    "expected": "5534998622270"
+  },
+  {
+    "description": "Telefone 8 dígitos fixo completado com DDD informado 34 e DDI 55",
+    "input": "32283999",
+    "defaultDdd": "34",
+    "expected": "553432283999"
+  },
+  {
+    "description": "Telefone 8 dígitos sem DDD informado permanece incompleto (retorna null)",
+    "input": "98622270",
+    "expected": null
+  },
+  {
+    "description": "Telefone 9 dígitos celular completado com DDD informado 34 e DDI 55",
+    "input": "998622270",
+    "defaultDdd": "34",
+    "expected": "5534998622270"
+  },
+  {
+    "description": "Telefone 9 dígitos celular formatado completado com DDD 34 e DDI 55",
+    "input": "9 9862-2270",
+    "defaultDdd": "34",
+    "expected": "5534998622270"
+  },
+  {
+    "description": "Telefone 9 dígitos sem DDD informado permanece incompleto (retorna null)",
+    "input": "998622270",
+    "expected": null
+  },
+  {
+    "description": "Telefone 9 dígitos outro DDD (11) completado corretamente",
+    "input": "991359324",
+    "defaultDdd": "11",
+    "expected": "5511991359324"
+  },
+  {
+    "description": "ID de grupo WhatsApp de 18 dígitos é barrado (retorna null)",
+    "input": "120363049633060243",
+    "expected": null
+  },
+  {
+    "description": "JID de grupo WhatsApp com sufixo @g.us é barrado (retorna null)",
+    "input": "120363049633060243@g.us",
+    "expected": null
+  },
+  {
+    "description": "Número longo com 15+ dígitos é barrado (retorna null)",
+    "input": "5534998622270123",
+    "expected": null
   }
 ]

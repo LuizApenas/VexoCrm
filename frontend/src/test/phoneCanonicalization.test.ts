@@ -4,9 +4,9 @@ import { sanitizePhone } from "../lib/phone";
 
 describe("Phone Canonicalization — Frontend & Shared Table Parity", () => {
   describe("sanitizePhone (Frontend)", () => {
-    testCases.forEach(({ description, input, expected }) => {
+    testCases.forEach(({ description, input, defaultDdd, expected }: any) => {
       it(description, () => {
-        expect(sanitizePhone(input)).toBe(expected);
+        expect(sanitizePhone(input, defaultDdd)).toBe(expected);
       });
     });
 

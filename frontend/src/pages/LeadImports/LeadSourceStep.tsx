@@ -1,5 +1,5 @@
-import { type ChangeEvent, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { Filter, Info, Trash2, Plus, Check, ChevronDown, Loader2, AlertTriangle } from "lucide-react";
+import { useState, type ChangeEvent, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Filter, Info, Trash2, Plus, Check, ChevronDown, Loader2, AlertTriangle, AlertCircle, CheckCircle2, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,12 +7,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { InfoTip } from "@/components/InfoTip";
 import { cn } from "@/lib/utils";
 import { ALL_IMPORTS_VALUE, CRM_BASE_VALUE, type LeadImportItem } from "@/hooks/useLeadImports";
 import { getLeadField, type FilterRule } from "@/lib/leadImports/spreadsheet";
 import { darkSelectContentClass, darkSelectItemClass } from "./styles";
 import { SpreadsheetUploader } from "./SpreadsheetUploader";
+
+export interface PhoneAuditStats {
+  total: number;
+  valid: number;
+  intactCount: number;
+  completedCount: number;
+  incompleteCount: number;
+  completedList: Array<{ original: string; result: string }>;
+  incompleteList: Array<{ original: string; reason: string }>;
+}
 
 interface LeadSourceStepProps {
   campaignName: string;
@@ -25,6 +36,10 @@ interface LeadSourceStepProps {
   onImportSpreadsheetOnly: () => void;
   showNumbersModal: boolean;
   onCloseNumbersModal: () => void;
+
+  defaultDdd?: string;
+  onDefaultDddChange?: (value: string) => void;
+  phoneAuditStats?: PhoneAuditStats;
 
   setSelectedFile: Dispatch<SetStateAction<File | null>>;
   setParsedRows: Dispatch<SetStateAction<Record<string, unknown>[]>>;
@@ -69,6 +84,9 @@ export function LeadSourceStep({
   onImportSpreadsheetOnly,
   showNumbersModal,
   onCloseNumbersModal,
+  defaultDdd = "34",
+  onDefaultDddChange,
+  phoneAuditStats,
   setSelectedFile,
   setParsedRows,
   selectedImportId,
@@ -88,6 +106,8 @@ export function LeadSourceStep({
   missingColumnWarnings = [],
   onToggleIncludeMissing,
 }: LeadSourceStepProps) {
+  const [showPhoneAuditModal, setShowPhoneAuditModal] = useState(false);
+
   // Escolher base pronta e planilha nova sao mutuamente exclusivos.
   const clearUpload = () => {
     setSelectedFile(null);
@@ -138,6 +158,8 @@ export function LeadSourceStep({
               }}
               showNumbersModal={showNumbersModal}
               onCloseNumbersModal={onCloseNumbersModal}
+              defaultDdd={defaultDdd}
+              onDefaultDddChange={onDefaultDddChange}
             />
           </div>
 
@@ -383,33 +405,74 @@ export function LeadSourceStep({
         {/* Simplified preview of uploaded or imported leads */}
         {!isLoadingSourceRows && canShowFiltersAndPreview && (
           <div className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-4 dark:border-white/5 dark:bg-slate-900/10 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex gap-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex flex-wrap gap-4">
                 <div>
                   <p className="text-[10px] uppercase font-bold text-slate-400">Total Leads</p>
-                  <p className="text-base font-bold text-slate-700 dark:text-slate-200">{parsedLeadsStats.total}</p>
+                  <p className="text-base font-bold text-slate-700 dark:text-slate-200">
+                    {phoneAuditStats ? phoneAuditStats.total : parsedLeadsStats.total}
+                  </p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase font-bold text-emerald-500">WhatsApp Válidos</p>
-                  <p className="text-base font-bold text-emerald-600 dark:text-emerald-400">{parsedLeadsStats.valid}</p>
+                  <p className="text-base font-bold text-emerald-600 dark:text-emerald-400">
+                    {phoneAuditStats ? phoneAuditStats.valid : parsedLeadsStats.valid}
+                  </p>
                 </div>
-                {parsedLeadsStats.invalid > 0 && (
+                {phoneAuditStats && phoneAuditStats.completedCount > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase font-bold text-rose-500">Formatos Inválidos</p>
-                    <p className="text-base font-bold text-rose-600 dark:text-rose-400">{parsedLeadsStats.invalid}</p>
+                    <p className="text-[10px] uppercase font-bold text-indigo-500">Completados c/ DDD</p>
+                    <p className="text-base font-bold text-indigo-600 dark:text-indigo-400">{phoneAuditStats.completedCount}</p>
+                  </div>
+                )}
+                {(phoneAuditStats ? phoneAuditStats.incompleteCount : parsedLeadsStats.invalid) > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-rose-500">Incompletos / Inválidos</p>
+                    <p className="text-base font-bold text-rose-600 dark:text-rose-400">
+                      {phoneAuditStats ? phoneAuditStats.incompleteCount : parsedLeadsStats.invalid}
+                    </p>
                   </div>
                 )}
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setPreviewOpen(!previewOpen)}
-                className="text-xs h-7 text-indigo-500 hover:text-indigo-600"
-              >
-                {previewOpen ? "Esconder Tabela" : "Ver Contatos"}
-              </Button>
+              <div className="flex items-center gap-2">
+                {phoneAuditStats && (phoneAuditStats.completedCount > 0 || phoneAuditStats.incompleteCount > 0) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowPhoneAuditModal(true)}
+                    className="text-xs h-7 border-indigo-200 text-indigo-600 dark:border-indigo-800 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+                  >
+                    🔍 Ver Auditoria
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPreviewOpen(!previewOpen)}
+                  className="text-xs h-7 text-indigo-500 hover:text-indigo-600"
+                >
+                  {previewOpen ? "Esconder Tabela" : "Ver Contatos"}
+                </Button>
+              </div>
             </div>
+
+            {phoneAuditStats && (phoneAuditStats.completedCount > 0 || phoneAuditStats.incompleteCount > 0) && (
+              <div className="rounded-lg bg-indigo-50/50 p-2.5 text-xs text-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200 border border-indigo-100 dark:border-indigo-900/30 space-y-1">
+                {phoneAuditStats.completedCount > 0 && (
+                  <p>
+                    ⚡ <strong>{phoneAuditStats.completedCount} números</strong> serão completados com{" "}
+                    {defaultDdd ? `DDD ${defaultDdd} e ` : ""}DDI 55.
+                  </p>
+                )}
+                {phoneAuditStats.incompleteCount > 0 && (
+                  <p className="text-rose-600 dark:text-rose-400">
+                    ⚠ <strong>{phoneAuditStats.incompleteCount} números</strong> ficaram incompletos e não serão importados.
+                  </p>
+                )}
+              </div>
+            )}
 
             {previewOpen && (
               <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-white/5 dark:bg-black/30">
@@ -452,6 +515,85 @@ export function LeadSourceStep({
               </div>
             )}
           </div>
+        )}
+
+        {/* Modal: Auditoria Detalhada dos Telefones */}
+        {phoneAuditStats && (
+          <Dialog open={showPhoneAuditModal} onOpenChange={setShowPhoneAuditModal}>
+            <DialogContent className="sm:max-w-xl max-h-[85vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle className="text-sm font-bold flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
+                  Auditoria de Telefones da Planilha
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  Confira como os números serão tratados antes de confirmar o disparo ou importação.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-2 flex-1 overflow-y-auto min-h-0 text-xs">
+                {phoneAuditStats.completedCount > 0 && (
+                  <div className="space-y-2">
+                    <p className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Números Completados com Sucesso ({phoneAuditStats.completedList.length}):
+                    </p>
+                    <div className="rounded-lg border border-border bg-background overflow-hidden max-h-48 overflow-y-auto">
+                      <table className="w-full text-left text-[11px]">
+                        <thead className="bg-muted/50 font-semibold border-b border-border sticky top-0">
+                          <tr>
+                            <th className="p-2">Original na Planilha</th>
+                            <th className="p-2">Resultado Higienizado</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border font-mono">
+                          {phoneAuditStats.completedList.map((item, i) => (
+                            <tr key={i} className="hover:bg-muted/20">
+                              <td className="p-2 text-muted-foreground">{item.original}</td>
+                              <td className="p-2 text-emerald-600 dark:text-emerald-400 font-bold">{item.result}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {phoneAuditStats.incompleteCount > 0 && (
+                  <div className="space-y-2">
+                    <p className="font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      Números Incompletos / Descartados ({phoneAuditStats.incompleteList.length}):
+                    </p>
+                    <div className="rounded-lg border border-border bg-background overflow-hidden max-h-48 overflow-y-auto">
+                      <table className="w-full text-left text-[11px]">
+                        <thead className="bg-muted/50 font-semibold border-b border-border sticky top-0">
+                          <tr>
+                            <th className="p-2">Original na Planilha</th>
+                            <th className="p-2">Motivo</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border font-mono">
+                          {phoneAuditStats.incompleteList.map((item, i) => (
+                            <tr key={i} className="hover:bg-muted/20">
+                              <td className="p-2 text-rose-500 font-medium">{item.original}</td>
+                              <td className="p-2 text-muted-foreground font-sans">{item.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button size="sm" onClick={() => setShowPhoneAuditModal(false)} className="text-xs">
+                  Fechar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
       </CardContent>
     </Card>

@@ -79,7 +79,8 @@ import {
   type StepActionButton,
 } from "@/lib/leadImports/spreadsheet";
 
-import { LeadSourceStep } from "./LeadImports/LeadSourceStep";
+import { sanitizePhone } from "@/lib/phone";
+import { LeadSourceStep, type PhoneAuditStats } from "./LeadImports/LeadSourceStep";
 import { MessageSequenceStep } from "./LeadImports/MessageSequenceStep";
 import { SchedulingStep } from "./LeadImports/SchedulingStep";
 import { WhatsAppPreviewPanel } from "./LeadImports/WhatsAppPreviewPanel";
@@ -174,6 +175,7 @@ export default function LeadImports({
 
   // Lead spreadsheet upload states
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [defaultDdd, setDefaultDdd] = useState<string>("34");
   const [parsedRows, setParsedRows] = useState<Record<string, unknown>[]>([]);
   const [showNumbersModal, setShowNumbersModal] = useState(false);
   const [isImportingFile, setIsImportingFile] = useState(false);
@@ -366,23 +368,83 @@ export default function LeadImports({
   const isMultiSpreadsheet = selectedImportIds.length > 1 || selectedImportId === ALL_IMPORTS_VALUE;
   const previewRows = useMemo(() => filteredRows.slice(0, 15), [filteredRows]);
 
-  const parsedLeadsStats = useMemo(() => {
-    if (filteredRows.length === 0) return { total: 0, valid: 0, invalid: 0 };
-    let valid = 0;
+  const phoneAuditStats: PhoneAuditStats = useMemo(() => {
+    if (filteredRows.length === 0) {
+      return {
+        total: 0,
+        valid: 0,
+        intactCount: 0,
+        completedCount: 0,
+        incompleteCount: 0,
+        completedList: [],
+        incompleteList: [],
+      };
+    }
+
+    let intactCount = 0;
+    let completedCount = 0;
+    let incompleteCount = 0;
+    const completedList: Array<{ original: string; result: string }> = [];
+    const incompleteList: Array<{ original: string; reason: string }> = [];
+
+    const cleanDdd = defaultDdd ? defaultDdd.replace(/\D/g, "").slice(0, 2) : null;
+
     filteredRows.forEach((row) => {
-      const phone =
+      const rawPhone =
         getLeadField(row, ["telefone", "celular", "phone", "number", "whatsapp"]) ||
         String(row.telefone || "");
-      if (phone && phone.replace(/\D/g, "").length >= 8) {
-        valid++;
+      const rawTrimmed = String(rawPhone).trim();
+      const rawDigits = rawTrimmed.replace(/\D/g, "");
+      const sanitized = sanitizePhone(rawTrimmed, cleanDdd);
+
+      if (sanitized) {
+        const isAlreadyComplete =
+          (rawDigits.length === 12 && rawDigits.startsWith("55") && sanitized === rawDigits) ||
+          (rawDigits.length === 13 && rawDigits.startsWith("55") && sanitized === rawDigits) ||
+          (rawDigits.length >= 10 && rawDigits.length < 15 && !rawDigits.startsWith("55") && sanitized === rawDigits);
+
+        if (isAlreadyComplete) {
+          intactCount++;
+        } else {
+          completedCount++;
+          if (completedList.length < 500) {
+            completedList.push({ original: rawTrimmed, result: sanitized });
+          }
+        }
+      } else {
+        incompleteCount++;
+        let reason = "Formato inválido";
+        if (rawDigits.length === 8 || rawDigits.length === 9) {
+          reason = cleanDdd ? "Telefone incompleto" : "Faltou informar o DDD padrão";
+        } else if (rawDigits.length >= 15 || rawTrimmed.includes("@g.us")) {
+          reason = "Identificador de grupo do WhatsApp bloqueado";
+        } else if (!rawDigits) {
+          reason = "Sem telefone";
+        }
+        if (incompleteList.length < 500) {
+          incompleteList.push({ original: rawTrimmed || "(vazio)", reason });
+        }
       }
     });
+
     return {
       total: filteredRows.length,
-      valid,
-      invalid: filteredRows.length - valid,
+      valid: intactCount + completedCount,
+      intactCount,
+      completedCount,
+      incompleteCount,
+      completedList,
+      incompleteList,
     };
-  }, [filteredRows]);
+  }, [filteredRows, defaultDdd]);
+
+  const parsedLeadsStats = useMemo(() => {
+    return {
+      total: phoneAuditStats.total,
+      valid: phoneAuditStats.valid,
+      invalid: phoneAuditStats.incompleteCount,
+    };
+  }, [phoneAuditStats]);
 
   // Campaign builder states
   const [editingCampaignId, setEditingCampaignId] = useLocalStorage<string | null>(`vexo_campaignId_${activeClientId}`, null);
@@ -690,6 +752,7 @@ export default function LeadImports({
         sourceName: selectedFile.name,
         sourceType: selectedFile.name.split(".").pop()?.toLowerCase() || "spreadsheet",
         rows: parsedRows,
+        defaultDdd: defaultDdd || undefined,
       });
 
       toast({
@@ -1615,6 +1678,9 @@ export default function LeadImports({
               onImportSpreadsheetOnly={handleImportSpreadsheetOnly}
               showNumbersModal={showNumbersModal}
               onCloseNumbersModal={() => setShowNumbersModal(false)}
+              defaultDdd={defaultDdd}
+              onDefaultDddChange={setDefaultDdd}
+              phoneAuditStats={phoneAuditStats}
               setSelectedFile={setSelectedFile}
               setParsedRows={setParsedRows}
               selectedImportId={selectedImportId}

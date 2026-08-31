@@ -8,9 +8,9 @@ const testCases = JSON.parse(readFileSync(sharedCasesPath, "utf-8"));
 
 describe("Phone Canonicalization — Backend & Shared Table Parity", () => {
   describe("sanitizePhone (Backend)", () => {
-    testCases.forEach(({ description, input, expected }) => {
+    testCases.forEach(({ description, input, defaultDdd, expected }) => {
       it(description, () => {
-        expect(sanitizePhone(input)).toBe(expected);
+        expect(sanitizePhone(input, defaultDdd)).toBe(expected);
       });
     });
 

@@ -24,8 +24,8 @@ import {
 
 import { buildPhoneLookupVariants, sanitizePhone } from "../../services/leadImport.js";
 
-function sanitizePhoneE164(phoneInput) {
-  const s = sanitizePhone(phoneInput);
+function sanitizePhoneE164(phoneInput, defaultDdd = null) {
+  const s = sanitizePhone(phoneInput, defaultDdd);
   if (!s) return null;
   return s.startsWith("+") ? s : `+${s}`;
 }
@@ -990,11 +990,11 @@ export function registerLeadsRoutes(app, deps) {
 
       const validChats = chats.filter(c => {
         const jid = realPhoneJid(c);
-        if (!jid || jid.includes("@g.us") || jid.includes("@broadcast")) return false;
+        if (!jid || jid.includes("@g.us") || jid.includes("@broadcast") || jid.includes("-group")) return false;
         const digits = jid.split("@")[0].replace(/\D/g, "");
-        // Descarta telefone vazio/curto ("0", "WhatsApp Business" etc.) e o
+        // Descarta telefone vazio/curto ("0", "WhatsApp Business" etc.), grupos (15+ dígitos) e o
         // próprio número conectado (aparecia como lead com telefone zerado).
-        if (!digits || digits.length < 10) return false;
+        if (!digits || digits.length < 10 || digits.length >= 15) return false;
         if (ownerDigits && digits === ownerDigits) return false;
         return true;
       });
@@ -1024,7 +1024,7 @@ export function registerLeadsRoutes(app, deps) {
             if (digits && nm && nm.toLowerCase() !== "você" && nm.toLowerCase() !== "voce") {
               contactNames.set(digits, nm);
             }
-            if (jid.endsWith("@s.whatsapp.net") && digits.length >= 10 && digits !== ownerDigits) {
+            if (jid.endsWith("@s.whatsapp.net") && digits.length >= 10 && digits.length < 15 && digits !== ownerDigits) {
               addressBook.push({ digits, name: nm });
             }
           }
@@ -1227,6 +1227,7 @@ export function registerLeadsRoutes(app, deps) {
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
     if (!clientId) return;
 
+    const defaultDdd = normalizeString(req.body?.defaultDdd);
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
     if (!rows || rows.length === 0) {
       sendError(res, 400, "INVALID_BODY", "Nenhuma linha enviada para importação");
@@ -1246,7 +1247,7 @@ export function registerLeadsRoutes(app, deps) {
 
       for (const row of rows) {
         const rawPhone = row.telefone || row.phone || row.celular || row.whatsapp || row.numero || "";
-        let formattedPhone = sanitizePhoneE164(rawPhone);
+        let formattedPhone = sanitizePhoneE164(rawPhone, defaultDdd);
         const name = normalizeString(row.nome || row.name || row.cliente || row.contato || formattedPhone || "Lead Social");
 
         if (!formattedPhone) {
@@ -1289,6 +1290,7 @@ export function registerLeadsRoutes(app, deps) {
             origem_marketing: originTag,
             lead_source: originTag,
             resumo_chat: row.interesse || row.resumo_chat || "Interação no Direct",
+            telefone_bruto: rawPhone ? String(rawPhone).trim() : null,
           },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -1781,6 +1783,7 @@ export function registerLeadsRoutes(app, deps) {
     const clientId = normalizeString(req.body?.clientId);
     const sourceName = normalizeString(req.body?.sourceName) || "planilha";
     const sourceType = normalizeString(req.body?.sourceType) || "spreadsheet";
+    const defaultDdd = normalizeString(req.body?.defaultDdd);
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
 
     if (!clientId || !rows) {
@@ -1810,13 +1813,19 @@ export function registerLeadsRoutes(app, deps) {
           enrichedRow.nome = row[mapping.nome];
         }
 
-        const normalized = normalizeImportedLead(enrichedRow, clientId);
+        const normalized = normalizeImportedLead(enrichedRow, clientId, defaultDdd);
         const imported = !!normalized.telefone;
+        const rawPhone = String(enrichedRow.telefone ?? "").trim();
+        const rawDigits = rawPhone.replace(/\D/g, "");
         const skipReason = imported
           ? null
           : isImportedLeadEmpty(normalized)
             ? "Linha vazia ou sem dados aproveitaveis"
-            : "Telefone ausente ou invalido";
+            : (rawDigits.length === 8 || rawDigits.length === 9) && !defaultDdd
+              ? "Telefone incompleto (faltou DDD)"
+              : rawDigits.length >= 15 || rawPhone.includes("@g.us")
+                ? "Identificador de grupo do WhatsApp bloqueado"
+                : "Telefone ausente ou invalido";
 
         return {
           rowNumber: index + 2,

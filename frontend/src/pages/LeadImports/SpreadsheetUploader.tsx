@@ -1,6 +1,7 @@
 import { type ChangeEvent, type RefObject } from "react";
 import { AlertCircle, FileSpreadsheet, Loader2, Trash2, Upload, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface SpreadsheetUploaderProps {
   fileInputRef: RefObject<HTMLInputElement>;
@@ -11,6 +12,8 @@ interface SpreadsheetUploaderProps {
   onClear: () => void;
   showNumbersModal: boolean;
   onCloseNumbersModal: () => void;
+  defaultDdd?: string;
+  onDefaultDddChange?: (value: string) => void;
 }
 
 export function SpreadsheetUploader({
@@ -22,6 +25,8 @@ export function SpreadsheetUploader({
   onClear,
   showNumbersModal,
   onCloseNumbersModal,
+  defaultDdd = "34",
+  onDefaultDddChange,
 }: SpreadsheetUploaderProps) {
   return (
     <>
@@ -33,46 +38,63 @@ export function SpreadsheetUploader({
         onChange={onFileChange}
       />
       {selectedFile ? (
-        <div className="flex h-12 items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-indigo-50/20 px-3 dark:border-indigo-800/40 dark:bg-indigo-950/10 text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all">
-          <div className="flex items-center gap-2 truncate">
-            <FileSpreadsheet className="h-4 w-4 text-indigo-500 flex-shrink-0" />
-            <span className="truncate">{selectedFile.name}</span>
+        <div className="space-y-2">
+          <div className="flex h-12 items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-indigo-50/20 px-3 dark:border-indigo-800/40 dark:bg-indigo-950/10 text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all">
+            <div className="flex items-center gap-2 truncate">
+              <FileSpreadsheet className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+              <span className="truncate">{selectedFile.name}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={onImport}
+                disabled={isImportingFile}
+                className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] uppercase font-bold flex items-center gap-1.5 shadow-sm transition-colors border-0"
+              >
+                {isImportingFile ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+                Importar Planilha
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                className="h-8 px-2 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-[10px] uppercase font-bold"
+              >
+                Alterar
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onClear}
+                className="h-8 w-8 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              onClick={onImport}
-              disabled={isImportingFile}
-              className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] uppercase font-bold flex items-center gap-1.5 shadow-sm transition-colors border-0"
-            >
-              {isImportingFile ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Upload className="h-3.5 w-3.5" />
-              )}
-              Importar Planilha
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              className="h-8 px-2 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-[10px] uppercase font-bold"
-            >
-              Alterar
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onClear}
-              className="h-8 w-8 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
+          {onDefaultDddChange && (
+            <div className="flex items-center justify-between gap-2 px-1 text-[11px] text-slate-600 dark:text-slate-400">
+              <span>DDD padrão para números sem DDD:</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  placeholder="34"
+                  maxLength={2}
+                  value={defaultDdd}
+                  onChange={(e) => onDefaultDddChange(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                  className="h-7 w-14 text-xs text-center font-mono font-bold rounded-lg border-indigo-200 bg-white dark:bg-slate-900 dark:border-indigo-900/40"
+                />
+                <span className="text-[10px] text-slate-400">(DDI +55 automático)</span>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div
