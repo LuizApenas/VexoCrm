@@ -61,7 +61,7 @@ import {
   INBOUND_SCOPE_ALL,
 } from "../../services/inboundEngagementPolicy.js";
 import { resolveSdrTarget, resolveTenantSdrNumbers, normalizeSdrNumber } from "../../services/sdrTarget.js";
-import { resolveCampaignAgent } from "../../services/campaignAgentRouting.js";
+import { resolveCampaignAgent, AGENTE_CAMPANHA } from "../../services/campaignAgentRouting.js";
 import { validateOutboundMessage } from "../../services/jsonExtractor.js";
 import { getCampaignStepPlan } from "../../campaign-outbound.js";
 import { normalizeCampaignPendingStepIndex } from "../../campaign/dispatch.js";
@@ -103,6 +103,8 @@ export function registerChatbotRoutes(app, deps) {
     leadsTableName,
     isMissingSchemaError,
   });
+
+  const lastKanbanDivergenceByTenant = new Map();
 
   // Aceita um chip ou VÁRIOS separados por vírgula ("Chip A,Chip B") — o inbox
   // permite selecionar mais de um chip ao mesmo tempo. Devolve todos os aliases
@@ -2304,6 +2306,9 @@ export function registerChatbotRoutes(app, deps) {
         rows = data || [];
       }
 
+      let divergenceCount = 0;
+      const isDebugDivergences = process.env.DEBUG_KANBAN_DIVERGENCES === "true" || process.env.DEBUG_KANBAN_DIVERGENCES === "1";
+
       const allLeads = rows
         .map((row) => {
           const finalizado = Boolean(row.finalizado || row.status_conversa === "finalizado");
@@ -2326,9 +2331,12 @@ export function registerChatbotRoutes(app, deps) {
           }
 
           if (row.status_conversa && row.status_conversa !== derivedStatus) {
-            console.warn(
-              `[chatbot-kanban] Divergência detectada para lead ${row.id || "sem-id"} (${row.telefone}): status_conversa no banco = '${row.status_conversa}', fato derivado = '${derivedStatus}' (outbound=${outboundCount}, inbound=${inboundCount})`
-            );
+            divergenceCount++;
+            if (isDebugDivergences) {
+              console.warn(
+                `[chatbot-kanban] Divergência detectada para lead ${row.id || "sem-id"} (${row.telefone}): status_conversa no banco = '${row.status_conversa}', fato derivado = '${derivedStatus}' (outbound=${outboundCount}, inbound=${inboundCount})`
+              );
+            }
           }
 
           const dados = typeof row.dados === "object" && row.dados !== null ? row.dados : {};
@@ -2356,6 +2364,15 @@ export function registerChatbotRoutes(app, deps) {
           };
         })
         .filter(Boolean);
+
+      const previousDivergenceCount = lastKanbanDivergenceByTenant.get(clientId);
+      if (divergenceCount > 0 && divergenceCount !== previousDivergenceCount) {
+        lastKanbanDivergenceByTenant.set(clientId, divergenceCount);
+        console.info(`[chatbot-kanban] ${divergenceCount} divergências status_conversa vs fato derivado (${clientId})`);
+      } else if (divergenceCount === 0 && previousDivergenceCount !== undefined && previousDivergenceCount !== 0) {
+        lastKanbanDivergenceByTenant.set(clientId, 0);
+        console.info(`[chatbot-kanban] 0 divergências status_conversa vs fato derivado (${clientId})`);
+      }
 
       const filteredLeads = (statusFilter && statusFilter !== "all")
         ? allLeads.filter((l) => l.statusConversa === statusFilter)

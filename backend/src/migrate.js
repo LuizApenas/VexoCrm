@@ -210,11 +210,37 @@ async function runMigration(pool, filename) {
   }
 }
 
+let migrationStatus = {
+  status: "idle", // "idle" | "running" | "completed" | "failed" | "skipped"
+  lastRunAt: null,
+  totalFiles: 0,
+  appliedCount: 0,
+  pendingCount: 0,
+  failedMigration: null,
+  error: null,
+};
+
+export function getMigrationStatus() {
+  return { ...migrationStatus };
+}
+
 export async function runMigrations(pool) {
   if (!pool) {
     console.warn("[migrate] No Postgres pool — skipping");
+    migrationStatus = {
+      status: "skipped",
+      lastRunAt: new Date().toISOString(),
+      totalFiles: 0,
+      appliedCount: 0,
+      pendingCount: 0,
+      failedMigration: null,
+      error: "No Postgres pool configured",
+    };
     return;
   }
+
+  migrationStatus.status = "running";
+  migrationStatus.lastRunAt = new Date().toISOString();
 
   try {
     await ensureMigrationsTable(pool);
@@ -224,10 +250,14 @@ export async function runMigrations(pool) {
       files = (await readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith(".sql")).sort();
     } catch {
       console.warn("[migrate] Migrations dir not found:", MIGRATIONS_DIR);
+      migrationStatus.status = "failed";
+      migrationStatus.error = `Migrations dir not found: ${MIGRATIONS_DIR}`;
       return;
     }
 
     const applied = await getAppliedMigrations(pool);
+    migrationStatus.totalFiles = files.length;
+    migrationStatus.appliedCount = applied.size;
 
     // Bootstrap: banco já existe mas sem histórico → detectar e marcar migrations já aplicadas
     if (applied.size === 0 && (await hasExistingSchema(pool))) {
@@ -240,29 +270,77 @@ export async function runMigrations(pool) {
       }
       // Re-checar o que ainda está pendente após bootstrap
       const afterBootstrap = await getAppliedMigrations(pool);
+      migrationStatus.appliedCount = afterBootstrap.size;
       const pending = files.filter((f) => !afterBootstrap.has(f));
+      migrationStatus.pendingCount = pending.length;
       if (pending.length === 0) {
         console.info("[migrate] All migrations already applied");
+        migrationStatus.status = "completed";
+        migrationStatus.failedMigration = null;
+        migrationStatus.error = null;
         return;
       }
       for (const file of pending) {
-        await runMigration(pool, file);
+        try {
+          await runMigration(pool, file);
+          migrationStatus.appliedCount++;
+          migrationStatus.pendingCount--;
+        } catch (mErr) {
+          migrationStatus.status = "failed";
+          migrationStatus.failedMigration = file;
+          migrationStatus.error = mErr.message;
+          console.error("══════════════════════════════════════════════════════════════════════════════");
+          console.error(`🚨 [migrate] ERRO CRÍTICO NA MIGRATION: ${file}`);
+          console.error(`🚨 [migrate] Motivo: ${mErr.message}`);
+          console.error(`🚨 [migrate] A cadeia de migrations parou! As migrations seguintes NÃO rodaram.`);
+          console.error("══════════════════════════════════════════════════════════════════════════════");
+          return;
+        }
       }
+      migrationStatus.status = "completed";
+      migrationStatus.failedMigration = null;
+      migrationStatus.error = null;
       return;
     }
 
     const pending = files.filter((f) => !applied.has(f));
+    migrationStatus.pendingCount = pending.length;
     if (pending.length === 0) {
       console.info("[migrate] No pending migrations");
+      migrationStatus.status = "completed";
+      migrationStatus.failedMigration = null;
+      migrationStatus.error = null;
       return;
     }
 
     console.info(`[migrate] Running ${pending.length} migration(s)...`);
     for (const file of pending) {
-      await runMigration(pool, file);
+      try {
+        await runMigration(pool, file);
+        migrationStatus.appliedCount++;
+        migrationStatus.pendingCount--;
+      } catch (mErr) {
+        migrationStatus.status = "failed";
+        migrationStatus.failedMigration = file;
+        migrationStatus.error = mErr.message;
+        console.error("══════════════════════════════════════════════════════════════════════════════");
+        console.error(`🚨 [migrate] ERRO CRÍTICO NA MIGRATION: ${file}`);
+        console.error(`🚨 [migrate] Motivo: ${mErr.message}`);
+        console.error(`🚨 [migrate] A cadeia de migrations parou! As ${migrationStatus.pendingCount} migration(s) restante(s) NÃO rodaram.`);
+        console.error("══════════════════════════════════════════════════════════════════════════════");
+        return;
+      }
     }
     console.info("[migrate] All migrations applied");
+    migrationStatus.status = "completed";
+    migrationStatus.failedMigration = null;
+    migrationStatus.error = null;
   } catch (err) {
-    console.error("[migrate] Error:", err.message);
+    migrationStatus.status = "failed";
+    migrationStatus.error = err.message;
+    console.error("══════════════════════════════════════════════════════════════════════════════");
+    console.error(`🚨 [migrate] ERRO GERAL NO RUNNER DE MIGRATIONS: ${err.message}`);
+    console.error("══════════════════════════════════════════════════════════════════════════════");
   }
 }
+

@@ -15,6 +15,7 @@ import {
   buildCommercialIntelligencePayload,
   getCommercialIntelligenceDefaultSettings,
 } from "../../commercial-intelligence.js";
+import { getMigrationStatus } from "../../migrate.js";
 
 const dirnameInsights = dirname(fileURLToPath(import.meta.url));
 
@@ -151,6 +152,7 @@ export function registerInsightsRoutes(app, deps) {
           : null,
       build: BUILD_INFO_PUBLICO(),
       uptimeSeconds: process.uptime(),
+      migrations: getMigrationStatus(),
       services,
     });
   });

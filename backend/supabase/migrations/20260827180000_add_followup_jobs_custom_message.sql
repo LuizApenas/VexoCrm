@@ -8,7 +8,13 @@ ALTER TABLE public.followup_schedules ALTER COLUMN campaign_id DROP NOT NULL;
 ALTER TABLE public.followup_jobs ADD COLUMN IF NOT EXISTS custom_message TEXT;
 ALTER TABLE public.followup_jobs ALTER COLUMN template_id DROP NOT NULL;
 
--- 3. CHECK de integridade em followup_jobs: garante que todo job tem template_id OU custom_message preenchida e não vazia
+-- 3. Limpa linhas órfãs/inválidas sem template e sem mensagem customizada antes de aplicar o CHECK
+-- Jobs sem template_id e sem custom_message não têm nenhum conteúdo e nunca poderiam ser enviados.
+DELETE FROM public.followup_jobs
+WHERE template_id IS NULL
+  AND (custom_message IS NULL OR length(trim(custom_message)) = 0);
+
+-- 4. CHECK de integridade em followup_jobs: garante que todo job tem template_id OU custom_message preenchida e não vazia
 ALTER TABLE public.followup_jobs DROP CONSTRAINT IF EXISTS followup_jobs_content_check;
 ALTER TABLE public.followup_jobs
   ADD CONSTRAINT followup_jobs_content_check
