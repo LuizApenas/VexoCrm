@@ -50,6 +50,7 @@ import {
   type CampaignSequenceStep,
 } from "@/hooks/useCampanhas";
 import { DispatchRecipientsDialog } from "./LeadImports/DispatchRecipientsDialog";
+import { DuplicateDispatchWarningDialog } from "./LeadImports/DuplicateDispatchWarningDialog";
 import {
   useConsultantSchedules,
   useCreateConsultantSchedule,
@@ -406,6 +407,14 @@ export default function LeadImports({
   // hoje (waitForReply false, mode disparo): campanha existente nao muda.
   const [replyAgent, setReplyAgent] = useLocalStorage<"passos" | "campanha" | "atendimento">(`vexo_replyAgent_${activeClientId}`, "atendimento");
   const [campaignAgentPrompt, setCampaignAgentPrompt] = useLocalStorage(`vexo_replyAgentPrompt_${activeClientId}`, "");
+
+  const [duplicateWarningState, setDuplicateWarningState] = useState<{
+    open: boolean;
+    campaignName: string;
+    pendingBatches: CampaignDispatch[];
+    pendingRecipientsCount: number;
+    isProcessing?: boolean;
+  } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sequenceImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -960,6 +969,69 @@ export default function LeadImports({
       return;
     }
 
+    // ⚡ ITEM 1: Checa se a campanha alvo já tem lotes pendentes ("scheduled", "running", "paused")
+    const targetCampaign = editingCampaignId
+      ? campaigns.find((c) => c.id === editingCampaignId)
+      : campaigns.find((c) => c.name?.trim().toLowerCase() === campaignName.trim().toLowerCase());
+    const targetCampaignId = targetCampaign?.id;
+
+    const pendingBatches = targetCampaignId
+      ? dispatches.filter(
+          (d) =>
+            d.campaign_id === targetCampaignId &&
+            (d.status === "scheduled" || d.status === "running" || d.status === "paused")
+        )
+      : [];
+
+    if (pendingBatches.length > 0) {
+      const pendingRecipients = pendingBatches.reduce((acc, d) => acc + (d.target_count ?? 0), 0);
+      setDuplicateWarningState({
+        open: true,
+        campaignName: targetCampaign?.name || campaignName.trim(),
+        pendingBatches,
+        pendingRecipientsCount: pendingRecipients,
+        isProcessing: false,
+      });
+      return;
+    }
+
+    await executeCreateAndDispatch();
+  }
+
+  async function handleCancelPreviousAndCreate() {
+    if (!duplicateWarningState) return;
+    setDuplicateWarningState((prev) => (prev ? { ...prev, isProcessing: true } : null));
+
+    try {
+      const token = await getIdToken();
+      // TRAVA: apenas lotes que não estejam "running" são cancelados
+      const batchesToCancel = duplicateWarningState.pendingBatches.filter((b) => b.status !== "running");
+
+      for (const batch of batchesToCancel) {
+        await fetch(`${API_BASE_URL}/api/campaigns/dispatches/${batch.id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+
+      setDuplicateWarningState(null);
+      await executeCreateAndDispatch();
+    } catch (err) {
+      toast({
+        title: "Erro ao cancelar lotes anteriores",
+        description: err instanceof Error ? err.message : "Não foi possível cancelar as filas antigas.",
+        variant: "destructive",
+      });
+      setDuplicateWarningState(null);
+    }
+  }
+
+  async function handleCreateAnyway() {
+    setDuplicateWarningState(null);
+    await executeCreateAndDispatch();
+  }
+
+  async function executeCreateAndDispatch() {
     setIsSubmitting(true);
     setSubmittingStatus("Preparando importação de leads...");
 
@@ -1241,6 +1313,32 @@ export default function LeadImports({
     }
   };
 
+  const handleDeleteMultipleDispatches = async (dispIds: string[]) => {
+    if (dispIds.length === 0) return;
+    try {
+      const token = await getIdToken();
+      let successCount = 0;
+      for (const id of dispIds) {
+        const res = await fetch(`${API_BASE_URL}/api/campaigns/dispatches/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) successCount++;
+      }
+      toast({
+        title: "Lotes removidos",
+        description: `${successCount} ${successCount === 1 ? "lote removido" : "lotes removidos"} com sucesso.`,
+      });
+      refetchDispatches();
+    } catch (err) {
+      toast({
+        title: "Erro",
+        description: err instanceof Error ? err.message : "Não foi possível remover.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleDeleteDispatchBatch = async (dispId: string) => {
     // Quantos leads ficam sem receber. Excluir um lote pausado com milhares de
     // leads pendentes e irreversivel, e o numero e a unica coisa que deixa o
@@ -1250,10 +1348,12 @@ export default function LeadImports({
     const alvo = lote?.target_count ?? null;
     const pendentes = alvo != null ? Math.max(0, alvo - enviados - (lote?.failed_count ?? 0)) : null;
 
+    const enviadosAviso = enviados > 0 ? `\n\nℹ️ ${enviados} destinatários já receberam mensagem deste lote. O histórico permanecerá preservado no Inbox.` : "";
+
     const aviso =
       pendentes != null && pendentes > 0
-        ? `Excluir o lote "${lote?.name || dispId}" permanentemente?\n\n${pendentes} ${pendentes === 1 ? "lead ficará" : "leads ficarão"} sem receber. Quem já recebeu não é afetado.\n\nEsta ação não pode ser desfeita.`
-        : `Excluir o lote "${lote?.name || dispId}" permanentemente do histórico?\n\nEsta ação não pode ser desfeita.`;
+        ? `Excluir o lote "${lote?.name || dispId}" permanentemente?\n\n${pendentes} ${pendentes === 1 ? "lead ficará" : "leads ficarão"} sem receber.${enviadosAviso}\n\nEsta ação não pode ser desfeita.`
+        : `Excluir o lote "${lote?.name || dispId}" permanentemente do histórico?${enviadosAviso}\n\nEsta ação não pode ser desfeita.`;
 
     if (!confirm(aviso)) return;
     try {
@@ -1633,6 +1733,7 @@ export default function LeadImports({
           onPauseDispatchBatch={handlePauseDispatchBatch}
           onDownloadFailedCsv={handleDownloadFailedCsv}
           onDeleteDispatchBatch={handleDeleteDispatchBatch}
+          onDeleteMultipleDispatches={handleDeleteMultipleDispatches}
           onPreviewDispatch={(dispId) => setPreviewDispatchId(dispId)}
           onEditDispatchPrompt={(dispId) => setPromptDispatchId(dispId)}
         />
@@ -1737,6 +1838,22 @@ export default function LeadImports({
         dispatchId={previewDispatchId}
         onClose={() => setPreviewDispatchId(null)}
       />
+
+      {/* Modal de Aviso de Disparos em Aberto / Duplicados */}
+      {duplicateWarningState && (
+        <DuplicateDispatchWarningDialog
+          open={duplicateWarningState.open}
+          onOpenChange={(open) => {
+            if (!open) setDuplicateWarningState(null);
+          }}
+          campaignName={duplicateWarningState.campaignName}
+          pendingDispatchesCount={duplicateWarningState.pendingBatches.length}
+          pendingRecipientsCount={duplicateWarningState.pendingRecipientsCount}
+          onCancelPreviousAndCreate={handleCancelPreviousAndCreate}
+          onCreateAnyway={handleCreateAnyway}
+          isProcessing={duplicateWarningState.isProcessing}
+        />
+      )}
     </PageShell>
   );
 }
