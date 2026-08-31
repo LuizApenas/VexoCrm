@@ -25,7 +25,11 @@
 
 import { createLeadMessaging, isGroupJid } from "../shared/leadMessaging.js";
 import { buildPhoneLookupVariants } from "../../services/leadImport.js";
-import { isEvolutionOpenState } from "../../services/evolution.js";
+import {
+  isEvolutionOpenState,
+  checkWhatsappNumbers,
+  validateWhatsappNumbersWithCache,
+} from "../../services/evolution.js";
 import {
   dispatchCampaignSequence,
   getCampaignStepPlan,
@@ -1594,7 +1598,7 @@ export function registerCampaignsRoutes(app, deps) {
       `ALTER TABLE public.campaign_dispatch_runs DROP CONSTRAINT IF EXISTS campaign_dispatch_runs_status_check`
     );
     await pgDatabasePool.query(
-      `ALTER TABLE public.campaign_dispatch_runs ADD CONSTRAINT campaign_dispatch_runs_status_check CHECK (status IN ('pending','claimed','sent','failed','skipped'))`
+      `ALTER TABLE public.campaign_dispatch_runs ADD CONSTRAINT campaign_dispatch_runs_status_check CHECK (status IN ('pending','claimed','sent','failed','skipped','invalid_number'))`
     );
     await pgDatabasePool.query(
       `CREATE UNIQUE INDEX IF NOT EXISTS uq_campaign_dispatch_runs_dispatch_lead ON public.campaign_dispatch_runs (dispatch_id, lead_id)`
@@ -1691,12 +1695,14 @@ export function registerCampaignsRoutes(app, deps) {
     if (leads.length === 0) {
       let totalSent = 0;
       let totalFailed = 0;
+      let totalInvalid = 0;
       let totalSkipped = 0;
       if (pgDatabasePool) {
         const countsRes = await pgDatabasePool.query(
           `SELECT 
              COUNT(*) FILTER (WHERE status = 'sent')::int as sent,
              COUNT(*) FILTER (WHERE status = 'failed')::int as failed,
+             COUNT(*) FILTER (WHERE status = 'invalid_number')::int as invalid,
              COUNT(*) FILTER (WHERE status = 'skipped')::int as skipped
            FROM public.campaign_dispatch_runs
            WHERE dispatch_id = $1`,
@@ -1704,9 +1710,10 @@ export function registerCampaignsRoutes(app, deps) {
         ).catch(() => ({ rows: [] }));
         totalSent = Number(countsRes?.rows?.[0]?.sent || 0);
         totalFailed = Number(countsRes?.rows?.[0]?.failed || 0);
+        totalInvalid = Number(countsRes?.rows?.[0]?.invalid || 0);
         totalSkipped = Number(countsRes?.rows?.[0]?.skipped || 0);
       }
-      const totalProcessed = totalSent + totalFailed + totalSkipped;
+      const totalProcessed = totalSent + totalFailed + totalInvalid + totalSkipped;
       const targetCount = Number(dispatch.target_count || 0) || totalProcessed;
 
       if (targetCount > 0 && totalProcessed < targetCount) {
@@ -1720,6 +1727,125 @@ export function registerCampaignsRoutes(app, deps) {
           sent_count: totalSent,
           failed_count: totalFailed,
           error_message: finalMsg,
+          updated_at: new Date().toISOString(),
+        }).eq("id", dispatchId);
+      } else {
+        await db.from("campaign_dispatches").update({
+          status: "done",
+          sent_count: totalSent,
+          failed_count: totalFailed,
+          finished_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          error_message: null,
+        }).eq("id", dispatchId);
+      }
+      return;
+    }
+
+    // ── Item 2: Validação prévia de números via Evolution API com cache ─────────
+    let validLeads = leads;
+    if (leads.length > 0) {
+      try {
+        const candidatePhones = leads
+          .map((l) => normalizeString(l.telefone).replace(/\D/g, ""))
+          .filter(Boolean);
+
+        const validationMap = await validateWhatsappNumbersWithCache({
+          pool: pgDatabasePool,
+          webhookUrl,
+          webhookToken,
+          phones: candidatePhones,
+        });
+
+        const invalidLeads = [];
+        validLeads = [];
+
+        for (const l of leads) {
+          const cleanPhone = normalizeString(l.telefone).replace(/\D/g, "");
+          const validation = cleanPhone ? validationMap.get(cleanPhone) : null;
+
+          if (validation && validation.exists === false) {
+            invalidLeads.push(l);
+          } else {
+            validLeads.push(l);
+          }
+        }
+
+        if (invalidLeads.length > 0) {
+          console.warn(
+            `[campaign-dispatch] ${invalidLeads.length} número(s) INEXISTENTE(S) no WhatsApp detectado(s) na pré-validação — envio cancelado para eles:`,
+            {
+              dispatchId,
+              campaignId: campaign.id,
+              invalidCount: invalidLeads.length,
+            }
+          );
+
+          if (pgDatabasePool) {
+            for (const invLead of invalidLeads) {
+              const cleanPhone = normalizeString(invLead.telefone).replace(/\D/g, "");
+              if (invLead.id) {
+                await pgDatabasePool.query(
+                  `INSERT INTO public.campaign_dispatch_runs
+                     (dispatch_id, campaign_id, client_id, lead_id, phone, status, error_message, created_at)
+                   VALUES ($1, $2, $3, $4, $5, 'invalid_number', 'Número não existe no WhatsApp', now())
+                   ON CONFLICT (dispatch_id, lead_id) DO UPDATE
+                     SET status = 'invalid_number',
+                         error_message = 'Número não existe no WhatsApp'`,
+                  [dispatchId, campaign.id, clientId, invLead.id, cleanPhone]
+                ).catch((err) => {
+                  console.warn("[campaign-dispatch] falha ao registrar lead inválido:", err?.message || err);
+                });
+              } else if (cleanPhone) {
+                await pgDatabasePool.query(
+                  `INSERT INTO public.campaign_dispatch_runs
+                     (dispatch_id, campaign_id, client_id, lead_id, phone, status, error_message, created_at)
+                   VALUES ($1, $2, $3, NULL, $4, 'invalid_number', 'Número não existe no WhatsApp', now())`,
+                  [dispatchId, campaign.id, clientId, cleanPhone]
+                ).catch((err) => {
+                  console.warn("[campaign-dispatch] falha ao registrar lead inválido por fone:", err?.message || err);
+                });
+              }
+            }
+          }
+        }
+      } catch (valErr) {
+        console.warn("[campaign-dispatch] erro na pré-validação de números (disparo continuará sem travar):", valErr?.message || valErr);
+        validLeads = leads;
+      }
+    }
+
+    if (validLeads.length === 0) {
+      let totalSent = 0;
+      let totalFailed = 0;
+      let totalInvalid = 0;
+      let totalSkipped = 0;
+      if (pgDatabasePool) {
+        const countsRes = await pgDatabasePool.query(
+          `SELECT 
+             COUNT(*) FILTER (WHERE status = 'sent')::int as sent,
+             COUNT(*) FILTER (WHERE status = 'failed')::int as failed,
+             COUNT(*) FILTER (WHERE status = 'invalid_number')::int as invalid,
+             COUNT(*) FILTER (WHERE status = 'skipped')::int as skipped
+           FROM public.campaign_dispatch_runs
+           WHERE dispatch_id = $1`,
+          [dispatchId]
+        ).catch(() => ({ rows: [] }));
+        totalSent = Number(countsRes?.rows?.[0]?.sent || 0);
+        totalFailed = Number(countsRes?.rows?.[0]?.failed || 0);
+        totalInvalid = Number(countsRes?.rows?.[0]?.invalid || 0);
+        totalSkipped = Number(countsRes?.rows?.[0]?.skipped || 0);
+      }
+      const totalProcessed = totalSent + totalFailed + totalInvalid + totalSkipped;
+      const targetCount = Number(dispatch.target_count || 0) || totalProcessed;
+
+      if (targetCount > 0 && totalProcessed < targetCount) {
+        const pendingCount = targetCount - totalProcessed;
+        await db.from("campaign_dispatches").update({
+          status: "interrupted",
+          sent_count: totalSent,
+          failed_count: totalFailed,
+          error_message: `Interrompido: ${pendingCount} lead(s) pendente(s) de envio.`,
           updated_at: new Date().toISOString(),
         }).eq("id", dispatchId);
       } else {
@@ -1754,7 +1880,7 @@ export function registerCampaignsRoutes(app, deps) {
       }
 
       if (activeConsultantLinks.length > 0) {
-        leads.forEach((lead, idx) => {
+        validLeads.forEach((lead, idx) => {
           if (!lead.normalized_data) {
             lead.normalized_data = {};
           }
@@ -1777,15 +1903,15 @@ export function registerCampaignsRoutes(app, deps) {
 
     // Se a campanha usa {{scheduling_link}}, nenhum lead pode ser disparado com a variável crua
     if (sequenceRequiresSchedulingLink) {
-      const leadsSemLink = leads.filter((lead) => !normalizeString(lead.normalized_data?.scheduling_link));
+      const leadsSemLink = validLeads.filter((lead) => !normalizeString(lead.normalized_data?.scheduling_link));
       if (leadsSemLink.length > 0) {
         const motivo = activeConsultantLinks.length === 0
           ? "Nenhum consultor ativo com link de agendamento cadastrado para preencher {{scheduling_link}}."
-          : `Link de agendamento ausente para ${leadsSemLink.length} de ${leads.length} lead(s).`;
+          : `Link de agendamento ausente para ${leadsSemLink.length} de ${validLeads.length} lead(s).`;
         console.error("[campaign-dispatch] Disparo bloqueado por link de agendamento ausente:", {
           clientId,
           leadsSemLink: leadsSemLink.length,
-          totalLeads: leads.length,
+          totalLeads: validLeads.length,
           motivo,
         });
         throw new Error(`Disparo interrompido: ${motivo}`);
@@ -1859,8 +1985,6 @@ export function registerCampaignsRoutes(app, deps) {
                   webhookUrl: normalizeString(inst.dispatch_webhook_url),
                   webhookToken: normalizeString(inst.dispatch_webhook_token) || null,
                   instanceId: inst.id,
-                  // Sem contador de cota nao ha indice por chip: a rotacao de
-                  // variacoes cai no fallback por leadIndex.
                   sequence: null,
                   release: null,
                 };
@@ -1876,8 +2000,6 @@ export function registerCampaignsRoutes(app, deps) {
                 webhookUrl: normalizeString(inst.dispatch_webhook_url),
                 webhookToken: normalizeString(inst.dispatch_webhook_token) || null,
                 instanceId: inst.id,
-                // sent_count do dia deste chip: indice sequencial por chip que a
-                // reserva de cota ja calcula. Alimenta a rotacao de variacoes.
                 sequence: reserved,
                 release: () => releaseEvolutionInstanceDailyQuota(inst.id),
               };
@@ -1895,18 +2017,37 @@ export function registerCampaignsRoutes(app, deps) {
       return rows.length > 0;
     };
 
-    // Defeito A: claim idempotente por lead. INSERT ... ON CONFLICT DO NOTHING marca o
-    // lead como 'claimed' ANTES do envio. Se a linha não foi inserida (conflito), o lead
-    // já foi tocado neste disparo → pular (evita duplicidade mesmo em retomada/concorrência).
+    // ── GARANTIA DURA INEGOCIÁVEL (Item 1a): ──────────────────────────────────
+    // Nenhum caminho pode enviar para um destinatário que já está 'sent' ou 'invalid_number' neste lote.
     const claimLead = async ({ lead, phone }) => {
       if (!pgDatabasePool) return true;
 
-      // Sem lead_id (base "__crm__", por exemplo) o claim por (dispatch_id, lead_id)
-      // nao se aplica — e ate aqui isso liberava o envio "por legado", ou seja, SEM
-      // nenhuma trava. Reenvio duplicado nao pode depender de o lead ter id: cai para
-      // uma trava por TELEFONE dentro do mesmo disparo.
+      const cleanPhone = normalizeString(phone || lead?.telefone).replace(/\D/g, "");
+
+      // 1. Checagem dura incondicional no banco de dados
+      try {
+        const existingRun = await pgDatabasePool.query(
+          `SELECT id, status FROM public.campaign_dispatch_runs
+           WHERE dispatch_id = $1 AND (
+             ($2::uuid IS NOT NULL AND lead_id = $2) OR
+             (regexp_replace(phone, '\\D', '', 'g') = $3)
+           ) AND status IN ('sent', 'invalid_number')
+           LIMIT 1`,
+          [dispatchId, lead?.id || null, cleanPhone]
+        );
+        if (existingRun.rows.length > 0) {
+          console.warn(
+            `[campaign-dispatch] 🚨 BLOQUEIO DURO DE SEGURANÇA: Destinatário (${cleanPhone}) já possui status '${existingRun.rows[0].status}' neste lote. Envio abortado imediatamente!`,
+            { dispatchId, leadId: lead?.id, phone: cleanPhone }
+          );
+          return false;
+        }
+      } catch (checkErr) {
+        console.warn("[campaign-dispatch] aviso ao checar duplicidade de envio:", checkErr?.message || checkErr);
+      }
+
       if (!lead?.id) {
-        const alvo = normalizeString(phone);
+        const alvo = cleanPhone || normalizeString(phone);
         if (!alvo) return true;
         const { rows } = await pgDatabasePool.query(
           `SELECT 1 FROM public.campaign_dispatch_runs
@@ -1965,16 +2106,48 @@ export function registerCampaignsRoutes(app, deps) {
         });
     };
 
-    const finalizeLeadFailed = async ({ lead, reason }) => {
-      if (!pgDatabasePool || !lead?.id) return;
-      await pgDatabasePool
-        .query(
-          `UPDATE public.campaign_dispatch_runs SET status = 'failed', error_message = $1 WHERE dispatch_id = $2 AND lead_id = $3`,
-          [reason || null, dispatchId, lead.id]
+    const finalizeLeadFailed = async ({ lead, phone, reason }) => {
+      if (!pgDatabasePool) return;
+      const isInvalidNumber = Boolean(
+        reason && (
+          /não existe no whatsapp/i.test(reason) ||
+          /invalid_number/i.test(reason) ||
+          /number does not exist/i.test(reason) ||
+          /não está no whatsapp/i.test(reason) ||
+          /not on whatsapp/i.test(reason)
         )
-        .catch((err) => {
-          console.warn("[campaign-dispatch] finalize_failed_failed:", err?.message || err);
-        });
+      );
+      const newStatus = isInvalidNumber ? "invalid_number" : "failed";
+      const cleanPhone = normalizeString(phone || lead?.telefone).replace(/\D/g, "");
+
+      if (lead?.id) {
+        await pgDatabasePool
+          .query(
+            `UPDATE public.campaign_dispatch_runs SET status = $1, error_message = $2 WHERE dispatch_id = $3 AND lead_id = $4`,
+            [newStatus, reason || null, dispatchId, lead.id]
+          )
+          .catch((err) => {
+            console.warn("[campaign-dispatch] finalize_failed_failed:", err?.message || err);
+          });
+      } else if (cleanPhone) {
+        await pgDatabasePool
+          .query(
+            `UPDATE public.campaign_dispatch_runs SET status = $1, error_message = $2 WHERE dispatch_id = $3 AND regexp_replace(phone, '\\D', '', 'g') = $4`,
+            [newStatus, reason || null, dispatchId, cleanPhone]
+          )
+          .catch((err) => {
+            console.warn("[campaign-dispatch] finalize_failed_failed by phone:", err?.message || err);
+          });
+      }
+
+      if (isInvalidNumber && cleanPhone) {
+        await pgDatabasePool.query(
+          `INSERT INTO public.whatsapp_number_validations (phone, exists_whatsapp, validated_at)
+           VALUES ($1, false, now())
+           ON CONFLICT (phone) DO UPDATE SET exists_whatsapp = false, validated_at = now()`,
+          [cleanPhone]
+        ).catch(() => {});
+      }
     };
 
     const rollbackClaimLead = async ({ lead, phone }) => {
@@ -2048,10 +2221,7 @@ export function registerCampaignsRoutes(app, deps) {
     const result = await dispatchCampaignSequence({
       webhookUrl,
       webhookToken,
-      leads,
-      // Com fluxo de resposta, so os passos imediatos entram na rajada; os after_reply
-      // ficam pendentes ate o lead responder. waitForReply: false aqui e proposital —
-      // quem representa a espera e o progresso gravado, nao esta chamada.
+      leads: validLeads,
       analyticsMeta: usaFluxoDeResposta
         ? {
             ...analyticsMeta,
@@ -2097,18 +2267,14 @@ export function registerCampaignsRoutes(app, deps) {
           console.warn("[campaign-dispatch] falha ao gravar lead_messages do passo:", err?.message || err);
         }
       },
-      onLeadFailed: async ({ lead, reason }) => {
+      onLeadFailed: async ({ lead, phone, reason }) => {
         failedCount += 1;
-        await finalizeLeadFailed({ lead, reason });
+        await finalizeLeadFailed({ lead, phone, reason });
       },
       onLeadDispatched: async ({ lead, phone, sentAt, lastStep, lastStepIndex }) => {
         sentCount += 1;
-        // Finaliza o registro de claim deste lead como 'sent' (UPDATE da linha já reservada).
         await finalizeLeadSent({ lead, sentAt });
 
-        // Progresso pendente: e o que continueCampaignLeadFromReply exige para avancar
-        // (waitForReply true + status "aguardando_usuario" + nextStepIndex). Mesma funcao
-        // usada pelo outro caminho — sem segunda implementacao da regra.
         if (usaFluxoDeResposta) {
           await markCampaignLeadWaitingReply({
             clientId,
@@ -2130,10 +2296,6 @@ export function registerCampaignsRoutes(app, deps) {
           });
         }
         const leadPatch = {
-          // "aguardando_usuario": pós-disparo, esperando o lead responder. Valor permitido
-          // pela CHECK lead_import_items_status_conversa_check (aguardando_usuario|
-          // em_atendimento|finalizado). O sinal de fila de follow-up é followup_status,
-          // não status_conversa. (Antes gravava "campanha_enviada", fora da CHECK → erro.)
           status_conversa: "aguardando_usuario",
           ultima_interacao_bot: sentAt || new Date().toISOString(),
           followup_status: "pending",
@@ -2154,7 +2316,6 @@ export function registerCampaignsRoutes(app, deps) {
         if (leadUpdateError) {
           console.warn("[campaign-dispatch] followup queue marker failed:", leadUpdateError.message || leadUpdateError);
         }
-        await db.from("campaign_dispatches").update({ sent_count: sentCount, updated_at: new Date().toISOString() }).eq("id", dispatchId).catch(() => {});
       },
       shouldContinue: isDispatchStillRunning,
       leadDelayProvider: Number.isFinite(dispatch.dispatch_options?.leadDelaySeconds)
@@ -2162,17 +2323,16 @@ export function registerCampaignsRoutes(app, deps) {
         : () => 30_000 + Math.floor(Math.random() * 60_001),
     });
 
-    // Falhas por lead já são finalizadas em tempo real via onLeadFailed (UPDATE do
-    // registro de claim para status='failed'). Lead que falhou NÃO volta para a fila
-    // do mesmo disparo — fica registrado para tratamento manual (endpoint /failed).
     let totalSent = sentCount;
     let totalFailed = failedCount;
+    let totalInvalid = 0;
     let totalSkipped = 0;
     if (pgDatabasePool) {
       const countsRes = await pgDatabasePool.query(
         `SELECT 
            COUNT(*) FILTER (WHERE status = 'sent')::int as sent,
            COUNT(*) FILTER (WHERE status = 'failed')::int as failed,
+           COUNT(*) FILTER (WHERE status = 'invalid_number')::int as invalid,
            COUNT(*) FILTER (WHERE status = 'skipped')::int as skipped
          FROM public.campaign_dispatch_runs
          WHERE dispatch_id = $1`,
@@ -2180,9 +2340,10 @@ export function registerCampaignsRoutes(app, deps) {
       ).catch(() => ({ rows: [] }));
       totalSent = Number(countsRes?.rows?.[0]?.sent ?? sentCount);
       totalFailed = Number(countsRes?.rows?.[0]?.failed ?? failedCount);
+      totalInvalid = Number(countsRes?.rows?.[0]?.invalid ?? 0);
       totalSkipped = Number(countsRes?.rows?.[0]?.skipped ?? 0);
     }
-    const totalProcessed = totalSent + totalFailed + totalSkipped;
+    const totalProcessed = totalSent + totalFailed + totalInvalid + totalSkipped;
     const targetCount = Number(dispatch.target_count || 0) || (leads.length + totalProcessed);
 
     if (result?.summary?.chipDisconnected) {
@@ -2262,9 +2423,25 @@ export function registerCampaignsRoutes(app, deps) {
       if (!pgDatabasePool) return sendError(res, 503, "DB_UNAVAILABLE", "Database unavailable");
       const { rows } = await pgDatabasePool.query(
         `
-          SELECT d.*, c.name as campaign_name
+          SELECT 
+            d.*,
+            c.name as campaign_name,
+            COALESCE(r.sent_cnt, d.sent_count, 0)::int as sent_count,
+            COALESCE(r.failed_cnt, d.failed_count, 0)::int as failed_count,
+            COALESCE(r.invalid_cnt, 0)::int as invalid_count,
+            COALESCE(r.skipped_cnt, 0)::int as skipped_count
           FROM public.campaign_dispatches d
           LEFT JOIN public.campaigns c ON c.id = d.campaign_id
+          LEFT JOIN (
+            SELECT 
+              dispatch_id,
+              COUNT(*) FILTER (WHERE status = 'sent') as sent_cnt,
+              COUNT(*) FILTER (WHERE status = 'failed') as failed_cnt,
+              COUNT(*) FILTER (WHERE status = 'invalid_number') as invalid_cnt,
+              COUNT(*) FILTER (WHERE status = 'skipped') as skipped_cnt
+            FROM public.campaign_dispatch_runs
+            GROUP BY dispatch_id
+          ) r ON r.dispatch_id = d.id
           WHERE d.client_id = $1
           ORDER BY d.created_at DESC
         `,
@@ -2292,14 +2469,42 @@ export function registerCampaignsRoutes(app, deps) {
       const authorizedClientId = resolveAuthorizedClientId(req, res, campaign.client_id);
       if (!authorizedClientId) return;
 
-      const { data, error } = await supabase
-        .from("campaign_dispatches")
-        .select("*")
-        .eq("campaign_id", campaignId)
-        .eq("client_id", authorizedClientId)
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      res.json({ dispatches: data || [] });
+      if (!pgDatabasePool) {
+        const { data, error } = await supabase
+          .from("campaign_dispatches")
+          .select("*")
+          .eq("campaign_id", campaignId)
+          .eq("client_id", authorizedClientId)
+          .order("created_at", { ascending: true });
+        if (error) throw error;
+        return res.json({ dispatches: data || [] });
+      }
+
+      const { rows } = await pgDatabasePool.query(
+        `
+          SELECT 
+            d.*,
+            COALESCE(r.sent_cnt, d.sent_count, 0)::int as sent_count,
+            COALESCE(r.failed_cnt, d.failed_count, 0)::int as failed_count,
+            COALESCE(r.invalid_cnt, 0)::int as invalid_count,
+            COALESCE(r.skipped_cnt, 0)::int as skipped_count
+          FROM public.campaign_dispatches d
+          LEFT JOIN (
+            SELECT 
+              dispatch_id,
+              COUNT(*) FILTER (WHERE status = 'sent') as sent_cnt,
+              COUNT(*) FILTER (WHERE status = 'failed') as failed_cnt,
+              COUNT(*) FILTER (WHERE status = 'invalid_number') as invalid_cnt,
+              COUNT(*) FILTER (WHERE status = 'skipped') as skipped_cnt
+            FROM public.campaign_dispatch_runs
+            GROUP BY dispatch_id
+          ) r ON r.dispatch_id = d.id
+          WHERE d.campaign_id = $1 AND d.client_id = $2
+          ORDER BY d.created_at ASC
+        `,
+        [campaignId, authorizedClientId]
+      );
+      res.json({ dispatches: rows });
     } catch (err) {
       sendError(res, 500, "DISPATCHES_FETCH_FAILED", err instanceof Error ? err.message : "Failed");
     }
@@ -2440,6 +2645,8 @@ export function registerCampaignsRoutes(app, deps) {
         const statusLabel =
           rawStatus === "sent"
             ? "Enviado"
+            : rawStatus === "invalid_number"
+            ? "Número inválido"
             : rawStatus === "failed"
             ? "Falhou"
             : rawStatus === "skipped"
@@ -2466,7 +2673,7 @@ export function registerCampaignsRoutes(app, deps) {
         };
       });
 
-      // Filtro opcional por status na query (?status=sent, ?status=failed, etc)
+      // Filtro opcional por status na query (?status=sent, ?status=failed, ?status=invalid_number, etc)
       const filterStatus = normalizeString(req.query.status);
       const filteredRecipients = filterStatus
         ? recipients.filter((r) => r.status.toLowerCase() === filterStatus.toLowerCase())
@@ -2513,6 +2720,7 @@ export function registerCampaignsRoutes(app, deps) {
 
       const sentCount = recipients.filter((r) => r.status === "sent").length;
       const failedCount = recipients.filter((r) => r.status === "failed").length;
+      const invalidCount = recipients.filter((r) => r.status === "invalid_number").length;
       const skippedCount = recipients.filter((r) => r.status === "skipped").length;
       const pendingCount = recipients.filter((r) => r.status === "pending").length;
 
@@ -2523,6 +2731,7 @@ export function registerCampaignsRoutes(app, deps) {
         total: recipients.length,
         sentCount,
         failedCount,
+        invalidCount,
         skippedCount,
         pendingCount,
         items: filteredRecipients,
@@ -2533,7 +2742,7 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
-  // POST /api/campaigns/dispatches/:dispatchId/retry-failed — Reenvia apenas os destinatários que falharam
+  // POST /api/campaigns/dispatches/:dispatchId/retry-failed — Reenvia apenas os destinatários que falharam (EXCLUI números inválidos)
   app.post("/api/campaigns/dispatches/:dispatchId/retry-failed", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
     const dispatchId = normalizeString(req.params.dispatchId);
@@ -2555,18 +2764,36 @@ export function registerCampaignsRoutes(app, deps) {
       }
 
       // 1. Remove os registros 'failed' de campaign_dispatch_runs para liberar reenvio
-      const { data: deletedRuns, error: deleteErr } = await supabase
-        .from("campaign_dispatch_runs")
-        .delete()
-        .eq("dispatch_id", dispatchId)
-        .eq("status", "failed")
-        .select("id");
-
-      if (deleteErr) throw deleteErr;
-      const retriedCount = deletedRuns?.length || 0;
+      // EXCLUI números inválidos (status='invalid_number' ou mensagens de 'não existe no WhatsApp')
+      let retriedCount = 0;
+      if (pgDatabasePool) {
+        const deleteRes = await pgDatabasePool.query(
+          `DELETE FROM public.campaign_dispatch_runs
+           WHERE dispatch_id = $1
+             AND status = 'failed'
+             AND (error_message IS NULL OR (
+               error_message NOT ILIKE '%não existe no whatsapp%' AND
+               error_message NOT ILIKE '%invalid_number%' AND
+               error_message NOT ILIKE '%não está no whatsapp%' AND
+               error_message NOT ILIKE '%number does not exist%'
+             ))
+           RETURNING id`,
+          [dispatchId]
+        );
+        retriedCount = deleteRes.rowCount || 0;
+      } else {
+        const { data: deletedRuns, error: deleteErr } = await supabase
+          .from("campaign_dispatch_runs")
+          .delete()
+          .eq("dispatch_id", dispatchId)
+          .eq("status", "failed")
+          .select("id");
+        if (deleteErr) throw deleteErr;
+        retriedCount = deletedRuns?.length || 0;
+      }
 
       if (retriedCount === 0) {
-        return res.json({ success: true, message: "Nenhum lead com status de falha para reenviar.", retriedCount: 0 });
+        return res.json({ success: true, message: "Nenhum lead com falha elegível para reenvio (números inválidos são preservados).", retriedCount: 0 });
       }
 
       // 2. Coloca o lote em 'scheduled' para o scheduler/motor pegar ou aciona imediatamente
@@ -2590,6 +2817,91 @@ export function registerCampaignsRoutes(app, deps) {
     } catch (err) {
       console.error("[retry-failed] error:", err);
       sendError(res, 500, "RETRY_FAILED_ERROR", err instanceof Error ? err.message : "Failed to retry failed leads");
+    }
+  });
+
+  // POST /api/campaigns/dispatches/:dispatchId/run-pending — Dispara apenas os destinatários não processados do lote
+  app.post("/api/campaigns/dispatches/:dispatchId/run-pending", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const dispatchId = normalizeString(req.params.dispatchId);
+    if (!dispatchId) return sendError(res, 400, "MISSING_ID", "Missing dispatch id");
+
+    try {
+      const { data: dispatch, error: dispatchErr } = await supabase
+        .from("campaign_dispatches")
+        .select("id, client_id, campaign_id, name, status, limit_per_run, offset, steps, evolution_instance_id")
+        .eq("id", dispatchId)
+        .maybeSingle();
+
+      if (dispatchErr || !dispatch) return sendError(res, 404, "DISPATCH_NOT_FOUND", "Dispatch not found");
+      const authorizedClientId = resolveAuthorizedClientId(req, res, dispatch.client_id);
+      if (!authorizedClientId) return;
+
+      if (dispatch.status === "running") {
+        return sendError(res, 409, "DISPATCH_RUNNING", "O lote já está em execução");
+      }
+
+      const { data: campaign, error: campErr } = await supabase
+        .from("campaigns")
+        .select("id, name, client_id, import_id, limit_per_run, analytics_meta, webhook_url, webhook_token")
+        .eq("id", dispatch.campaign_id)
+        .single();
+      if (campErr || !campaign) return sendError(res, 404, "CAMPAIGN_NOT_FOUND", "Campaign not found");
+
+      // 1. Calcula quantos leads pendentes restam
+      const pendingLeads = await buildDispatchLeads({
+        clientId: authorizedClientId,
+        importId: resolveCampaignImportSelection(campaign),
+        limit: dispatch.limit_per_run ?? campaign.limit_per_run,
+        offset: dispatch.offset ?? 0,
+        excludeDispatchId: dispatchId,
+      });
+
+      if (pendingLeads.length === 0) {
+        return res.json({
+          success: true,
+          message: "Todos os destinatários deste lote já foram processados. Nenhum lead pendente.",
+          pendingCount: 0,
+          dispatchId,
+        });
+      }
+
+      // 2. Coloca o lote em 'running' e dispara em background
+      const { data: claimed, error: claimErr } = await supabase
+        .from("campaign_dispatches")
+        .update({
+          status: "running",
+          triggered_at: new Date().toISOString(),
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", dispatchId)
+        .neq("status", "running")
+        .select("id");
+
+      if (claimErr || !claimed || claimed.length === 0) {
+        return sendError(res, 409, "DISPATCH_ALREADY_RUNNING", "Este disparo já está em execução");
+      }
+
+      res.json({
+        success: true,
+        message: `${pendingLeads.length} lead(s) pendente(s) em execução.`,
+        pendingCount: pendingLeads.length,
+        dispatchId,
+      });
+
+      runCampaignDispatch({ dispatch, campaign, supabase }).catch((err) => {
+        console.error("[campaign-dispatch] run_pending_failed", { dispatchId, error: err.message });
+        supabase.from("campaign_dispatches").update({
+          status: "failed",
+          error_message: err.message,
+          finished_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("id", dispatchId);
+      });
+    } catch (err) {
+      console.error("[run-pending] error:", err);
+      sendError(res, 500, "RUN_PENDING_ERROR", err instanceof Error ? err.message : "Failed to run pending leads");
     }
   });
 

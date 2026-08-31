@@ -982,7 +982,7 @@ export interface DispatchRecipientItem {
   leadId: string | null;
   nome: string;
   telefone: string;
-  status: "sent" | "failed" | "skipped" | "pending";
+  status: "sent" | "failed" | "invalid_number" | "skipped" | "pending";
   statusLabel: string;
   sentAt: string | null;
   attemptedAt: string | null;
@@ -999,6 +999,7 @@ export interface DispatchRecipientsResponse {
   total: number;
   sentCount: number;
   failedCount: number;
+  invalidCount?: number;
   skippedCount: number;
   pendingCount: number;
   items: DispatchRecipientItem[];
@@ -1037,6 +1038,28 @@ export function useRetryFailedDispatchLeads() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao reenviar falhados"));
+      return res.json();
+    },
+    onSuccess: (_, dispatchId) => {
+      qc.invalidateQueries({ queryKey: ["campaign-dispatches"] });
+      qc.invalidateQueries({ queryKey: ["all-dispatches"] });
+      qc.invalidateQueries({ queryKey: ["dispatch-recipients", dispatchId] });
+    },
+  });
+}
+
+export function useRunPendingDispatchLeads() {
+  const { getIdToken } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (dispatchId: string) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+      const res = await fetch(`${API_BASE_URL}/api/campaigns/dispatches/${dispatchId}/run-pending`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await readApiErrorMessage(res, "Erro ao disparar não processados"));
       return res.json();
     },
     onSuccess: (_, dispatchId) => {

@@ -249,6 +249,17 @@ describe("runCampaignDispatch - Execução de Ponta a Ponta do Laço de Disparo"
       if (urlStr.includes("fetchInstances") || urlStr.includes("connectionState")) {
         return { ok: true, status: 200, json: async () => ({ state: "open" }), text: async () => '{"state":"open"}' };
       }
+      if (urlStr.includes("whatsappNumbers")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            { number: "5511999990001", exists: true },
+            { number: "5511999990002", exists: true },
+          ],
+          text: async () => '[{"number":"5511999990001","exists":true},{"number":"5511999990002","exists":true}]',
+        };
+      }
       sendCallCount++;
       if (sendCallCount === 1) {
         return { ok: true, status: 200, json: async () => ({ key: { id: "msg-1" } }), text: async () => '{"key":{"id":"msg-1"}}' };
@@ -296,8 +307,12 @@ describe("runCampaignDispatch - Execução de Ponta a Ponta do Laço de Disparo"
           finalizedSent.push(params[1]);
           return { rowCount: 1, rows: [] };
         }
-        if (sqlStr.includes("UPDATE public.campaign_dispatch_runs SET status = 'failed'")) {
-          finalizedFailed.push(params[2]);
+        if (sqlStr.includes("UPDATE public.campaign_dispatch_runs SET status = 'failed'") || sqlStr.includes("UPDATE public.campaign_dispatch_runs SET status = $1")) {
+          if (params[0] === "sent") {
+            finalizedSent.push(params[1]);
+          } else {
+            finalizedFailed.push(params[3] || params[2]);
+          }
           return { rowCount: 1, rows: [] };
         }
         if (sqlStr.includes("COUNT(*) FILTER")) {

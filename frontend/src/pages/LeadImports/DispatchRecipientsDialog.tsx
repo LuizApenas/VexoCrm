@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Download, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Clock, Search } from "lucide-react";
-import { useDispatchRecipients, useRetryFailedDispatchLeads } from "@/hooks/useCampanhas";
+import { Loader2, Download, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Clock, Search, Play, PhoneOff } from "lucide-react";
+import { useDispatchRecipients, useRetryFailedDispatchLeads, useRunPendingDispatchLeads } from "@/hooks/useCampanhas";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_BASE_URL } from "@/lib/api";
@@ -25,6 +25,7 @@ export function DispatchRecipientsDialog({ dispatchId, onClose }: DispatchRecipi
   const { getIdToken } = useAuth();
   const { data, isLoading, refetch, isFetching } = useDispatchRecipients(dispatchId, statusFilter);
   const retryFailedMutation = useRetryFailedDispatchLeads();
+  const runPendingMutation = useRunPendingDispatchLeads();
 
   const handleDownloadCsv = async () => {
     if (!dispatchId) return;
@@ -80,6 +81,24 @@ export function DispatchRecipientsDialog({ dispatchId, onClose }: DispatchRecipi
     }
   };
 
+  const handleRunPending = async () => {
+    if (!dispatchId) return;
+    try {
+      const res = await runPendingMutation.mutateAsync(dispatchId);
+      toast({
+        title: "Disparo iniciado",
+        description: res.message || `${res.pendingCount || data?.pendingCount || 0} lead(s) não processado(s) agendado(s) para envio.`,
+      });
+      refetch();
+    } catch (err: any) {
+      toast({
+        title: "Erro ao disparar não processados",
+        description: err.message || "Não foi possível iniciar o envio dos leads pendentes.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const filteredItems = (data?.items || []).filter((item) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
@@ -96,6 +115,12 @@ export function DispatchRecipientsDialog({ dispatchId, onClose }: DispatchRecipi
         return (
           <Badge className="border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] font-bold">
             <CheckCircle2 className="h-3 w-3 mr-1 text-emerald-600" /> Enviado
+          </Badge>
+        );
+      case "invalid_number":
+        return (
+          <Badge className="border-purple-300 bg-purple-50 text-purple-700 dark:border-purple-700 dark:bg-purple-900/30 dark:text-purple-400 text-[10px] font-bold">
+            <PhoneOff className="h-3 w-3 mr-1 text-purple-600" /> Número inválido
           </Badge>
         );
       case "failed":
@@ -150,19 +175,36 @@ export function DispatchRecipientsDialog({ dispatchId, onClose }: DispatchRecipi
           </div>
 
           {/* Ações superiores */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {data && data.pendingCount > 0 && (
+              <Button
+                size="sm"
+                variant="default"
+                disabled={runPendingMutation.isPending}
+                onClick={handleRunPending}
+                className="h-8 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm gap-1.5"
+              >
+                {runPendingMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Play className="h-3.5 w-3.5 fill-current" />
+                )}
+                Disparar não processados ({data.pendingCount})
+              </Button>
+            )}
+
             {data && data.failedCount > 0 && (
               <Button
                 size="sm"
                 variant="default"
                 disabled={retryFailedMutation.isPending}
                 onClick={handleRetryFailed}
-                className="h-8 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-sm"
+                className="h-8 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-sm gap-1.5"
               >
                 {retryFailedMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                  <RefreshCw className="h-3.5 w-3.5" />
                 )}
                 Reenviar Falhados ({data.failedCount})
               </Button>
@@ -214,6 +256,19 @@ export function DispatchRecipientsDialog({ dispatchId, onClose }: DispatchRecipi
             >
               Falhas ({data?.failedCount ?? 0}) ✗
             </Button>
+            {data && (data.invalidCount ?? 0) > 0 && (
+              <Button
+                size="sm"
+                variant={statusFilter === "invalid_number" ? "default" : "outline"}
+                onClick={() => setStatusFilter("invalid_number")}
+                className={cn(
+                  "h-7 text-xs px-2.5 rounded-lg font-bold",
+                  statusFilter === "invalid_number" ? "bg-purple-600 text-white" : "text-purple-600 border-purple-300"
+                )}
+              >
+                Número inválido ({data.invalidCount}) 🚫
+              </Button>
+            )}
             {data && data.skippedCount > 0 && (
               <Button
                 size="sm"
