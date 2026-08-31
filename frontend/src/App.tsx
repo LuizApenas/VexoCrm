@@ -140,10 +140,11 @@ const App = () => (
               }
             />
             <Route path="/dashboard" element={<Navigate to="/crm/dashboard" replace />} />
-            <Route path="/leads" element={<Navigate to="/crm/leads" replace />} />
+            <Route path="/leads" element={<Navigate to="/crm/banco-de-dados" replace />} />
             <Route path="/banco-de-dados" element={<Navigate to="/crm/banco-de-dados" replace />} />
             <Route path="/planilhas" element={<Navigate to="/crm/planilhas" replace />} />
             <Route path="/campanhas" element={<Navigate to="/crm/planilhas" replace />} />
+            <Route path="/relatorios" element={<Navigate to="/crm/planilhas?tab=relatorios" replace />} />
             <Route path="/inteligencia-comercial" element={<Navigate to="/crm/inteligencia-comercial" replace />} />
             <Route path="/agente" element={<Navigate to="/crm/agente" replace />} />
             <Route path="/whatsapp" element={<Navigate to="/crm/whatsapp" replace />} />
@@ -166,14 +167,7 @@ const App = () => (
                 }
               />
 
-              <Route
-                path="leads"
-                element={
-                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="leads">
-                    <Leads />
-                  </ProtectedRoute>
-                }
-              />
+              <Route path="leads" element={<Navigate to="/crm/banco-de-dados" replace />} />
               <Route
                 path="banco-de-dados"
                 element={
@@ -269,14 +263,7 @@ const App = () => (
               <Route path="aquecimento" element={<Navigate to="/crm/chips-whatsapp?tab=aquecimento" replace />} />
               <Route path="evolution-admin" element={<Navigate to="/crm/chips-whatsapp?tab=evolution-admin" replace />} />
 
-              <Route
-                path="relatorios"
-                element={
-                  <ProtectedRoute allowedRoles={["internal"]} requiredInternalPage="relatorios">
-                    <Relatorios />
-                  </ProtectedRoute>
-                }
-              />
+              <Route path="relatorios" element={<Navigate to="/crm/planilhas?tab=relatorios" replace />} />
               <Route
                 path="livpub"
                 element={

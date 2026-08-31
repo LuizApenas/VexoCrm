@@ -7,7 +7,7 @@ export const FEATURE_TIERS = {
     description: "Operação comercial completa com 1 conexão de chip, IA de atendimento e disparos.",
     features: [
       "Dashboard comercial e KPIs em tempo real",
-      "Leads & Banco de Dados Inteligente",
+      "Banco de Dados Inteligente",
       "Conversas (Inbox WhatsApp centralizado)",
       "Disparos por Planilha com cadência segura",
       "IA de Atendimento Inbound (1 Conexão de Chip)",
@@ -55,11 +55,11 @@ export const AVAILABLE_CUSTOM_MODULES: readonly CustomModuleDefinition[] = [
   { id: "agente_rag", featureKey: "agente_rag", label: "Base de Conhecimento RAG", desc: "Upload de arquivos, PDFs e documentos de treino para IA", pages: ["chatbot-docs", "agente"] },
   { id: "followup", featureKey: "followup", label: "Follow-up & Cadências", desc: "Fila de follow-up e sugestões de recontato comercial", pages: ["followup", "fila-de-followup", "followup-sugestoes"] },
   { id: "followup_automations", featureKey: "followup_automations", label: "Automações de Follow-up", desc: "Disparos automáticos e cadências pós-atendimento", pages: ["followup", "fila-de-followup", "followup-empresas", "followup-campanhas", "followup-analytics"] },
-  { id: "sdr_broadcast", featureKey: "sdr_broadcast", label: "Alertas SDR Broadcast", desc: "Distribuição automática de leads quentes para consultores", pages: ["leads", "conversas"] },
+  { id: "sdr_broadcast", featureKey: "sdr_broadcast", label: "Alertas SDR Broadcast", desc: "Distribuição automática de leads quentes para consultores", pages: ["conversas"] },
   { id: "multiplos_chips", featureKey: "multiplos_chips", label: "Múltiplos Chips WhatsApp", desc: "Conexões extras de WhatsApp para múltiplos números", pages: ["conexoes", "aquecimento"] },
-  { id: "origem_leads", featureKey: "origem_leads", label: "Rastreamento de Origens", desc: "Atribuição precisa do canal de aquisição (Instagram/Google/TikTok)", pages: ["leads", "inteligencia-comercial"] },
+  { id: "origem_leads", featureKey: "origem_leads", label: "Rastreamento de Origens", desc: "Atribuição precisa do canal de aquisição (Instagram/Google/TikTok)", pages: ["inteligencia-comercial"] },
   { id: "antiban_groq", featureKey: "antiban_groq", label: "Variações Antiban Groq", desc: "Reescrita dinâmica de mensagens em tempo real para evitar bloqueios", pages: ["campanhas", "disparos"] },
-  { id: "relatorios", featureKey: "relatorios", label: "Relatórios & Inteligência", desc: "Métricas avançadas de disparos e performance operacional", pages: ["relatorios", "inteligencia-comercial"] },
+  { id: "relatorios", featureKey: "relatorios", label: "Relatórios & Inteligência", desc: "Métricas avançadas de disparos e performance operacional", pages: ["inteligencia-comercial"] },
   { id: "banco-de-dados", featureKey: "banco-de-dados", label: "Banco de Dados Inteligente", desc: "Base de leads própria: importação, extração do WhatsApp, exportação e edição em massa", pages: ["banco-de-dados"] },
 ] as const;
 
@@ -140,7 +140,6 @@ export function hasFeatureUnlocked(client: any, featureKey: string): boolean {
   // 20260817120000 gravou o módulo como contratado para ele.
   const UNIVERSAL_BASE_FEATURES = new Set([
     "dashboard",
-    "leads",
     "conversas",
     "inbox",
     "whatsapp",

@@ -25,12 +25,12 @@ vi.mock("../services/n8nSettings.js", () => ({
 
 const { applyModularPlanGate, _resetModularGateCache } = await import("../access/modularGate.js");
 const { requireInternalPageAccess } = await import("../access/middlewares.js");
-
+const TENANT = "teste-modular";
 const TODAS = [
-  "dashboard", "leads", "banco-de-dados", "whatsapp", "onboarding-wizard",
+  "dashboard", "banco-de-dados", "whatsapp", "onboarding-wizard",
   "campanhas", "planilhas", "disparos",
   "followup", "fila-de-followup", "followup-sugestoes",
-  "agente", "conexoes", "relatorios",
+  "agente", "conexoes", "inteligencia-comercial",
 ];
 
 function usuarioDoTenant(clientId, internalPages = TODAS) {
@@ -46,16 +46,28 @@ function usuarioDoTenant(clientId, internalPages = TODAS) {
 }
 
 function makeRes() {
+  const headers = {};
   const res = {
     statusCode: null,
     body: null,
-    status(code) { res.statusCode = code; return res; },
-    json(payload) { res.body = payload; return res; },
+    status(c) {
+      this.statusCode = c;
+      return this;
+    },
+    json(b) {
+      this.body = b;
+      return this;
+    },
+    setHeader(k, v) {
+      headers[k.toLowerCase()] = v;
+    },
+    getHeader(k) {
+      return headers[k.toLowerCase()];
+    },
   };
   return res;
 }
 
-/** Roda o guard real e diz se passou. */
 function passouNoGuard(access, pagina) {
   const res = makeRes();
   let chamouNext = false;
@@ -63,15 +75,11 @@ function passouNoGuard(access, pagina) {
   return { passou: chamouNext, status: res.statusCode, code: res.body?.error?.code };
 }
 
-beforeEach(() => {
-  settingsPorTenant.clear();
-  _resetModularGateCache();
-});
-
-describe("tenant modular com so disparador_campanhas", () => {
-  const TENANT = "teste-modular";
-
+describe("gating em tenant modular", () => {
   beforeEach(() => {
+    _resetModularGateCache();
+    settingsPorTenant.clear();
+    // Tenant modular que SO contratou disparador de campanhas
     settingsPorTenant.set(TENANT, {
       plan_tier: "modular",
       modulos_avulsos: ["disparador_campanhas"],
@@ -95,7 +103,7 @@ describe("tenant modular com so disparador_campanhas", () => {
 
   it("mantem a base universal do plano modular", async () => {
     const access = await applyModularPlanGate(usuarioDoTenant(TENANT));
-    for (const base of ["dashboard", "leads", "whatsapp"]) {
+    for (const base of ["dashboard", "whatsapp"]) {
       expect(passouNoGuard(access, base).passou, `${base} deveria continuar liberada`).toBe(true);
     }
     // banco-de-dados saiu da base universal e virou modulo vendavel: este tenant
@@ -103,9 +111,9 @@ describe("tenant modular com so disparador_campanhas", () => {
     expect(passouNoGuard(access, "banco-de-dados").passou).toBe(false);
   });
 
-  it("barra tambem agente, conexoes e relatorios nao contratados", async () => {
+  it("barra tambem agente, conexoes e relatorios/inteligencia nao contratados", async () => {
     const access = await applyModularPlanGate(usuarioDoTenant(TENANT));
-    for (const bloqueada of ["agente", "conexoes", "relatorios"]) {
+    for (const bloqueada of ["agente", "conexoes", "inteligencia-comercial"]) {
       expect(passouNoGuard(access, bloqueada).passou, `${bloqueada} deveria estar bloqueada`).toBe(false);
     }
   });

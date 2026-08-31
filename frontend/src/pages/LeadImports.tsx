@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import {
   Building2,
@@ -144,7 +145,31 @@ export default function LeadImports({
 
   const isCampanhasUnlocked = hasFeatureUnlocked(crmClient?.selectedClient, "disparador_campanhas");
 
-  const [activeTab, setActiveTab] = useLocalStorage<SheetTab>(`vexo_activeTab_${activeClientId}`, "campanha");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const normalizeSheetTab = (rawTab: string | null): SheetTab | null => {
+    if (!rawTab) return null;
+    const t = rawTab.toLowerCase().trim();
+    if (["relatorios", "relatorio", "auditoria"].includes(t)) return "relatorios";
+    if (["campanha", "novo-disparo", "disparo"].includes(t)) return "campanha";
+    if (["enviadas", "campanhas", "historico"].includes(t)) return "enviadas";
+    if (["agendamentos", "fila", "fila-de-envios"].includes(t)) return "agendamentos";
+    if (["planilhas", "salvas", "planilhas-salvas"].includes(t)) return "planilhas";
+    return null;
+  };
+
+  const [activeTab, setActiveTab] = useLocalStorage<SheetTab>(
+    `vexo_activeTab_${activeClientId}`,
+    normalizeSheetTab(searchParams.get("tab")) || "campanha"
+  );
+
+  useEffect(() => {
+    const urlTab = searchParams.get("tab");
+    const matched = normalizeSheetTab(urlTab);
+    if (matched) {
+      setActiveTab(matched);
+    }
+  }, [searchParams, setActiveTab]);
 
   // Lead spreadsheet upload states
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

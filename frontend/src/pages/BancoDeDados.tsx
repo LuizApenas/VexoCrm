@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import * as XLSX from "xlsx";
 import {
   Database,
@@ -268,14 +268,44 @@ export default function BancoDeDados() {
   const [evolutionInstances, setEvolutionInstances] = useState<EvolutionInstanceItem[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string>("");
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Mapeia apelidos de abas vindos da URL para os estágios reais do banco
+  const normalizeStageTab = (rawTab: string | null): string => {
+    if (!rawTab) return "all";
+    const t = rawTab.toLowerCase().trim();
+    if (["open_budget", "orcamentos", "orcamento", "qualificados", "qualificado", "proposta"].includes(t)) {
+      return "open_budget";
+    }
+    if (["buyer", "clientes", "cliente", "fechados", "fechado", "vendas"].includes(t)) {
+      return "buyer";
+    }
+    if (["cold", "frios", "frio"].includes(t)) {
+      return "cold";
+    }
+    if (["lost", "perdidos", "perdido"].includes(t)) {
+      return "lost";
+    }
+    return "all";
+  };
+
   // Filters & Tabs
-  const [activeTab, setActiveTab] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<string>(() => normalizeStageTab(searchParams.get("tab")));
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState<string>("");
   const [selectedSource, setSelectedSource] = useState<string>("");
   const [selectedChannel, setSelectedChannel] = useState<string>("all");
   const [knownTags, setKnownTags] = useState<string[]>([]);
   const [knownSources, setKnownSources] = useState<string[]>([]);
+
+  // Sincroniza activeTab quando o parâmetro da URL mudar
+  useEffect(() => {
+    const urlTab = searchParams.get("tab");
+    if (urlTab) {
+      const normalized = normalizeStageTab(urlTab);
+      setActiveTab(normalized);
+    }
+  }, [searchParams]);
 
   // Acumula tags e origens conhecidas da base para não sumirem ao filtrar
   useEffect(() => {
@@ -1393,7 +1423,10 @@ export default function BancoDeDados() {
   }
 
   return (
-    <PageShell>
+    <PageShell
+      title="Banco de Dados Inteligente"
+      subtitle="Vexo Lead Intelligence & Extrator de Contatos com Inteligência Semântica via WhatsApp"
+    >
       <div className="space-y-6 pb-20">
         {/* Header Superior */}
         <SectionHeader

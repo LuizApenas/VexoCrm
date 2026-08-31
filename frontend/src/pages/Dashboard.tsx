@@ -230,7 +230,7 @@ export default function Dashboard({
         icon: Star,
         colorClass: "text-amber-600 dark:text-amber-400",
         bgClass: "bg-amber-500/10 border-amber-500/20 hover:border-amber-500/40",
-        href: "/crm/leads",
+        href: "/crm/banco-de-dados?tab=open_budget",
         hint: "Interesse confirmado",
       },
       {
@@ -240,7 +240,7 @@ export default function Dashboard({
         icon: Trophy,
         colorClass: "text-emerald-600 dark:text-emerald-400",
         bgClass: "bg-emerald-500/10 border-emerald-500/20 hover:border-emerald-500/40",
-        href: "/crm/leads",
+        href: "/crm/banco-de-dados?tab=buyer",
         hint: "Clientes convertidos",
       },
     ];

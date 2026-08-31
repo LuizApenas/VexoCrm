@@ -40,7 +40,6 @@ export const CLIENT_VIEW_KEYS = ["dashboard", "leads", "planilhas", "whatsapp"];
 export const DEFAULT_CLIENT_VIEWS = ["dashboard", "leads"];
 export const INTERNAL_PAGE_KEYS = [
   "dashboard",
-  "leads",
   "banco-de-dados",
   "planilhas",
   "whatsapp",
@@ -63,7 +62,6 @@ export const INTERNAL_PAGE_KEYS = [
   "conexoes",
   "disparos",
   "aquecimento",
-  "relatorios",
   "apresentacao",
   "apresentacao-gd",
   "briefings-gd",
@@ -158,7 +156,7 @@ export const ACCESS_PRESET_DEFAULTS = {
     scopeMode: "assigned_clients",
     approvalLevel: "operator",
     permissions: ["dashboard.view", "leads.view", "imports.manage", "whatsapp.view", "whatsapp.reply"],
-    internalPages: ["dashboard", "leads", "whatsapp"],
+    internalPages: ["dashboard", "banco-de-dados", "whatsapp"],
     allowedViews: [],
   },
   parceiro: {
@@ -662,7 +660,6 @@ export function deriveTenantInternalPages(tenant = {}) {
   // Plano essencial padrão (inalterado)
   return [
     "dashboard",
-    "leads",
     "banco-de-dados",
     "whatsapp",
     "followup",
@@ -671,7 +668,6 @@ export function deriveTenantInternalPages(tenant = {}) {
     "planilhas",
     "agente",
     "conexoes",
-    "relatorios",
     "onboarding-wizard",
   ];
 }

@@ -69,9 +69,9 @@ describe("banco-de-dados saiu da base universal e virou modulo", () => {
     expect(MODULAR_BASE_PAGES).not.toContain("banco-de-dados");
   });
 
-  it("a base restante e dashboard, leads e conversas (mais o Treinamento)", () => {
+  it("a base restante e dashboard e conversas (mais o Treinamento)", () => {
     expect([...MODULAR_BASE_PAGES].sort()).toEqual(
-      ["dashboard", "leads", "onboarding-wizard", "whatsapp"].sort()
+      ["dashboard", "onboarding-wizard", "whatsapp"].sort()
     );
   });
 
@@ -124,10 +124,9 @@ describe("gate das rotas exclusivas do Banco de Dados", () => {
     expect(soBanco.internalPages).not.toContain("campanhas");
   });
 
-  it("a tela Leads continua na base universal — nao pode cair junto", async () => {
+  it("dashboard e conversas continuam na base universal", async () => {
     settingsPorTenant.set("t", { plan_tier: "modular", modulos_avulsos: [] });
     const access = await applyModularPlanGate(usuario("t"));
-    expect(access.internalPages).toContain("leads");
     expect(access.internalPages).toContain("dashboard");
     expect(access.internalPages).toContain("whatsapp");
   });

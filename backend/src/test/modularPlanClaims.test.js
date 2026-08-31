@@ -34,10 +34,10 @@ describe("Modular Plan Claims & Gating", () => {
 
     // Base universal
     expect(pages).toContain("dashboard");
-    expect(pages).toContain("leads");
     expect(pages).toContain("whatsapp");
-    // banco-de-dados saiu da base: virou modulo vendavel avulso.
+    // banco-de-dados e leads saíram da base: virou modulo vendavel avulso / aposentado.
     expect(pages).not.toContain("banco-de-dados");
+    expect(pages).not.toContain("leads");
     expect(pages).toContain("onboarding-wizard");
 
     // Contracted module pages
@@ -69,7 +69,6 @@ describe("Modular Plan Claims & Gating", () => {
 
     // Allowed permissions
     expect(effectivePermissions).toContain("dashboard.view");
-    expect(effectivePermissions).toContain("leads.view");
     expect(effectivePermissions).toContain("banco_dados.view");
     expect(effectivePermissions).toContain("campaigns.view");
     expect(effectivePermissions).toContain("campaigns.create");
@@ -99,15 +98,16 @@ describe("Modular Plan Claims & Gating", () => {
 
     // Universal base
     expect(pages).toContain("dashboard");
-    expect(pages).toContain("leads");
     expect(pages).toContain("whatsapp");
-    // banco-de-dados saiu da base: virou modulo vendavel avulso.
+    // banco-de-dados e leads saíram da base: banco é modulo avulso, leads foi aposentado.
     expect(pages).not.toContain("banco-de-dados");
+    expect(pages).not.toContain("leads");
 
     // Contracted modules
     expect(pages).toContain("chatbot-docs");
     expect(pages).toContain("agente");
-    expect(pages).toContain("relatorios");
+    expect(pages).toContain("inteligencia-comercial");
+    expect(pages).not.toContain("relatorios");
     expect(pages).toContain("conexoes");
     expect(pages).toContain("aquecimento");
 

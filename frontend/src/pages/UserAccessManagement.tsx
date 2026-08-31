@@ -258,7 +258,6 @@ const INTERNAL_PAGE_LABELS: Record<InternalPage, string> = {
   "contratos-gd": "Contratos GD",
   "pacotes-gd": "Pacotes GD",
   "condicoes-gd": "Condições GD",
-  leads: "Leads",
   planilhas: "Planilhas",
   whatsapp: "WhatsApp",
   agente: "Agente",
@@ -279,7 +278,6 @@ const INTERNAL_PAGE_LABELS: Record<InternalPage, string> = {
   conexoes: "Chips WhatsApp",
   disparos: "Disparos",
   aquecimento: "Aquecimento",
-  relatorios: "Relatórios",
   apresentacao: "Demonstração Vexo",
   "apresentacao-gd": "Apresentação GD",
   "briefings-gd": "Briefings Salvos",
@@ -302,7 +300,7 @@ const INTERNAL_PAGE_TABS = [
     label: "Máquina de Vendas",
     items: [
       "dashboard",
-      "leads",
+      "banco-de-dados",
       "whatsapp",
       "inteligencia-comercial",
       "chatbot-kanban",
@@ -323,7 +321,6 @@ const INTERNAL_PAGE_TABS = [
       "conexoes",
       "disparos",
       "aquecimento",
-      "relatorios",
     ] as InternalPage[],
   },
   {
@@ -567,7 +564,7 @@ function derivePermissionsFromInternalPages(pages: InternalPage[]): AccessPermis
   const permissions: AccessPermission[] = [];
 
   if (pages.includes("dashboard")) permissions.push("dashboard.view");
-  if (pages.includes("leads")) permissions.push("leads.view");
+  if (pages.includes("banco-de-dados")) permissions.push("leads.view");
   if (pages.includes("planilhas")) permissions.push("imports.manage");
   if (pages.includes("whatsapp")) permissions.push("whatsapp.view", "whatsapp.reply");
   if (pages.includes("agente")) permissions.push("agente.view");
@@ -1517,7 +1514,7 @@ function UserPlanAndSecurityControls({
   const pagesSet = new Set(draft.internalPages || []);
 
   const allowLeadsExport = permissionsSet.has("leads.export");
-  const showAnalyticsReports = pagesSet.has("relatorios") || pagesSet.has("inteligencia-comercial");
+  const showAnalyticsReports = pagesSet.has("inteligencia-comercial");
   const allowUsersManage = permissionsSet.has("users.manage") || pagesSet.has("usuarios");
 
   const canChangePlan = Boolean(isAdminUser);
@@ -1526,7 +1523,7 @@ function UserPlanAndSecurityControls({
     if (!canChangePlan) return;
     if (tier === "avancado") {
       const advancedPages = [...INTERNAL_PAGE_ORDER].filter((page) =>
-        showAnalyticsReports ? true : page !== "relatorios" && page !== "inteligencia-comercial"
+        showAnalyticsReports ? true : page !== "inteligencia-comercial"
       );
       if (!allowUsersManage) {
         const idx = advancedPages.indexOf("usuarios");
@@ -1546,7 +1543,6 @@ function UserPlanAndSecurityControls({
     } else {
       const essentialPages: InternalPage[] = [
         "dashboard",
-        "leads",
         "banco-de-dados",
         "whatsapp",
         "followup",
@@ -1558,7 +1554,7 @@ function UserPlanAndSecurityControls({
         "onboarding-wizard",
       ];
       if (showAnalyticsReports) {
-        essentialPages.push("relatorios");
+        essentialPages.push("inteligencia-comercial");
       }
       if (allowUsersManage) {
         essentialPages.push("usuarios");
@@ -1599,11 +1595,10 @@ function UserPlanAndSecurityControls({
       ? Array.from(
           new Set([
             ...draft.internalPages,
-            "relatorios" as InternalPage,
             "inteligencia-comercial" as InternalPage,
           ])
         )
-      : draft.internalPages.filter((p) => p !== "relatorios" && p !== "inteligencia-comercial");
+      : draft.internalPages.filter((p) => p !== "inteligencia-comercial");
     onChange({ internalPages: nextPages });
   };
 

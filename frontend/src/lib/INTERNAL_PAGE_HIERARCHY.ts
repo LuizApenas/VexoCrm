@@ -4,7 +4,7 @@ export const INTERNAL_PAGE_HIERARCHY = [
     label: "Máquina de Vendas",
     children: [
       { key: "dashboard", label: "Dashboard" },
-      { key: "leads", label: "Leads" },
+      { key: "banco-de-dados", label: "Banco de Dados" },
       { key: "whatsapp", label: "Conversas" },
       { key: "inteligencia-comercial", label: "Inteligência Comercial" },
       { key: "chatbot-kanban", label: "Chatbot Kanban" },
@@ -31,7 +31,6 @@ export const INTERNAL_PAGE_HIERARCHY = [
       { key: "campanhas", label: "Campanhas" },
       { key: "disparos", label: "Disparos" },
       { key: "aquecimento", label: "Aquecimento" },
-      { key: "relatorios", label: "Relatórios" }
     ]
   },
   {

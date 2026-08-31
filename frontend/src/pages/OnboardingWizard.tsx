@@ -495,8 +495,8 @@ const ACADEMY_MODULES: AcademyModule[] = [
     summary:
       "Onde você mede resultado: relatórios comerciais (fechamento, funil) e de disparos de WhatsApp (entregues, respondidos, falhados).",
     goal: "Objetivo de vendas: saber o que está dando retorno e cortar o que não está.",
-    ctaHref: "/crm/relatorios",
-    ctaLabel: "Abrir Relatórios",
+    ctaHref: "/crm/planilhas?tab=relatorios",
+    ctaLabel: "Abrir Relatórios de Envios",
     sections: [
       {
         title: "Relatórios de disparos de WhatsApp",

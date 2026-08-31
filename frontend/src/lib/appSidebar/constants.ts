@@ -34,7 +34,6 @@ export type SidebarItem = {
 // ━━ OPERAÇÃO ━━
 export const OPERACAO_ITEMS: SidebarItem[] = [
   { key: "dashboard", label: "Dashboard", url: "/crm/dashboard", icon: LayoutDashboard, page: "dashboard" },
-  { key: "leads", label: "Leads", url: "/crm/leads", icon: Users, page: "leads" },
   { key: "banco-de-dados", label: "Banco de Dados", url: "/crm/banco-de-dados", icon: Database, page: "banco-de-dados" },
   { key: "conversas", label: "Conversas", url: "/crm/whatsapp", icon: MessageCircle, page: "whatsapp" },
   { key: "followup", label: "Follow-up", url: "/crm/followup", icon: ListChecks, page: "fila-de-followup" },
@@ -42,10 +41,7 @@ export const OPERACAO_ITEMS: SidebarItem[] = [
 ];
 
 // ━━ INTELIGÊNCIA ━━
-export const INTELIGENCIA_ITEMS: SidebarItem[] = [
-  // { key: "inteligencia", label: "Int. Comercial", url: "/crm/inteligencia-comercial", icon: LineChart, page: "inteligencia-comercial" },
-  { key: "relatorios", label: "Relatórios", url: "/crm/relatorios", icon: BarChart2, page: "relatorios" },
-];
+export const INTELIGENCIA_ITEMS: SidebarItem[] = [];
 
 // ━━ AGENTE IA ━━
 export const AGENTE_IA_ITEMS: SidebarItem[] = [

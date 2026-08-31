@@ -96,7 +96,7 @@ function PainelLivPub() {
                 <span className="text-xs text-muted-foreground ml-2">importados</span>
               </div>
               <Button asChild size="sm" variant="ghost" className="gap-1 hover:text-amber-400 text-xs h-8">
-                <Link to="/crm/leads">
+                <Link to="/crm/banco-de-dados">
                   Ver Leads
                   <ChevronRight className="h-3 w-3" />
                 </Link>

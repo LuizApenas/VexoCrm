@@ -54,7 +54,7 @@ describe("planTier resolver", () => {
     expect(hasFeatureUnlocked(modularTenant, "antiban_groq")).toBe(false);
     // Universal base modules
     expect(hasFeatureUnlocked(modularTenant, "dashboard")).toBe(true);
-    expect(hasFeatureUnlocked(modularTenant, "leads")).toBe(true);
+    expect(hasFeatureUnlocked(modularTenant, "whatsapp")).toBe(true);
     expect(hasFeatureUnlocked(modularTenant, "conversas")).toBe(true);
   });
 

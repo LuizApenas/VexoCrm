@@ -46,7 +46,7 @@ describe("os dois catalogos descrevem os mesmos modulos (em memoria)", () => {
     const frontendSet = new Set(FRONTEND_INTERNAL_PAGE_ORDER);
 
     expect([...backendSet].sort()).toEqual([...frontendSet].sort());
-    expect(backendSet.size).toBe(36);
+    expect(backendSet.size).toBe(34);
   });
 });
 
@@ -60,7 +60,7 @@ describe("resolucao por id e por apelido", () => {
     expect(pagesForContractedModules(["campanhas"])).toContain("planilhas");
     expect(pagesForContractedModules(["agente-ia"])).toContain("agente");
     expect(pagesForContractedModules(["chips-whatsapp"])).toContain("conexoes");
-    expect(pagesForContractedModules(["relatorio"])).toContain("relatorios");
+    expect(pagesForContractedModules(["relatorio"])).toContain("inteligencia-comercial");
   });
 
   it("ignora prefixo mod_/modulo_ e caixa", () => {
@@ -85,13 +85,14 @@ describe("resolucao por id e por apelido", () => {
 
 describe("base universal do plano modular", () => {
   it("inclui as paginas que todo tenant modular ve", () => {
-    for (const base of ["dashboard", "leads", "whatsapp"]) {
+    for (const base of ["dashboard", "whatsapp"]) {
       expect(MODULAR_BASE_PAGES).toContain(base);
     }
   });
 
-  it("banco-de-dados NAO esta na base: virou modulo vendavel", () => {
+  it("banco-de-dados e leads NAO estao na base universal", () => {
     expect(MODULAR_BASE_PAGES).not.toContain("banco-de-dados");
+    expect(MODULAR_BASE_PAGES).not.toContain("leads");
     expect(MODULE_CATALOG.some((m) => m.id === "banco-de-dados")).toBe(true);
   });
 });
@@ -106,7 +107,7 @@ describe("comportamento de derivacao de permissoes e isolamento", () => {
     expect(AVAILABLE_CUSTOM_MODULES.length).toBe(11);
   });
 
-  it("INTERNAL_PAGE_KEYS contem as 36 chaves de pagina incluindo as 4 chaves -gd", () => {
+  it("INTERNAL_PAGE_KEYS contem as 34 chaves de pagina incluindo as 4 chaves -gd", () => {
     expect(INTERNAL_PAGE_KEYS).toContain("propostas-gd");
     expect(INTERNAL_PAGE_KEYS).toContain("contratos-gd");
     expect(INTERNAL_PAGE_KEYS).toContain("pacotes-gd");
@@ -123,7 +124,7 @@ describe("comportamento de derivacao de permissoes e isolamento", () => {
     const pages = deriveTenantInternalPages(tenantComBanco);
     expect(pages).toContain("banco-de-dados");
     expect(pages).toContain("dashboard");
-    expect(pages).toContain("leads");
+    expect(pages).toContain("whatsapp");
   });
 
   it("tenant modular SEM 'banco-de-dados' contratado NAO recebe a pagina", () => {

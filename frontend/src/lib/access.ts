@@ -1,6 +1,5 @@
 export const INTERNAL_PAGE_ORDER = [
   "dashboard",
-  "leads",
   "planilhas",
   "whatsapp",
   "agente",
@@ -22,7 +21,6 @@ export const INTERNAL_PAGE_ORDER = [
   "conexoes",
   "disparos",
   "aquecimento",
-  "relatorios",
   "apresentacao",
   "apresentacao-gd",
   "briefings-gd",
@@ -224,7 +222,6 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
     ],
     internalPages: [
       "dashboard",
-      "leads",
       "banco-de-dados",
       "planilhas",
       "whatsapp",
@@ -236,7 +233,6 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
       "conexoes",
       "disparos",
       "aquecimento",
-      "relatorios",
       "onboarding-wizard",
       "apresentacao",
       "eventos",
@@ -260,7 +256,6 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
     ],
     internalPages: [
       "dashboard",
-      "leads",
       "banco-de-dados",
       "whatsapp",
       "followup",
@@ -297,7 +292,6 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
     ],
     internalPages: [
       "dashboard",
-      "leads",
       "banco-de-dados",
       "whatsapp",
       "followup",
@@ -324,7 +318,6 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
     ],
     internalPages: [
       "dashboard",
-      "leads",
       "banco-de-dados",
       "whatsapp",
       "followup",
@@ -342,7 +335,7 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
     scopeMode: "assigned_clients",
     approvalLevel: "none",
     permissions: ["dashboard.view", "leads.view"],
-    internalPages: ["dashboard", "leads"],
+    internalPages: ["dashboard"],
     allowedViews: ["dashboard", "leads"],
   },
   pending: {
@@ -651,7 +644,6 @@ export function getInheritedPlanPages(planTier?: string | null, client?: any): I
   }
   return [
     "dashboard",
-    "leads",
     "banco-de-dados",
     "whatsapp",
     "followup",
@@ -660,7 +652,6 @@ export function getInheritedPlanPages(planTier?: string | null, client?: any): I
     "planilhas",
     "agente",
     "conexoes",
-    "relatorios",
     "onboarding-wizard",
     "apresentacao",
   ];
@@ -674,7 +665,6 @@ export function isInternalPageAllowedForClient(
 
   const pageToTabKey: Record<string, string> = {
     dashboard: "dashboard",
-    leads: "leads",
     "banco-de-dados": "leads",
     planilhas: "campanhas",
     whatsapp: "conversas",
@@ -695,7 +685,6 @@ export function isInternalPageAllowedForClient(
     apresentacao: "apresentacao",
     conexoes: "conexoes",
     aquecimento: "aquecimento",
-    relatorios: "relatorios",
     "apresentacao-gd": "apresentacao-gd",
     "briefings-gd": "briefings-gd",
     "propostas-gd": "propostas-gd",
@@ -725,7 +714,7 @@ export function isPathAllowedForClient(
 
   let tabKey = "";
   if (path.includes("/crm/dashboard")) tabKey = "dashboard";
-  else if (path.includes("/crm/leads") || path.includes("/crm/banco-de-dados")) tabKey = "leads";
+  else if (path.includes("/crm/banco-de-dados")) tabKey = "leads";
   else if (path.includes("/crm/whatsapp")) tabKey = "conversas";
   else if (path.includes("/crm/inteligencia-comercial")) tabKey = "inteligencia";
   else if (path.includes("/crm/chatbot-settings") || (path.includes("/crm/agente") && path.includes("tab=settings"))) tabKey = "chatbot";
@@ -738,7 +727,7 @@ export function isPathAllowedForClient(
     else tabKey = "conexoes";
   }
   else if (path.includes("/crm/planilhas")) tabKey = "campanhas";
-  else if (path.includes("/crm/relatorios")) tabKey = "relatorios";
+  else if (path.includes("/crm/relatorios")) tabKey = "campanhas";
   else if (path.includes("/crm/geracao-digital") || path.includes("/crm/apresentacao-gd") || path.includes("/crm/briefings-gd") || path.includes("/crm/propostas-gd") || path.includes("/crm/contratos-gd") || path.includes("/crm/pacotes-gd") || path.includes("/crm/condicoes-gd")) {
     if (path.includes("tab=briefings") || path.includes("/crm/briefings-gd")) tabKey = "briefings-gd";
     else if (path.includes("/crm/propostas-gd")) tabKey = "propostas-gd";

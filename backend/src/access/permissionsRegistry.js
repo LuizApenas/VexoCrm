@@ -60,7 +60,7 @@ export const AVAILABLE_CUSTOM_MODULES = [
     featureKey: "sdr_broadcast",
     label: "Alertas SDR Broadcast",
     desc: "Distribuição automática de leads quentes para consultores",
-    pages: ["leads", "conversas"],
+    pages: ["conversas"],
     views: [],
   },
   {
@@ -76,7 +76,7 @@ export const AVAILABLE_CUSTOM_MODULES = [
     featureKey: "origem_leads",
     label: "Rastreamento de Origens",
     desc: "Atribuição precisa do canal de aquisição (Instagram/Google/TikTok)",
-    pages: ["leads", "inteligencia-comercial"],
+    pages: ["inteligencia-comercial"],
     views: [],
   },
   {
@@ -92,7 +92,7 @@ export const AVAILABLE_CUSTOM_MODULES = [
     featureKey: "relatorios",
     label: "Relatórios & Inteligência",
     desc: "Métricas avançadas de disparos e performance operacional",
-    pages: ["relatorios", "inteligencia-comercial"],
+    pages: ["inteligencia-comercial"],
     views: [],
   },
   {
@@ -117,8 +117,8 @@ export const PERMISSION_CATEGORIES = [
 export const PERMISSIONS_REGISTRY = [
   // A) MÁQUINA DE VENDAS & CRM
   { key: "dashboard.view", category: "vendas_crm", label: "Visualizar Dashboard e Métricas", roles: ["internal", "client"], legacyPages: ["dashboard"], legacyViews: ["dashboard"] },
-  { key: "leads.view", category: "vendas_crm", label: "Visualizar Lista de Leads", roles: ["internal", "client"], legacyPages: ["leads"], legacyViews: ["leads"] },
-  { key: "leads.export", category: "vendas_crm", label: "Exportar Leads (Excel/CSV)", roles: ["internal", "client"], legacyPages: ["leads", "planilhas"], legacyViews: ["leads"] },
+  { key: "leads.view", category: "vendas_crm", label: "Visualizar Lista de Leads", roles: ["internal", "client"], legacyPages: ["banco-de-dados"], legacyViews: ["leads"] },
+  { key: "leads.export", category: "vendas_crm", label: "Exportar Leads (Excel/CSV)", roles: ["internal", "client"], legacyPages: ["banco-de-dados", "planilhas"], legacyViews: ["leads"] },
   { key: "banco_dados.view", category: "vendas_crm", label: "Acessar Banco de Dados Inteligente", roles: ["internal", "client"], legacyPages: ["planilhas"], legacyViews: ["planilhas"] },
   { key: "banco_dados.extract_wa", category: "vendas_crm", label: "Executar Extração de Contatos via WhatsApp", roles: ["internal", "client"], legacyPages: ["planilhas"], legacyViews: ["planilhas"] },
   { key: "banco_dados.import", category: "vendas_crm", label: "Importar Planilhas de Leads", roles: ["internal", "client"], legacyPages: ["planilhas"], legacyViews: ["planilhas"] },
@@ -137,7 +137,7 @@ export const PERMISSIONS_REGISTRY = [
   { key: "campaigns.delete", category: "disparos_whatsapp", label: "Excluir Campanha", roles: ["internal", "client"], legacyPages: ["planilhas", "campanhas", "disparos"], legacyViews: ["planilhas"] },
   { key: "dispatches.execute", category: "disparos_whatsapp", label: "Executar e Disparar Lotes de Mensagens", roles: ["internal", "client"], legacyPages: ["planilhas", "disparos", "campanhas"], legacyViews: ["planilhas"] },
   { key: "dispatches.pause", category: "disparos_whatsapp", label: "Pausar Disparo em Andamento", roles: ["internal", "client"], legacyPages: ["planilhas", "disparos", "campanhas"], legacyViews: ["planilhas"] },
-  { key: "dispatches.export_failed", category: "disparos_whatsapp", label: "Exportar Relatório de Leads Falhados", roles: ["internal", "client"], legacyPages: ["planilhas", "disparos", "relatorios"], legacyViews: ["planilhas"] },
+  { key: "dispatches.export_failed", category: "disparos_whatsapp", label: "Exportar Relatório de Leads Falhados", roles: ["internal", "client"], legacyPages: ["planilhas", "disparos"], legacyViews: ["planilhas"] },
 
   // C) AGENTE DE INTELIGÊNCIA ARTIFICIAL (IA)
   { key: "agente.view", category: "agente_ia", label: "Visualizar Painel do Agente IA (Iara)", roles: ["internal", "client"], legacyPages: ["agente"], legacyViews: [] },
@@ -147,9 +147,9 @@ export const PERMISSIONS_REGISTRY = [
   { key: "agente.change_identity", category: "agente_ia", label: "Alterar Nome e Foto do Agente", roles: ["internal", "client"], legacyPages: ["agente"], legacyViews: [] },
 
   // D) RELATÓRIOS & INTELIGÊNCIA
-  { key: "reports.commercial", category: "relatorios", label: "Acessar Relatórios Comerciais", roles: ["internal", "client"], legacyPages: ["inteligencia-comercial", "relatorios"], legacyViews: [] },
-  { key: "reports.dispatches", category: "relatorios", label: "Acessar Relatórios de Envio de WhatsApp", roles: ["internal", "client"], legacyPages: ["relatorios", "disparos"], legacyViews: [] },
-  { key: "reports.export_pdf", category: "relatorios", label: "Exportar Relatórios em PDF", roles: ["internal", "client"], legacyPages: ["relatorios", "inteligencia-comercial"], legacyViews: [] },
+  { key: "reports.commercial", category: "relatorios", label: "Acessar Relatórios Comerciais", roles: ["internal", "client"], legacyPages: ["inteligencia-comercial"], legacyViews: [] },
+  { key: "reports.dispatches", category: "relatorios", label: "Acessar Relatórios de Envio de WhatsApp", roles: ["internal", "client"], legacyPages: ["planilhas", "disparos"], legacyViews: [] },
+  { key: "reports.export_pdf", category: "relatorios", label: "Exportar Relatórios em PDF", roles: ["internal", "client"], legacyPages: ["inteligencia-comercial"], legacyViews: [] },
 
   // E) ADMINISTRAÇÃO DA EMPRESA
   { key: "users.view", category: "administracao", label: "Visualizar Usuários Cadastrados", roles: ["internal"], legacyPages: ["usuarios"], legacyViews: [] },
@@ -350,7 +350,7 @@ export const MODULE_CATALOG = [
   {
     id: "sdr_broadcast",
     label: "Alertas SDR Broadcast",
-    pages: ["leads", "conversas"],
+    pages: ["conversas"],
     aliases: [],
   },
   {
@@ -362,7 +362,7 @@ export const MODULE_CATALOG = [
   {
     id: "origem_leads",
     label: "Rastreamento de Origens",
-    pages: ["leads", "inteligencia-comercial"],
+    pages: ["inteligencia-comercial"],
     aliases: ["origens", "rastreamento"],
   },
   {
@@ -374,7 +374,7 @@ export const MODULE_CATALOG = [
   {
     id: "relatorios",
     label: "Relatórios & Inteligência",
-    pages: ["relatorios", "inteligencia-comercial"],
+    pages: ["inteligencia-comercial"],
     aliases: ["relatorio"],
   },
   // Banco de Dados saiu da base universal e virou vendavel avulso. Id igual a
@@ -434,11 +434,11 @@ export const MODULE_TAB_KEYS = {
     "followup:config",
   ],
   followup_automations: ["followup", "followup:journeys"],
-  sdr_broadcast: ["leads", "conversas"],
+  sdr_broadcast: ["conversas"],
   multiplos_chips: ["conexoes", "aquecimento"],
-  origem_leads: ["leads", "inteligencia", "inteligencia:performance"],
+  origem_leads: ["inteligencia", "inteligencia:performance"],
   antiban_groq: ["campanhas"],
-  relatorios: ["relatorios", "inteligencia", "inteligencia:performance"],
+  relatorios: ["inteligencia", "inteligencia:performance"],
   "banco-de-dados": ["leads"],
 };
 
@@ -484,7 +484,7 @@ export function ensureModuleTabs(allowedTabs, modulosAvulsos = []) {
   return [...allowedTabs, ...faltando];
 }
 
-export const MODULAR_BASE_PAGES = ["dashboard", "leads", "whatsapp", "onboarding-wizard"];
+export const MODULAR_BASE_PAGES = ["dashboard", "whatsapp", "onboarding-wizard"];
 
 /**
  * Paginas concedidas pelos modulos contratados. Casa por id ou por alias, sempre
