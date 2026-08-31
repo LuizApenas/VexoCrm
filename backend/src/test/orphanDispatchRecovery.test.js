@@ -50,15 +50,15 @@ describe("Recuperação de Lotes Órfãos no Startup com Retomada Automática", 
           return { rowCount: 1 };
         }
 
-        // 6. UPDATE campaign_dispatches to scheduled (para retomada automática)
-        if (text.includes("UPDATE public.campaign_dispatches") && text.includes("SET status = 'scheduled'")) {
+        // 6. UPDATE campaign_dispatches to paused (para controle manual seguro pelo usuário)
+        if (text.includes("UPDATE public.campaign_dispatches") && text.includes("SET status = 'paused'")) {
           const sentCount = params[0];
           const failedCount = params[1];
           const errorMsg = params[2];
           const dispatchId = params[3];
           const disp = dispatchRows.find((d) => d.id === dispatchId && d.status === "running");
           if (disp) {
-            disp.status = "scheduled";
+            disp.status = "paused";
             disp.sent_count = sentCount;
             disp.failed_count = failedCount;
             disp.error_message = errorMsg;
@@ -73,7 +73,7 @@ describe("Recuperação de Lotes Órfãos no Startup com Retomada Automática", 
     };
   }
 
-  it("lote 'running' no boot vira 'scheduled' para retomada automática com motivo legível e explicativo", async () => {
+  it("lote 'running' no boot vira 'paused' para retomada manual segura com motivo legível e explicativo", async () => {
     const mockPool = createMockPool({
       dispatches: [
         {
@@ -98,12 +98,12 @@ describe("Recuperação de Lotes Órfãos no Startup com Retomada Automática", 
       leadsUnconfirmed: 0,
     });
     expect(result.items[0].errorMessage).toContain(
-      "Interrompido por reinício do servidor. Retomando automaticamente do ponto onde parou — quem já recebeu não recebe de novo."
+      "Pausado — servidor reiniciou durante o envio. Retome quando quiser."
     );
 
     const updatedDisp = mockPool.dispatchRows.find((d) => d.id === "disp-101");
-    expect(updatedDisp.status).toBe("scheduled");
-    expect(updatedDisp.error_message).toContain("Interrompido por reinício do servidor");
+    expect(updatedDisp.status).toBe("paused");
+    expect(updatedDisp.error_message).toContain("Pausado — servidor reiniciou durante o envio. Retome quando quiser.");
   });
 
   it("lead em 'claimed' sem sent_at NÃO é reenviado, vira 'skipped' e aparece na contagem de não confirmados", async () => {

@@ -71,17 +71,15 @@ export async function recoverOrphanDispatches(pool) {
       const failedCount = Number(failedRes.rows[0]?.cnt || 0);
 
       // 5. Formular mensagem explicativa
-      let errorMessage = "Interrompido por reinício do servidor. Retomando automaticamente do ponto onde parou — quem já recebeu não recebe de novo.";
+      let errorMessage = "Pausado — servidor reiniciou durante o envio. Retome quando quiser.";
       if (claimedCount > 0) {
-        errorMessage = `Interrompido por reinício do servidor (${claimedCount} lead(s) com envio não confirmado). Retomando automaticamente do ponto onde parou — quem já recebeu não recebe de novo.`;
+        errorMessage = `Pausado — servidor reiniciou durante o envio (${claimedCount} lead(s) com envio não confirmado). Retome quando quiser.`;
       }
 
-      // 6. Atualizar o lote em campaign_dispatches para 'scheduled' para retomada automática pelo scheduler
+      // 6. Atualizar o lote em campaign_dispatches para 'paused' para controle manual seguro pelo usuário
       await pool.query(
         `UPDATE public.campaign_dispatches
-         SET status = 'scheduled',
-             scheduled_at = now(),
-             trigger_type = 'auto_resume',
+         SET status = 'paused',
              sent_count = $1,
              failed_count = $2,
              error_message = $3,
@@ -91,7 +89,7 @@ export async function recoverOrphanDispatches(pool) {
         [sentCount, failedCount, errorMessage, dispatchId]
       );
 
-      console.log("[boot-recovery] lote órfão agendado para retomada automática:", {
+      console.log("[boot-recovery] lote órfão pausado com segurança:", {
         dispatchId,
         dispatchName: disp.name,
         campaignId: disp.campaign_id,
@@ -99,7 +97,7 @@ export async function recoverOrphanDispatches(pool) {
         leadsSent: sentCount,
         leadsFailed: failedCount,
         leadsUnconfirmed: claimedCount,
-        novoStatus: "scheduled",
+        novoStatus: "paused",
       });
 
       items.push({
@@ -114,7 +112,7 @@ export async function recoverOrphanDispatches(pool) {
       });
     }
 
-    console.log(`[boot-recovery] ${items.length} lote(s) órfão(s) recuperado(s) e agendado(s) para retomada automática.`);
+    console.log(`[boot-recovery] ${items.length} lote(s) órfão(s) recuperado(s) e pausado(s) para retomada manual.`);
     return { recovered: items.length, items };
   } catch (err) {
     console.error("[boot-recovery] erro ao verificar/recuperar lotes órfãos:", err?.message || err);

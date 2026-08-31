@@ -123,6 +123,7 @@ export function computeVpFromItems(items: any[]): number {
 export interface ProposalLike {
   cobrar_setup?: boolean;
   valor_setup_vexo?: number | string | null;
+  valor_vp?: number | string | null;
   package_id?: string | null;
   package_vexo_id?: string | null;
   periodo_plano?: string | null;

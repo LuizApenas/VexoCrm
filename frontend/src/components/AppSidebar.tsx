@@ -333,11 +333,9 @@ export function AppSidebar() {
             <div className="space-y-1">
               <NavItem
                 item={{
-                  key: "equipe-usuarios",
                   label: "Equipe & Usuários",
                   url: "/crm/admin?tab=usuarios",
                   icon: Users,
-                  page: "empresas",
                 }}
                 collapsed={collapsed}
               />

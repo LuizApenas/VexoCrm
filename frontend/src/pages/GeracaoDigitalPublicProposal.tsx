@@ -849,7 +849,7 @@ export default function GeracaoDigitalPublicProposal() {
               <div className="pb-4 border-b border-white/10 space-y-1 transition-all duration-500 ease-in-out">
                 <span className="text-[11px] text-slate-400 font-mono font-bold uppercase tracking-widest block transition-colors duration-500">Mensalidade</span>
                 {(() => {
-                  const pkgItem = (proposal.items || []).find((i: any) => i.categoria === "gd" && (Number(i.valor || 0) > 0 || Number(i.valor_tabela || 0) > 0));
+                  const pkgItem = (proposal.itens || (proposal as any).items || []).find((i: any) => i.categoria === "gd" && (Number(i.valor || 0) > 0 || Number(i.valor_tabela || 0) > 0));
                   const valorTabelaPeriodo = pkgItem ? Number(pkgItem.valor_tabela || 0) : 0;
                   const mesesItem = pkgItem ? (pkgItem.meses || calc.mesesPeriodo || 1) : 1;
                   const rawTabelaMensal = valorTabelaPeriodo > 0 ? Math.round((valorTabelaPeriodo / mesesItem) * 100) / 100 : Number((proposal as any).valor_tabela_mensal || 0);

@@ -382,11 +382,11 @@ export default function WhatsAppInbox({
     if (found) return found;
 
     const chatCanonical = sanitizePhone(selectedChatId);
-    const matchingLead = leads.find((l) => sanitizePhone(l.telefone || l.phone) === chatCanonical);
+    const matchingLead = leads.find((l) => sanitizePhone(l.telefone || (l as any).phone) === chatCanonical);
 
     return {
       id: selectedChatId,
-      name: matchingLead?.nome || matchingLead?.name || selectedChatId,
+      name: matchingLead?.nome || (matchingLead as any)?.name || selectedChatId,
       profilePic: null,
       isGroup: false,
       unreadCount: 0,
@@ -941,6 +941,7 @@ export default function WhatsAppInbox({
                 </div>
               ) : (
                 filteredChats.map((chat) => {
+                  const isSelected = selectedChatId === chat.id;
                   const rawId = String(chat.id || "");
                   const isJid = rawId.includes("@");
                   const phoneLabel = isJid
@@ -1377,8 +1378,8 @@ export default function WhatsAppInbox({
                 {/* Origem */}
                 <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
                   <OriginBadge
-                    origin={selectedChat?.leadOrigin ?? (matchedLead ? "inbound" : null)}
-                    campaignId={selectedChat?.sourceCampaignId ?? null}
+                    origin={(selectedChat as any)?.leadOrigin ?? (matchedLead ? "inbound" : null)}
+                    campaignId={(selectedChat as any)?.sourceCampaignId ?? null}
                     campaignNames={campaignNames}
                   />
                   {matchedLead?.qualificacao && (

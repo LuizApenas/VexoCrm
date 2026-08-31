@@ -68,14 +68,14 @@ describe("Aviso de Duplicidade e Exclusão em Massa de Disparos", () => {
         trigger_type: "scheduled",
         created_at: new Date().toISOString(),
       },
-    ];
+    ] as any;
 
     const onDeleteBatch = vi.fn();
     const onDeleteMultiple = vi.fn();
 
     render(
       <DispatchQueueTable
-        dispatches={mockDispatches}
+        dispatches={mockDispatches as any}
         loadingDispatches={false}
         refetchDispatches={vi.fn()}
         onTriggerDispatchBatch={vi.fn()}
@@ -125,14 +125,14 @@ describe("Aviso de Duplicidade e Exclusão em Massa de Disparos", () => {
         trigger_type: "scheduled",
         created_at: new Date().toISOString(),
       },
-    ];
+    ] as any;
 
     const onDeleteMultiple = vi.fn();
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(
       <DispatchQueueTable
-        dispatches={mockDispatches}
+        dispatches={mockDispatches as any}
         loadingDispatches={false}
         refetchDispatches={vi.fn()}
         onTriggerDispatchBatch={vi.fn()}

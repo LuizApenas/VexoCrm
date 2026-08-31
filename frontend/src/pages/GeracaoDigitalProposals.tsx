@@ -990,7 +990,7 @@ export default function GeracaoDigitalProposals({ isVexoCommercial = false }: Ge
         desconto_mensal_pct: (editPlano as any).descontoMensalPorcentagem ?? (editPlano as any).desconto_mensal_pct ?? 0,
         vexo_plan: (editPlano as any).vexoPlan || null,
         vexo_price: (editPlano as any).vexoPlan === "essencial" ? 397 : (editPlano as any).vexoPlan === "avancado" ? 897 : 0,
-        owner_company: isVexoCommercial ? "vexo" : (selectedProposal.owner_company || "geracao-digital")
+        owner_company: isVexoCommercial ? "vexo" : ((selectedProposal as any).owner_company || "geracao-digital")
       };
 
       const res = await fetchApi(`/api/gd/proposals/${selectedProposal.id}`, {

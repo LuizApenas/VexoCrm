@@ -262,20 +262,14 @@ export function CommercialIntelligenceContent({ clientId }: { clientId: string }
   }, [clientId, getIdToken]);
 
   const options = data?.filters?.options;
-  const consultants = useMemo(() => {
-    if (data?.rankings?.consultants && Array.isArray(data.rankings.consultants)) {
-      return data.rankings.consultants;
-    }
+  const consultants: ConsultantItem[] = useMemo(() => {
     if (data?.consultants?.items && Array.isArray(data.consultants.items)) {
       return data.consultants.items;
     }
     return [];
   }, [data]);
 
-  const campaigns = useMemo(() => {
-    if (data?.rankings?.campaigns && Array.isArray(data.rankings.campaigns)) {
-      return data.rankings.campaigns;
-    }
+  const campaigns: CampaignPerformanceItem[] = useMemo(() => {
     if (data?.campaigns?.items && Array.isArray(data.campaigns.items)) {
       return data.campaigns.items;
     }

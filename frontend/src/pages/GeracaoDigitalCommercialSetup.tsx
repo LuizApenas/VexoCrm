@@ -102,6 +102,7 @@ interface PackageApi {
   valor: number;
   valor_tabela?: number | null;
   destaque: boolean;
+  tipo?: "gd" | "vexo" | string | null;
 }
 
 export default function GeracaoDigitalCommercialSetup() {

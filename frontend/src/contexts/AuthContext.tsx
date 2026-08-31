@@ -47,7 +47,7 @@ export type {
 export interface AuthAccessProfile {
   uid: string;
   email: string | null;
-  role: AccessRole;
+  role: AccessRole | string;
   isAdmin: boolean;
   accessPreset: AccessPreset;
   scopeMode: AccessScope;
@@ -360,7 +360,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const isAuthenticated = !!firebaseUser;
-  const accessRole = accessProfile?.role || "internal";
+  const accessRole: AccessRole = (accessProfile?.role as AccessRole) || "internal";
   const accessPreset = accessProfile?.accessPreset || "internal_operator";
   const scopeMode = accessProfile?.scopeMode || "all_clients";
   const approvalLevel = accessProfile?.approvalLevel || "none";

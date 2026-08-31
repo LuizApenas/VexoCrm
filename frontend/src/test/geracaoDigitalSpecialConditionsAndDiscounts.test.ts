@@ -104,7 +104,7 @@ describe("DEFEITO 2: Formas de Pagamento e Ausência de 'Desconto' Não Concedid
       id: "avista",
       nome: "À vista",
       tipo: "avista_desconto" as const,
-      config: { meio: "pix", percentual_desconto: 0 },
+      config: { meio: "pix" as const, percentual_desconto: 0 },
     };
 
     const breakdownSemDesc = computePaymentBreakdown(termSemDesconto, 5000);
@@ -116,7 +116,7 @@ describe("DEFEITO 2: Formas de Pagamento e Ausência de 'Desconto' Não Concedid
       id: "avista",
       nome: "À vista",
       tipo: "avista_desconto" as const,
-      config: { meio: "pix", percentual_desconto: 10 },
+      config: { meio: "pix" as const, percentual_desconto: 10 },
     };
 
     const breakdownComDesc = computePaymentBreakdown(termComDesconto, 5000);

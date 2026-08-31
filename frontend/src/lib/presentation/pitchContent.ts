@@ -1321,32 +1321,30 @@ export const SEGMENT_GROUPS: Record<string, SegmentGroup> = {
   turismo: {
     id: "turismo",
     label: "Agências de Turismo & Viagens",
-    tagline: "Vendas de Pacotes, Cruzeiros e Cotações no WhatsApp sem Perder Clientes",
+    focus: "Vendas de Pacotes, Cruzeiros e Cotações no WhatsApp sem Perder Clientes",
+    accent: "#0284c7",
     buildSlides: (ctx: PitchContext): PitchSlide[] => {
-      const nome = ctx.prospectName || "sua agência";
+      const nome = ctx.companyName || "sua agência";
       return [
         {
           id: 1,
-          kind: "cover",
+          kind: "impact",
           eyebrow: "APRESENTAÇÃO COMERCIAL",
           title: `Transforme Cotações de Viagens em Vendas com Resposta Imediata na ${nome}.`,
           subtitle: "Como agências de turismo líderes multiplicam fecho de pacotes, cruzeiros e passagens aéreas com inteligência de atendimento.",
         },
         {
           id: 2,
-          kind: "problem",
+          kind: "pain",
           eyebrow: "O DESAFIO DO TURISMO",
           title: "Cotações no WhatsApp esfriam em poucas horas.",
-          bullets: [
-            "Clientes pesquisam pacotes e resorts em várias agências ao mesmo tempo.",
-            "Demorar mais de 10 minutos para enviar a cotação faz o viajante fechar com o concorrente.",
-            "Base de clientes que viajaram no ano passado fica abandonada sem acompanhamento para as próximas férias.",
-            "Atendentes perdem horas digitando as mesmas opções de voos, hotéis e passeios manualmente.",
-          ],
+          body:
+            "Clientes pesquisam pacotes e resorts em várias agências ao mesmo tempo. Demorar mais de 10 minutos para enviar a cotação faz o viajante fechar com o concorrente. " +
+            "A base de clientes que viajaram no ano passado fica abandonada sem acompanhamento para as próximas férias.",
         },
         {
           id: 3,
-          kind: "math",
+          kind: "implication",
           eyebrow: "O CUSTO DAS COTAÇÕES PERDIDAS",
           title: "Vendas perdidas no WhatsApp custam caro.",
           body: `Agências de viagem perdem de 30% a 50% dos orçamentos por falta de agilidade na cotação inicial e acompanhamento de follow-up. Uma única venda de viagem internacional ou cruzeiro familiar recuperada já paga todo o investimento do sistema.`,

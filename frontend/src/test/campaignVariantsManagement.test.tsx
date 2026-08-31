@@ -36,7 +36,7 @@ describe("MessageSequenceStep — Gerenciamento e Limpeza de Variações Humaniz
       },
     ];
 
-    render(<MessageSequenceStep {...defaultProps} campaignSequence={sequence} />);
+    render(<MessageSequenceStep {...defaultProps} campaignSequence={sequence as any} />);
 
     expect(
       screen.getByText(/Variações têm pouco efeito aqui: esta etapa sai uma por vez/i)
@@ -54,7 +54,7 @@ describe("MessageSequenceStep — Gerenciamento e Limpeza de Variações Humaniz
       },
     ];
 
-    render(<MessageSequenceStep {...defaultProps} campaignSequence={sequence} />);
+    render(<MessageSequenceStep {...defaultProps} campaignSequence={sequence as any} />);
 
     expect(
       screen.queryByText(/Variações têm pouco efeito aqui: esta etapa sai uma por vez/i)
@@ -79,7 +79,7 @@ describe("MessageSequenceStep — Gerenciamento e Limpeza de Variações Humaniz
     render(
       <MessageSequenceStep
         {...defaultProps}
-        campaignSequence={sequence}
+        campaignSequence={sequence as any}
         updateCampaignStep={updateMock}
       />
     );
@@ -113,7 +113,7 @@ describe("MessageSequenceStep — Gerenciamento e Limpeza de Variações Humaniz
     render(
       <MessageSequenceStep
         {...defaultProps}
-        campaignSequence={sequence}
+        campaignSequence={sequence as any}
         updateCampaignStep={updateMock}
       />
     );
