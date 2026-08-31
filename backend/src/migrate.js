@@ -161,6 +161,16 @@ async function isAlreadyApplied(pool, filename) {
         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lead_client_n8n_settings' AND column_name='agent_replies_outside_window')
       )
     ) AS ok`,
+    "20260831170000_fix_send_window_days_jsonb.sql": `SELECT (
+      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='lead_client_n8n_settings')
+      OR EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema='public' 
+          AND table_name='lead_client_n8n_settings' 
+          AND column_name='send_window_days' 
+          AND data_type = 'jsonb'
+      )
+    ) AS ok`,
   };
 
   const query = checks[filename];

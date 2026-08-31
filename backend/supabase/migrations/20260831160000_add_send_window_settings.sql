@@ -4,7 +4,7 @@
 ALTER TABLE public.lead_client_n8n_settings
   ADD COLUMN IF NOT EXISTS send_window_start TEXT DEFAULT '08:00',
   ADD COLUMN IF NOT EXISTS send_window_end TEXT DEFAULT '20:00',
-  ADD COLUMN IF NOT EXISTS send_window_days TEXT[] DEFAULT ARRAY['mon','tue','wed','thu','fri'],
+  ADD COLUMN IF NOT EXISTS send_window_days JSONB DEFAULT '["mon","tue","wed","thu","fri"]'::jsonb,
   ADD COLUMN IF NOT EXISTS send_window_timezone TEXT DEFAULT 'America/Sao_Paulo',
   ADD COLUMN IF NOT EXISTS send_window_enabled BOOLEAN DEFAULT true,
   ADD COLUMN IF NOT EXISTS agent_replies_outside_window BOOLEAN DEFAULT true;

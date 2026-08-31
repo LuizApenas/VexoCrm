@@ -295,12 +295,12 @@ export function useUpdateLeadClientN8nSettings() {
       );
 
       if (!res.ok) {
-        throw new Error(await readApiErrorMessage(res, "N8N settings update failed"));
+        throw new Error(await readApiErrorMessage(res, "Falha ao salvar configurações do cliente"));
       }
 
       const responsePayload = await readApiJson<{ item?: LeadClientN8nSettingsSummary }>(res, "update_lead_client_n8n_settings");
       if (!responsePayload?.item) {
-        throw new Error("N8N settings update failed: missing response payload");
+        throw new Error("Falha ao salvar configurações: resposta vazia do servidor");
       }
 
       return responsePayload.item;

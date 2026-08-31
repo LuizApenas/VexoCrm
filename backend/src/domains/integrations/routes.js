@@ -469,12 +469,13 @@ export function registerIntegrationsRoutes(app, deps) {
         res.json({ item: maskN8nSettings(savedSettings) });
       } catch (error) {
         if (error instanceof Error && error.message === "INVALID_DISPATCH_WEBHOOK_URL") {
-          sendError(res, 400, "INVALID_BODY", "dispatchWebhookUrl must be a valid http or https URL");
+          sendError(res, 400, "INVALID_BODY", "URL do webhook de disparo inválida (deve começar com http:// ou https://)");
           return;
         }
 
         console.error("lead client n8n settings update error:", error);
-        sendError(res, 500, "N8N_SETTINGS_SAVE_FAILED", "Failed to save n8n settings");
+        const detailedMessage = error instanceof Error && error.message ? error.message : "Falha ao salvar configurações";
+        sendError(res, 500, "N8N_SETTINGS_SAVE_FAILED", `Erro ao salvar configurações do n8n: ${detailedMessage}`);
       }
     }
   );

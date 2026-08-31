@@ -54,6 +54,24 @@ export function resolveSingleLeadClientSettings(rawRow, instances = []) {
   };
 }
 
+function parseSendWindowDays(raw) {
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw.map((d) => String(d).toLowerCase().slice(0, 3)).filter(Boolean);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((d) => String(d).toLowerCase().slice(0, 3)).filter(Boolean);
+      }
+    } catch {
+      const cleaned = raw.replace(/[{}"']/g, "").split(",").map((s) => s.trim().toLowerCase().slice(0, 3)).filter(Boolean);
+      if (cleaned.length > 0) return cleaned;
+    }
+  }
+  return ["mon", "tue", "wed", "thu", "fri"];
+}
+
 export function maskN8nSettings(row) {
   if (!row) {
     return {
@@ -62,13 +80,13 @@ export function maskN8nSettings(row) {
       has_inbound_bearer_token: false,
       active: false,
       chatbot_enabled: false,
-      chatbot_model: "outlier",
+      chatbot_model: "generico",
       chatbot_llm_model: defaultGroqModel(),
       chatbot_instances: [],
       chatbot_inbound_scope: "leads_only",
       recontact_message: null,
       sdr_whatsapp_numbers: [],
-      segmentation_config: buildDefaultSegmentationConfig("outlier"),
+      segmentation_config: buildDefaultSegmentationConfig("generico"),
       sdr_whatsapp_number: null,
       send_window_start: "08:00",
       send_window_end: "20:00",
@@ -87,7 +105,7 @@ export function maskN8nSettings(row) {
     has_inbound_bearer_token: !!row.inbound_bearer_token,
     active: row.active !== false,
     chatbot_enabled: row.chatbot_enabled === true,
-    chatbot_model: row.chatbot_model || "outlier",
+    chatbot_model: row.chatbot_model || "generico",
     chatbot_llm_model: row.chatbot_llm_model || null,
     // Chips que este chatbot atende. Vazio = qualquer chip sem agente inbound.
     chatbot_instances: Array.isArray(row.chatbot_instances) ? row.chatbot_instances : [],
@@ -100,7 +118,7 @@ export function maskN8nSettings(row) {
     sdr_whatsapp_numbers: Array.isArray(row.sdr_whatsapp_numbers) && row.sdr_whatsapp_numbers.length > 0
       ? row.sdr_whatsapp_numbers
       : (row.sdr_whatsapp_number ? [row.sdr_whatsapp_number] : []),
-    segmentation_config: sanitizeSegmentationConfig(row.segmentation_config, row.chatbot_model || "outlier"),
+    segmentation_config: sanitizeSegmentationConfig(row.segmentation_config, row.chatbot_model || "generico"),
     sdr_whatsapp_number: row.sdr_whatsapp_number || null,
     updated_at: row.updated_at || null,
     updated_by_email: row.updated_by_email || null,
@@ -112,9 +130,7 @@ export function maskN8nSettings(row) {
     chip_limit: row.chip_limit === null || row.chip_limit === undefined ? null : Number(row.chip_limit),
     send_window_start: row.send_window_start || "08:00",
     send_window_end: row.send_window_end || "20:00",
-    send_window_days: Array.isArray(row.send_window_days) && row.send_window_days.length > 0
-      ? row.send_window_days
-      : ["mon", "tue", "wed", "thu", "fri"],
+    send_window_days: parseSendWindowDays(row.send_window_days),
     send_window_timezone: row.send_window_timezone || "America/Sao_Paulo",
     send_window_enabled: row.send_window_enabled !== false,
     agent_replies_outside_window: row.agent_replies_outside_window !== false,
@@ -237,7 +253,7 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
   const payload = {
     active: activeProvided ? body.active !== false : existing?.active ?? true,
     chatbot_enabled: chatbotEnabledProvided ? body.chatbotEnabled === true : existing?.chatbot_enabled ?? false,
-    chatbot_model: chatbotModelProvided ? (body.chatbotModel || "outlier") : existing?.chatbot_model ?? "outlier",
+    chatbot_model: chatbotModelProvided ? (body.chatbotModel || "generico") : existing?.chatbot_model ?? "generico",
     // Era "llama-3.3-70b-versatile" chumbado nos dois lados: TODO tenant salvo
     // gravava no banco um modelo que a Groq descontinuou. Agora sai da escada
     // configuravel — e resolveGroqLadder descarta o valor morto de quem ja tem.
@@ -294,10 +310,8 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
           : "20:00")
       : existing?.send_window_end ?? "20:00",
     send_window_days: sendWindowDaysProvided
-      ? (Array.isArray(body.sendWindowDays ?? body.send_window_days)
-          ? (body.sendWindowDays ?? body.send_window_days).map((d) => String(d).toLowerCase().slice(0, 3)).filter(Boolean)
-          : ["mon", "tue", "wed", "thu", "fri"])
-      : existing?.send_window_days ?? ["mon", "tue", "wed", "thu", "fri"],
+      ? parseSendWindowDays(body.sendWindowDays ?? body.send_window_days)
+      : parseSendWindowDays(existing?.send_window_days),
     send_window_timezone: sendWindowTimezoneProvided
       ? (typeof (body.sendWindowTimezone ?? body.send_window_timezone) === "string" && (body.sendWindowTimezone ?? body.send_window_timezone).trim()
           ? (body.sendWindowTimezone ?? body.send_window_timezone).trim()
@@ -389,6 +403,12 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
       segmentation_config: segmentationConfigProvided,
       sdr_whatsapp_number: sdrWhatsappNumberProvided,
       allowed_tabs: allowedTabsProvided,
+      send_window_start: sendWindowStartProvided,
+      send_window_end: sendWindowEndProvided,
+      send_window_days: sendWindowDaysProvided,
+      send_window_timezone: sendWindowTimezoneProvided,
+      send_window_enabled: sendWindowEnabledProvided,
+      agent_replies_outside_window: agentRepliesOutsideWindowProvided,
     };
     for (const [coluna, foiEnviado] of Object.entries(enviados)) {
       if (!foiEnviado) delete payload[coluna];
@@ -408,7 +428,7 @@ export async function upsertLeadClientN8nSettings(clientId, input, authAccess, e
     .from("lead_client_n8n_settings")
     .upsert(payload, { onConflict: "client_id" })
     .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_inbound_scope, recontact_message, segmentation_config, sdr_whatsapp_number, allowed_tabs, updated_at, updated_by_email"
+      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_inbound_scope, recontact_message, segmentation_config, sdr_whatsapp_number, allowed_tabs, send_window_start, send_window_end, send_window_days, send_window_timezone, send_window_enabled, agent_replies_outside_window, updated_at, updated_by_email"
     )
     .single();
 
