@@ -282,11 +282,42 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
   const anthropicModels = llmModels.filter((m) => m.provider === "anthropic");
   const geminiModels = llmModels.filter((m) => m.provider === "gemini");
 
+  const isChipMarcado = (chip: any) => {
+    const inst = nomeInstancia(chip);
+    const url = chip?.dispatch_webhook_url || "";
+    const ultimo = url.split("/").filter(Boolean).pop() || "";
+    return (
+      chipsDoChatbot.includes(inst) ||
+      (chip.id && chipsDoChatbot.includes(chip.id)) ||
+      (chip.name && chipsDoChatbot.includes(chip.name)) ||
+      (ultimo && chipsDoChatbot.includes(ultimo))
+    );
+  };
+
+  const hasOrphanChips =
+    enabled &&
+    chipsDoChatbot.length > 0 &&
+    chipsDoTenant.length > 0 &&
+    !chipsDoTenant.some((chip: any) => isChipMarcado(chip));
+
   return (
     <div className="space-y-5 max-w-2xl">
       {/* Status */}
       <Card>
         <CardContent className="pt-5 space-y-4">
+          {hasOrphanChips && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 flex items-start gap-2.5 text-xs text-red-800 dark:text-red-300">
+              <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5 min-w-0 flex-1">
+                <p className="font-bold">Atenção: Chip configurado desconectado ou renomeado</p>
+                <p className="text-[11px] text-red-700/90 dark:text-red-300/90 leading-normal">
+                  O chip salvo nas configurações deste chatbot ({chipsDoChatbot.join(", ")}) não corresponde a nenhuma instância WhatsApp conectada no momento.
+                  Selecione o chip ativo abaixo para garantir que as mensagens dos leads sejam respondidas.
+                </p>
+              </div>
+            </div>
+          )}
+
           {canEdit && (
             <div className={`flex items-center justify-between rounded-lg border px-3 py-2.5 transition-colors ${
               enabled
@@ -346,16 +377,15 @@ export function TabGeral({ clientId, clientName, client }: { clientId: string; c
                     )}
                     {chipsDoTenant.map((chip: any) => {
                       const inst = nomeInstancia(chip);
-                      const marcado = chipsDoChatbot.includes(inst);
+                      const marcado = isChipMarcado(chip);
                       return (
                         <label key={chip.id || chip.name || inst} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs hover:bg-accent">
                           <Checkbox
                             checked={marcado}
-                            onCheckedChange={() =>
-                              void salvarChipsDoChatbot(
-                                marcado ? chipsDoChatbot.filter((i) => i !== inst) : [...chipsDoChatbot, inst]
-                              )
-                            }
+                            onCheckedChange={() => {
+                              const semEste = chipsDoChatbot.filter((i) => i !== inst && i !== chip.id && i !== chip.name);
+                              void salvarChipsDoChatbot(marcado ? semEste : [...semEste, inst]);
+                            }}
                           />
                           <span className="truncate">{chip.name}</span>
                         </label>

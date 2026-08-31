@@ -234,7 +234,9 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
   const chatbotLlmModelProvided = Object.prototype.hasOwnProperty.call(body, "chatbotLlmModel") || Object.prototype.hasOwnProperty.call(body, "chatbot_llm_model");
   const agentNameProvided = Object.prototype.hasOwnProperty.call(body, "agentName") || Object.prototype.hasOwnProperty.call(body, "agent_name");
   const segmentationConfigProvided = Object.prototype.hasOwnProperty.call(body, "segmentationConfig");
-  const chatbotInstancesProvided = Object.prototype.hasOwnProperty.call(body, "chatbotInstances");
+  const chatbotInstancesProvided =
+    Object.prototype.hasOwnProperty.call(body, "chatbotInstances") ||
+    Object.prototype.hasOwnProperty.call(body, "chatbot_instances");
   const chatbotInboundScopeProvided = Object.prototype.hasOwnProperty.call(body, "chatbotInboundScope") || Object.prototype.hasOwnProperty.call(body, "chatbot_inbound_scope");
   const recontactMessageProvided = Object.prototype.hasOwnProperty.call(body, "recontactMessage") || Object.prototype.hasOwnProperty.call(body, "recontact_message");
   const sdrWhatsappNumberProvided = Object.prototype.hasOwnProperty.call(body, "sdrWhatsappNumber");
@@ -282,8 +284,8 @@ export function buildN8nSettingsPayload(input, authAccess, existing = null) {
           .filter((v) => /^[0-9]{10,15}$/.test(v)))]
       : existing?.sdr_whatsapp_numbers ?? [],
     chatbot_instances: chatbotInstancesProvided
-      ? (Array.isArray(body.chatbotInstances)
-          ? [...new Set(body.chatbotInstances.map((v) => String(v ?? "").trim()).filter(Boolean))]
+      ? (Array.isArray(body.chatbotInstances ?? body.chatbot_instances)
+          ? [...new Set((body.chatbotInstances ?? body.chatbot_instances).map((v) => String(v ?? "").trim()).filter(Boolean))]
           : [])
       : existing?.chatbot_instances ?? [],
     chatbot_inbound_scope: chatbotInboundScopeProvided
@@ -427,9 +429,7 @@ export async function upsertLeadClientN8nSettings(clientId, input, authAccess, e
   const { data, error } = await supabase
     .from("lead_client_n8n_settings")
     .upsert(payload, { onConflict: "client_id" })
-    .select(
-      "client_id, dispatch_webhook_url, dispatch_webhook_token, inbound_bearer_token, active, chatbot_enabled, chatbot_model, chatbot_llm_model, chatbot_inbound_scope, recontact_message, segmentation_config, sdr_whatsapp_number, allowed_tabs, send_window_start, send_window_end, send_window_days, send_window_timezone, send_window_enabled, agent_replies_outside_window, updated_at, updated_by_email"
-    )
+    .select(N8N_SETTINGS_SELECT_FIELDS)
     .single();
 
   if (error) throw error;

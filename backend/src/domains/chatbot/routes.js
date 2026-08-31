@@ -1464,21 +1464,47 @@ export function registerChatbotRoutes(app, deps) {
       if (chipsDoChatbot.length > 0) {
         // O mesmo chip tem TRES nomes: o amigavel, o id, e o ultimo segmento da URL
         // de disparo. A tela grava o da URL (TabGeral: nomeInstancia), e o webhook
-        // manda body.instance. Comparar string crua descartava resposta legitima de
-        // lead assim que o usuario marcasse um chip — o filtro so parecia funcionar
-        // enquanto a lista estava vazia. resolveInstanceNameAliases ja existe neste
-        // arquivo exatamente para reconciliar os tres.
+        // manda body.instance. resolveInstanceNameAliases reconcilia os tres.
+        const allTenantInstances = (await getLeadClientEvolutionInstances(clientId).catch(() => [])) || [];
         const aliasesDoChip = (await resolveInstanceNameAliases(clientId, chipAtual).catch(() => null)) || [];
         const nomesDoChipAtual = new Set([chipAtual, ...aliasesDoChip].filter(Boolean));
-        const vinculado = chipsDoChatbot.some((marcado) => nomesDoChipAtual.has(marcado));
+
+        // Expande também todos os aliases das instâncias marcadas
+        const nomesMarcadosExpandidos = new Set(chipsDoChatbot);
+        for (const inst of allTenantInstances) {
+          const urlName = inst.dispatch_webhook_url?.split("/").filter(Boolean).pop();
+          if (chipsDoChatbot.includes(inst.id) || chipsDoChatbot.includes(inst.name) || (urlName && chipsDoChatbot.includes(urlName))) {
+            if (inst.id) nomesMarcadosExpandidos.add(inst.id);
+            if (inst.name) nomesMarcadosExpandidos.add(inst.name);
+            if (urlName) nomesMarcadosExpandidos.add(urlName);
+          }
+        }
+
+        const vinculado = Array.from(nomesDoChipAtual).some((nome) => nomesMarcadosExpandidos.has(nome));
         if (!chipAtual || !vinculado) {
-          descartar("chip_nao_vinculado", {
-            clientId,
-            chipAtual: chipAtual || null,
-            aliasesDoChipAtual: Array.from(nomesDoChipAtual),
-            chipsMarcados: chipsDoChatbot,
+          // Proteção anti-apagão: se NENHUM dos chips marcados existe nas instâncias ativas do tenant
+          // (lista órfã decorrente de renomeação ou substituição de chip), não descarta o lead ao vivo.
+          const hasAnyValidConfiguredChip = allTenantInstances.some((inst) => {
+            const urlName = inst.dispatch_webhook_url?.split("/").filter(Boolean).pop();
+            return chipsDoChatbot.some((m) => m === inst.id || m === inst.name || (urlName && m === urlName));
           });
-          return;
+
+          if (!hasAnyValidConfiguredChip && allTenantInstances.length > 0) {
+            console.warn("[chatbot-webhook] chips_marcados_orfaos: nenhum chip ativo do tenant casa com a lista marcada. Atendendo pelo chip ativo para evitar descarte de lead:", {
+              clientId,
+              chipAtual,
+              chipsMarcados: chipsDoChatbot,
+              instanciasAtivas: allTenantInstances.map((i) => i.name || i.id),
+            });
+          } else {
+            descartar("chip_nao_vinculado", {
+              clientId,
+              chipAtual: chipAtual || null,
+              aliasesDoChipAtual: Array.from(nomesDoChipAtual),
+              chipsMarcados: chipsDoChatbot,
+            });
+            return;
+          }
         }
       }
     }

@@ -271,7 +271,12 @@ export async function runMigrations(pool) {
       return;
     }
 
-    // Validação estrita: impede colisões de timestamp (ex: duas migrations com prefixo 20260831180000_)
+    const applied = await getAppliedMigrations(pool);
+    migrationStatus.totalFiles = files.length;
+    migrationStatus.appliedCount = applied.size;
+
+    // Validação estrita: impede colisões de timestamp em migrations pendentes/novas.
+    // Colisões antigas onde ambos os arquivos já estão aplicados no banco são toleradas para não travar o boot.
     const seenTimestamps = new Map();
     for (const file of files) {
       const match = file.match(/^(\d{14})_/);
@@ -279,17 +284,15 @@ export async function runMigrations(pool) {
         const prefix = match[1];
         if (seenTimestamps.has(prefix)) {
           const prior = seenTimestamps.get(prefix);
-          const errMsg = `DUPLICATE MIGRATION TIMESTAMP: "${file}" tem o mesmo prefixo (${prefix}) que "${prior}". Toda migration exige timestamp único.`;
-          console.error(`🚨 [migrate] ${errMsg}`);
-          throw new Error(errMsg);
+          if (!applied.has(file) || !applied.has(prior)) {
+            const errMsg = `DUPLICATE MIGRATION TIMESTAMP: "${file}" tem o mesmo prefixo (${prefix}) que "${prior}". Toda migration pendente exige timestamp único.`;
+            console.error(`🚨 [migrate] ${errMsg}`);
+            throw new Error(errMsg);
+          }
         }
         seenTimestamps.set(prefix, file);
       }
     }
-
-    const applied = await getAppliedMigrations(pool);
-    migrationStatus.totalFiles = files.length;
-    migrationStatus.appliedCount = applied.size;
 
     // Bootstrap: banco já existe mas sem histórico → detectar e marcar migrations já aplicadas
     if (applied.size === 0 && (await hasExistingSchema(pool))) {
