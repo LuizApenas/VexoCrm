@@ -2945,6 +2945,44 @@ export function registerCampaignsRoutes(app, deps) {
     }
   });
 
+  // POST /api/campaigns/dispatches/backfill-interrupted-batches — Regulariza status de lotes concluídos
+  app.post("/api/campaigns/dispatches/backfill-interrupted-batches", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
+    if (!ensureDb(res)) return;
+    const requestedClientId = normalizeString(req.query.clientId || req.body?.clientId);
+    const authorizedClientId = resolveAuthorizedClientId(req, res, requestedClientId);
+    if (!authorizedClientId) return;
+
+    const campaignId = normalizeString(req.body?.campaignId);
+    const dispatchIds = Array.isArray(req.body?.dispatchIds) ? req.body.dispatchIds.map(normalizeString).filter(Boolean) : [];
+
+    if (!campaignId || dispatchIds.length === 0) {
+      return sendError(res, 400, "INVALID_PAYLOAD", "campaignId e dispatchIds são obrigatórios");
+    }
+
+    try {
+      if (!pgDatabasePool) return sendError(res, 503, "DB_UNAVAILABLE", "Database unavailable");
+      const { rows, rowCount } = await pgDatabasePool.query(
+        `
+          UPDATE public.campaign_dispatches
+          SET 
+            status = 'done',
+            error_message = NULL,
+            finished_at = COALESCE(finished_at, updated_at, NOW()),
+            updated_at = NOW()
+          WHERE campaign_id = $1
+            AND client_id = $2
+            AND status = 'interrupted'
+            AND id = ANY($3::uuid[])
+          RETURNING id, name, status, sent_count, failed_count, updated_at
+        `,
+        [campaignId, authorizedClientId, dispatchIds]
+      );
+      res.json({ success: true, updatedCount: rowCount, batches: rows });
+    } catch (err) {
+      sendError(res, 500, "BACKFILL_FAILED", err instanceof Error ? err.message : "Backfill failed");
+    }
+  });
+
   // POST /api/campaigns/dispatches/:dispatchId/run-pending — Dispara apenas os destinatários não processados do lote
   app.post("/api/campaigns/dispatches/:dispatchId/run-pending", requireFirebaseAuth, requireCampaignDispatchAccess, async (req, res) => {
     if (!ensureDb(res)) return;
