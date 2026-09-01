@@ -1968,16 +1968,71 @@ export function registerCampaignsRoutes(app, deps) {
     const activeInstances = tenantInstances.filter(
       (inst) => inst.active !== false && normalizeString(inst.dispatch_webhook_url)
     );
-    let targetInstances = activeInstances;
+    let targetInstances = [];
+    let chipMismatchWarning = null;
+
     if (dispatchEvolutionInstanceId) {
       const matched = activeInstances.filter(
-        (inst) => inst.id === dispatchEvolutionInstanceId || inst.name === dispatchEvolutionInstanceId || normalizeString(inst.dispatch_webhook_url) === normalizeString(dispatchEvolutionInstanceId)
+        (inst) =>
+          inst.id === dispatchEvolutionInstanceId ||
+          inst.name === dispatchEvolutionInstanceId ||
+          normalizeString(inst.dispatch_webhook_url) === normalizeString(dispatchEvolutionInstanceId)
       );
+
       if (matched.length > 0) {
         targetInstances = matched;
+      } else {
+        // ID configurado não encontrado nas instâncias ativas do tenant
+        if (activeInstances.length === 0) {
+          const pauseMsg = "Pausado — nenhum chip conectado para este cliente. Conecte um chip em Conexões para retomar.";
+          console.warn("[campaign-dispatch] Nenhum chip conectado para este cliente:", {
+            clientId,
+            dispatchId,
+            configuredInstanceId: dispatchEvolutionInstanceId,
+          });
+          await db.from("campaign_dispatches").update({
+            status: "paused",
+            error_message: pauseMsg,
+            updated_at: new Date().toISOString(),
+          }).eq("id", dispatchId);
+          return;
+        }
+
+        if (activeInstances.length > 1) {
+          // Mais de um chip ativo: NÃO escolhe sozinho! Pausa o lote e pede a escolha ao usuário.
+          const pauseMsg = `Pausado — chip configurado não encontrado e existem múltiplos chips ativos (${activeInstances.length}). Selecione o chip desejado na campanha para retomar.`;
+          console.warn("[campaign-dispatch] AVISO: Chip configurado não encontrado e existem múltiplos chips ativos. Pausando lote:", {
+            clientId,
+            dispatchId,
+            configuredInstanceId: dispatchEvolutionInstanceId,
+            activeChips: activeInstances.map((i) => ({ id: i.id, name: i.name })),
+          });
+          await db.from("campaign_dispatches").update({
+            status: "paused",
+            error_message: pauseMsg,
+            updated_at: new Date().toISOString(),
+          }).eq("id", dispatchId);
+          return;
+        }
+
+        // Exatamente 1 chip ativo: fallback com log explícito e aviso visível na tela
+        const singleChip = activeInstances[0];
+        const singleChipName = singleChip.name || singleChip.id;
+        chipMismatchWarning = `Chip configurado não encontrado. Enviando por ${singleChipName}.`;
+        console.warn("[campaign-dispatch] AVISO: Chip configurado não encontrado, utilizando o único chip ativo do tenant:", {
+          clientId,
+          dispatchId,
+          configuredInstanceId: dispatchEvolutionInstanceId,
+          usedInstanceId: singleChip.id,
+          usedInstanceName: singleChipName,
+        });
+        targetInstances = [singleChip];
       }
+    } else {
+      targetInstances = activeInstances;
     }
-    const rotationPool = targetInstances.length > 0 ? targetInstances : activeInstances;
+
+    const rotationPool = targetInstances;
 
     if (rotationPool.length > 0) {
       let anyOpen = false;
@@ -2473,7 +2528,7 @@ export function registerCampaignsRoutes(app, deps) {
       failed_count: totalFailed,
       finished_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      error_message: null,
+      error_message: chipMismatchWarning || null,
     }).eq("id", dispatchId);
   }
 
