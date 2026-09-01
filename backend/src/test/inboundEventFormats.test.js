@@ -70,10 +70,9 @@ describe("nome do evento nos formatos reais da Evolution", () => {
 describe("eco proprio e reprocessamento", () => {
   beforeEach(() => _resetInboundGuard());
 
-  it("fromMe nao passa, mesmo com o evento certo", () => {
-    const r = shouldIgnoreInboundEvent(mensagemDeLead({ event: "MESSAGES_UPSERT", fromMe: true }));
-    expect(r.ignore).toBe(true);
-    expect(r.reason).toBe("fromMe");
+  it("fromMe é identificado com precisão para gravação outbound sem acionar IA", () => {
+    const ev = mensagemDeLead({ event: "MESSAGES_UPSERT", fromMe: true });
+    expect(isFromMe(ev)).toBe(true);
   });
 
   it("fromMe e lido nos formatos conhecidos de payload", () => {

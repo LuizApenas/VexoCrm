@@ -871,6 +871,7 @@ export function registerChatbotRoutes(app, deps) {
           waMessageId: row.wa_message_id,
           phone: row.phone,
           direction: row.direction,
+          senderType: row.sender_type || (row.direction === "outbound" ? "agent" : "lead"),
           type: "chat",
           hasMedia: false,
         };
@@ -1432,29 +1433,44 @@ export function registerChatbotRoutes(app, deps) {
       return;
     }
 
-    // ── ETAPA 3: GRAVAÇÃO DA MENSAGEM RECEBIDA (SEMPRE, INDEPENDENTE DA IA) ──
-    // Toda mensagem recebida de lead é gravada em lead_messages e reflete no Inbox
-    // (Conversas) imediatamente, antes de qualquer decisão sobre avanço de campanha ou IA.
+    const fromMe = isFromMe(body);
+
+    // ── ETAPA 3: GRAVAÇÃO DA MENSAGEM (SEMPRE, INBOUND OU OUTBOUND/FROM_ME) ──
+    // Se fromMe = true: gravada como direction "outbound" e senderType "device".
+    // Se fromMe = false: gravada como direction "inbound" e senderType "lead".
     // Idempotência garantida via wa_message_id.
     try {
       await appendLeadMessage({
         clientId,
         phone,
-        senderType: "lead",
-        direction: "inbound",
+        senderType: fromMe ? "device" : "lead",
+        direction: fromMe ? "outbound" : "inbound",
         messageText: messageData.text,
         meta: {
-          source: "hardcoded-chat-webhook",
+          source: fromMe ? "device-whatsapp-webhook" : "hardcoded-chat-webhook",
           messageType: messageData.type || null,
           transcribed: messageData.transcribed === true,
           described: messageData.described === true,
+          fromMe,
         },
         instanceName,
-        waMessageId: messageData.waMessageId || null,
+        waMessageId: messageData.waMessageId || resolveMessageId(body) || null,
         messageTimestamp: messageData.messageTimestamp || new Date().toISOString(),
       });
     } catch (msgErr) {
-      console.warn("[chatbot-webhook] falha ao gravar mensagem inbound em lead_messages:", msgErr?.message || msgErr);
+      console.warn(`[chatbot-webhook] falha ao gravar mensagem ${fromMe ? "outbound/fromMe" : "inbound"} em lead_messages:`, msgErr?.message || msgErr);
+    }
+
+    // Se for mensagem fromMe (digitada pelo consultor no celular ou eco de envio),
+    // a gravação no Conversas já foi realizada com sucesso — NUNCA aciona IA ou campanha!
+    if (fromMe) {
+      console.log("[chatbot-webhook] mensagem outbound do aparelho gravada no Conversas (sem acionamento de IA)", {
+        clientId,
+        phone: maskPhoneForLog(phone),
+        waMessageId: messageData.waMessageId || resolveMessageId(body) || null,
+      });
+      responder({ saved: "outbound_from_me" });
+      return;
     }
 
     // ── ETAPA 4: CAMPAIGN ROUTING (AVANÇA PASSO DE CAMPANHA, SE HOUVER) ──

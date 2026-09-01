@@ -38,6 +38,7 @@ export interface WhatsAppMessage {
   waMessageId?: string | null;
   phone?: string | null;
   direction?: string | null;
+  senderType?: string | null;
   createdAt?: string | null;
   messageTimestamp?: string | null;
 }

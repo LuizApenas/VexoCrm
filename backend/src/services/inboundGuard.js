@@ -61,7 +61,6 @@ function registrarId(id, agora) {
  * envio. Devolve o motivo para o log — silencio sem motivo esconde loop.
  */
 export function shouldIgnoreInboundEvent(body, agora = Date.now()) {
-  if (isFromMe(body)) return { ignore: true, reason: "fromMe" };
 
   const isInternalForward =
     body?.isInternalForward === true ||

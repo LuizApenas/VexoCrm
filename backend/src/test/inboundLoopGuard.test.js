@@ -19,10 +19,15 @@ const ALERTA_SDR =
 
 /** Simula o handler: so chama LLM/envio quando a guarda deixa passar. */
 function processarEvento(body, efeitos, agora) {
+  const fromMe = isFromMe(body);
   const guarda = shouldIgnoreInboundEvent(body, agora);
   if (guarda.ignore) {
     efeitos.ignorados.push(guarda.reason);
     return guarda.reason;
+  }
+  if (fromMe) {
+    efeitos.gravadasOutbound = (efeitos.gravadasOutbound || 0) + 1;
+    return "fromMe";
   }
   efeitos.chamadasLLM += 1;
   efeitos.enviosWhatsApp += 1;

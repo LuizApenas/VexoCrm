@@ -1200,14 +1200,29 @@ export default function WhatsAppInbox({
                               />
                               <div
                                 className={cn(
-                                  "mt-0.5 flex items-center justify-end gap-1 text-[11px] font-normal leading-none select-none",
-                                  item.fromMe ? "text-emerald-100/75" : "text-muted-foreground/75"
+                                  "mt-0.5 flex items-center justify-end gap-1.5 text-[11px] font-normal leading-none select-none",
+                                  item.fromMe ? "text-emerald-100/85" : "text-muted-foreground/75"
                                 )}
                                 style={{
                                   fontFamily: '-apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif',
                                   fontSize: "11px",
                                 }}
                               >
+                                {item.fromMe && item.senderType === "device" && (
+                                  <span className="text-[10px] text-emerald-100/90 flex items-center gap-0.5" title="Enviado pelo aparelho móvel (celular)">
+                                    📱 <span className="hidden sm:inline text-[9px] opacity-90">Aparelho</span>
+                                  </span>
+                                )}
+                                {item.fromMe && (item.senderType === "bot" || item.senderType === "campaign") && (
+                                  <span className="text-[10px] text-emerald-100/90 flex items-center gap-0.5" title="Enviado automaticamente pelo robô/campanha">
+                                    🤖 <span className="hidden sm:inline text-[9px] opacity-90">Robô</span>
+                                  </span>
+                                )}
+                                {item.fromMe && (item.senderType === "agent" || item.senderType === "user") && (
+                                  <span className="text-[10px] text-emerald-100/90 flex items-center gap-0.5" title="Enviado pelo CRM (Conversas)">
+                                    💻 <span className="hidden sm:inline text-[9px] opacity-90">CRM</span>
+                                  </span>
+                                )}
                                 <span>{formatTimestamp(item.timestamp)}</span>
                                 {item.fromMe && <span className="tracking-tighter text-[11px]">✓✓</span>}
                               </div>
