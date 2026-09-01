@@ -35,6 +35,10 @@ import {
   ArchiveRestore,
   Bot,
   Users,
+  MoreVertical,
+  CheckSquare,
+  Square,
+  Undo2,
 } from "lucide-react";
 import { useCampanhas } from "@/hooks/useCampanhas";
 import { useCrmClient } from "@/hooks/useCrmClient";
@@ -48,6 +52,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorMessage } from "@/components/ErrorMessage";
@@ -60,6 +81,7 @@ import {
   useWhatsAppMessages,
   useClearWhatsAppChats,
   useUpdateChatState,
+  useBulkUpdateChatState,
   type WhatsAppChat,
   type WhatsAppMessage,
 } from "@/hooks/useWhatsAppInbox";
@@ -314,9 +336,93 @@ export default function WhatsAppInbox({
     search: debouncedSearch,
   });
   const updateChatState = useUpdateChatState(clientId);
+  const bulkUpdateChatState = useBulkUpdateChatState(clientId);
   const messagesQuery = useWhatsAppMessages(clientId, instanceFilter, selectedChatId, canLoadInbox);
   const sendMessage = useSendWhatsAppMessage(clientId, selectedChatId);
   const clearChats = useClearWhatsAppChats(clientId);
+
+  // ── Seleção Múltipla e Ações em Massa ─────────────────────────────────────────
+  const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkConfirmCount, setBulkConfirmCount] = useState(0);
+  const [bulkConfirmPhones, setBulkConfirmPhones] = useState<string[]>([]);
+  const [undoArchiveState, setUndoArchiveState] = useState<{ count: number; phones: string[] } | null>(null);
+  const undoTimeoutRef = useRef<any>(null);
+
+  // Limpa seleção sempre que mudar de aba ou de termo de busca (garante isolamento estrito)
+  useEffect(() => {
+    setSelectedChatIds(new Set());
+  }, [inboxTab, debouncedSearch]);
+
+  const toggleSelectChat = (chatId: string) => {
+    setSelectedChatIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(chatId)) {
+        next.delete(chatId);
+      } else {
+        next.add(chatId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllVisible = () => {
+    const visibleIds = (chatsQuery.items ?? []).map((c) => c.id);
+    setSelectedChatIds(new Set(visibleIds));
+  };
+
+  const handleRequestBulkArchive = (phonesToArchive: string[]) => {
+    if (phonesToArchive.length === 0) return;
+    setBulkConfirmPhones(phonesToArchive);
+    setBulkConfirmCount(phonesToArchive.length);
+    setBulkConfirmOpen(true);
+  };
+
+  const handleConfirmBulkArchive = async () => {
+    if (bulkConfirmPhones.length === 0) return;
+    const count = bulkConfirmPhones.length;
+    const phones = [...bulkConfirmPhones];
+    setBulkConfirmOpen(false);
+
+    try {
+      await bulkUpdateChatState.mutateAsync({
+        phones,
+        state: "arquivada",
+        reason: "Arquivamento em lote pelo usuário",
+      });
+
+      setSelectedChatIds(new Set());
+      setUndoArchiveState({ count, phones });
+
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = setTimeout(() => {
+        setUndoArchiveState(null);
+      }, 7000);
+
+      toast.success(`${count} conversa${count > 1 ? "s" : ""} arquivada${count > 1 ? "s" : ""} com sucesso.`);
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao arquivar conversas em lote.");
+    }
+  };
+
+  const handleUndoBulkArchive = async () => {
+    if (!undoArchiveState || undoArchiveState.phones.length === 0) return;
+    const phones = undoArchiveState.phones;
+    const count = undoArchiveState.count;
+    setUndoArchiveState(null);
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+
+    try {
+      await bulkUpdateChatState.mutateAsync({
+        phones,
+        state: "ativa",
+        reason: "Arquivamento desfeito pelo usuário",
+      });
+      toast.success(`${count} conversa${count > 1 ? "s" : ""} restaurada${count > 1 ? "s" : ""} para a Fila.`);
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao desfazer arquivamento.");
+    }
+  };
 
   const { data: leads = [], refetch: refetchLeads } = useLeads(clientId || undefined);
 
@@ -478,6 +584,49 @@ export default function WhatsAppInbox({
       toast.error(err?.message || "Erro ao reabrir atendimento.");
     } finally {
       setReabrirPending(false);
+    }
+  };
+
+  const handleToggleArchive = async () => {
+    if (!selectedChat) return;
+    const isCurrentlyArchived = selectedChat.archived || selectedChat.state === "arquivada";
+    try {
+      await updateChatState.mutateAsync({
+        phone: selectedChat.id,
+        state: isCurrentlyArchived ? "ativa" : "arquivada",
+        reason: isCurrentlyArchived ? "Desarquivado manualmente" : "Arquivado manualmente",
+      });
+      toast.success(isCurrentlyArchived ? "Conversa desarquivada com sucesso!" : "Conversa arquivada com sucesso!");
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao alterar arquivamento.");
+    }
+  };
+
+  const handleMarkNotAutomation = async () => {
+    if (!selectedChat) return;
+    try {
+      await updateChatState.mutateAsync({
+        phone: selectedChat.id,
+        state: "ativa",
+        reason: "Marcado manualmente como não automação",
+      });
+      toast.success("Conversa movida para a Fila principal!");
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao atualizar estado.");
+    }
+  };
+
+  const handleMarkAsAutomation = async () => {
+    if (!selectedChat) return;
+    try {
+      await updateChatState.mutateAsync({
+        phone: selectedChat.id,
+        state: "automacao",
+        reason: "Marcado manualmente como automação pelo usuário",
+      });
+      toast.success("Conversa movida para a aba Automações!");
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao atualizar estado.");
     }
   };
 
@@ -980,6 +1129,63 @@ export default function WhatsAppInbox({
               </div>
             </div>
 
+            {/* Barra de Seleção em Massa ou Cabeçalho de Itens */}
+            {selectedChatIds.size > 0 ? (
+              <div className="sticky top-0 z-20 flex flex-col gap-1.5 p-2 bg-primary/10 dark:bg-primary/20 border-b border-primary/30 shadow-xs">
+                <div className="flex items-center justify-between gap-1 text-xs">
+                  <div className="flex items-center gap-1.5 font-semibold text-primary">
+                    <CheckSquare className="h-3.5 w-3.5" />
+                    <span>{selectedChatIds.size} selecionada{selectedChatIds.size > 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-6.5 px-2 text-[11px] font-semibold gap-1 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 text-white rounded-lg shadow-xs cursor-pointer"
+                      onClick={() => handleRequestBulkArchive(Array.from(selectedChatIds))}
+                      title="Arquivar conversas selecionadas"
+                    >
+                      <Archive className="h-3 w-3" />
+                      Arquivar ({selectedChatIds.size})
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6.5 px-1.5 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                      onClick={() => setSelectedChatIds(new Set())}
+                      title="Limpar seleção"
+                    >
+                      Limpar
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Opção para selecionar todas as conversas visíveis */}
+                {filteredChats.length > selectedChatIds.size && (
+                  <button
+                    type="button"
+                    onClick={handleSelectAllVisible}
+                    className="text-left text-[10px] text-primary hover:underline font-medium cursor-pointer"
+                  >
+                    Selecionar todas as {filteredChats.length} conversas desta lista
+                  </button>
+                )}
+              </div>
+            ) : filteredChats.length > 0 ? (
+              <div className="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/40 text-[10px] text-muted-foreground">
+                <span>{filteredChats.length} conversa{filteredChats.length > 1 ? "s" : ""}</span>
+                <button
+                  type="button"
+                  onClick={handleSelectAllVisible}
+                  className="text-primary hover:underline font-medium flex items-center gap-1 cursor-pointer"
+                  title="Selecionar todas as conversas visíveis"
+                >
+                  <Square className="h-3 w-3" />
+                  Selecionar todas
+                </button>
+              </div>
+            ) : null}
+
             {/* Lista Scrollável de Chats */}
             <div
               ref={chatsContainerRef}
@@ -1021,11 +1227,26 @@ export default function WhatsAppInbox({
                       type="button"
                       onClick={() => setSelectedChatId(chat.id)}
                       className={cn(
-                        "flex w-full items-start gap-3 p-3 text-left transition-all hover:bg-muted/50 cursor-pointer",
-                        isSelected && "bg-emerald-500/10 border-l-4 border-l-emerald-500 pl-2.5",
-                        precisaAtencao && !isSelected && "bg-rose-500/5 border-l-2 border-l-rose-500 pl-2.5"
+                        "flex w-full items-start gap-2.5 p-2.5 text-left transition-all hover:bg-muted/50 cursor-pointer",
+                        isSelected && "bg-emerald-500/10 border-l-4 border-l-emerald-500 pl-2",
+                        precisaAtencao && !isSelected && "bg-rose-500/5 border-l-2 border-l-rose-500 pl-2"
                       )}
                     >
+                      {/* Checkbox de Seleção Individual */}
+                      <div
+                        className="flex items-center self-center shrink-0 pr-0.5"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
+                        <Checkbox
+                          checked={selectedChatIds.has(chat.id)}
+                          onCheckedChange={() => toggleSelectChat(chat.id)}
+                          className="h-4 w-4 rounded-sm border-border/80 data-[state=checked]:bg-primary"
+                          aria-label={`Selecionar ${chat.name || phoneLabel}`}
+                        />
+                      </div>
+
                       <ChatAvatar label={chat.name || phoneLabel} picture={chat.profilePic} size="md" />
 
                       <div className="min-w-0 flex-1">
@@ -1125,8 +1346,9 @@ export default function WhatsAppInbox({
           ══════════════════════════════════════════════════════════════════════════ */}
           <div className="flex-1 min-w-0 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-xs">
             {/* Header da Conversa Ativa */}
-            <div className="flex items-center justify-between border-b border-border/60 p-3 bg-muted/20">
-              <div className="flex items-center gap-3 min-w-0">
+            <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 border-b border-border/60 p-3 bg-muted/20 min-h-[58px]">
+              {/* Faixa 1: Identidade do Contato */}
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 {selectedChat && (
                   <ChatAvatar
                     label={selectedChat.name || String(selectedChat.id)}
@@ -1134,45 +1356,59 @@ export default function WhatsAppInbox({
                     size="sm"
                   />
                 )}
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="truncate text-sm font-bold text-foreground">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p
+                      className="truncate text-sm font-bold text-foreground max-w-[200px] sm:max-w-[260px]"
+                      title={selectedChat?.name || "Selecione uma conversa"}
+                    >
                       {selectedChat?.name || "Selecione uma conversa"}
                     </p>
                     {selectedChat && (
                       <Badge
                         variant="outline"
-                        className="h-4.5 px-1.5 text-[9px] font-bold border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1"
+                        className="h-4 px-1.5 text-[9px] font-bold border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1 shrink-0"
                       >
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Online / WhatsApp
+                        Online
                       </Badge>
                     )}
                     {selectedChat?.isNumberChange && (
                       <Badge
                         variant="outline"
-                        className="h-4.5 px-1.5 text-[9px] font-bold border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 gap-1"
+                        className="h-4 px-1.5 text-[9px] font-bold border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 gap-1 shrink-0"
+                        title="Contato informou novo número"
                       >
                         <Phone className="h-2.5 w-2.5 text-indigo-600" />
-                        Novo número informado
+                        Novo Número
                       </Badge>
                     )}
                     {selectedChat?.state === "automacao" && !selectedChat?.isNumberChange && (
                       <Badge
                         variant="outline"
-                        className="h-4.5 px-1.5 text-[9px] font-bold border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300 gap-1"
+                        className="h-4 px-1.5 text-[9px] font-bold border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300 gap-1 max-w-[180px] sm:max-w-[220px] truncate shrink-0 cursor-help"
+                        title={selectedChat.stateReason || "Robô / Autoatendimento detectado"}
                       >
-                        <Bot className="h-2.5 w-2.5 text-purple-600" />
-                        Automação: {selectedChat.stateReason || "URA / Robô"}
+                        <Bot className="h-2.5 w-2.5 text-purple-600 shrink-0" />
+                        <span className="truncate">Automação: {selectedChat.stateReason || "URA / Robô"}</span>
                       </Badge>
                     )}
                     {(selectedChat?.state === "arquivada" || selectedChat?.archived) && (
                       <Badge
                         variant="outline"
-                        className="h-4.5 px-1.5 text-[9px] font-bold border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300 gap-1"
+                        className="h-4 px-1.5 text-[9px] font-bold border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300 gap-1 shrink-0"
                       >
                         <Archive className="h-2.5 w-2.5" />
                         Arquivada
+                      </Badge>
+                    )}
+                    {selectedChat?.isGroup && (
+                      <Badge
+                        variant="outline"
+                        className="h-4 px-1.5 text-[9px] font-bold border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300 gap-1 shrink-0"
+                      >
+                        <Users className="h-2.5 w-2.5" />
+                        Grupo
                       </Badge>
                     )}
                   </div>
@@ -1180,78 +1416,46 @@ export default function WhatsAppInbox({
                 </div>
               </div>
 
+              {/* Faixa 2: Ações (Máximo 2 visíveis + Menu "⋯") */}
               {selectedChat && (
-                <div className="flex items-center gap-2">
-                  {/* Se estiver classificada como automação, botão para reverter */}
-                  {selectedChat.state === "automacao" && !selectedChat.isNumberChange && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Botão Primário Contextual */}
+                  {selectedChat.state === "automacao" && !selectedChat.isNumberChange ? (
                     <Button
                       variant="outline"
                       size="sm"
                       className="h-8 gap-1 text-xs text-purple-600 hover:text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-900/50 rounded-xl"
-                      onClick={async () => {
-                        try {
-                          await updateChatState.mutateAsync({
-                            phone: selectedChat.id,
-                            state: "ativa",
-                            reason: "Marcado manualmente pelo usuário",
-                          });
-                          toast.success("Conversa movida para a Fila principal!");
-                        } catch (err: any) {
-                          toast.error(err?.message || "Erro ao atualizar estado.");
-                        }
-                      }}
-                      title="Reclassificar esta conversa como atendimento humano normal"
+                      onClick={handleMarkNotAutomation}
+                      title="Reclassificar esta conversa como atendimento humano normal e mover para a Fila"
                     >
                       <Bot className="h-3.5 w-3.5" />
-                      Não é automação
+                      <span>Não é automação</span>
+                    </Button>
+                  ) : selectedChat.archived || selectedChat.state === "arquivada" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1 text-xs rounded-xl border-border/80 text-muted-foreground hover:text-foreground"
+                      onClick={handleToggleArchive}
+                      title="Desarquivar conversa e mover para a Fila"
+                    >
+                      <ArchiveRestore className="h-3.5 w-3.5" />
+                      <span>Desarquivar</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1 text-xs rounded-xl border-border/80 text-muted-foreground hover:text-foreground"
+                      onClick={handleToggleArchive}
+                      title="Arquivar conversa"
+                    >
+                      <Archive className="h-3.5 w-3.5" />
+                      <span>Arquivar</span>
                     </Button>
                   )}
 
-                  {/* Botão de Arquivar / Desarquivar */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1 text-xs rounded-xl border-border/80 text-muted-foreground hover:text-foreground"
-                    onClick={async () => {
-                      const isCurrentlyArchived = selectedChat.archived || selectedChat.state === "arquivada";
-                      try {
-                        await updateChatState.mutateAsync({
-                          phone: selectedChat.id,
-                          state: isCurrentlyArchived ? "ativa" : "arquivada",
-                          reason: isCurrentlyArchived ? "Desarquivado manualmente" : "Arquivado manualmente",
-                        });
-                        toast.success(isCurrentlyArchived ? "Conversa desarquivada com sucesso!" : "Conversa arquivada com sucesso!");
-                      } catch (err: any) {
-                        toast.error(err?.message || "Erro ao alterar arquivamento.");
-                      }
-                    }}
-                    title={selectedChat.archived || selectedChat.state === "arquivada" ? "Desarquivar conversa" : "Arquivar conversa"}
-                  >
-                    {selectedChat.archived || selectedChat.state === "arquivada" ? (
-                      <>
-                        <ArchiveRestore className="h-3.5 w-3.5" />
-                        Desarquivar
-                      </>
-                    ) : (
-                      <>
-                        <Archive className="h-3.5 w-3.5" />
-                        Arquivar
-                      </>
-                    )}
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1 text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/50 rounded-xl"
-                    disabled={reabrirPending}
-                    onClick={handleReabrirAtendimento}
-                    title="Reiniciar fluxo da inteligência artificial"
-                  >
-                    <RotateCcw className={cn("h-3.5 w-3.5", reabrirPending && "animate-spin")} />
-                    Reabrir Atendimento
-                  </Button>
-
+                  {/* Botão Secundário: Dossiê do Lead */}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1267,6 +1471,44 @@ export default function WhatsAppInbox({
                     <User className="h-3.5 w-3.5" />
                     <span className="hidden sm:inline">Dossiê do Lead</span>
                   </Button>
+
+                  {/* Menu "⋯" para Outras Ações */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-foreground cursor-pointer"
+                        title="Mais opções da conversa"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52 text-xs">
+                      {selectedChat.state === "automacao" && (
+                        <DropdownMenuItem onClick={handleToggleArchive} className="gap-2 cursor-pointer">
+                          <Archive className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>Arquivar conversa</span>
+                        </DropdownMenuItem>
+                      )}
+                      {selectedChat.state !== "automacao" &&
+                        selectedChat.state !== "arquivada" &&
+                        !selectedChat.archived && (
+                          <DropdownMenuItem onClick={handleMarkAsAutomation} className="gap-2 cursor-pointer">
+                            <Bot className="h-3.5 w-3.5 text-purple-600" />
+                            <span>Mover para Automações</span>
+                          </DropdownMenuItem>
+                        )}
+                      <DropdownMenuItem
+                        onClick={handleReabrirAtendimento}
+                        disabled={reabrirPending}
+                        className="gap-2 cursor-pointer text-indigo-600 dark:text-indigo-400"
+                      >
+                        <RotateCcw className={cn("h-3.5 w-3.5", reabrirPending && "animate-spin")} />
+                        <span>Reabrir Atendimento IA</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               )}
             </div>
@@ -1325,8 +1567,8 @@ export default function WhatsAppInbox({
                       return (
                         <div key={item.id || `${item.timestamp}-${item.body}-${idx}`} className={marginTopClass}>
                           {showDayDivider && (
-                            <div className="my-3 flex items-center justify-center sticky top-0 z-10 pointer-events-none">
-                              <span className="rounded-full border border-border/70 bg-muted/90 px-2.5 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider shadow-xs backdrop-blur-xs">
+                            <div className="my-3 flex items-center justify-center relative z-0 py-1 clear-both">
+                              <span className="rounded-full border border-border/70 bg-muted px-2.5 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider shadow-xs">
                                 {formatDaySeparator(item.timestamp)}
                               </span>
                             </div>
@@ -1809,6 +2051,55 @@ export default function WhatsAppInbox({
         apiBase={API_BASE_URL}
         getToken={getIdToken}
       />
+
+      {/* Modal de Confirmação para Arquivamento em Massa */}
+      <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-base">
+              <Archive className="h-5 w-5 text-slate-700 dark:text-slate-300" />
+              Arquivar {bulkConfirmCount} conversa{bulkConfirmCount > 1 ? "s" : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              As conversas selecionadas serão movidas para a aba <strong>Arquivadas</strong> e sairão da fila de atendimento.
+              <br />
+              <span className="text-foreground font-medium mt-1.5 block">
+                Esta ação é reversível: você poderá desarquivá-las a qualquer momento na aba Arquivadas ou pelo botão Desfazer.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="h-8 text-xs rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmBulkArchive}
+              className="h-8 text-xs rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 cursor-pointer"
+            >
+              Sim, Arquivar {bulkConfirmCount}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Banner de Desfazer Arquivamento em Massa */}
+      {undoArchiveState && (
+        <div className="fixed bottom-4 left-4 z-50 flex items-center justify-between gap-3 p-3 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded-xl shadow-lg border border-slate-700 dark:border-slate-300 text-xs animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="flex items-center gap-2">
+            <Archive className="h-4 w-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
+            <span>
+              <strong>{undoArchiveState.count}</strong> conversa{undoArchiveState.count > 1 ? "s" : ""} arquivada{undoArchiveState.count > 1 ? "s" : ""}.
+            </span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2.5 text-xs font-semibold gap-1 bg-transparent border-slate-600 dark:border-slate-300 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 rounded-lg cursor-pointer"
+            onClick={handleUndoBulkArchive}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            Desfazer
+          </Button>
+        </div>
+      )}
     </PageShell>
   );
 }
