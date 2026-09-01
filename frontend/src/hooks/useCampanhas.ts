@@ -110,6 +110,7 @@ export interface CampaignDispatchOptions {
   maxWaitSeconds?: number;
   dailyQuotaPerChip?: number;
   maxRepetitionsPerTemplate?: number;
+  replyAgent?: "passos" | "campanha" | "atendimento";
 }
 
 export type SegmentationOperator = "equals" | "contains" | "gt" | "lt";

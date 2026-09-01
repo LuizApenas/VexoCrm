@@ -1182,6 +1182,7 @@ export default function LeadImports({
           sequence: campaignSequence,
           dispatchOptions: {
             ...dispatchOptions,
+            replyAgent,
             // "Só enviar os passos" silencia o chatbot: e o waitForReply que faz
             // o roteamento parar em skipped_disparo_only. Nas outras duas opcoes
             // o lead segue para um agente.
@@ -1464,7 +1465,14 @@ export default function LeadImports({
     setSelectedImportId(c.import_id || ALL_IMPORTS_VALUE);
     setSelectedImportIds(Array.isArray(meta.importIds) ? meta.importIds : (c.import_id ? [c.import_id] : []));
     setDispatchOptions(meta.dispatchOptions || defaultDispatchOptions);
-    if (c.campaign_prompt_id && campaignPromptsById[c.campaign_prompt_id]) {
+    if (meta.dispatchOptions?.replyAgent) {
+      setReplyAgent(meta.dispatchOptions.replyAgent);
+      if (meta.dispatchOptions.replyAgent === "campanha") {
+        setCampaignAgentPrompt(c.campaign_prompt_id ? (campaignPromptsById[c.campaign_prompt_id] || "") : "");
+      } else {
+        setCampaignAgentPrompt("");
+      }
+    } else if (c.campaign_prompt_id && campaignPromptsById[c.campaign_prompt_id]) {
       setReplyAgent("campanha");
       setCampaignAgentPrompt(campaignPromptsById[c.campaign_prompt_id]);
     } else if (c.mode === "agente") {
@@ -1518,7 +1526,14 @@ export default function LeadImports({
     setDispatchOptions(meta.dispatchOptions || defaultDispatchOptions);
     // Roteiro do agente: a copia leva o TEXTO, nao o id. Salvar cria um
     // campaign_prompt proprio, entao editar o roteiro da copia nao mexe no original.
-    if (c.campaign_prompt_id && campaignPromptsById[c.campaign_prompt_id]) {
+    if (meta.dispatchOptions?.replyAgent) {
+      setReplyAgent(meta.dispatchOptions.replyAgent);
+      if (meta.dispatchOptions.replyAgent === "campanha") {
+        setCampaignAgentPrompt(c.campaign_prompt_id ? (campaignPromptsById[c.campaign_prompt_id] || "") : "");
+      } else {
+        setCampaignAgentPrompt("");
+      }
+    } else if (c.campaign_prompt_id && campaignPromptsById[c.campaign_prompt_id]) {
       setReplyAgent("campanha");
       setCampaignAgentPrompt(campaignPromptsById[c.campaign_prompt_id]);
     } else {

@@ -1,4 +1,6 @@
 import { buildPhoneLookupVariants, sanitizePhone } from "../../services/leadImport.js";
+import { supabase as liveSupabase } from "../../services/database.js";
+import { maskPhoneForLog } from "../../services/tenant.js";
 
 /**
  * Detecta JID de GRUPO / broadcast no inbound da Evolution. Resposta de lead legítima
@@ -25,10 +27,13 @@ export function isGroupJid(rawJid) {
  * closure do destructure de routeDeps dentro de registerAllDomainRoutes (supabase,
  * normalizeString, leadsTableName, isMissingSchemaError) e retorna as duas funções
  * prontas para uso pelos call sites, sem exigir mudança nesses call sites.
+ *
+ * NOTA DE RESILIÊNCIA: Se a factory for chamada no topo de módulo antes do initDatabase(),
+ * a closure captura o live-binding liveSupabase dinamicamente na chamada.
  */
-export function createLeadMessaging({ supabase, normalizeString, leadsTableName, isMissingSchemaError }) {
+export function createLeadMessaging({ supabase: injectedSupabase, normalizeString, leadsTableName, isMissingSchemaError }) {
   function maskSecretPresence(value) {
-    return Boolean(normalizeString(value));
+    return Boolean(normalizeString ? normalizeString(value) : value);
   }
 
   // Janela de atribuição de resposta → disparo (ajustável). Um inbound é vinculado ao
@@ -50,9 +55,25 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
     waMessageId = null,
     messageTimestamp = null,
   }) {
-    if (!supabase || !clientId || !phone) return null;
+    const supabase = injectedSupabase || liveSupabase;
+    if (!supabase) {
+      console.error("[lead-messages] ERRO CRÍTICO: appendLeadMessage chamado sem cliente Supabase/Postgres ativo", {
+        clientId,
+        phone: maskPhoneForLog(phone),
+        direction,
+      });
+      throw new Error("[lead-messages] Conexão com banco de dados indisponível no appendLeadMessage");
+    }
 
-    const normalizedMessage = normalizeString(messageText);
+    if (!clientId || !phone) {
+      console.error("[lead-messages] ERRO CRÍTICO: appendLeadMessage chamado sem clientId ou phone obrigatórios", {
+        clientId,
+        phone: maskPhoneForLog(phone),
+      });
+      return null;
+    }
+
+    const normalizedMessage = normalizeString ? normalizeString(messageText) : String(messageText || "").trim();
     if (!normalizedMessage) return null;
 
     const isJid = String(phone).includes("@");
@@ -158,8 +179,14 @@ export function createLeadMessaging({ supabase, normalizeString, leadsTableName,
       error = null;
     }
 
-    if (error && !isMissingSchemaError(error)) {
-      console.warn("[lead-messages] insert failed:", error.message || error);
+    if (error && (!isMissingSchemaError || !isMissingSchemaError(error))) {
+      console.error("[lead-messages] ERRO CRÍTICO ao gravar mensagem em lead_messages:", error.message || error, {
+        clientId,
+        phone: maskPhoneForLog(canonicalPhone),
+        direction,
+        senderType,
+        campaignId: finalCampaignId,
+      });
     }
 
     // Marca o lead como "respondeu": grava ultima_interacao_usuario no momento do inbound.

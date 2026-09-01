@@ -91,7 +91,10 @@ export async function resolveInboundAgentConfig({ supabase, clientId, instanceNa
         return rowAliases.some((alias) => wantedAliases.includes(alias));
       })
     : [];
-  const byInstance = candidatas.find((row) => row.inbound_enabled === true) || candidatas[0] || null;
+  const byInstance =
+    candidatas.find((row) => row.inbound_enabled === true) ||
+    candidatas[0] ||
+    (data.length === 1 ? data[0] : null);
   if (!byInstance) return null;
   const row = byInstance;
 

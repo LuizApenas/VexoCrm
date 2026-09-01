@@ -1688,7 +1688,12 @@ export async function continueCampaignLeadFromReply({ clientId, phone, repliedAt
           },
         });
       } catch (err) {
-        console.warn("[campaign-reply] falha ao gravar lead_messages do passo:", err?.message || err);
+        console.error("[campaign-reply] ERRO CRÍTICO ao gravar lead_messages do passo na continuação:", err?.message || err, {
+          clientId,
+          campaignId: campaign.id,
+          phone: maskPhoneForLog(phone),
+          stepId: step.id,
+        });
       }
 
       if (leadImportItem?.id) {

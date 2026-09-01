@@ -61,7 +61,7 @@ import {
   INBOUND_SCOPE_ALL,
 } from "../../services/inboundEngagementPolicy.js";
 import { resolveSdrTarget, resolveTenantSdrNumbers, normalizeSdrNumber } from "../../services/sdrTarget.js";
-import { resolveCampaignAgent, AGENTE_CAMPANHA } from "../../services/campaignAgentRouting.js";
+import { resolveCampaignAgent, AGENTE_CAMPANHA, AGENTE_NENHUM } from "../../services/campaignAgentRouting.js";
 import { validateOutboundMessage } from "../../services/jsonExtractor.js";
 import { getCampaignStepPlan } from "../../campaign-outbound.js";
 import { normalizeCampaignPendingStepIndex } from "../../campaign/dispatch.js";
@@ -1525,6 +1525,17 @@ export function registerChatbotRoutes(app, deps) {
         }
       } else if (activeCampaignForLead) {
         const escolha = resolveCampaignAgent(activeCampaignForLead);
+        if (escolha.agente === AGENTE_NENHUM || escolha.bloqueado) {
+          console.log("[campaign-routing] campanha configurada como Sem IA (apenas passos) — IA bloqueada:", {
+            clientId,
+            phone: maskPhoneForLog(phone),
+            campaignId: activeCampaignForLead.id,
+            campaignName: activeCampaignForLead.name,
+            porque: escolha.porque,
+          });
+          responder({ status: "skipped_disparo_only", motivo: "campanha_sem_ia" }, { clientId, phone: maskPhoneForLog(phone) });
+          return;
+        }
         campaignPromptIdOverride = escolha.campaignPromptId;
         chatbotPromptTypeOverride = escolha.agente === AGENTE_CAMPANHA && escolha.campaignPromptId ? "campanha" : "padrao";
         if (escolha.configuracaoIncompleta) {

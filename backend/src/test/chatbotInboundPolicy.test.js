@@ -20,6 +20,7 @@ import {
   resolveCampaignAgent,
   AGENTE_CAMPANHA,
   AGENTE_ATENDIMENTO,
+  AGENTE_NENHUM,
 } from "../services/campaignAgentRouting.js";
 
 describe("escopo de inbound: quem o chatbot pode atender", () => {
@@ -153,5 +154,37 @@ describe("qual agente atende o lead que respondeu", () => {
     const escolha = resolveCampaignAgent({ id: "c4", campaignPromptId: null, mode: "agente" });
     expect(escolha.agente).toBe(AGENTE_ATENDIMENTO);
     expect(escolha.configuracaoIncompleta).toBe(true);
+  });
+
+  it("campanha explicitamente 'Sem IA' (replyAgent: passos): bloqueia resposta com AGENTE_NENHUM", () => {
+    const escolha = resolveCampaignAgent({
+      id: "c-sem-ia",
+      campaignPromptId: null,
+      mode: "disparo",
+      analytics_meta: { dispatchOptions: { replyAgent: "passos" } },
+    });
+    expect(escolha.agente).toBe(AGENTE_NENHUM);
+    expect(escolha.bloqueado).toBe(true);
+    expect(escolha.porque).toContain("Sem IA");
+  });
+
+  it("campanha explicitamente 'Qualificar com roteiro' (replyAgent: campanha)", () => {
+    const escolha = resolveCampaignAgent({
+      id: "c-roteiro",
+      campaignPromptId: "prompt-xyz",
+      analytics_meta: { dispatchOptions: { replyAgent: "campanha" } },
+    });
+    expect(escolha.agente).toBe(AGENTE_CAMPANHA);
+    expect(escolha.campaignPromptId).toBe("prompt-xyz");
+  });
+
+  it("campanha explicitamente 'Qualificar com atendimento padrão' (replyAgent: atendimento)", () => {
+    const escolha = resolveCampaignAgent({
+      id: "c-atendimento",
+      campaignPromptId: null,
+      analytics_meta: { dispatchOptions: { replyAgent: "atendimento" } },
+    });
+    expect(escolha.agente).toBe(AGENTE_ATENDIMENTO);
+    expect(escolha.campaignPromptId).toBeNull();
   });
 });

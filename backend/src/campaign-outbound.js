@@ -294,7 +294,12 @@ function normalizeDispatchOptions(rawOptions = {}, sequence = []) {
     MAX_REPLY_POLL_INTERVAL_SECONDS
   );
 
+  const replyAgent = ["passos", "campanha", "atendimento"].includes(rawOptions.replyAgent)
+    ? rawOptions.replyAgent
+    : null;
+
   return {
+    ...(replyAgent ? { replyAgent } : {}),
     leadDelaySeconds: normalizeNonNegativeInteger(
       rawOptions.leadDelaySeconds,
       DEFAULT_LEAD_DELAY_SECONDS
