@@ -794,8 +794,8 @@ export default function WhatsAppInbox({
 
               {/* Abas de Navegação do Inbox */}
               <div className="flex flex-col gap-1 rounded-xl bg-background p-1 border border-border/70 text-[11px]">
-                {/* Linha 1: Fila | Espera | Minhas */}
-                <div className="grid grid-cols-3 gap-1">
+                {/* Linha 1: Fila | Espera | Minhas | Todas */}
+                <div className="grid grid-cols-4 gap-1">
                   <button
                     type="button"
                     onClick={() => setInboxTab("fila")}
@@ -805,6 +805,7 @@ export default function WhatsAppInbox({
                         ? "bg-primary text-primary-foreground shadow-xs"
                         : "text-muted-foreground hover:text-foreground"
                     )}
+                    title="Fila de trabalho limpa (sem grupos e sem automações)"
                   >
                     Fila
                   </button>
@@ -812,7 +813,7 @@ export default function WhatsAppInbox({
                     type="button"
                     onClick={() => setInboxTab("aguardando")}
                     className={cn(
-                      "rounded-lg py-1 font-semibold transition-all text-center flex items-center justify-center gap-1",
+                      "rounded-lg py-1 font-semibold transition-all text-center flex items-center justify-center gap-0.5",
                       inboxTab === "aguardando"
                         ? "bg-amber-600 text-white shadow-xs"
                         : "text-amber-700 dark:text-amber-400 hover:text-foreground"
@@ -842,8 +843,22 @@ export default function WhatsAppInbox({
                         ? "bg-primary text-primary-foreground shadow-xs"
                         : "text-muted-foreground hover:text-foreground"
                     )}
+                    title="Conversas com mensagens enviadas"
                   >
                     Minhas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInboxTab("todas")}
+                    className={cn(
+                      "rounded-lg py-1 font-semibold transition-all text-center",
+                      inboxTab === "todas"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    title="Todas as conversas (incluindo grupos e arquivadas)"
+                  >
+                    Todas
                   </button>
                 </div>
 

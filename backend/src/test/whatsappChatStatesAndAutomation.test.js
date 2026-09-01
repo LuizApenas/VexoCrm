@@ -63,7 +63,47 @@ describe("WhatsApp Chat Classifier & Deterministic Rules", () => {
     }
   });
 
-  it("deve validar transições de estado para 'arquivada', 'automacao', 'ativa' e 'lixeira'", () => {
+  it("deve classificar mensagens de saudação automática do WhatsApp Business e pesquisas como automacao", () => {
+    const businessGreetings = [
+      "Infinity Telecom agradece seu contato. Como podemos te ajudar?",
+      "‎DGT NO-BREAKS agradece seu contato. Como podemos ajudar?",
+      "‎Regina Cartuchos agradece seu contato. Como podemos ajudar?",
+      "‎Sabor Di Casa agradece seu contato. Um atendente entrará em contato com você logo!! Para agilizar o atendimento me conte o que você precisa, escolha um dos números abaixo: 1- Informações 2-Cardápio",
+      "Como não entendi sua resposta, vou te transferir para nossa equipe, assim que um atendente estiver disponível, ele já retorna o contato",
+      "O seu atendimento foi finalizado e gostaríamos de te convidar a responder a nossa pesquisa! ☺",
+    ];
+
+    for (const msg of businessGreetings) {
+      const result = classifyConversation(msg, { hasHumanReply: false, hasLeadInCrm: false });
+      expect(result.state).toBe("automacao");
+      expect(result.isAutomation).toBe(true);
+      expect(result.isNumberChange).toBe(false);
+    }
+  });
+
+  it("deve validar regras de reativação no webhook: arquivada volta sempre, automação só volta se for mensagem livre", () => {
+    // 1. Mensagem de automação chegando em conversa de automação -> permanece em automacao
+    const botMsg = "Digite 1 para suporte";
+    const botRes = classifyConversation(botMsg, { hasHumanReply: false });
+    expect(botRes.state).toBe("automacao");
+
+    // 2. Mensagem humana livre chegando em conversa de automação -> volta para ativa
+    const humanMsg = "Boa tarde, qual o valor da entrega?";
+    const humanRes = classifyConversation(humanMsg, { hasHumanReply: false });
+    expect(humanRes.state).toBe("ativa");
+
+    // 3. Resposta enviada no aparelho (fromMe) -> volta para ativa
+    const fromMeRes = classifyConversation(botMsg, { hasHumanReply: true });
+    expect(fromMeRes.state).toBe("ativa");
+
+    // 4. Mudança de número -> sempre ativa
+    const numberChangeMsg = "Estamos desativando esse número, por gentileza chame no 34 99999-0000";
+    const numberChangeRes = classifyConversation(numberChangeMsg, { hasHumanReply: false });
+    expect(numberChangeRes.state).toBe("ativa");
+    expect(numberChangeRes.isNumberChange).toBe(true);
+  });
+
+  it("deve validar transições de estado para 'ativa', 'automacao', 'arquivada' e 'lixeira'", () => {
     const validStates = ["ativa", "automacao", "arquivada", "lixeira"];
     for (const st of validStates) {
       expect(validStates.includes(st)).toBe(true);
@@ -71,4 +111,5 @@ describe("WhatsApp Chat Classifier & Deterministic Rules", () => {
     expect(validStates.includes("invalido")).toBe(false);
   });
 });
+
 

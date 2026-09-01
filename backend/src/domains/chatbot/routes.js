@@ -32,11 +32,11 @@ const SQL_CANONICAL_PHONE = (col) => `
 `;
 
 const SQL_NUMBER_CHANGE_MATCH = (col) => `(
-  ${col} ~* 'estamos\\s+desativando\\s+esse\\s+n[úu]mero|chama\\s+meu\\s+vendedor|nos\\s+chame\\s+no\\s+(contato|n[úu]mero)|novo\\s+n[úu]mero|troca\\s+de\\s+n[úu]mero'
+  ${col} ~* 'estamos\\s+desativando\\s+esse\\s+n[úu]mero|chama\\s+meu\\s+vendedor|nos\\s+chame\\s+no\\s+(contato|n[úu]mero|link)|novo\\s+n[úu]mero|troca\\s+de\\s+n[úu]mero'
 )`;
 
 const SQL_AUTOMATION_MATCH = (col) => `(
-  ${col} ~* 'digite\\s+(apenas\\s+)?(o\\s+)?n[úu]mero|selecione\\s+(uma\\s+)?(das\\s+)?opç[õo]|opç[ãa]o\\s+(desejada|inv[áa]lida)|\\bmenu\\b|atendimento\\s+autom[áa]tico|protocolo\\s+de\\s+atendimento|resposta\\s+autom[áa]tica|\\[mensagem\\s+autom[áa]tica\\]|seja\\s+bem[- ]vindo\\(a\\)|hor[áa]rios?\\s+de\\s+atendimento|nosso\\s+(showroom|card[áa]pio|cat[áa]logo|site)|finalizarei\\s+nossa\\s+intera[çc][ãa]o|n[ãa]o\\s+consegui\\s+identificar\\s+nenhuma\\s+resposta'
+  ${col} ~* 'digite\\s+(apenas\\s+)?(o\\s+)?(n[úu]mero|\\d)|selecione\\s+(uma\\s+)?(das\\s+)?opç[õo]|escolha\\s+(um\\s+)?(dos\\s+)?n[úu]meros?|escreva\\s+uma\\s+das\\s+opç[õo]es|opç[ãa]o\\s+(desejada|inv[áa]lida)|\\bmenu\\b|atendimento\\s+autom[áa]tico|protocolo\\s+de\\s+atendimento|resposta\\s+autom[áa]tica|\\[mensagem\\s+autom[áa]tica\\]|vou\\s+te\\s+transferir\\s+para\\s+nossa\\s+equipe|agradece\\s+(o\\s+)?seu\\s+contato|agradecemos\\s+(o\\s+)?seu\\s+contato|agradecemos\\s+a\\s+prefer[êe]ncia|seja\\s+(muito\\s+)?bem[- ]vindo\\(a\\)|hor[áa]rios?\\s+de\\s+atendimento|nosso\\s+(showroom|card[áa]pio|cat[áa]logo|site)|finalizarei\\s+nossa\\s+intera[çc][ãa]o|n[ãa]o\\s+consegui\\s+identificar\\s+nenhuma\\s+resposta|vou\\s+encerrar\\s+esse\\s+atendimento|atendimento\\s+foi\\s+finalizado|responder\\s+a\\s+nossa\\s+pesquisa'
 )`;
 
 import { classifyConversation } from "../../services/whatsappChatClassifier.js";
@@ -500,8 +500,11 @@ export function registerChatbotRoutes(app, deps) {
           ) AND (
             cs.state IS NOT NULL OR NOT ${SQL_AUTOMATION_MATCH("m.message_text")} OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
           )`;
+        } else if (rawTab === "todas" || rawTab === "all") {
+          // Aba "Todas": exibe absolutamente tudo (grupos, ativas, automações, arquivadas), exceto lixeira
+          tabCondition = "AND COALESCE(cs.state, 'ativa') != 'lixeira'";
         } else {
-          // Padrão: "ativa" / "fila" / "todos"
+          // Padrão: "fila" / "ativa" (exclui grupos, automações e arquivadas)
           tabCondition = `AND (m.is_group IS NOT TRUE) AND (
             COALESCE(cs.state, 'ativa') = 'ativa' OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
           ) AND (
@@ -1702,19 +1705,54 @@ export function registerChatbotRoutes(app, deps) {
       console.warn(`[chatbot-webhook] falha ao gravar mensagem ${fromMe ? "outbound/fromMe" : "inbound"} em lead_messages:`, msgErr?.message || msgErr);
     }
 
-    // Auto-reativação: se o contato estava arquivado ou em automação e recebeu/enviou mensagem,
-    // reativa automaticamente para 'ativa'.
+    // Auto-reativação e manutenção de estados:
+    // 1. Arquivada + qualquer mensagem nova -> volta para ativa
+    // 2. Automação + mensagem que casa com padrão -> PERMANECE em automacao
+    // 3. Automação + mensagem livre (não casa) ou resposta no celular (fromMe) -> volta para ativa
     try {
       if (pgDatabasePool && phone) {
+        // 1. Desarquiva se estava arquivada
         await pgDatabasePool.query(
           `UPDATE public.whatsapp_chat_states
              SET state = 'ativa',
                  reason = 'Reativada automaticamente por nova mensagem',
                  source = 'auto',
                  updated_at = now()
-           WHERE client_id = $1 AND phone = $2 AND state IN ('arquivada', 'automacao')`,
+           WHERE client_id = $1 AND phone = $2 AND state = 'arquivada'`,
           [clientId, phone]
         );
+
+        // 2. Classifica a mensagem para decidir o estado de automação
+        const classified = classifyConversation(messageData?.text || "", { hasHumanReply: fromMe });
+        if (fromMe || classified.state === "ativa" || classified.isNumberChange) {
+          // Mensagem humana livre, resposta no aparelho pelo consultor ou mudança de número: volta para ativa
+          await pgDatabasePool.query(
+            `UPDATE public.whatsapp_chat_states
+               SET state = 'ativa',
+                   reason = $3,
+                   source = 'auto',
+                   updated_at = now()
+             WHERE client_id = $1 AND phone = $2 AND state = 'automacao'`,
+            [
+              clientId,
+              phone,
+              classified.isNumberChange
+                ? "Mudança de número informada pelo contato"
+                : fromMe
+                ? "Reativada por resposta manual no aparelho"
+                : "Reativada por mensagem humana livre",
+            ]
+          );
+        } else {
+          // Mensagem recebida ainda é robô/menu/URA: permanece em automação e atualiza motivo
+          await pgDatabasePool.query(
+            `UPDATE public.whatsapp_chat_states
+               SET reason = $3,
+                   updated_at = now()
+             WHERE client_id = $1 AND phone = $2 AND state = 'automacao'`,
+            [clientId, phone, classified.reason || "Automação / Robô detectado"]
+          );
+        }
       }
     } catch (reactivateErr) {
       console.warn("[chatbot-webhook] erro ao auto-reativar conversa:", reactivateErr?.message || reactivateErr);
