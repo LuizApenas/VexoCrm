@@ -56,6 +56,7 @@ import {
   getNextSendWindowOpening,
   resolveSendWindowConfig,
 } from "../../services/sendWindow.js";
+import { getDateKey } from "../../services/analytics.js";
 
 let _evolutionDailyUsageSchemaEnsured = false;
 let _dispatchRunsClaimSchemaEnsured = false;
@@ -1355,18 +1356,47 @@ export function registerCampaignsRoutes(app, deps) {
       const results = [];
       for (const dispatch of dispatches) {
         try {
-          // Se estiver pausado por motivo diferente da janela (ex: chip desconectado), não tenta retomar sozinho
-          if (dispatch.status === "paused" && !String(dispatch.error_message || "").includes("fora da janela de envio")) {
-            continue;
-          }
+          if (dispatch.status === "paused") {
+            const errMsg = String(dispatch.error_message || "");
+            const isSendWindowPause = errMsg.includes("fora da janela de envio");
+            const isQuotaPause = errMsg.includes("cota diária do chip atingida");
 
-          const tenantSettings = await getLeadClientN8nSettings(dispatch.client_id);
-          const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+            if (!isSendWindowPause && !isQuotaPause) {
+              continue;
+            }
 
-          // Verifica se está dentro da janela de envio permitida do tenant
-          if (!isWithinSendWindow(new Date(), sendWindowConfig)) {
-            // Permanece aguardando abertura da janela
-            continue;
+            const tenantSettings = await getLeadClientN8nSettings(dispatch.client_id);
+            const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+
+            // Verifica se está dentro da janela de envio permitida do tenant
+            if (!isWithinSendWindow(new Date(), sendWindowConfig)) {
+              continue;
+            }
+
+            // Se estava pausado por cota, verifica se o chip já tem cota disponível hoje no timezone do tenant
+            if (isQuotaPause) {
+              const tenantTimezone = sendWindowConfig.timezone || "America/Sao_Paulo";
+              const todayDateKey = getDateKey(new Date(), tenantTimezone);
+              const tenantInstances = await getLeadClientEvolutionInstances(dispatch.client_id);
+              const targetInst = (tenantInstances || []).find((i) => i.id === dispatch.evolution_instance_id) || tenantInstances?.[0];
+              if (targetInst) {
+                const limit = resolveEvolutionInstanceDailyLimit(targetInst);
+                const currentUsage = await getEvolutionInstanceDailyUsage(targetInst.id, todayDateKey);
+                if (currentUsage >= limit) {
+                  // Cota de hoje ainda está esgotada, continua aguardando o dia seguinte
+                  continue;
+                }
+              }
+            }
+          } else {
+            const tenantSettings = await getLeadClientN8nSettings(dispatch.client_id);
+            const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+
+            // Verifica se está dentro da janela de envio permitida do tenant
+            if (!isWithinSendWindow(new Date(), sendWindowConfig)) {
+              // Permanece aguardando abertura da janela
+              continue;
+            }
           }
 
           const { data: campaign, error: campErr } = await supabase
@@ -1527,19 +1557,22 @@ export function registerCampaignsRoutes(app, deps) {
   }
 
   // ── Anti-ban (Fatia 3a): cota diária por chip ───────────────────────────────
-  const EVOLUTION_CHIP_DAILY_QUOTA_DEFAULTS = { cold: 100, warm: 500 };
+  const EVOLUTION_CHIP_DAILY_QUOTA_DEFAULTS = { cold: 50, warm: 500 };
 
   async function ensureEvolutionInstanceDailyUsageTable() {
     if (!pgDatabasePool) return false;
     if (_evolutionDailyUsageSchemaEnsured) return true;
     await pgDatabasePool.query(`
       CREATE TABLE IF NOT EXISTS public.evolution_instance_daily_usage (
-        instance_id UUID NOT NULL REFERENCES public.lead_client_evolution_instances(id) ON DELETE CASCADE,
+        instance_id TEXT NOT NULL,
         date DATE NOT NULL,
         sent_count INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (instance_id, date)
       )
     `);
+    await pgDatabasePool.query(`
+      ALTER TABLE public.evolution_instance_daily_usage ALTER COLUMN instance_id TYPE TEXT
+    `).catch(() => {});
     _evolutionDailyUsageSchemaEnsured = true;
     return true;
   }
@@ -1551,31 +1584,43 @@ export function registerCampaignsRoutes(app, deps) {
     return EVOLUTION_CHIP_DAILY_QUOTA_DEFAULTS[state];
   }
 
-  async function reserveEvolutionInstanceDailyQuota(instanceId) {
+  async function reserveEvolutionInstanceDailyQuota(instanceId, dateStr = null) {
     if (!instanceId || !(await ensureEvolutionInstanceDailyUsageTable())) return null;
+    const targetDate = dateStr || new Date().toISOString().slice(0, 10);
     const { rows } = await pgDatabasePool.query(
       `
         INSERT INTO public.evolution_instance_daily_usage (instance_id, date, sent_count)
-        VALUES ($1, CURRENT_DATE, 1)
+        VALUES ($1::text, $2::date, 1)
         ON CONFLICT (instance_id, date)
         DO UPDATE SET sent_count = public.evolution_instance_daily_usage.sent_count + 1
         RETURNING sent_count
       `,
-      [instanceId]
+      [String(instanceId), targetDate]
     );
     return rows[0]?.sent_count ?? null;
   }
 
-  async function releaseEvolutionInstanceDailyQuota(instanceId) {
+  async function getEvolutionInstanceDailyUsage(instanceId, dateStr = null) {
+    if (!instanceId || !(await ensureEvolutionInstanceDailyUsageTable())) return 0;
+    const targetDate = dateStr || new Date().toISOString().slice(0, 10);
+    const { rows } = await pgDatabasePool.query(
+      `SELECT sent_count FROM public.evolution_instance_daily_usage WHERE instance_id = $1::text AND date = $2::date`,
+      [String(instanceId), targetDate]
+    );
+    return Number(rows[0]?.sent_count ?? 0);
+  }
+
+  async function releaseEvolutionInstanceDailyQuota(instanceId, dateStr = null) {
     if (!instanceId || !pgDatabasePool) return;
+    const targetDate = dateStr || new Date().toISOString().slice(0, 10);
     await pgDatabasePool
       .query(
         `
           UPDATE public.evolution_instance_daily_usage
           SET sent_count = GREATEST(sent_count - 1, 0)
-          WHERE instance_id = $1 AND date = CURRENT_DATE
+          WHERE instance_id = $1::text AND date = $2::date
         `,
-        [instanceId]
+        [String(instanceId), targetDate]
       )
       .catch(() => {});
   }
@@ -1718,10 +1763,7 @@ export function registerCampaignsRoutes(app, deps) {
 
       if (targetCount > 0 && totalProcessed < targetCount) {
         const pendingCount = targetCount - totalProcessed;
-        const existingMsg = dispatch.error_message || "";
-        const finalMsg = existingMsg.includes("Interrompido") || existingMsg.includes("reinício")
-          ? existingMsg
-          : `Interrompido: ${pendingCount} lead(s) pendente(s) de envio.`;
+        const finalMsg = `Interrompido: ${pendingCount} lead(s) pendente(s) de envio.`;
         await db.from("campaign_dispatches").update({
           status: "interrupted",
           sent_count: totalSent,
@@ -1926,9 +1968,16 @@ export function registerCampaignsRoutes(app, deps) {
     const activeInstances = tenantInstances.filter(
       (inst) => inst.active !== false && normalizeString(inst.dispatch_webhook_url)
     );
-    const rotationPool = dispatchEvolutionInstanceId
-      ? activeInstances.filter((inst) => inst.id === dispatchEvolutionInstanceId)
-      : activeInstances;
+    let targetInstances = activeInstances;
+    if (dispatchEvolutionInstanceId) {
+      const matched = activeInstances.filter(
+        (inst) => inst.id === dispatchEvolutionInstanceId || inst.name === dispatchEvolutionInstanceId || normalizeString(inst.dispatch_webhook_url) === normalizeString(dispatchEvolutionInstanceId)
+      );
+      if (matched.length > 0) {
+        targetInstances = matched;
+      }
+    }
+    const rotationPool = targetInstances.length > 0 ? targetInstances : activeInstances;
 
     if (rotationPool.length > 0) {
       let anyOpen = false;
@@ -1970,14 +2019,20 @@ export function registerCampaignsRoutes(app, deps) {
       }
     }
 
+    const tenantSettings = await getLeadClientN8nSettings(clientId);
+    const sendWindowConfig = resolveSendWindowConfig(tenantSettings);
+    const tenantTimezone = sendWindowConfig.timezone || "America/Sao_Paulo";
+    const todayDateKey = getDateKey(new Date(), tenantTimezone);
+
     let rotationCursor = 0;
     const chipProvider =
       rotationPool.length > 0
         ? async () => {
+            let lastExhausted = null;
             for (let attempt = 0; attempt < rotationPool.length; attempt += 1) {
               const inst = rotationPool[(rotationCursor + attempt) % rotationPool.length];
               const limit = resolveEvolutionInstanceDailyLimit(inst);
-              const reserved = await reserveEvolutionInstanceDailyQuota(inst.id);
+              const reserved = await reserveEvolutionInstanceDailyQuota(inst.id, todayDateKey);
 
               if (reserved === null) {
                 rotationCursor = (rotationCursor + attempt + 1) % rotationPool.length;
@@ -1985,13 +2040,21 @@ export function registerCampaignsRoutes(app, deps) {
                   webhookUrl: normalizeString(inst.dispatch_webhook_url),
                   webhookToken: normalizeString(inst.dispatch_webhook_token) || null,
                   instanceId: inst.id,
+                  instanceName: inst.name || inst.id,
                   sequence: null,
                   release: null,
                 };
               }
 
               if (reserved > limit) {
-                await releaseEvolutionInstanceDailyQuota(inst.id);
+                await releaseEvolutionInstanceDailyQuota(inst.id, todayDateKey);
+                lastExhausted = {
+                  exhausted: true,
+                  chipName: inst.name || inst.id,
+                  limitQuota: limit,
+                  usedQuota: limit,
+                  exhaustedQuotaMessage: `Pausado — cota diária do chip atingida (${limit}/${limit}). Retoma amanhã.`,
+                };
                 continue;
               }
 
@@ -2000,11 +2063,20 @@ export function registerCampaignsRoutes(app, deps) {
                 webhookUrl: normalizeString(inst.dispatch_webhook_url),
                 webhookToken: normalizeString(inst.dispatch_webhook_token) || null,
                 instanceId: inst.id,
+                instanceName: inst.name || inst.id,
                 sequence: reserved,
-                release: () => releaseEvolutionInstanceDailyQuota(inst.id),
+                release: () => releaseEvolutionInstanceDailyQuota(inst.id, todayDateKey),
+                limitQuota: limit,
+                usedQuota: reserved,
               };
             }
-            return null;
+            return lastExhausted || {
+              exhausted: true,
+              chipName: rotationPool[0]?.name || "WhatsApp",
+              limitQuota: resolveEvolutionInstanceDailyLimit(rotationPool[0]),
+              usedQuota: resolveEvolutionInstanceDailyLimit(rotationPool[0]),
+              exhaustedQuotaMessage: `Pausado — cota diária do chip atingida (${resolveEvolutionInstanceDailyLimit(rotationPool[0])}/${resolveEvolutionInstanceDailyLimit(rotationPool[0])}). Retoma amanhã.`,
+            };
           }
         : null;
 
@@ -2359,11 +2431,12 @@ export function registerCampaignsRoutes(app, deps) {
     }
 
     if (result?.summary?.allChipsExhausted) {
+      const quotaMsg = result.summary.exhaustedQuotaMessage || "Pausado — cota diária do chip atingida. Retoma amanhã.";
       await db.from("campaign_dispatches").update({
         status: "paused",
         sent_count: totalSent,
         failed_count: totalFailed,
-        error_message: "Cota diaria atingida em todos os chips ativos.",
+        error_message: quotaMsg,
         updated_at: new Date().toISOString(),
       }).eq("id", dispatchId);
       return;
@@ -2383,10 +2456,7 @@ export function registerCampaignsRoutes(app, deps) {
     // REGRA RÍGIDA: Lote só pode ser 'done' quando TODO lead tiver um desfecho registrado
     if (targetCount > 0 && totalProcessed < targetCount) {
       const pendingCount = targetCount - totalProcessed;
-      const existingMsg = dispatch.error_message || "";
-      const finalMsg = existingMsg.includes("Interrompido") || existingMsg.includes("reinício")
-        ? existingMsg
-        : `Interrompido: ${pendingCount} lead(s) pendente(s) de envio.`;
+      const finalMsg = `Interrompido: ${pendingCount} lead(s) pendente(s) de envio.`;
       await db.from("campaign_dispatches").update({
         status: "interrupted",
         sent_count: totalSent,

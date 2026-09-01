@@ -105,7 +105,7 @@ const CAMPAIGN_LIMIT_MAX = 500;
 
 // Cotas default por estado do chip — mesmos valores do backend
 // (EVOLUTION_CHIP_DAILY_QUOTA_DEFAULTS em domains/campaigns/routes.js).
-const COLD_CHIP_DAILY_QUOTA = 100;
+const COLD_CHIP_DAILY_QUOTA = 50;
 const WARM_CHIP_DAILY_QUOTA = 500;
 // Quantas vezes a MESMA mensagem pode se repetir num chip por dia. Serve so
 // para SUGERIR o numero de variacoes — nao valida e nao trava nada.
@@ -633,6 +633,9 @@ export default function LeadImports({
 
   // Initialize/refresh settings
   useEffect(() => {
+    if (editingCampaignId) {
+      return;
+    }
     const defaultInstanceId =
       evolutionInstanceOptions.find((inst) => inst.isDefault)?.id ||
       evolutionInstanceOptions[0]?.id ||
@@ -640,11 +643,9 @@ export default function LeadImports({
 
     setDispatchOptions((current) => ({
       ...current,
-      evolutionInstanceId: current.evolutionInstanceId && evolutionInstanceOptions.some(i => i.id === current.evolutionInstanceId)
-        ? current.evolutionInstanceId
-        : defaultInstanceId,
+      evolutionInstanceId: current.evolutionInstanceId ?? defaultInstanceId,
     }));
-  }, [evolutionInstanceOptions]);
+  }, [evolutionInstanceOptions, editingCampaignId]);
 
   // Carregar público-alvo vindo do Banco de Dados Inteligente
   useEffect(() => {
@@ -1456,15 +1457,54 @@ export default function LeadImports({
   };
 
   const handleEditCampaign = (c: Campaign) => {
+    if (!c || !c.id) {
+      toast({
+        title: "Erro ao carregar",
+        description: "Não foi possível carregar os dados desta campanha.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const meta = c.analytics_meta || {};
     const seq = normalizeCampaignSequence(c.analytics_meta);
+    const limitPerRun = c.limit_per_run || 50;
+
     setEditingCampaignId(c.id);
     setCampaignName(c.name || "");
-    setCampaignLimitPerRun(String(c.limit_per_run || 50));
+    setCampaignLimitPerRun(String(limitPerRun));
     setCampaignSequence(seq.length > 0 ? seq : [createCampaignStep("text", 1)]);
     setSelectedImportId(c.import_id || ALL_IMPORTS_VALUE);
     setSelectedImportIds(Array.isArray(meta.importIds) ? meta.importIds : (c.import_id ? [c.import_id] : []));
-    setDispatchOptions(meta.dispatchOptions || defaultDispatchOptions);
+
+    // Restaura Loteamento / Batches
+    const hasBatchConfig = Boolean(c.limit_per_run && c.limit_per_run > 0);
+    setBatchingEnabled(hasBatchConfig);
+    setBatchSize(String(c.limit_per_run || meta.dispatchOptions?.batchSize || 100));
+    setBatchIntervalHours(String(meta.dispatchOptions?.batchIntervalHours || meta.batchIntervalHours || "1"));
+
+    // Restaura Estratégia de Variações
+    const hasVariants = seq.some(s => s.textVariants && s.textVariants.length > 0);
+    const templateStrategy = meta.dispatchOptions?.templateStrategy || (hasVariants ? "ai_variations" : "single");
+    setCampaignTemplateStrategy(templateStrategy === "ai_variations" ? "ai_variations" : "single");
+    setVariantCountOverride(meta.dispatchOptions?.templateVariantCount || null);
+
+    // Restaura Multi-Agenda se houver
+    const hasSchedulingLink = seq.some(s => {
+      const texts = [s.text, ...(Array.isArray(s.textVariants) ? s.textVariants : [])].filter(Boolean);
+      return texts.some(t => /\{\{\s*scheduling_link\s*\}\}/i.test(t));
+    });
+    setMultiAgendaEnabled(Boolean(meta.dispatchOptions?.multiAgendaEnabled || hasSchedulingLink));
+
+    // Restaura Opções de Disparo (incluindo instance do WhatsApp)
+    const savedDispatchOptions = meta.dispatchOptions || {};
+    setDispatchOptions({
+      ...defaultDispatchOptions,
+      ...savedDispatchOptions,
+      evolutionInstanceId: savedDispatchOptions.evolutionInstanceId ?? c.evolution_instance_id ?? null,
+    });
+
+    // Restaura Cérebro que atende
     if (meta.dispatchOptions?.replyAgent) {
       setReplyAgent(meta.dispatchOptions.replyAgent);
       if (meta.dispatchOptions.replyAgent === "campanha") {
@@ -1744,6 +1784,7 @@ export default function LeadImports({
               dispatchOptions={dispatchOptions}
               setDispatchOptions={setDispatchOptions}
               evolutionInstanceOptions={evolutionInstanceOptions}
+              totalLeads={selectedFile ? previewRows.length : filteredRows.length}
               batchingEnabled={batchingEnabled}
               setBatchingEnabled={setBatchingEnabled}
               batchSize={batchSize}

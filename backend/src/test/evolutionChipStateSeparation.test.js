@@ -4,7 +4,7 @@ import {
 } from "../services/evolution.js";
 
 // Função canônica de resolução de limite diário (espelho de campaigns/routes.js:1516-1523)
-const EVOLUTION_CHIP_DAILY_QUOTA_DEFAULTS = { cold: 100, warm: 500 };
+const EVOLUTION_CHIP_DAILY_QUOTA_DEFAULTS = { cold: 50, warm: 500 };
 function resolveEvolutionInstanceDailyLimit(instance) {
   const override = Number.parseInt(String(instance?.daily_limit_override ?? ""), 10);
   if (Number.isInteger(override) && override > 0) return override;
@@ -43,7 +43,7 @@ describe("Separação de connection_state e chip_state (Estágio de Aquecimento 
     }
   });
 
-  it("2. Resolução de Cotas: chip_state 'cold' com connection_state 'open' -> limite 100", () => {
+  it("2. Resolução de Cotas: chip_state 'cold' com connection_state 'open' -> limite 50", () => {
     const chip = maskEvolutionInstance({
       id: "chip-cold",
       client_id: "geracao-digital",
@@ -55,7 +55,7 @@ describe("Separação de connection_state e chip_state (Estágio de Aquecimento 
     expect(chip.chip_state).toBe("cold");
     expect(chip.connection_state).toBe("open");
     expect(chip.connectionStatus).toBe("open");
-    expect(resolveEvolutionInstanceDailyLimit(chip)).toBe(100);
+    expect(resolveEvolutionInstanceDailyLimit(chip)).toBe(50);
   });
 
   it("3. Resolução de Cotas: chip_state 'warm' com connection_state 'open' -> limite 500", () => {
@@ -145,7 +145,7 @@ describe("Separação de connection_state e chip_state (Estágio de Aquecimento 
     expect(resolveEvolutionInstanceDailyLimit(maskedAfterCheck)).toBe(70);
   });
 
-  it("7. Migração sem mudança de comportamento: chip_state='open' hoje vira cold (100 msgs/dia)", () => {
+  it("7. Migração sem mudança de comportamento: chip_state='open' hoje vira cold (50 msgs/dia)", () => {
     // Estado medido em produção hoje antes da migration
     const rowAntesDaMigration = {
       id: "chip-prod",
@@ -155,9 +155,9 @@ describe("Separação de connection_state e chip_state (Estágio de Aquecimento 
       daily_limit_override: null,
     };
 
-    // Antes da migration: como 'open' !== 'warm', o resolvedor já devolvia 100
+    // Antes da migration: como 'open' !== 'warm', o resolvedor já devolvia 50
     const limiteAntes = resolveEvolutionInstanceDailyLimit(rowAntesDaMigration);
-    expect(limiteAntes).toBe(100);
+    expect(limiteAntes).toBe(50);
 
     // Simula a transformação SQL da migration:
     // connection_state = lower(chip_state)
@@ -173,15 +173,15 @@ describe("Separação de connection_state e chip_state (Estágio de Aquecimento 
       daily_limit_override: rowAntesDaMigration.daily_limit_override,
     };
 
-    // Depois da migration: continua exatamente 100, com connection_state preservado
+    // Depois da migration: continua exatamente 50, com connection_state preservado
     const limiteDepois = resolveEvolutionInstanceDailyLimit(rowDepoisDaMigration);
-    expect(limiteDepois).toBe(100);
+    expect(limiteDepois).toBe(50);
     expect(rowDepoisDaMigration.chip_state).toBe("cold");
     expect(rowDepoisDaMigration.connection_state).toBe("open");
     expect(limiteDepois).toBe(limiteAntes);
   });
 
-  it("8. Mutação: se checagem de status sobrescrevesse chip_state com 'open', chip warm perderia cota para 100", () => {
+  it("8. Mutação: se checagem de status sobrescrevesse chip_state com 'open', chip warm perderia cota para 50", () => {
     const chipWarm = {
       id: "chip-mutation",
       chip_state: "warm",
@@ -196,8 +196,8 @@ describe("Separação de connection_state e chip_state (Estágio de Aquecimento 
       chip_state: "open", // bug antigo
     };
 
-    // Demonstra que o bug destruía a cota (voltava para 100)
-    expect(resolveEvolutionInstanceDailyLimit(chipMutadoComBug)).toBe(100);
+    // Demonstra que o bug destruía a cota (voltava para 50)
+    expect(resolveEvolutionInstanceDailyLimit(chipMutadoComBug)).toBe(50);
 
     // Com o código correto, a cota de 500 é preservada
     const chipCorreto = {

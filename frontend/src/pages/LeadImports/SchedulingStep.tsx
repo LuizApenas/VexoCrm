@@ -23,7 +23,14 @@ import { darkSelectContentClass, darkSelectItemClass } from "./styles";
 interface SchedulingStepProps {
   dispatchOptions: CampaignDispatchOptions;
   setDispatchOptions: Dispatch<SetStateAction<CampaignDispatchOptions>>;
-  evolutionInstanceOptions: { id: string; name: string; isDefault?: boolean }[];
+  evolutionInstanceOptions: { 
+    id: string; 
+    name: string; 
+    isDefault?: boolean;
+    chipState?: "cold" | "warm" | string;
+    dailyLimitOverride?: number | null;
+  }[];
+  totalLeads?: number;
 
   batchingEnabled: boolean;
   setBatchingEnabled: Dispatch<SetStateAction<boolean>>;
@@ -79,6 +86,7 @@ export function SchedulingStep({
   dispatchOptions,
   setDispatchOptions,
   evolutionInstanceOptions,
+  totalLeads = 0,
   batchingEnabled,
   setBatchingEnabled,
   batchSize,
@@ -115,18 +123,28 @@ export function SchedulingStep({
   onCancelEdit,
   onNovaCampanha,
 }: SchedulingStepProps) {
-  const crmClient = useOptionalCrmClient();
+  const { data: client } = useOptionalCrmClient(activeClientId);
+  const sendWindow = client?.n8n_settings?.send_window;
+  const sendWindowNotice = useMemo(() => formatSendWindowNotice(sendWindow), [sendWindow]);
 
-  const sendWindowNotice = useMemo(() => {
-    if (newTriggerType !== "scheduled" || !newScheduledAt) return null;
-    const d = new Date(newScheduledAt);
-    if (isNaN(d.getTime())) return null;
-    const settings = crmClient?.selectedClient?.n8n_settings;
-    return formatSendWindowNotice(d, settings);
-  }, [newTriggerType, newScheduledAt, crmClient?.selectedClient?.n8n_settings]);
+  const selectedInst =
+    evolutionInstanceOptions.find((i) => i.id === dispatchOptions.evolutionInstanceId) ||
+    evolutionInstanceOptions.find((i) => i.isDefault) ||
+    evolutionInstanceOptions[0] ||
+    null;
+  const chipState = (selectedInst?.chipState || "").toLowerCase() === "warm" ? "warm" : "cold";
+  const chipStateLabel = chipState === "warm" ? "aquecido" : "frio";
+  const dailyQuota =
+    Number(selectedInst?.dailyLimitOverride) > 0
+      ? Number(selectedInst?.dailyLimitOverride)
+      : (chipState === "warm" ? 500 : 50);
+
+  const numLeads = Number(totalLeads) || 0;
+  const daysNeeded = numLeads && dailyQuota ? Math.ceil(numLeads / dailyQuota) : 1;
+  const isOverDailyQuota = numLeads > dailyQuota;
 
   return (
-    <Card className="border-border bg-card shadow-sm text-card-foreground rounded-2xl">
+    <Card className="rounded-2xl border-slate-100 dark:border-white/5 shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500 text-[10px] text-white">3</span>
@@ -170,6 +188,21 @@ export function SchedulingStep({
             />
           </div>
         </div>
+
+        {/* Aviso de cota diária do chip (Anti-Ban) */}
+        {isOverDailyQuota && (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3.5 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2.5">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-semibold text-amber-900 dark:text-amber-100">
+                Este chip é '{chipStateLabel}' e tem {dailyQuota} envios/dia.
+              </p>
+              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                Seu lote tem {numLeads.toLocaleString("pt-BR")} destinatários — serão necessários {daysNeeded} dias.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Batch sending (Loteamento) config */}
         <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-white/5 dark:bg-slate-900/10 space-y-3">

@@ -809,8 +809,13 @@ export async function dispatchCampaignSequence({
     let activeChip = null;
     if (typeof chipProvider === "function") {
       activeChip = await chipProvider({ leadIndex });
-      if (!activeChip) {
+      if (!activeChip || activeChip.exhausted) {
         summary.allChipsExhausted = true;
+        summary.exhaustedChipName = activeChip?.chipName || null;
+        summary.limitQuota = activeChip?.limitQuota || null;
+        summary.usedQuota = activeChip?.usedQuota || null;
+        summary.exhaustedQuotaMessage = activeChip?.exhaustedQuotaMessage || null;
+        summary.paused = true;
         break;
       }
       leadWebhookUrl = activeChip.webhookUrl;
