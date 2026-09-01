@@ -30,6 +30,16 @@ const SQL_CANONICAL_PHONE = (col) => `
     ELSE regexp_replace(${col}, '\\D', '', 'g')
   END
 `;
+
+const SQL_NUMBER_CHANGE_MATCH = (col) => `(
+  ${col} ~* 'estamos\\s+desativando\\s+esse\\s+n[úu]mero|chama\\s+meu\\s+vendedor|nos\\s+chame\\s+no\\s+(contato|n[úu]mero)|novo\\s+n[úu]mero|troca\\s+de\\s+n[úu]mero'
+)`;
+
+const SQL_AUTOMATION_MATCH = (col) => `(
+  ${col} ~* 'digite\\s+(apenas\\s+)?(o\\s+)?n[úu]mero|selecione\\s+(uma\\s+)?(das\\s+)?opç[õo]|opç[ãa]o\\s+(desejada|inv[áa]lida)|\\bmenu\\b|atendimento\\s+autom[áa]tico|protocolo\\s+de\\s+atendimento|resposta\\s+autom[áa]tica|\\[mensagem\\s+autom[áa]tica\\]|seja\\s+bem[- ]vindo\\(a\\)|hor[áa]rios?\\s+de\\s+atendimento|nosso\\s+(showroom|card[áa]pio|cat[áa]logo|site)|finalizarei\\s+nossa\\s+intera[çc][ãa]o|n[ãa]o\\s+consegui\\s+identificar\\s+nenhuma\\s+resposta'
+)`;
+
+import { classifyConversation } from "../../services/whatsappChatClassifier.js";
 import { getChatMemory } from "../../hardcoded-chatbot.js";
 import { defaultGroqModel } from "../../services/llmModels.js";
 import {
@@ -411,7 +421,26 @@ export function registerChatbotRoutes(app, deps) {
     try { await pgDatabasePool.query("ALTER TABLE public.lead_messages ADD COLUMN IF NOT EXISTS message_timestamp TIMESTAMPTZ;").catch(() => {}); } catch(e) {}
 
     try {
+      await pgDatabasePool.query(`
+        CREATE TABLE IF NOT EXISTS public.whatsapp_chat_states (
+          client_id TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          state TEXT NOT NULL DEFAULT 'ativa',
+          reason TEXT,
+          source TEXT NOT NULL DEFAULT 'auto',
+          changed_by TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (client_id, phone)
+        );
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_states_client_state
+          ON public.whatsapp_chat_states (client_id, state);
+      `).catch(() => {});
+    } catch(e) {}
+
+    try {
       const search = normalizeString(_req.query.search)?.toLowerCase() || "";
+      const rawTab = normalizeString(_req.query.tab)?.toLowerCase() || "ativa";
       const rawLimit = Number.parseInt(String(_req.query.limit || "100"), 10);
       const rawOffset = Number.parseInt(String(_req.query.offset || "0"), 10);
       const limit = Number.isNaN(rawLimit) ? 20 : Math.min(Math.max(rawLimit, 1), 200);
@@ -426,11 +455,6 @@ export function registerChatbotRoutes(app, deps) {
       const leadsTable = leadsTableName(clientId);
 
       const queryParams = [clientId];
-      let searchFilter = "";
-      if (search) {
-        queryParams.push(`%${search}%`);
-        searchFilter = `AND (LOWER(l.nome) LIKE $2 OR m.phone LIKE $2 OR LOWER(m.message_text) LIKE $2)`;
-      }
 
       let instanceFilter = "";
       if (instanceAliases && instanceAliases.length > 0) {
@@ -439,35 +463,157 @@ export function registerChatbotRoutes(app, deps) {
         instanceFilter = `AND instance_name = ANY($${idx})`;
       }
 
+      let tabCondition = "";
+      let searchFilter = "";
+
+      if (search) {
+        queryParams.push(`%${search}%`);
+        const searchIdx = queryParams.length;
+        // Busca ampla por nome, telefone canônico, telefone bruto, texto da mensagem ou pushName
+        searchFilter = `AND (
+          LOWER(COALESCE(l.nome, '')) LIKE $${searchIdx}
+          OR m.phone LIKE $${searchIdx}
+          OR m.raw_phone LIKE $${searchIdx}
+          OR LOWER(COALESCE(m.message_text, '')) LIKE $${searchIdx}
+          OR LOWER(COALESCE(m.contact_name, '')) LIKE $${searchIdx}
+          OR LOWER(COALESCE(lm.contact_name, '')) LIKE $${searchIdx}
+        ) AND COALESCE(cs.state, 'ativa') != 'lixeira'`;
+      } else {
+        if (rawTab === "grupos") {
+          tabCondition = "AND m.is_group IS TRUE AND COALESCE(cs.state, 'ativa') != 'lixeira'";
+        } else if (rawTab === "arquivada" || rawTab === "arquivadas") {
+          tabCondition = "AND (m.is_group IS NOT TRUE) AND cs.state = 'arquivada'";
+        } else if (rawTab === "automacao" || rawTab === "automacoes") {
+          tabCondition = `AND (m.is_group IS NOT TRUE) AND (
+            cs.state = 'automacao' OR (cs.state IS NULL AND ${SQL_AUTOMATION_MATCH("m.message_text")})
+          ) AND NOT ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}`;
+        } else if (rawTab === "aguardando" || rawTab === "espera") {
+          tabCondition = `AND (m.is_group IS NOT TRUE) AND (
+            COALESCE(cs.state, 'ativa') = 'ativa' OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
+          ) AND m.direction = 'inbound' AND (
+            cs.state IS NOT NULL OR NOT ${SQL_AUTOMATION_MATCH("m.message_text")} OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
+          )`;
+        } else if (rawTab === "minhas") {
+          // Filtro de mensagens ativas (podendo filtrar por atendente específico se fornecido)
+          tabCondition = `AND (m.is_group IS NOT TRUE) AND (
+            COALESCE(cs.state, 'ativa') = 'ativa' OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
+          ) AND (
+            cs.state IS NOT NULL OR NOT ${SQL_AUTOMATION_MATCH("m.message_text")} OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
+          )`;
+        } else {
+          // Padrão: "ativa" / "fila" / "todos"
+          tabCondition = `AND (m.is_group IS NOT TRUE) AND (
+            COALESCE(cs.state, 'ativa') = 'ativa' OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
+          ) AND (
+            cs.state IS NOT NULL OR NOT ${SQL_AUTOMATION_MATCH("m.message_text")} OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
+          )`;
+        }
+      }
+
       let total = 0;
       let items = [];
+      let counts = { active: 0, awaiting: 0, automations: 0, groups: 0, archived: 0 };
 
       try {
+        // 1. Apura contadores gerais para as abas
+        const countsQueryText = `
+          WITH pre_canonical AS (
+            SELECT
+              ${SQL_CANONICAL_PHONE("phone")} as canonical_phone,
+              COALESCE(message_timestamp, delivered_at, created_at) as effective_timestamp,
+              direction,
+              message_text,
+              is_group
+            FROM public.lead_messages
+            WHERE client_id = $1 ${instanceFilter}
+          ),
+          latest_messages AS (
+            SELECT DISTINCT ON (canonical_phone)
+              canonical_phone as phone,
+              direction,
+              message_text,
+              is_group
+            FROM pre_canonical
+            ORDER BY canonical_phone, effective_timestamp DESC NULLS LAST
+          )
+          SELECT
+            COUNT(*) FILTER (WHERE m.is_group IS TRUE AND COALESCE(cs.state, 'ativa') != 'lixeira')::integer as groups_count,
+            COUNT(*) FILTER (WHERE m.is_group IS NOT TRUE AND cs.state = 'arquivada')::integer as archived_count,
+            COUNT(*) FILTER (
+              WHERE m.is_group IS NOT TRUE
+                AND (cs.state = 'automacao' OR (cs.state IS NULL AND ${SQL_AUTOMATION_MATCH("m.message_text")}))
+                AND NOT ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
+            )::integer as automations_count,
+            COUNT(*) FILTER (
+              WHERE m.is_group IS NOT TRUE
+                AND (COALESCE(cs.state, 'ativa') = 'ativa' OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")})
+                AND (cs.state IS NOT NULL OR NOT ${SQL_AUTOMATION_MATCH("m.message_text")} OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")})
+            )::integer as active_count,
+            COUNT(*) FILTER (
+              WHERE m.is_group IS NOT TRUE
+                AND (COALESCE(cs.state, 'ativa') = 'ativa' OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")})
+                AND m.direction = 'inbound'
+                AND (cs.state IS NOT NULL OR NOT ${SQL_AUTOMATION_MATCH("m.message_text")} OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")})
+            )::integer as awaiting_count
+          FROM latest_messages m
+          LEFT JOIN public.whatsapp_chat_states cs ON cs.client_id = $1 AND cs.phone = m.phone;
+        `;
+        const countsRes = await pgDatabasePool.query(countsQueryText, [clientId]);
+        const countsRow = countsRes.rows[0];
+        if (countsRow) {
+          counts = {
+            active: countsRow.active_count || 0,
+            awaiting: countsRow.awaiting_count || 0,
+            automations: countsRow.automations_count || 0,
+            groups: countsRow.groups_count || 0,
+            archived: countsRow.archived_count || 0,
+          };
+        }
+
+        // 2. Count total para a listagem atual
         const countQueryText = `
           WITH pre_canonical AS (
             SELECT
               ${SQL_CANONICAL_PHONE("phone")} as canonical_phone,
+              phone as raw_phone,
+              message_text,
+              direction,
+              contact_name,
+              is_group,
               COALESCE(message_timestamp, delivered_at, created_at) as effective_timestamp
             FROM public.lead_messages
             WHERE client_id = $1 ${instanceFilter}
           ),
           latest_messages AS (
             SELECT DISTINCT ON (canonical_phone)
-              canonical_phone as phone
+              canonical_phone as phone,
+              raw_phone,
+              message_text,
+              direction,
+              contact_name,
+              is_group,
+              effective_timestamp
             FROM pre_canonical
             ORDER BY canonical_phone, effective_timestamp DESC NULLS LAST
           )
           SELECT COUNT(*)::integer as total
           FROM latest_messages m
           LEFT JOIN public."${leadsTable}" l ON ${SQL_CANONICAL_PHONE("l.telefone")} = m.phone AND l.client_id = $1
+          LEFT JOIN public.whatsapp_chat_states cs ON cs.client_id = $1 AND cs.phone = m.phone
+          LEFT JOIN public.whatsapp_lid_map lm ON lm.lid = m.phone OR lm.lid = m.raw_phone
           WHERE 1=1
+          ${tabCondition}
           ${searchFilter}
         `;
 
         const countRes = await pgDatabasePool.query(countQueryText, queryParams);
         total = countRes.rows[0]?.total || 0;
 
+        // 3. Query paginada de itens
         const queryParamsWithPaging = [...queryParams, limit, offset];
+        const limitParamIdx = queryParams.length + 1;
+        const offsetParamIdx = queryParams.length + 2;
+
         const queryText = `
           WITH pre_canonical AS (
             SELECT
@@ -476,6 +622,7 @@ export function registerChatbotRoutes(app, deps) {
               phone as raw_phone,
               message_text,
               direction,
+              sender_type,
               delivered_at,
               created_at,
               message_timestamp,
@@ -493,6 +640,7 @@ export function registerChatbotRoutes(app, deps) {
               raw_phone,
               message_text,
               direction,
+              sender_type,
               delivered_at,
               created_at,
               message_timestamp,
@@ -506,8 +654,10 @@ export function registerChatbotRoutes(app, deps) {
           SELECT
             m.id,
             m.phone as phone_number,
+            m.raw_phone,
             m.message_text,
             m.direction,
+            m.sender_type,
             m.delivered_at,
             m.created_at,
             m.message_timestamp,
@@ -519,35 +669,53 @@ export function registerChatbotRoutes(app, deps) {
             lm.contact_name as profile_name,
             l.nome as lead_name,
             l.lead_origin,
-            l.source_campaign_id
+            l.source_campaign_id,
+            cs.state as chat_state,
+            cs.reason as chat_state_reason,
+            cs.source as chat_state_source,
+            cs.changed_by as chat_state_changed_by
           FROM latest_messages m
           LEFT JOIN public."${leadsTable}" l ON ${SQL_CANONICAL_PHONE("l.telefone")} = m.phone AND l.client_id = $1
+          LEFT JOIN public.whatsapp_chat_states cs ON cs.client_id = $1 AND cs.phone = m.phone
           LEFT JOIN public.whatsapp_lid_map lm ON lm.lid = m.phone OR lm.lid = m.raw_phone
           WHERE 1=1
+          ${tabCondition}
           ${searchFilter}
           ORDER BY m.effective_timestamp DESC NULLS LAST, m.id DESC
-          LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
+          LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}
         `;
 
         const result = await pgDatabasePool.query(queryText, queryParamsWithPaging);
         items = result.rows.map((row) => {
           const timestampVal = row.effective_timestamp ? Math.floor(new Date(row.effective_timestamp).getTime() / 1000) : null;
+          const hasLead = Boolean(row.lead_name || row.lead_origin || row.source_campaign_id);
+          const classified = classifyConversation(row.message_text, { hasLeadInCrm: hasLead, hasHumanReply: false });
+
+          const isGroup = row.is_group === true;
+          const isNumberChange = classified.isNumberChange === true;
+          const effectiveState = row.chat_state || (isGroup ? "ativa" : classified.state);
+          const effectiveReason = row.chat_state_reason || (isNumberChange ? "Mudança de número informada pelo contato" : classified.reason);
+          const effectiveSource = row.chat_state_source || (row.chat_state ? "manual" : "auto");
+
           return {
             id: row.phone_number,
-            // contact_name (pushName do WhatsApp) tem prioridade: existe para
-            // grupos e para contatos que nao viraram lead no Banco de Dados.
             name: row.contact_name || row.profile_name || row.lead_name || row.phone_number,
             profilePic: row.profile_pic || null,
-            isGroup: row.is_group === true,
+            isGroup,
             unreadCount: 0,
             timestamp: timestampVal,
-            archived: false,
+            archived: effectiveState === "arquivada",
+            state: effectiveState,
+            stateReason: effectiveReason,
+            stateSource: effectiveSource,
+            isNumberChange,
             pinned: false,
             muted: false,
             lastMessage: {
               id: null,
               body: row.message_text || "",
               fromMe: row.direction === "outbound",
+              senderType: row.sender_type || (row.direction === "outbound" ? "agent" : "lead"),
               timestamp: timestampVal,
               type: "chat",
             },
@@ -559,18 +727,91 @@ export function registerChatbotRoutes(app, deps) {
         console.warn("[whatsapp/chats] Postgres query warning/fallback:", pgErr?.message);
       }
 
-
       res.json({
         items,
         total: total || items.length,
+        counts,
         nextOffset: offset + items.length,
         hasMore: offset + items.length < (total || items.length),
       });
     } catch (error) {
       console.warn("whatsapp chats endpoint warning:", error?.message || error);
-      res.json({ items: [], total: 0, nextOffset: 0, hasMore: false });
+      res.json({ items: [], total: 0, counts: { active: 0, awaiting: 0, automations: 0, groups: 0, archived: 0 }, nextOffset: 0, hasMore: false });
     }
   });
+
+  // POST /api/whatsapp/chats/state — altera o estado de uma conversa (ativa, automacao, arquivada, lixeira)
+  app.post("/api/whatsapp/chats/state", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
+    if (!ensureDb(res)) return;
+    const clientId = resolveAuthorizedClientId(req, res, req.body?.clientId);
+    if (!clientId) return;
+
+    const phone = sanitizePhone(req.body?.phone);
+    const state = normalizeString(req.body?.state)?.toLowerCase();
+    const reason = normalizeString(req.body?.reason) || null;
+
+    if (!phone || !["ativa", "automacao", "arquivada", "lixeira"].includes(state)) {
+      sendError(res, 400, "INVALID_BODY", "Telefone ou estado inválido");
+      return;
+    }
+
+    try {
+      const changedBy = req.user?.email || "user";
+      await pgDatabasePool.query(
+        `INSERT INTO public.whatsapp_chat_states (client_id, phone, state, reason, source, changed_by, updated_at)
+         VALUES ($1, $2, $3, $4, 'manual', $5, now())
+         ON CONFLICT (client_id, phone) DO UPDATE SET
+           state = EXCLUDED.state,
+           reason = EXCLUDED.reason,
+           source = 'manual',
+           changed_by = EXCLUDED.changed_by,
+           updated_at = now()`,
+        [clientId, phone, state, reason, changedBy]
+      );
+      res.json({ success: true, phone, state, reason });
+    } catch (err) {
+      console.error("[whatsapp/chats/state] erro:", err?.message || err);
+      sendError(res, 500, "STATE_UPDATE_ERROR", err?.message || "Erro ao atualizar estado da conversa");
+    }
+  });
+
+  // POST /api/whatsapp/chats/state/bulk — altera o estado de múltiplas conversas em lote
+  app.post("/api/whatsapp/chats/state/bulk", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
+    if (!ensureDb(res)) return;
+    const clientId = resolveAuthorizedClientId(req, res, req.body?.clientId);
+    if (!clientId) return;
+
+    const phones = Array.isArray(req.body?.phones) ? req.body.phones.map(sanitizePhone).filter(Boolean) : [];
+    const state = normalizeString(req.body?.state)?.toLowerCase();
+    const reason = normalizeString(req.body?.reason) || null;
+
+    if (phones.length === 0 || !["ativa", "automacao", "arquivada", "lixeira"].includes(state)) {
+      sendError(res, 400, "INVALID_BODY", "Lista de telefones ou estado inválido");
+      return;
+    }
+
+    try {
+      const changedBy = req.user?.email || "user";
+      for (const phone of phones) {
+        await pgDatabasePool.query(
+          `INSERT INTO public.whatsapp_chat_states (client_id, phone, state, reason, source, changed_by, updated_at)
+           VALUES ($1, $2, $3, $4, 'manual', $5, now())
+           ON CONFLICT (client_id, phone) DO UPDATE SET
+             state = EXCLUDED.state,
+             reason = EXCLUDED.reason,
+             source = 'manual',
+             changed_by = EXCLUDED.changed_by,
+             updated_at = now()`,
+          [clientId, phone, state, reason, changedBy]
+        );
+      }
+      res.json({ success: true, count: phones.length, state });
+    } catch (err) {
+      console.error("[whatsapp/chats/state/bulk] erro:", err?.message || err);
+      sendError(res, 500, "BULK_STATE_UPDATE_ERROR", err?.message || "Erro ao atualizar estados em lote");
+    }
+  });
+
   app.post("/api/whatsapp/chats/read", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
     const chatId = normalizeString(req.body?.chatId);
     if (!chatId) {
@@ -1459,6 +1700,24 @@ export function registerChatbotRoutes(app, deps) {
       });
     } catch (msgErr) {
       console.warn(`[chatbot-webhook] falha ao gravar mensagem ${fromMe ? "outbound/fromMe" : "inbound"} em lead_messages:`, msgErr?.message || msgErr);
+    }
+
+    // Auto-reativação: se o contato estava arquivado ou em automação e recebeu/enviou mensagem,
+    // reativa automaticamente para 'ativa'.
+    try {
+      if (pgDatabasePool && phone) {
+        await pgDatabasePool.query(
+          `UPDATE public.whatsapp_chat_states
+             SET state = 'ativa',
+                 reason = 'Reativada automaticamente por nova mensagem',
+                 source = 'auto',
+                 updated_at = now()
+           WHERE client_id = $1 AND phone = $2 AND state IN ('arquivada', 'automacao')`,
+          [clientId, phone]
+        );
+      }
+    } catch (reactivateErr) {
+      console.warn("[chatbot-webhook] erro ao auto-reativar conversa:", reactivateErr?.message || reactivateErr);
     }
 
     // Se for mensagem fromMe (digitada pelo consultor no celular ou eco de envio),

@@ -187,6 +187,10 @@ async function isAlreadyApplied(pool, filename) {
       NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='chatbot_templates')
       OR NOT EXISTS (SELECT 1 FROM public.chatbot_templates WHERE template_key IN ('outlier', 'infinie') AND is_builtin = true AND client_id IS NULL)
     ) AS ok`,
+    "20260901190000_create_whatsapp_chat_states.sql": `SELECT (
+      EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='whatsapp_chat_states')
+      AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'whatsapp_chat_states_state_check')
+    ) AS ok`,
   };
 
   const query = checks[filename];

@@ -10,12 +10,17 @@ export interface WhatsAppChat {
   unreadCount: number;
   timestamp: number | null;
   archived: boolean;
+  state?: "ativa" | "automacao" | "arquivada" | "lixeira";
+  stateReason?: string | null;
+  stateSource?: "auto" | "manual";
+  isNumberChange?: boolean;
   pinned: boolean;
   muted: boolean;
   lastMessage: {
     id: string | null;
     body: string;
     fromMe: boolean;
+    senderType?: string | null;
     timestamp: number | null;
     type: string | null;
   } | null;
@@ -23,6 +28,14 @@ export interface WhatsAppChat {
   sourceCampaignId: string | null;
   /** Foto do perfil do WhatsApp (URL temporária da Evolution). */
   profilePic?: string | null;
+}
+
+export interface WhatsAppCounts {
+  active: number;
+  awaiting: number;
+  automations: number;
+  groups: number;
+  archived: number;
 }
 
 export interface WhatsAppMessage {
@@ -46,6 +59,7 @@ export interface WhatsAppMessage {
 interface WhatsAppChatsPage {
   items: WhatsAppChat[];
   total: number;
+  counts?: WhatsAppCounts;
   nextOffset: number;
   hasMore: boolean;
 }
@@ -89,16 +103,23 @@ export function useDocumentVisibility(): boolean {
   return isVisible;
 }
 
-export function useWhatsAppChats(clientId: string | null, instanceName: string | null, enabled: boolean) {
+export function useWhatsAppChats(
+  clientId: string | null,
+  instanceName: string | null,
+  enabled: boolean,
+  options?: { tab?: string; search?: string }
+) {
   const { getIdToken } = useAuth();
   const isVisible = useDocumentVisibility();
   const [olderPagesEnabled, setOlderPagesEnabled] = useState(false);
+  const tab = options?.tab || "ativa";
+  const search = options?.search || "";
 
   useEffect(() => {
     if (!enabled) {
       setOlderPagesEnabled(false);
     }
-  }, [enabled]);
+  }, [enabled, tab, search]);
 
   const fetchChatsPage = async (offset: number): Promise<WhatsAppChatsPage> => {
     const token = await getIdToken();
@@ -107,8 +128,9 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
     }
 
     const params = new URLSearchParams({
-      limit: "20",
+      limit: "40",
       offset: String(offset),
+      tab,
     });
 
     if (clientId) {
@@ -117,6 +139,10 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
     
     if (instanceName) {
       params.append("instanceName", instanceName);
+    }
+
+    if (search.trim()) {
+      params.append("search", search.trim());
     }
 
     const res = await fetch(`${API_BASE_URL}/api/whatsapp/chats?${params.toString()}`, {
@@ -129,18 +155,18 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
   };
 
   const recentChatsQuery = useQuery({
-    queryKey: ["whatsapp-chats", clientId, instanceName, "recent"],
+    queryKey: ["whatsapp-chats", clientId, instanceName, tab, search, "recent"],
     enabled: enabled && !!clientId,
     queryFn: async () => fetchChatsPage(0),
-    refetchInterval: isVisible && enabled && !!clientId ? 12000 : false,
+    refetchInterval: isVisible && enabled && !!clientId && !search.trim() ? 12000 : false,
     refetchIntervalInBackground: false,
     staleTime: 5000,
   });
 
   const olderChatsQuery = useInfiniteQuery({
-    queryKey: ["whatsapp-chats", clientId, instanceName, "older"],
+    queryKey: ["whatsapp-chats", clientId, instanceName, tab, search, "older"],
     enabled: enabled && olderPagesEnabled && !!clientId,
-    initialPageParam: 20,
+    initialPageParam: 40,
     queryFn: async ({ pageParam }) => fetchChatsPage(pageParam),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextOffset : undefined),
     staleTime: 30000,
@@ -162,6 +188,7 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
   }, [olderItems, recentChatsQuery.data?.items]);
 
   const total = recentChatsQuery.data?.total ?? items.length;
+  const counts = recentChatsQuery.data?.counts || { active: 0, awaiting: 0, automations: 0, groups: 0, archived: 0 };
   const isLoading = recentChatsQuery.isLoading;
   const error = recentChatsQuery.error ?? olderChatsQuery.error;
   const isFetchingNextPage =
@@ -172,6 +199,7 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
     ...recentChatsQuery,
     items,
     total,
+    counts,
     hasMore,
     isLoading,
     error,
@@ -187,6 +215,74 @@ export function useWhatsAppChats(clientId: string | null, instanceName: string |
       }
     },
   };
+}
+
+export function useUpdateChatState(clientId: string | null) {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      phone,
+      state,
+      reason,
+    }: {
+      phone: string;
+      state: "ativa" | "automacao" | "arquivada" | "lixeira";
+      reason?: string;
+    }) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+
+      const res = await fetch(`${API_BASE_URL}/api/whatsapp/chats/state`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ clientId, phone, state, reason }),
+      });
+
+      return parseApiResponse<{ success: boolean; phone: string; state: string }>(res);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-chats"] });
+    },
+  });
+}
+
+export function useBulkUpdateChatState(clientId: string | null) {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      phones,
+      state,
+      reason,
+    }: {
+      phones: string[];
+      state: "ativa" | "automacao" | "arquivada" | "lixeira";
+      reason?: string;
+    }) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+
+      const res = await fetch(`${API_BASE_URL}/api/whatsapp/chats/state/bulk`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ clientId, phones, state, reason }),
+      });
+
+      return parseApiResponse<{ success: boolean; count: number; state: string }>(res);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-chats"] });
+    },
+  });
 }
 
 export interface WhatsAppMessagesPage {

@@ -31,6 +31,10 @@ import {
   User,
   Activity,
   Zap,
+  Archive,
+  ArchiveRestore,
+  Bot,
+  Users,
 } from "lucide-react";
 import { useCampanhas } from "@/hooks/useCampanhas";
 import { useCrmClient } from "@/hooks/useCrmClient";
@@ -55,6 +59,7 @@ import {
   useWhatsAppChats,
   useWhatsAppMessages,
   useClearWhatsAppChats,
+  useUpdateChatState,
   type WhatsAppChat,
   type WhatsAppMessage,
 } from "@/hooks/useWhatsAppInbox";
@@ -257,14 +262,22 @@ export default function WhatsAppInbox({
   const [selectedInstanceNames, setSelectedInstanceNames] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [compositionMode, setCompositionMode] = useState<"whatsapp" | "internal_note">("whatsapp");
-  const [inboxTab, setInboxTab] = useState<"minhas" | "fila" | "aguardando" | "todas">("todas");
+  const [inboxTab, setInboxTab] = useState<"fila" | "aguardando" | "minhas" | "automacao" | "arquivadas" | "grupos" | "todas">("fila");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
   const [hasNewUnseenMessage, setHasNewUnseenMessage] = useState(false);
   const [showDossier, setShowDossier] = useState(true);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [isApplyFollowupModalOpen, setIsApplyFollowupModalOpen] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const chatsContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -296,7 +309,11 @@ export default function WhatsAppInbox({
 
   const canLoadInbox = Boolean(clientId);
   const instanceFilter = selectedInstanceNames.length > 0 ? selectedInstanceNames.join(",") : null;
-  const chatsQuery = useWhatsAppChats(clientId, instanceFilter, canLoadInbox);
+  const chatsQuery = useWhatsAppChats(clientId, instanceFilter, canLoadInbox, {
+    tab: inboxTab,
+    search: debouncedSearch,
+  });
+  const updateChatState = useUpdateChatState(clientId);
   const messagesQuery = useWhatsAppMessages(clientId, instanceFilter, selectedChatId, canLoadInbox);
   const sendMessage = useSendWhatsAppMessage(clientId, selectedChatId);
   const clearChats = useClearWhatsAppChats(clientId);
@@ -418,58 +435,11 @@ export default function WhatsAppInbox({
     return leadsByPhone.get(chatCanonical) || null;
   }, [selectedChat, leadsByPhone]);
 
-  // Contagem de conversas onde a última mensagem é do lead OU o robô identificou que precisa de atenção humana
-  const awaitingReplyCount = useMemo(
-    () =>
-      chats.filter((c) => {
-        const cPhone = sanitizePhone(c.id);
-        const lead = cPhone ? leadsByPhone.get(cPhone) : null;
-        const precisaAtencao = Boolean(
-          lead?.dados?.precisa_atencao_humana || (lead as any)?.precisa_atencao_humana
-        );
-        return precisaAtencao || Boolean(c.lastMessage && !c.lastMessage.fromMe);
-      }).length,
-    [chats, leadsByPhone]
-  );
+  // Contagem de conversas em espera vinda do servidor ou fallback local
+  const awaitingReplyCount = chatsQuery.counts?.awaiting ?? 0;
 
-  // Filtro de Conversas por Abas e Busca
-  const filteredChats = useMemo(() => {
-    let result = chats;
-
-    if (inboxTab === "fila") {
-      result = result.filter((c) => {
-        const cPhone = sanitizePhone(c.id);
-        const lead = cPhone ? leadsByPhone.get(cPhone) : null;
-        const precisaAtencao = Boolean(
-          lead?.dados?.precisa_atencao_humana || (lead as any)?.precisa_atencao_humana
-        );
-        return precisaAtencao || c.unreadCount > 0 || !c.lastMessage?.fromMe;
-      });
-    } else if (inboxTab === "aguardando") {
-      result = result.filter((c) => {
-        const cPhone = sanitizePhone(c.id);
-        const lead = cPhone ? leadsByPhone.get(cPhone) : null;
-        const precisaAtencao = Boolean(
-          lead?.dados?.precisa_atencao_humana || (lead as any)?.precisa_atencao_humana
-        );
-        return precisaAtencao || Boolean(c.lastMessage && !c.lastMessage.fromMe);
-      });
-    } else if (inboxTab === "minhas") {
-      result = result.filter((c) => c.lastMessage?.fromMe);
-    }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter(
-        (c) =>
-          (c.name || "").toLowerCase().includes(q) ||
-          String(c.id).toLowerCase().includes(q) ||
-          (c.lastMessage?.body || "").toLowerCase().includes(q)
-      );
-    }
-
-    return result;
-  }, [chats, inboxTab, searchQuery, leadsByPhone]);
+  // Lista de conversas já filtradas pelo servidor conforme aba e busca
+  const filteredChats = useMemo(() => chats, [chats]);
 
   const handleReabrirAtendimento = async () => {
     if (!selectedChat || !clientId) return;
@@ -822,69 +792,139 @@ export default function WhatsAppInbox({
                 </span>
               </div>
 
-              {/* Abas Minhas | Fila | Aguardando | Todas */}
-              <div className="grid grid-cols-4 gap-1 rounded-xl bg-background p-1 border border-border/70 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setInboxTab("minhas")}
-                  className={cn(
-                    "rounded-lg py-1 font-semibold transition-all text-center",
-                    inboxTab === "minhas"
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  Minhas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInboxTab("fila")}
-                  className={cn(
-                    "rounded-lg py-1 font-semibold transition-all text-center",
-                    inboxTab === "fila"
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  Fila
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInboxTab("aguardando")}
-                  className={cn(
-                    "rounded-lg py-1 font-semibold transition-all text-center flex items-center justify-center gap-0.5",
-                    inboxTab === "aguardando"
-                      ? "bg-amber-600 text-white shadow-xs"
-                      : "text-amber-700 dark:text-amber-400 hover:text-foreground"
-                  )}
-                  title="Leads que responderam e estão aguardando nossa resposta"
-                >
-                  <span>Espera</span>
-                  {awaitingReplyCount > 0 && (
-                    <span
-                      className={cn(
-                        "rounded-full px-1 text-[9px] font-bold leading-tight",
-                        inboxTab === "aguardando"
-                          ? "bg-white text-amber-800"
-                          : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                      )}
-                    >
-                      {awaitingReplyCount}
-                    </span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInboxTab("todas")}
-                  className={cn(
-                    "rounded-lg py-1 font-semibold transition-all text-center",
-                    inboxTab === "todas"
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  Todas
-                </button>
+              {/* Abas de Navegação do Inbox */}
+              <div className="flex flex-col gap-1 rounded-xl bg-background p-1 border border-border/70 text-[11px]">
+                {/* Linha 1: Fila | Espera | Minhas */}
+                <div className="grid grid-cols-3 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setInboxTab("fila")}
+                    className={cn(
+                      "rounded-lg py-1 font-semibold transition-all text-center",
+                      inboxTab === "fila"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Fila
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInboxTab("aguardando")}
+                    className={cn(
+                      "rounded-lg py-1 font-semibold transition-all text-center flex items-center justify-center gap-1",
+                      inboxTab === "aguardando"
+                        ? "bg-amber-600 text-white shadow-xs"
+                        : "text-amber-700 dark:text-amber-400 hover:text-foreground"
+                    )}
+                    title="Leads que responderam e estão aguardando nossa resposta"
+                  >
+                    <span>Espera</span>
+                    {(chatsQuery.counts?.awaiting ?? 0) > 0 && (
+                      <span
+                        className={cn(
+                          "rounded-full px-1 text-[9px] font-bold leading-tight",
+                          inboxTab === "aguardando"
+                            ? "bg-white text-amber-800"
+                            : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                        )}
+                      >
+                        {chatsQuery.counts?.awaiting}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInboxTab("minhas")}
+                    className={cn(
+                      "rounded-lg py-1 font-semibold transition-all text-center",
+                      inboxTab === "minhas"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Minhas
+                  </button>
+                </div>
+
+                {/* Linha 2: Automações | Arquivadas | Grupos */}
+                <div className="grid grid-cols-3 gap-1 border-t border-border/40 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setInboxTab("automacao")}
+                    className={cn(
+                      "rounded-lg py-1 font-semibold transition-all text-center flex items-center justify-center gap-1 text-[10px]",
+                      inboxTab === "automacao"
+                        ? "bg-purple-600 text-white shadow-xs"
+                        : "text-purple-700 dark:text-purple-400 hover:text-foreground"
+                    )}
+                    title="Robôs e autoatendimentos detectados"
+                  >
+                    <span>Automações</span>
+                    {(chatsQuery.counts?.automations ?? 0) > 0 && (
+                      <span
+                        className={cn(
+                          "rounded-full px-1 text-[9px] font-bold leading-tight",
+                          inboxTab === "automacao"
+                            ? "bg-white text-purple-800"
+                            : "bg-purple-500/20 text-purple-700 dark:text-purple-300"
+                        )}
+                      >
+                        {chatsQuery.counts?.automations}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInboxTab("arquivadas")}
+                    className={cn(
+                      "rounded-lg py-1 font-semibold transition-all text-center flex items-center justify-center gap-1 text-[10px]",
+                      inboxTab === "arquivadas"
+                        ? "bg-slate-700 text-white shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    title="Conversas arquivadas manualmente"
+                  >
+                    <span>Arquivadas</span>
+                    {(chatsQuery.counts?.archived ?? 0) > 0 && (
+                      <span
+                        className={cn(
+                          "rounded-full px-1 text-[9px] font-bold leading-tight",
+                          inboxTab === "arquivadas"
+                            ? "bg-white text-slate-800"
+                            : "bg-slate-500/20 text-slate-700 dark:text-slate-300"
+                        )}
+                      >
+                        {chatsQuery.counts?.archived}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInboxTab("grupos")}
+                    className={cn(
+                      "rounded-lg py-1 font-semibold transition-all text-center flex items-center justify-center gap-1 text-[10px]",
+                      inboxTab === "grupos"
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-blue-700 dark:text-blue-400 hover:text-foreground"
+                    )}
+                    title="Grupos de WhatsApp"
+                  >
+                    <span>Grupos</span>
+                    {(chatsQuery.counts?.groups ?? 0) > 0 && (
+                      <span
+                        className={cn(
+                          "rounded-full px-1 text-[9px] font-bold leading-tight",
+                          inboxTab === "grupos"
+                            ? "bg-white text-blue-800"
+                            : "bg-blue-500/20 text-blue-700 dark:text-blue-300"
+                        )}
+                      >
+                        {chatsQuery.counts?.groups}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Barra de Busca em Tempo Real */}
@@ -1002,6 +1042,40 @@ export default function WhatsAppInbox({
                               {chat.unreadCount}
                             </span>
                           )}
+                          {chat.isNumberChange && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700 dark:text-indigo-300"
+                              title="Contato informou novo número / mudança de telefone"
+                            >
+                              <Phone className="h-2.5 w-2.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                              <span>Novo Número</span>
+                            </span>
+                          )}
+                          {chat.state === "automacao" && !chat.isNumberChange && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-purple-500/15 border border-purple-500/30 px-1.5 py-0.5 text-[9px] font-bold text-purple-700 dark:text-purple-300"
+                              title={chat.stateReason || "Robô / Autoatendimento detectado"}
+                            >
+                              <Bot className="h-2.5 w-2.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                              <span>Automação</span>
+                            </span>
+                          )}
+                          {(chat.state === "arquivada" || chat.archived) && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-slate-500/15 border border-slate-500/30 px-1.5 py-0.5 text-[9px] font-bold text-slate-700 dark:text-slate-300"
+                            >
+                              <Archive className="h-2.5 w-2.5 shrink-0" />
+                              <span>Arquivada</span>
+                            </span>
+                          )}
+                          {chat.isGroup && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 border border-blue-500/30 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 dark:text-blue-300"
+                            >
+                              <Users className="h-2.5 w-2.5 shrink-0" />
+                              <span>Grupo</span>
+                            </span>
+                          )}
                           {precisaAtencao && (
                             <span
                               className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 text-[9px] font-bold text-rose-700 dark:text-rose-300"
@@ -1046,7 +1120,7 @@ export default function WhatsAppInbox({
                   />
                 )}
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="truncate text-sm font-bold text-foreground">
                       {selectedChat?.name || "Selecione uma conversa"}
                     </p>
@@ -1059,6 +1133,33 @@ export default function WhatsAppInbox({
                         Online / WhatsApp
                       </Badge>
                     )}
+                    {selectedChat?.isNumberChange && (
+                      <Badge
+                        variant="outline"
+                        className="h-4.5 px-1.5 text-[9px] font-bold border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 gap-1"
+                      >
+                        <Phone className="h-2.5 w-2.5 text-indigo-600" />
+                        Novo número informado
+                      </Badge>
+                    )}
+                    {selectedChat?.state === "automacao" && !selectedChat?.isNumberChange && (
+                      <Badge
+                        variant="outline"
+                        className="h-4.5 px-1.5 text-[9px] font-bold border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300 gap-1"
+                      >
+                        <Bot className="h-2.5 w-2.5 text-purple-600" />
+                        Automação: {selectedChat.stateReason || "URA / Robô"}
+                      </Badge>
+                    )}
+                    {(selectedChat?.state === "arquivada" || selectedChat?.archived) && (
+                      <Badge
+                        variant="outline"
+                        className="h-4.5 px-1.5 text-[9px] font-bold border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300 gap-1"
+                      >
+                        <Archive className="h-2.5 w-2.5" />
+                        Arquivada
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-[11px] text-muted-foreground truncate">{displayPhone}</p>
                 </div>
@@ -1066,6 +1167,64 @@ export default function WhatsAppInbox({
 
               {selectedChat && (
                 <div className="flex items-center gap-2">
+                  {/* Se estiver classificada como automação, botão para reverter */}
+                  {selectedChat.state === "automacao" && !selectedChat.isNumberChange && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1 text-xs text-purple-600 hover:text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-900/50 rounded-xl"
+                      onClick={async () => {
+                        try {
+                          await updateChatState.mutateAsync({
+                            phone: selectedChat.id,
+                            state: "ativa",
+                            reason: "Marcado manualmente pelo usuário",
+                          });
+                          toast.success("Conversa movida para a Fila principal!");
+                        } catch (err: any) {
+                          toast.error(err?.message || "Erro ao atualizar estado.");
+                        }
+                      }}
+                      title="Reclassificar esta conversa como atendimento humano normal"
+                    >
+                      <Bot className="h-3.5 w-3.5" />
+                      Não é automação
+                    </Button>
+                  )}
+
+                  {/* Botão de Arquivar / Desarquivar */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1 text-xs rounded-xl border-border/80 text-muted-foreground hover:text-foreground"
+                    onClick={async () => {
+                      const isCurrentlyArchived = selectedChat.archived || selectedChat.state === "arquivada";
+                      try {
+                        await updateChatState.mutateAsync({
+                          phone: selectedChat.id,
+                          state: isCurrentlyArchived ? "ativa" : "arquivada",
+                          reason: isCurrentlyArchived ? "Desarquivado manualmente" : "Arquivado manualmente",
+                        });
+                        toast.success(isCurrentlyArchived ? "Conversa desarquivada com sucesso!" : "Conversa arquivada com sucesso!");
+                      } catch (err: any) {
+                        toast.error(err?.message || "Erro ao alterar arquivamento.");
+                      }
+                    }}
+                    title={selectedChat.archived || selectedChat.state === "arquivada" ? "Desarquivar conversa" : "Arquivar conversa"}
+                  >
+                    {selectedChat.archived || selectedChat.state === "arquivada" ? (
+                      <>
+                        <ArchiveRestore className="h-3.5 w-3.5" />
+                        Desarquivar
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="h-3.5 w-3.5" />
+                        Arquivar
+                      </>
+                    )}
+                  </Button>
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -1088,10 +1247,10 @@ export default function WhatsAppInbox({
                         : "text-muted-foreground hover:text-foreground"
                     )}
                     onClick={() => setShowDossier((v) => !v)}
-                    title={showDossier ? "Ocultar painel lateral de informações do lead" : "Exibir painel lateral de informações do lead"}
+                    title={showDossier ? "Ocultar painel lateral do Dossiê do Lead" : "Exibir painel lateral do Dossiê do Lead"}
                   >
                     <User className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{showDossier ? "Ocultar Lead" : "Ver Lead"}</span>
+                    <span className="hidden sm:inline">Dossiê do Lead</span>
                   </Button>
                 </div>
               )}
