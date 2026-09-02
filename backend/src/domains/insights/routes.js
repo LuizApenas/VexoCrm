@@ -234,7 +234,11 @@ export function registerInsightsRoutes(app, deps) {
       try {
         let q = supabase
           .from(leadsTableName(clientId))
-          .select("id, nome, tipo_cliente, status, qualificacao, data_hora, cidade, created_at")
+          // telefone ENTRA aqui: contactedLeads, noContact3d, responseRate e
+          // totalMessaged casam lead com lead_messages por telefone, e a coluna
+          // nunca vinha — metade de cada condicao era sempre falsa. Sobrava so o
+          // casamento por lead_id, que o webhook do chatbot nao gravava.
+          .select("id, nome, telefone, tipo_cliente, status, qualificacao, data_hora, cidade, created_at")
           .eq("client_id", clientId)
           .order("created_at", { ascending: false });
 
@@ -245,7 +249,7 @@ export function registerInsightsRoutes(app, deps) {
           // Fallback sem data_hora se der erro de coluna
           const fallbackRes = await supabase
             .from("leads")
-            .select("id, nome, status, created_at")
+            .select("id, nome, telefone, status, created_at")
             .eq("client_id", clientId)
             .order("created_at", { ascending: false });
           leads = fallbackRes.data || [];

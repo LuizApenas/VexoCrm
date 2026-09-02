@@ -184,8 +184,14 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
   const outboundLeads = new Set();
   const inboundLeads = new Set();
 
+  // Telefone CRU nao casa: a mesma pessoa aparece como 5534997817660 no lead e
+  // como 553497817660 (sem o 9) na mensagem, ou com mascara. sanitizePhone e a
+  // funcao canonica do projeto, coberta por shared/phoneTestCases.json — a mesma
+  // tabela que o frontend usa. Nao existe segunda implementacao.
+  const canon = (valor) => sanitizePhone(valor) || null;
+
   for (const m of messages) {
-    const phone = m.phone;
+    const phone = canon(m.phone);
     const leadId = m.lead_id;
     if (m.direction === "outbound") {
       if (leadId) outboundLeads.add(leadId);
@@ -197,12 +203,14 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
   }
 
   const totalMessaged = leads.filter((lead) => {
-    return (lead.id && outboundLeads.has(lead.id)) || (lead.telefone && outboundPhones.has(lead.telefone));
+    const tel = canon(lead.telefone);
+    return (lead.id && outboundLeads.has(lead.id)) || (tel && outboundPhones.has(tel));
   }).length;
 
   const totalResponded = leads.filter((lead) => {
-    const sent = (lead.id && outboundLeads.has(lead.id)) || (lead.telefone && outboundPhones.has(lead.telefone));
-    const replied = (lead.id && inboundLeads.has(lead.id)) || (lead.telefone && inboundPhones.has(lead.telefone));
+    const tel = canon(lead.telefone);
+    const sent = (lead.id && outboundLeads.has(lead.id)) || (tel && outboundPhones.has(tel));
+    const replied = (lead.id && inboundLeads.has(lead.id)) || (tel && inboundPhones.has(tel));
     return sent && replied;
   }).length;
 
@@ -225,10 +233,11 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
         lastContactByLead.set(m.lead_id, msgDate);
       }
     }
-    if (m.phone) {
-      const current = lastContactByPhone.get(m.phone);
+    const telMsg = canon(m.phone);
+    if (telMsg) {
+      const current = lastContactByPhone.get(telMsg);
       if (!current || msgDate > current) {
-        lastContactByPhone.set(m.phone, msgDate);
+        lastContactByPhone.set(telMsg, msgDate);
       }
     }
   }
@@ -242,11 +251,12 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
     if (isClosedOrQualified) continue;
 
     // Last contact calculation for noContact3d
+    const telLead = canon(lead.telefone);
     let lastDate = null;
     if (lead.id && lastContactByLead.has(lead.id)) {
       lastDate = lastContactByLead.get(lead.id);
-    } else if (lead.telefone && lastContactByPhone.has(lead.telefone)) {
-      lastDate = lastContactByPhone.get(lead.telefone);
+    } else if (telLead && lastContactByPhone.has(telLead)) {
+      lastDate = lastContactByPhone.get(telLead);
     } else {
       lastDate = parseLeadReferenceDate(lead);
     }
@@ -257,7 +267,7 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
 
     // ContactedLeads (Em contato) calculation
     const hasMessages = (lead.id && (outboundLeads.has(lead.id) || inboundLeads.has(lead.id))) ||
-                        (lead.telefone && (outboundPhones.has(lead.telefone) || inboundPhones.has(lead.telefone)));
+                        (telLead && (outboundPhones.has(telLead) || inboundPhones.has(telLead)));
     const isExplicitlyEmContato = statusKey === "em_contato" || statusKey === "em contato" || statusKey === "conversando" || statusKey === "atendimento";
 
     if (isExplicitlyEmContato || hasMessages) {

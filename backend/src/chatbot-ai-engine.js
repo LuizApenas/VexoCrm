@@ -1407,6 +1407,12 @@ async function responderRecontatoComTextoLiteral({
       tableRef.insert([{
         client_id: clientId,
         phone,
+        // lead_id: o Dashboard casa lead com mensagem por lead_id OU telefone.
+        // Este insert cru era o unico caminho que gravava sem o vinculo — as
+        // demais vias ja passam por appendLeadMessage, que resolve o lead por
+        // telefone canonico. Aqui o lead ja esta em maos (`existing`), entao nao
+        // ha lookup: se nao houver lead, fica null. Nao se inventa vinculo.
+        lead_id: existing?.id ?? null,
         sender_type: "bot",
         direction: "outbound",
         message_text: customMessage,
