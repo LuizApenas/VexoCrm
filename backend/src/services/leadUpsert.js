@@ -67,6 +67,14 @@ export async function upsertLeadByPhone(pool, clientId, telefone, fields = {}, o
 
   const preserveExistingName = options.preserveExistingName !== false;
 
+  // Sanitização de campos: 'origem' não é coluna de public.leads (as colunas são lead_source e lead_origin)
+  const sanitizedFields = { ...fields };
+  if (sanitizedFields.origem !== undefined) {
+    if (!sanitizedFields.lead_source) sanitizedFields.lead_source = sanitizedFields.origem;
+    if (!sanitizedFields.lead_origin) sanitizedFields.lead_origin = sanitizedFields.origem;
+    delete sanitizedFields.origem;
+  }
+
   // 1. Busca se o lead já existe por telefone ou phone
   const existingRes = await pool.query(
     `SELECT id, nome, tags, dados
@@ -83,7 +91,7 @@ export async function upsertLeadByPhone(pool, clientId, telefone, fields = {}, o
 
   if (existing) {
     // ── UPDATE ─────────────────────────────────────────────────────────────
-    const updates = { ...fields };
+    const updates = { ...sanitizedFields };
 
     // Regra de ouro: não sobrescrever nome bom existente se o novo nome for vazio/placeholder
     if (preserveExistingName && isRealName(existing.nome)) {
@@ -134,7 +142,7 @@ export async function upsertLeadByPhone(pool, clientId, telefone, fields = {}, o
     client_id: clientId,
     telefone: cleanPhone,
     phone: cleanPhone,
-    ...fields,
+    ...sanitizedFields,
   };
 
   const cols = Object.keys(insertPayload).filter((k) => insertPayload[k] !== undefined);

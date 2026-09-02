@@ -86,6 +86,7 @@ import {
   useClearWhatsAppChats,
   useUpdateChatState,
   useBulkUpdateChatState,
+  useAttendChat,
   useCreateLeadFromChat,
   useBulkCreateLeadsFromChats,
   type WhatsAppChat,
@@ -343,6 +344,7 @@ export default function WhatsAppInbox({
   });
   const updateChatState = useUpdateChatState(clientId);
   const bulkUpdateChatState = useBulkUpdateChatState(clientId);
+  const attendChat = useAttendChat(clientId);
   const createLeadMutation = useCreateLeadFromChat(clientId);
   const bulkCreateLeadsMutation = useBulkCreateLeadsFromChats(clientId);
   const messagesQuery = useWhatsAppMessages(clientId, instanceFilter, selectedChatId, canLoadInbox);
@@ -643,10 +645,8 @@ export default function WhatsAppInbox({
   const handleMarkAsAttended = async () => {
     if (!selectedChat) return;
     try {
-      await updateChatState.mutateAsync({
+      await attendChat.mutateAsync({
         phone: selectedChat.id,
-        state: "arquivada",
-        reason: "Atendimento concluído / Marcado como atendido",
       });
       toast.success("Conversa marcada como atendida!");
     } catch (err: any) {
@@ -1294,6 +1294,10 @@ export default function WhatsAppInbox({
                       (lead as any)?.motivo_atencao_humana ||
                       "Atenção humana solicitada"
                   );
+                  const isAttended = Boolean(
+                    chat.attendedAt &&
+                    (!chat.timestamp || new Date(chat.attendedAt).getTime() >= chat.timestamp * 1000)
+                  );
                   const isAwaitingReply = Boolean(
                     !chat.isGroup &&
                     !rawId.includes("@g.us") &&
@@ -1302,7 +1306,8 @@ export default function WhatsAppInbox({
                     !chat.archived &&
                     chat.lastMessage &&
                     !chat.lastMessage.fromMe &&
-                    !precisaAtencao
+                    !precisaAtencao &&
+                    !isAttended
                   );
 
                   return (
@@ -1411,6 +1416,15 @@ export default function WhatsAppInbox({
                               Aguardando resposta
                             </span>
                           )}
+                          {isAttended && !isAwaitingReply && chat.state !== "automacao" && chat.state !== "arquivada" && !chat.archived && !chat.isGroup && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-300"
+                              title={chat.attendedBy ? `Atendido por ${chat.attendedBy}` : "Atendimento registrado"}
+                            >
+                              <CheckCheck className="h-2.5 w-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span>Atendido</span>
+                            </span>
+                          )}
                           {!chat.isGroup && !rawId.includes("@g.us") && !lead && (
                             <span
                               className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-300"
@@ -1498,217 +1512,266 @@ export default function WhatsAppInbox({
           ══════════════════════════════════════════════════════════════════════════ */}
           <div className="flex-1 min-w-0 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-xs">
             {/* Header da Conversa Ativa */}
-            <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 border-b border-border/60 p-3 bg-muted/20 min-h-[58px]">
-              {/* Faixa 1: Identidade do Contato */}
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                {selectedChat && (
-                  <ChatAvatar
-                    label={selectedChat.name || String(selectedChat.id)}
-                    picture={selectedChat.profilePic}
-                    size="sm"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p
-                      className="truncate text-sm font-bold text-foreground max-w-[200px] sm:max-w-[260px]"
-                      title={selectedChat?.name || "Selecione uma conversa"}
-                    >
-                      {selectedChat?.name || "Selecione uma conversa"}
-                    </p>
+            {(() => {
+              const isSelectedChatAttended = Boolean(
+                selectedChat?.attendedAt &&
+                (!selectedChat?.timestamp || new Date(selectedChat.attendedAt).getTime() >= selectedChat.timestamp * 1000)
+              );
+              const isSelectedChatAwaiting = Boolean(
+                selectedChat &&
+                !selectedChat.isGroup &&
+                selectedChat.state !== "automacao" &&
+                selectedChat.state !== "arquivada" &&
+                !selectedChat.archived &&
+                selectedChat.lastMessage &&
+                !selectedChat.lastMessage.fromMe &&
+                !isSelectedChatAttended
+              );
+
+              return (
+                <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 border-b border-border/60 p-3 bg-muted/20 min-h-[58px]">
+                  {/* Faixa 1: Identidade do Contato */}
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     {selectedChat && (
-                      <Badge
-                        variant="outline"
-                        className="h-4 px-1.5 text-[9px] font-bold border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1 shrink-0"
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Online
-                      </Badge>
-                    )}
-                    {selectedChat && !matchedLead && !selectedChat.isGroup && (
-                      <Badge
-                        variant="outline"
-                        className="h-4 px-1.5 text-[9px] font-bold border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 gap-1 shrink-0"
-                        title="Contato não cadastrado como Lead no CRM"
-                      >
-                        <UserPlus className="h-2.5 w-2.5 text-amber-600" />
-                        Sem Lead
-                      </Badge>
-                    )}
-                    {selectedChat?.isNumberChange && (
-                      <Badge
-                        variant="outline"
-                        className="h-4 px-1.5 text-[9px] font-bold border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 gap-1 shrink-0"
-                        title="Contato informou novo número"
-                      >
-                        <Phone className="h-2.5 w-2.5 text-indigo-600" />
-                        Novo Número
-                      </Badge>
-                    )}
-                    {selectedChat?.state === "automacao" && !selectedChat?.isNumberChange && (
-                      <Badge
-                        variant="outline"
-                        className="h-4 px-1.5 text-[9px] font-bold border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300 gap-1 max-w-[180px] sm:max-w-[220px] truncate shrink-0 cursor-help"
-                        title={selectedChat.stateReason || "Robô / Autoatendimento detectado"}
-                      >
-                        <Bot className="h-2.5 w-2.5 text-purple-600 shrink-0" />
-                        <span className="truncate">Automação: {selectedChat.stateReason || "URA / Robô"}</span>
-                      </Badge>
-                    )}
-                    {(selectedChat?.state === "arquivada" || selectedChat?.archived) && (
-                      <Badge
-                        variant="outline"
-                        className="h-4 px-1.5 text-[9px] font-bold border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300 gap-1 shrink-0"
-                      >
-                        <Archive className="h-2.5 w-2.5" />
-                        Arquivada
-                      </Badge>
-                    )}
-                    {selectedChat?.isGroup && (
-                      <Badge
-                        variant="outline"
-                        className="h-4 px-1.5 text-[9px] font-bold border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300 gap-1 shrink-0"
-                      >
-                        <Users className="h-2.5 w-2.5" />
-                        Grupo
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground truncate">{displayPhone}</p>
-                </div>
-              </div>
-
-              {/* Faixa 2: Ações (Máximo 2 visíveis + Menu "⋯") */}
-              {selectedChat && (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Botão Primário Contextual */}
-                  {!matchedLead && !selectedChat.isGroup ? (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-8 gap-1 text-xs rounded-xl bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shadow-xs"
-                      onClick={handleCreateLeadFromCurrentChat}
-                      disabled={createLeadMutation.isPending}
-                      title="Cadastrar este contato como lead no CRM"
-                    >
-                      <UserPlus className="h-3.5 w-3.5" />
-                      <span>{createLeadMutation.isPending ? "Cadastrando..." : "Cadastrar Lead"}</span>
-                    </Button>
-                  ) : selectedChat.state === "automacao" && !selectedChat.isNumberChange ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1 text-xs text-purple-600 hover:text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-900/50 rounded-xl"
-                      onClick={handleMarkNotAutomation}
-                      title="Reclassificar esta conversa como atendimento humano normal e mover para a Fila"
-                    >
-                      <Bot className="h-3.5 w-3.5" />
-                      <span>Não é automação</span>
-                    </Button>
-                  ) : selectedChat.archived || selectedChat.state === "arquivada" ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1 text-xs rounded-xl border-border/80 text-muted-foreground hover:text-foreground"
-                      onClick={handleToggleArchive}
-                      title="Desarquivar conversa e mover para a Fila"
-                    >
-                      <ArchiveRestore className="h-3.5 w-3.5" />
-                      <span>Desarquivar</span>
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1 text-xs rounded-xl border-border/80 text-muted-foreground hover:text-foreground"
-                      onClick={handleToggleArchive}
-                      title="Arquivar conversa"
-                    >
-                      <Archive className="h-3.5 w-3.5" />
-                      <span>Arquivar</span>
-                    </Button>
-                  )}
-
-                  {/* Botão Secundário: Dossiê do Lead */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                      "h-8 gap-1.5 text-xs rounded-xl border-border/80 transition-colors",
-                      showDossier
-                        ? "bg-muted/80 text-foreground font-semibold"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                    onClick={() => setShowDossier((v) => !v)}
-                    title={showDossier ? "Ocultar painel lateral do Dossiê do Lead" : "Exibir painel lateral do Dossiê do Lead"}
-                  >
-                    <User className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Dossiê do Lead</span>
-                  </Button>
-
-                  {/* Menu "⋯" para Outras Ações */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
+                      <ChatAvatar
+                        label={selectedChat.name || String(selectedChat.id)}
+                        picture={selectedChat.profilePic}
                         size="sm"
-                        className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-foreground cursor-pointer"
-                        title="Mais opções da conversa"
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56 text-xs">
-                      {/* Cadastrar como Lead se ainda não existir */}
-                      {!matchedLead && !selectedChat.isGroup && (
-                        <DropdownMenuItem
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p
+                          className="truncate text-sm font-bold text-foreground max-w-[200px] sm:max-w-[260px]"
+                          title={selectedChat?.name || "Selecione uma conversa"}
+                        >
+                          {selectedChat?.name || "Selecione uma conversa"}
+                        </p>
+                        {selectedChat && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1.5 text-[9px] font-bold border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1 shrink-0"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Online
+                          </Badge>
+                        )}
+                        {isSelectedChatAttended && !isSelectedChatAwaiting && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1.5 text-[9px] font-bold border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1 shrink-0"
+                            title={selectedChat?.attendedBy ? `Atendido por ${selectedChat.attendedBy}` : "Atendimento registrado"}
+                          >
+                            <CheckCheck className="h-2.5 w-2.5 text-emerald-600" />
+                            Atendido
+                          </Badge>
+                        )}
+                        {isSelectedChatAwaiting && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1.5 text-[9px] font-bold border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 gap-1 shrink-0"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                            Aguardando resposta
+                          </Badge>
+                        )}
+                        {selectedChat && !matchedLead && !selectedChat.isGroup && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1.5 text-[9px] font-bold border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 gap-1 shrink-0"
+                            title="Contato não cadastrado como Lead no CRM"
+                          >
+                            <UserPlus className="h-2.5 w-2.5 text-amber-600" />
+                            Sem Lead
+                          </Badge>
+                        )}
+                        {selectedChat?.isNumberChange && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1.5 text-[9px] font-bold border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 gap-1 shrink-0"
+                            title="Contato informou novo número"
+                          >
+                            <Phone className="h-2.5 w-2.5 text-indigo-600" />
+                            Novo Número
+                          </Badge>
+                        )}
+                        {selectedChat?.state === "automacao" && !selectedChat?.isNumberChange && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1.5 text-[9px] font-bold border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300 gap-1 max-w-[180px] sm:max-w-[220px] truncate shrink-0 cursor-help"
+                            title={selectedChat.stateReason || "Robô / Autoatendimento detectado"}
+                          >
+                            <Bot className="h-2.5 w-2.5 text-purple-600 shrink-0" />
+                            <span className="truncate">Automação: {selectedChat.stateReason || "URA / Robô"}</span>
+                          </Badge>
+                        )}
+                        {(selectedChat?.state === "arquivada" || selectedChat?.archived) && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1.5 text-[9px] font-bold border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300 gap-1 shrink-0"
+                          >
+                            <Archive className="h-2.5 w-2.5" />
+                            Arquivada
+                          </Badge>
+                        )}
+                        {selectedChat?.isGroup && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1.5 text-[9px] font-bold border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300 gap-1 shrink-0"
+                          >
+                            <Users className="h-2.5 w-2.5" />
+                            Grupo
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground truncate">{displayPhone}</p>
+                    </div>
+                  </div>
+
+                  {/* Faixa 2: Ações (Máximo 2 visíveis + Menu "⋯") */}
+                  {selectedChat && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Botão Primário Contextual */}
+                      {!matchedLead && !selectedChat.isGroup ? (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="h-8 gap-1 text-xs rounded-xl bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shadow-xs"
                           onClick={handleCreateLeadFromCurrentChat}
                           disabled={createLeadMutation.isPending}
-                          className="gap-2 cursor-pointer text-amber-700 dark:text-amber-300 font-semibold"
+                          title="Cadastrar este contato como lead no CRM"
                         >
-                          <UserPlus className="h-3.5 w-3.5 text-amber-600" />
-                          <span>{createLeadMutation.isPending ? "Cadastrando..." : "Cadastrar como Lead"}</span>
-                        </DropdownMenuItem>
-                      )}
-
-                      {/* Marcar como Atendido */}
-                      {selectedChat.state !== "arquivada" && !selectedChat.archived && (
-                        <DropdownMenuItem
+                          <UserPlus className="h-3.5 w-3.5" />
+                          <span>{createLeadMutation.isPending ? "Cadastrando..." : "Cadastrar Lead"}</span>
+                        </Button>
+                      ) : selectedChat.state === "automacao" && !selectedChat.isNumberChange ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1 text-xs text-purple-600 hover:text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-900/50 rounded-xl"
+                          onClick={handleMarkNotAutomation}
+                          title="Reclassificar esta conversa como atendimento humano normal e mover para a Fila"
+                        >
+                          <Bot className="h-3.5 w-3.5" />
+                          <span>Não é automação</span>
+                        </Button>
+                      ) : isSelectedChatAwaiting ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1 text-xs rounded-xl border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20"
                           onClick={handleMarkAsAttended}
-                          className="gap-2 cursor-pointer text-emerald-700 dark:text-emerald-300 font-semibold"
+                          title="Marcar atendimento concluído e remover da Espera sem arquivar"
                         >
                           <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
-                          <span>Marcar como Atendido</span>
-                        </DropdownMenuItem>
+                          <span>Marcar Atendido</span>
+                        </Button>
+                      ) : selectedChat.archived || selectedChat.state === "arquivada" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1 text-xs rounded-xl border-border/80 text-muted-foreground hover:text-foreground"
+                          onClick={handleToggleArchive}
+                          title="Desarquivar conversa e mover para a Fila"
+                        >
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                          <span>Desarquivar</span>
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1 text-xs rounded-xl border-border/80 text-muted-foreground hover:text-foreground"
+                          onClick={handleToggleArchive}
+                          title="Arquivar conversa"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
+                          <span>Arquivar</span>
+                        </Button>
                       )}
 
-                      {selectedChat.state === "automacao" && (
-                        <DropdownMenuItem onClick={handleToggleArchive} className="gap-2 cursor-pointer">
-                          <Archive className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>Arquivar conversa</span>
-                        </DropdownMenuItem>
-                      )}
-                      {selectedChat.state !== "automacao" &&
-                        selectedChat.state !== "arquivada" &&
-                        !selectedChat.archived && (
-                          <DropdownMenuItem onClick={handleMarkAsAutomation} className="gap-2 cursor-pointer">
-                            <Bot className="h-3.5 w-3.5 text-purple-600" />
-                            <span>Mover para Automações</span>
-                          </DropdownMenuItem>
+                      {/* Botão Secundário: Dossiê do Lead */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={cn(
+                          "h-8 gap-1.5 text-xs rounded-xl border-border/80 transition-colors",
+                          showDossier
+                            ? "bg-muted/80 text-foreground font-semibold"
+                            : "text-muted-foreground hover:text-foreground"
                         )}
-                      <DropdownMenuItem
-                        onClick={handleReabrirAtendimento}
-                        disabled={reabrirPending}
-                        className="gap-2 cursor-pointer text-indigo-600 dark:text-indigo-400"
+                        onClick={() => setShowDossier((v) => !v)}
+                        title={showDossier ? "Ocultar painel lateral do Dossiê do Lead" : "Exibir painel lateral do Dossiê do Lead"}
                       >
-                        <RotateCcw className={cn("h-3.5 w-3.5", reabrirPending && "animate-spin")} />
-                        <span>Reabrir Atendimento IA</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        <User className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Dossiê do Lead</span>
+                      </Button>
+
+                      {/* Menu "⋯" para Outras Ações */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="Mais opções da conversa"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 text-xs">
+                          {/* Cadastrar como Lead se ainda não existir */}
+                          {!matchedLead && !selectedChat.isGroup && (
+                            <DropdownMenuItem
+                              onClick={handleCreateLeadFromCurrentChat}
+                              disabled={createLeadMutation.isPending}
+                              className="gap-2 cursor-pointer text-amber-700 dark:text-amber-300 font-semibold"
+                            >
+                              <UserPlus className="h-3.5 w-3.5 text-amber-600" />
+                              <span>{createLeadMutation.isPending ? "Cadastrando..." : "Cadastrar como Lead"}</span>
+                            </DropdownMenuItem>
+                          )}
+
+                          {/* Marcar como Atendido (se não estiver já como botão primário) */}
+                          {selectedChat.state !== "arquivada" && !selectedChat.archived && !isSelectedChatAwaiting && (
+                            <DropdownMenuItem
+                              onClick={handleMarkAsAttended}
+                              className="gap-2 cursor-pointer text-emerald-700 dark:text-emerald-300 font-semibold"
+                            >
+                              <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
+                              <span>Marcar como Atendido</span>
+                            </DropdownMenuItem>
+                          )}
+
+                          {selectedChat.state === "automacao" && (
+                            <DropdownMenuItem onClick={handleToggleArchive} className="gap-2 cursor-pointer">
+                              <Archive className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span>Arquivar conversa</span>
+                            </DropdownMenuItem>
+                          )}
+                          {selectedChat.state !== "automacao" &&
+                            selectedChat.state !== "arquivada" &&
+                            !selectedChat.archived && (
+                              <DropdownMenuItem onClick={handleMarkAsAutomation} className="gap-2 cursor-pointer">
+                                <Bot className="h-3.5 w-3.5 text-purple-600" />
+                                <span>Mover para Automações</span>
+                              </DropdownMenuItem>
+                            )}
+                          <DropdownMenuItem
+                            onClick={handleReabrirAtendimento}
+                            disabled={reabrirPending}
+                            className="gap-2 cursor-pointer text-indigo-600 dark:text-indigo-400"
+                          >
+                            <RotateCcw className={cn("h-3.5 w-3.5", reabrirPending && "animate-spin")} />
+                            <span>Reabrir Atendimento IA</span>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* Linha do Tempo das Mensagens */}
             <div className="relative flex-1 min-h-0 flex flex-col">

@@ -26,6 +26,10 @@ export interface WhatsAppChat {
   } | null;
   leadOrigin: string | null;
   sourceCampaignId: string | null;
+  /** Data/hora do último atendimento manual pontual */
+  attendedAt?: string | null;
+  /** Quem marcou como atendido */
+  attendedBy?: string | null;
   /** Foto do perfil do WhatsApp (URL temporária da Evolution). */
   profilePic?: string | null;
 }
@@ -278,6 +282,32 @@ export function useBulkUpdateChatState(clientId: string | null) {
       });
 
       return parseApiResponse<{ success: boolean; count: number; state: string }>(res);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-chats"] });
+    },
+  });
+}
+
+export function useAttendChat(clientId: string | null) {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ phone }: { phone: string }) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+
+      const res = await fetch(`${API_BASE_URL}/api/whatsapp/chats/attend`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ clientId, phone }),
+      });
+
+      return parseApiResponse<{ success: boolean; phone: string; attended_at: string; attended_by: string }>(res);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["whatsapp-chats"] });

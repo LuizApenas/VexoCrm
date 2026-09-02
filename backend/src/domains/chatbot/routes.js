@@ -491,6 +491,8 @@ export function registerChatbotRoutes(app, deps) {
           tabCondition = `AND (m.is_group IS NOT TRUE) AND (
             COALESCE(cs.state, 'ativa') = 'ativa' OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
           ) AND m.direction = 'inbound' AND (
+            cs.attended_at IS NULL OR cs.attended_at < m.effective_timestamp
+          ) AND (
             cs.state IS NOT NULL OR NOT ${SQL_AUTOMATION_MATCH("m.message_text")} OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")}
           )`;
         } else if (rawTab === "minhas") {
@@ -535,7 +537,8 @@ export function registerChatbotRoutes(app, deps) {
               canonical_phone as phone,
               direction,
               message_text,
-              is_group
+              is_group,
+              effective_timestamp
             FROM pre_canonical
             ORDER BY canonical_phone, effective_timestamp DESC NULLS LAST
           )
@@ -556,6 +559,7 @@ export function registerChatbotRoutes(app, deps) {
               WHERE m.is_group IS NOT TRUE
                 AND (COALESCE(cs.state, 'ativa') = 'ativa' OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")})
                 AND m.direction = 'inbound'
+                AND (cs.attended_at IS NULL OR cs.attended_at < m.effective_timestamp)
                 AND (cs.state IS NOT NULL OR NOT ${SQL_AUTOMATION_MATCH("m.message_text")} OR ${SQL_NUMBER_CHANGE_MATCH("m.message_text")})
             )::integer as awaiting_count
           FROM latest_messages m
@@ -676,7 +680,9 @@ export function registerChatbotRoutes(app, deps) {
             cs.state as chat_state,
             cs.reason as chat_state_reason,
             cs.source as chat_state_source,
-            cs.changed_by as chat_state_changed_by
+            cs.changed_by as chat_state_changed_by,
+            cs.attended_at as chat_attended_at,
+            cs.attended_by as chat_attended_by
           FROM latest_messages m
           LEFT JOIN public."${leadsTable}" l ON ${SQL_CANONICAL_PHONE("l.telefone")} = m.phone AND l.client_id = $1
           LEFT JOIN public.whatsapp_chat_states cs ON cs.client_id = $1 AND cs.phone = m.phone
@@ -714,6 +720,8 @@ export function registerChatbotRoutes(app, deps) {
             isNumberChange,
             pinned: false,
             muted: false,
+            attendedAt: row.chat_attended_at || null,
+            attendedBy: row.chat_attended_by || null,
             lastMessage: {
               id: null,
               body: row.message_text || "",
@@ -815,6 +823,36 @@ export function registerChatbotRoutes(app, deps) {
     }
   });
 
+  // POST /api/whatsapp/chats/attend — marca conversa como atendida pontual (sai da Espera sem sair da Fila)
+  app.post("/api/whatsapp/chats/attend", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
+    if (!ensureDb(res)) return;
+    const clientId = resolveAuthorizedClientId(req, res, req.body?.clientId);
+    if (!clientId) return;
+
+    const phone = sanitizePhone(req.body?.phone);
+    if (!phone) {
+      sendError(res, 400, "INVALID_PHONE", "Telefone é obrigatório");
+      return;
+    }
+
+    try {
+      const attendedBy = req.user?.email || "user";
+      await pgDatabasePool.query(
+        `INSERT INTO public.whatsapp_chat_states (client_id, phone, state, attended_at, attended_by, source, updated_at)
+         VALUES ($1, $2, 'ativa', now(), $3, 'manual', now())
+         ON CONFLICT (client_id, phone) DO UPDATE SET
+           attended_at = now(),
+           attended_by = EXCLUDED.attended_by,
+           updated_at = now()`,
+        [clientId, phone, attendedBy]
+      );
+      res.json({ success: true, phone, attended_at: new Date().toISOString(), attended_by: attendedBy });
+    } catch (err) {
+      console.error("[whatsapp/chats/attend] erro:", err?.message || err);
+      sendError(res, 500, "ATTEND_ERROR", err?.message || "Erro ao marcar conversa como atendida");
+    }
+  });
+
   // POST /api/whatsapp/chats/create-lead — cadastra contato inbound como lead no CRM
   app.post("/api/whatsapp/chats/create-lead", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
     if (!ensureDb(res)) return;
@@ -849,7 +887,6 @@ export function registerChatbotRoutes(app, deps) {
       await upsertLeadByPhone(pgDatabasePool, clientId, phone, {
         nome: finalName || null,
         phone: phone,
-        origem: leadSource,
         lead_origin: leadSource,
         lead_source: leadSource,
         status: "NOVO",
@@ -883,7 +920,7 @@ export function registerChatbotRoutes(app, deps) {
         ok: true,
         success: true,
         message: "Lead cadastrado com sucesso",
-        lead: createdLead || { client_id: clientId, telefone: phone, nome: finalName, origem: leadSource },
+        lead: createdLead || { client_id: clientId, telefone: phone, nome: finalName, lead_source: leadSource, lead_origin: leadSource },
       });
     } catch (err) {
       console.error("[create-lead-from-chat] erro:", err?.message || err);
@@ -932,7 +969,6 @@ export function registerChatbotRoutes(app, deps) {
         await upsertLeadByPhone(pgDatabasePool, clientId, phone, {
           nome: finalName || null,
           phone: phone,
-          origem: leadSource,
           lead_origin: leadSource,
           lead_source: leadSource,
           status: "NOVO",
