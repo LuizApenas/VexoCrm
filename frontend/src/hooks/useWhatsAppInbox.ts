@@ -285,6 +285,70 @@ export function useBulkUpdateChatState(clientId: string | null) {
   });
 }
 
+export function useCreateLeadFromChat(clientId: string | null) {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      phone,
+      name,
+    }: {
+      phone: string;
+      name?: string | null;
+    }) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+
+      const res = await fetch(`${API_BASE_URL}/api/whatsapp/chats/create-lead`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ clientId, phone, name }),
+      });
+
+      return parseApiResponse<{ success: boolean; lead: any; message: string }>(res);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-chats"] });
+    },
+  });
+}
+
+export function useBulkCreateLeadsFromChats(clientId: string | null) {
+  const { getIdToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      items,
+    }: {
+      items: Array<{ phone: string; name?: string | null }>;
+    }) => {
+      const token = await getIdToken();
+      if (!token) throw new Error("Usuário não autenticado.");
+
+      const res = await fetch(`${API_BASE_URL}/api/whatsapp/chats/create-leads-bulk`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ clientId, items }),
+      });
+
+      return parseApiResponse<{ success: boolean; count: number; message: string }>(res);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-chats"] });
+    },
+  });
+}
+
 export interface WhatsAppMessagesPage {
   items: WhatsAppMessage[];
   hasMore: boolean;

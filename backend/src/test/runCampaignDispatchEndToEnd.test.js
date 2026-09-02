@@ -58,7 +58,11 @@ describe("runCampaignDispatch - Execução de Ponta a Ponta do Laço de Disparo"
           active: true,
         },
       ],
-      getLeadClientN8nSettings: async () => ({}),
+      getLeadClientN8nSettings: async () => ({
+        send_window_start: "00:00",
+        send_window_end: "23:59",
+        send_window_days: [0, 1, 2, 3, 4, 5, 6],
+      }),
       getRequestId: () => "req-1",
       getSafeDispatchSettingsLog: () => ({}),
       internalErrorPayloadDetails: () => ({}),

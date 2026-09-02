@@ -39,6 +39,10 @@ import {
   CheckSquare,
   Square,
   Undo2,
+  UserPlus,
+  CheckCheck,
+  ChevronUp,
+  Clock3,
 } from "lucide-react";
 import { useCampanhas } from "@/hooks/useCampanhas";
 import { useCrmClient } from "@/hooks/useCrmClient";
@@ -82,6 +86,8 @@ import {
   useClearWhatsAppChats,
   useUpdateChatState,
   useBulkUpdateChatState,
+  useCreateLeadFromChat,
+  useBulkCreateLeadsFromChats,
   type WhatsAppChat,
   type WhatsAppMessage,
 } from "@/hooks/useWhatsAppInbox";
@@ -337,6 +343,8 @@ export default function WhatsAppInbox({
   });
   const updateChatState = useUpdateChatState(clientId);
   const bulkUpdateChatState = useBulkUpdateChatState(clientId);
+  const createLeadMutation = useCreateLeadFromChat(clientId);
+  const bulkCreateLeadsMutation = useBulkCreateLeadsFromChats(clientId);
   const messagesQuery = useWhatsAppMessages(clientId, instanceFilter, selectedChatId, canLoadInbox);
   const sendMessage = useSendWhatsAppMessage(clientId, selectedChatId);
   const clearChats = useClearWhatsAppChats(clientId);
@@ -346,6 +354,8 @@ export default function WhatsAppInbox({
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkConfirmCount, setBulkConfirmCount] = useState(0);
   const [bulkConfirmPhones, setBulkConfirmPhones] = useState<string[]>([]);
+  const [bulkLeadConfirmOpen, setBulkLeadConfirmOpen] = useState(false);
+  const [showOlderAwaiting, setShowOlderAwaiting] = useState(false);
   const [undoArchiveState, setUndoArchiveState] = useState<{ count: number; phones: string[] } | null>(null);
   const undoTimeoutRef = useRef<any>(null);
 
@@ -627,6 +637,59 @@ export default function WhatsAppInbox({
       toast.success("Conversa movida para a aba Automações!");
     } catch (err: any) {
       toast.error(err?.message || "Erro ao atualizar estado.");
+    }
+  };
+
+  const handleMarkAsAttended = async () => {
+    if (!selectedChat) return;
+    try {
+      await updateChatState.mutateAsync({
+        phone: selectedChat.id,
+        state: "arquivada",
+        reason: "Atendimento concluído / Marcado como atendido",
+      });
+      toast.success("Conversa marcada como atendida!");
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao marcar como atendida.");
+    }
+  };
+
+  const handleCreateLeadFromCurrentChat = async () => {
+    if (!selectedChat) return;
+    try {
+      const res = await createLeadMutation.mutateAsync({
+        phone: selectedChat.id,
+        name: selectedChat.name,
+      });
+      toast.success(res.message || "Lead cadastrado com sucesso!");
+      refetchLeads();
+      chatsQuery.refetch?.();
+      setShowDossier(true);
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao cadastrar lead.");
+    }
+  };
+
+  const handleRequestBulkCreateLeads = () => {
+    if (selectedChatIds.size === 0) return;
+    setBulkLeadConfirmOpen(true);
+  };
+
+  const handleConfirmBulkCreateLeads = async () => {
+    if (selectedChatIds.size === 0) return;
+    const items = (chatsQuery.items ?? [])
+      .filter((c) => selectedChatIds.has(c.id))
+      .map((c) => ({ phone: c.id, name: c.name }));
+
+    setBulkLeadConfirmOpen(false);
+    try {
+      const res = await bulkCreateLeadsMutation.mutateAsync({ items });
+      toast.success(res.message || `${res.count} leads cadastrados com sucesso!`);
+      setSelectedChatIds(new Set());
+      refetchLeads();
+      chatsQuery.refetch?.();
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao cadastrar leads em lote.");
     }
   };
 
@@ -1137,7 +1200,18 @@ export default function WhatsAppInbox({
                     <CheckSquare className="h-3.5 w-3.5" />
                     <span>{selectedChatIds.size} selecionada{selectedChatIds.size > 1 ? "s" : ""}</span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-6.5 px-2 text-[11px] font-semibold gap-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg shadow-xs cursor-pointer"
+                      onClick={handleRequestBulkCreateLeads}
+                      disabled={bulkCreateLeadsMutation.isPending}
+                      title="Cadastrar contatos selecionados como leads no CRM"
+                    >
+                      <UserPlus className="h-3 w-3" />
+                      Cadastrar Leads ({selectedChatIds.size})
+                    </Button>
                     <Button
                       variant="default"
                       size="sm"
@@ -1200,8 +1274,8 @@ export default function WhatsAppInbox({
                 <div className="p-6 text-center text-xs text-muted-foreground">
                   Nenhuma conversa encontrada.
                 </div>
-              ) : (
-                filteredChats.map((chat) => {
+              ) : (() => {
+                const renderChatCard = (chat: WhatsAppChat) => {
                   const isSelected = selectedChatId === chat.id;
                   const rawId = String(chat.id || "");
                   const isJid = rawId.includes("@");
@@ -1219,6 +1293,16 @@ export default function WhatsAppInbox({
                     lead?.dados?.motivo_atencao_humana ||
                       (lead as any)?.motivo_atencao_humana ||
                       "Atenção humana solicitada"
+                  );
+                  const isAwaitingReply = Boolean(
+                    !chat.isGroup &&
+                    !rawId.includes("@g.us") &&
+                    chat.state !== "automacao" &&
+                    chat.state !== "arquivada" &&
+                    !chat.archived &&
+                    chat.lastMessage &&
+                    !chat.lastMessage.fromMe &&
+                    !precisaAtencao
                   );
 
                   return (
@@ -1321,10 +1405,19 @@ export default function WhatsAppInbox({
                               <span>Atenção Humana</span>
                             </span>
                           )}
-                          {chat.lastMessage && !chat.lastMessage.fromMe && !precisaAtencao && (
+                          {isAwaitingReply && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-300">
                               <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                               Aguardando resposta
+                            </span>
+                          )}
+                          {!chat.isGroup && !rawId.includes("@g.us") && !lead && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-300"
+                              title="Contato ainda não cadastrado na base de Leads do CRM"
+                            >
+                              <UserPlus className="h-2.5 w-2.5 shrink-0" />
+                              <span>Sem Lead</span>
                             </span>
                           )}
                           <OriginBadge
@@ -1336,8 +1429,67 @@ export default function WhatsAppInbox({
                       </div>
                     </button>
                   );
-                })
-              )}
+                };
+
+                if (inboxTab === "aguardando") {
+                  const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                  const recentAwaitingChats = filteredChats.filter(
+                    (c) => Boolean(c.timestamp && c.timestamp * 1000 >= sevenDaysAgoMs)
+                  );
+                  const olderAwaitingChats = filteredChats.filter(
+                    (c) => !c.timestamp || c.timestamp * 1000 < sevenDaysAgoMs
+                  );
+
+                  return (
+                    <div className="flex flex-col divide-y divide-border/30">
+                      {/* Seção 1: Últimos 7 dias */}
+                      <div className="px-3 py-1.5 bg-muted/40 text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                        <span>Últimos 7 dias ({recentAwaitingChats.length})</span>
+                      </div>
+                      <div className="divide-y divide-border/40">
+                        {recentAwaitingChats.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-muted-foreground">
+                            Nenhuma conversa recente nos últimos 7 dias.
+                          </div>
+                        ) : (
+                          recentAwaitingChats.map(renderChatCard)
+                        )}
+                      </div>
+
+                      {/* Seção 2: Mais antigas (Recolhidas por padrão) */}
+                      {olderAwaitingChats.length > 0 && (
+                        <div className="border-t border-border/60">
+                          <button
+                            type="button"
+                            onClick={() => setShowOlderAwaiting((v) => !v)}
+                            className="w-full px-3 py-2 bg-muted/20 hover:bg-muted/40 text-[11px] font-semibold text-muted-foreground flex items-center justify-between transition-colors cursor-pointer"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <Clock3 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                              <span>Mais antigas ({olderAwaitingChats.length})</span>
+                            </div>
+                            <span className="text-[10px] text-primary flex items-center gap-0.5">
+                              {showOlderAwaiting ? "Recolher" : "Expandir"}
+                              {showOlderAwaiting ? (
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              )}
+                            </span>
+                          </button>
+                          {showOlderAwaiting && (
+                            <div className="divide-y divide-border/40 bg-muted/5">
+                              {olderAwaitingChats.map(renderChatCard)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return filteredChats.map(renderChatCard);
+              })()}
             </div>
           </div>
 
@@ -1371,6 +1523,16 @@ export default function WhatsAppInbox({
                       >
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         Online
+                      </Badge>
+                    )}
+                    {selectedChat && !matchedLead && !selectedChat.isGroup && (
+                      <Badge
+                        variant="outline"
+                        className="h-4 px-1.5 text-[9px] font-bold border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 gap-1 shrink-0"
+                        title="Contato não cadastrado como Lead no CRM"
+                      >
+                        <UserPlus className="h-2.5 w-2.5 text-amber-600" />
+                        Sem Lead
                       </Badge>
                     )}
                     {selectedChat?.isNumberChange && (
@@ -1420,7 +1582,19 @@ export default function WhatsAppInbox({
               {selectedChat && (
                 <div className="flex items-center gap-1.5 shrink-0">
                   {/* Botão Primário Contextual */}
-                  {selectedChat.state === "automacao" && !selectedChat.isNumberChange ? (
+                  {!matchedLead && !selectedChat.isGroup ? (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-8 gap-1 text-xs rounded-xl bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shadow-xs"
+                      onClick={handleCreateLeadFromCurrentChat}
+                      disabled={createLeadMutation.isPending}
+                      title="Cadastrar este contato como lead no CRM"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                      <span>{createLeadMutation.isPending ? "Cadastrando..." : "Cadastrar Lead"}</span>
+                    </Button>
+                  ) : selectedChat.state === "automacao" && !selectedChat.isNumberChange ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1484,7 +1658,30 @@ export default function WhatsAppInbox({
                         <MoreVertical className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52 text-xs">
+                    <DropdownMenuContent align="end" className="w-56 text-xs">
+                      {/* Cadastrar como Lead se ainda não existir */}
+                      {!matchedLead && !selectedChat.isGroup && (
+                        <DropdownMenuItem
+                          onClick={handleCreateLeadFromCurrentChat}
+                          disabled={createLeadMutation.isPending}
+                          className="gap-2 cursor-pointer text-amber-700 dark:text-amber-300 font-semibold"
+                        >
+                          <UserPlus className="h-3.5 w-3.5 text-amber-600" />
+                          <span>{createLeadMutation.isPending ? "Cadastrando..." : "Cadastrar como Lead"}</span>
+                        </DropdownMenuItem>
+                      )}
+
+                      {/* Marcar como Atendido */}
+                      {selectedChat.state !== "arquivada" && !selectedChat.archived && (
+                        <DropdownMenuItem
+                          onClick={handleMarkAsAttended}
+                          className="gap-2 cursor-pointer text-emerald-700 dark:text-emerald-300 font-semibold"
+                        >
+                          <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
+                          <span>Marcar como Atendido</span>
+                        </DropdownMenuItem>
+                      )}
+
                       {selectedChat.state === "automacao" && (
                         <DropdownMenuItem onClick={handleToggleArchive} className="gap-2 cursor-pointer">
                           <Archive className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1847,6 +2044,29 @@ export default function WhatsAppInbox({
                     </div>
                   </div>
                 )}
+
+                {/* Aviso e Ação de Cadastro de Lead se Contato não existe no CRM */}
+                {!matchedLead && !selectedChat?.isGroup && (
+                  <div className="w-full mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left">
+                    <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200 font-semibold text-xs">
+                      <UserPlus className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span>Lead não cadastrado</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-snug">
+                      Este contato do WhatsApp ainda não está na sua base de leads do CRM.
+                    </p>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="w-full mt-2.5 h-7 text-xs font-semibold gap-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg shadow-xs cursor-pointer"
+                      onClick={handleCreateLeadFromCurrentChat}
+                      disabled={createLeadMutation.isPending}
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                      <span>{createLeadMutation.isPending ? "Cadastrando..." : "Cadastrar como Lead no CRM"}</span>
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Estágio do Funil Comercial */}
@@ -2075,6 +2295,35 @@ export default function WhatsAppInbox({
               className="h-8 text-xs rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 cursor-pointer"
             >
               Sim, Arquivar {bulkConfirmCount}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal de Confirmação para Cadastro de Leads em Massa */}
+      <AlertDialog open={bulkLeadConfirmOpen} onOpenChange={setBulkLeadConfirmOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-base">
+              <UserPlus className="h-5 w-5 text-amber-600" />
+              Cadastrar {selectedChatIds.size} contato{selectedChatIds.size > 1 ? "s" : ""} como Lead{selectedChatIds.size > 1 ? "s" : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              Serão criados leads no CRM para as conversas selecionadas que ainda não possuem cadastro (ou atualizados os existentes).
+              <br />
+              <span className="text-foreground font-medium mt-1.5 block">
+                Os novos leads serão vinculados aos seus respectivos telefones e histórico de conversas.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="h-8 text-xs rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmBulkCreateLeads}
+              disabled={bulkCreateLeadsMutation.isPending}
+              className="h-8 text-xs rounded-xl bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+            >
+              {bulkCreateLeadsMutation.isPending ? "Cadastrando..." : `Sim, Cadastrar (${selectedChatIds.size})`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

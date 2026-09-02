@@ -12,7 +12,7 @@
 import { createLeadMessaging, isGroupJid } from "../shared/leadMessaging.js";
 import { summarizeChatWithAI } from "../leads/chatInsight.js";
 import { applyCorsHeaders } from "../../services/corsPolicy.js";
-import { upsertLeadByPhone } from "../../services/leadUpsert.js";
+import { upsertLeadByPhone, isRealName } from "../../services/leadUpsert.js";
 import { buildPhoneLookupVariants } from "../../services/leadImport.js";
 import { OutlierQualificationBot } from "../../hardcoded-chatbot-outlier.js";
 
@@ -812,6 +812,166 @@ export function registerChatbotRoutes(app, deps) {
     } catch (err) {
       console.error("[whatsapp/chats/state/bulk] erro:", err?.message || err);
       sendError(res, 500, "BULK_STATE_UPDATE_ERROR", err?.message || "Erro ao atualizar estados em lote");
+    }
+  });
+
+  // POST /api/whatsapp/chats/create-lead — cadastra contato inbound como lead no CRM
+  app.post("/api/whatsapp/chats/create-lead", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
+    if (!ensureDb(res)) return;
+    const clientId = resolveAuthorizedClientId(req, res, req.body?.clientId);
+    if (!clientId) return;
+
+    const phone = sanitizePhone(req.body?.phone);
+    if (!phone) {
+      sendError(res, 400, "INVALID_PHONE", "Telefone é obrigatório");
+      return;
+    }
+
+    const contactName = isRealName(req.body?.name) ? normalizeString(req.body.name) : null;
+    const leadSource = "inbound";
+
+    try {
+      // 1. Tentar pegar o nome das mensagens se não veio no body
+      let finalName = contactName;
+      if (!finalName) {
+        const nameQuery = await pgDatabasePool.query(
+          `SELECT contact_name FROM public.lead_messages 
+           WHERE client_id = $1 AND (${SQL_CANONICAL_PHONE("phone")} = $2 OR phone = $2) AND contact_name IS NOT NULL 
+           ORDER BY COALESCE(message_timestamp, delivered_at, created_at) DESC LIMIT 1`,
+          [clientId, phone]
+        );
+        if (nameQuery.rows[0]?.contact_name && isRealName(nameQuery.rows[0].contact_name)) {
+          finalName = nameQuery.rows[0].contact_name;
+        }
+      }
+
+      // 2. Upsert do lead na tabela public.leads
+      await upsertLeadByPhone(pgDatabasePool, clientId, phone, {
+        nome: finalName || null,
+        phone: phone,
+        origem: leadSource,
+        lead_origin: leadSource,
+        lead_source: leadSource,
+        status: "NOVO",
+        qualificacao: "Lead inbound cadastrado via WhatsApp",
+        historico: `Lead cadastrado a partir do WhatsApp Inbox em ${new Date().toLocaleString("pt-BR")}`,
+      });
+
+      // 3. Buscar o lead criado para retornar completo
+      const leadRes = await pgDatabasePool.query(
+        `SELECT * FROM public.leads 
+         WHERE client_id = $1 AND (${SQL_CANONICAL_PHONE("telefone")} = $2 OR phone = $2 OR telefone = $2) 
+         ORDER BY updated_at DESC LIMIT 1`,
+        [clientId, phone]
+      );
+
+      const createdLead = leadRes.rows[0];
+      if (createdLead?.id) {
+        try {
+          await pgDatabasePool.query(
+            `UPDATE public.lead_messages 
+             SET lead_id = $1 
+             WHERE client_id = $2 AND (${SQL_CANONICAL_PHONE("phone")} = $3 OR phone = $3)`,
+            [createdLead.id, clientId, phone]
+          );
+        } catch (e) {
+          console.warn("[create-lead] lead_messages update lead_id warning:", e?.message);
+        }
+      }
+
+      res.json({
+        ok: true,
+        success: true,
+        message: "Lead cadastrado com sucesso",
+        lead: createdLead || { client_id: clientId, telefone: phone, nome: finalName, origem: leadSource },
+      });
+    } catch (err) {
+      console.error("[create-lead-from-chat] erro:", err?.message || err);
+      sendError(res, 500, "CREATE_LEAD_ERROR", err?.message || "Erro ao cadastrar lead");
+    }
+  });
+
+  // POST /api/whatsapp/chats/create-leads-bulk — cadastra múltiplos contatos inbound como leads em lote
+  app.post("/api/whatsapp/chats/create-leads-bulk", requireFirebaseAuth, requireAppViewAccess("whatsapp"), async (req, res) => {
+    if (!ensureDb(res)) return;
+    const clientId = resolveAuthorizedClientId(req, res, req.body?.clientId);
+    if (!clientId) return;
+
+    const items = Array.isArray(req.body?.items)
+      ? req.body.items
+      : Array.isArray(req.body?.phones)
+      ? req.body.phones.map((p) => ({ phone: p }))
+      : [];
+
+    if (items.length === 0) {
+      sendError(res, 400, "INVALID_BODY", "Lista de contatos/telefones é obrigatória");
+      return;
+    }
+
+    try {
+      let createdCount = 0;
+      const leadSource = "inbound";
+
+      for (const item of items) {
+        const phone = sanitizePhone(item.phone || item.id);
+        if (!phone) continue;
+
+        let finalName = isRealName(item.name) ? normalizeString(item.name) : null;
+        if (!finalName) {
+          const nameQuery = await pgDatabasePool.query(
+            `SELECT contact_name FROM public.lead_messages 
+             WHERE client_id = $1 AND (${SQL_CANONICAL_PHONE("phone")} = $2 OR phone = $2) AND contact_name IS NOT NULL 
+             ORDER BY COALESCE(message_timestamp, delivered_at, created_at) DESC LIMIT 1`,
+            [clientId, phone]
+          );
+          if (nameQuery.rows[0]?.contact_name && isRealName(nameQuery.rows[0].contact_name)) {
+            finalName = nameQuery.rows[0].contact_name;
+          }
+        }
+
+        await upsertLeadByPhone(pgDatabasePool, clientId, phone, {
+          nome: finalName || null,
+          phone: phone,
+          origem: leadSource,
+          lead_origin: leadSource,
+          lead_source: leadSource,
+          status: "NOVO",
+          qualificacao: "Lead inbound cadastrado via WhatsApp (em lote)",
+          historico: `Lead cadastrado em lote a partir do WhatsApp Inbox em ${new Date().toLocaleString("pt-BR")}`,
+        });
+
+        // Vincular mensagens ao lead cadastrado
+        try {
+          const leadRow = await pgDatabasePool.query(
+            `SELECT id FROM public.leads 
+             WHERE client_id = $1 AND (${SQL_CANONICAL_PHONE("telefone")} = $2 OR phone = $2 OR telefone = $2) 
+             ORDER BY updated_at DESC LIMIT 1`,
+            [clientId, phone]
+          );
+          if (leadRow.rows[0]?.id) {
+            await pgDatabasePool.query(
+              `UPDATE public.lead_messages 
+               SET lead_id = $1 
+               WHERE client_id = $2 AND (${SQL_CANONICAL_PHONE("phone")} = $3 OR phone = $3)`,
+              [leadRow.rows[0].id, clientId, phone]
+            );
+          }
+        } catch (e) {
+          console.warn("[create-leads-bulk] lead_messages update lead_id warning:", e?.message);
+        }
+
+        createdCount++;
+      }
+
+      res.json({
+        ok: true,
+        success: true,
+        count: createdCount,
+        message: `${createdCount} leads cadastrados com sucesso`,
+      });
+    } catch (err) {
+      console.error("[create-leads-bulk] erro:", err?.message || err);
+      sendError(res, 500, "BULK_CREATE_LEAD_ERROR", err?.message || "Erro ao cadastrar leads em lote");
     }
   });
 
