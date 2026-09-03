@@ -22,6 +22,7 @@ const dirnameInsights = dirname(fileURLToPath(import.meta.url));
 export function registerInsightsRoutes(app, deps) {
   const {
     buildDashboardPayload,
+    computeRescueCandidates,
     buildRevenueOpsFallbackPayload,
     buildRevenueOpsPayload,
     ensureDb,
@@ -305,6 +306,74 @@ export function registerInsightsRoutes(app, deps) {
             }
           : { cause: String(error) };
       sendError(res, 500, "DASHBOARD_QUERY_FAILED", "Failed to query dashboard data", details);
+    }
+  });
+
+  // GET /api/dashboard/rescue-candidates — SOMENTE LEITURA. Nao grava nada, nao
+  // cria tabela.
+  //
+  // Medicao do criterio de resgate (2.4): recebeu mensagem nossa E respondeu ao
+  // menos uma vez E o mais recente dos dois esta ha mais de `days` dias.
+  //
+  // ACHADO que motivou este endpoint: as colunas ultima_interacao_bot/
+  // ultima_interacao_usuario (no proprio lead) so sao escritas pelo disparo de
+  // campanha (campaign/dispatch.js:1313) — o motor do chatbot NUNCA as toca.
+  // Medir so por essas colunas capturava apenas o subconjunto tocado por
+  // campanha (11 de geracao-digital, 0 de sonhare, medido 2026-09-03) e
+  // ignorava inteiramente a conversa organica via chatbot, que e a maioria
+  // (havia leads com ultima_interacao_usuario preenchida e ultima_interacao_bot
+  // vazia — responderam a uma mensagem que, por essas colunas, "nunca chegou").
+  //
+  // Este endpoint le lead_messages diretamente — a MESMA query unica, sem
+  // limite e sem loop por conversa, que buildDashboardPayload ja faz — via
+  // computeRescueCandidates/buildContactIndex (services/analytics.js), a UNICA
+  // implementacao deste join. Cobre as duas origens: campanha e chatbot.
+  app.get("/api/dashboard/rescue-candidates", requireFirebaseAuth, async (req, res) => {
+    if (!ensureDb(res)) return;
+    if (!ensureSharedRoutePageAccess(req, res, "dashboard")) return;
+
+    const requestedClientId = normalizeString(req.query.clientId);
+    const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
+    if (!clientId) return;
+
+    const rawDays = Number.parseInt(String(req.query.days || "3"), 10);
+    const thresholdDays = Number.isFinite(rawDays) && rawDays > 0 ? Math.min(rawDays, 90) : 3;
+
+    try {
+      let leads = [];
+      try {
+        const { data: leadRows, error: leadsError } = await supabase
+          .from(leadsTableName(clientId))
+          .select("id, nome, telefone")
+          .eq("client_id", clientId);
+
+        if (!leadsError) leads = leadRows || [];
+      } catch (lErr) {
+        console.warn("rescue-candidates leads query failed:", lErr?.message || lErr);
+      }
+
+      let messages = [];
+      try {
+        const { data: messageRows, error: messagesError } = await supabase
+          .from("lead_messages")
+          .select("lead_id, phone, direction, created_at")
+          .eq("client_id", clientId);
+
+        if (!messagesError) messages = messageRows || [];
+      } catch (msgError) {
+        console.warn("rescue-candidates messages query failed:", msgError?.message || msgError);
+      }
+
+      res.json(computeRescueCandidates(leads, messages, { thresholdDays }));
+    } catch (error) {
+      console.error("rescue-candidates query error:", error);
+      sendError(
+        res,
+        500,
+        "RESCUE_CANDIDATES_QUERY_FAILED",
+        "Failed to compute rescue candidates",
+        error?.message ? { cause: error.message } : undefined
+      );
     }
   });
 

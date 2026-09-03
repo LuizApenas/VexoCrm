@@ -97,6 +97,128 @@ export function parseLeadReferenceDate(lead) {
   return tryParse(lead?.data_hora) ?? tryParse(lead?.created_at);
 }
 
+// Telefone CRU nao casa: a mesma pessoa aparece como 5534997817660 no lead e
+// como 553497817660 (sem o 9) na mensagem, ou com mascara. sanitizePhone e a
+// funcao canonica do projeto, coberta por shared/phoneTestCases.json — a mesma
+// tabela que o frontend usa. Nao existe segunda implementacao.
+export function canonPhone(valor) {
+  return sanitizePhone(valor) || null;
+}
+
+/**
+ * Indice de contato lead<->mensagem: quem recebeu (outbound), quem respondeu
+ * (inbound), e a data do ultimo contato de QUALQUER direcao — casando por
+ * lead_id OU telefone canonico. UNICA implementacao deste join; usada por
+ * buildDashboardPayload (responseRate/noContact3d) e por
+ * computeRescueCandidates (criterio de resgate, 2.4).
+ */
+export function buildContactIndex(leads, messages) {
+  const outboundPhones = new Set();
+  const inboundPhones = new Set();
+  const outboundLeads = new Set();
+  const inboundLeads = new Set();
+  const lastContactByLead = new Map();
+  const lastContactByPhone = new Map();
+
+  for (const m of messages || []) {
+    const phone = canonPhone(m.phone);
+    const leadId = m.lead_id;
+
+    if (m.direction === "outbound") {
+      if (leadId) outboundLeads.add(leadId);
+      if (phone) outboundPhones.add(phone);
+    } else if (m.direction === "inbound") {
+      if (leadId) inboundLeads.add(leadId);
+      if (phone) inboundPhones.add(phone);
+    }
+
+    const msgDate = new Date(m.created_at || Date.now());
+    if (Number.isNaN(msgDate.getTime())) continue;
+
+    if (leadId) {
+      const current = lastContactByLead.get(leadId);
+      if (!current || msgDate > current) lastContactByLead.set(leadId, msgDate);
+    }
+    if (phone) {
+      const current = lastContactByPhone.get(phone);
+      if (!current || msgDate > current) lastContactByPhone.set(phone, msgDate);
+    }
+  }
+
+  return { outboundPhones, inboundPhones, outboundLeads, inboundLeads, lastContactByLead, lastContactByPhone };
+}
+
+export function leadReceivedMessage(lead, { outboundLeads, outboundPhones }) {
+  const tel = canonPhone(lead?.telefone);
+  return Boolean((lead?.id && outboundLeads.has(lead.id)) || (tel && outboundPhones.has(tel)));
+}
+
+export function leadRespondedToMessage(lead, { inboundLeads, inboundPhones }) {
+  const tel = canonPhone(lead?.telefone);
+  return Boolean((lead?.id && inboundLeads.has(lead.id)) || (tel && inboundPhones.has(tel)));
+}
+
+export function leadLastContactDate(lead, { lastContactByLead, lastContactByPhone }) {
+  const tel = canonPhone(lead?.telefone);
+  if (lead?.id && lastContactByLead.has(lead.id)) return lastContactByLead.get(lead.id);
+  if (tel && lastContactByPhone.has(tel)) return lastContactByPhone.get(tel);
+  return null;
+}
+
+/**
+ * Criterio de resgate (Fase 2, 2.4): o lead RECEBEU mensagem nossa, RESPONDEU
+ * ao menos uma vez, e o mais recente dos dois esta ha mais de `thresholdDays`.
+ *
+ * Cobre TODA fonte de interacao — disparo de campanha (que grava
+ * ultima_interacao_bot/usuario no proprio lead) E chatbot organico (que so
+ * grava em lead_messages, nunca nessas duas colunas) — porque le
+ * lead_messages diretamente, a mesma tabela e a mesma query unica que
+ * buildDashboardPayload ja faz, via buildContactIndex.
+ *
+ * So leitura: nao grava nada, nao cria tabela.
+ */
+export function computeRescueCandidates(leads, messages, { thresholdDays = 3, now = new Date() } = {}) {
+  const index = buildContactIndex(leads, messages);
+  const cutoff = new Date(now.getTime() - thresholdDays * 24 * 60 * 60 * 1000);
+
+  let receberam = 0;
+  let responderam = 0;
+  let receberamEResponderam = 0;
+  const candidatos = [];
+
+  for (const lead of leads || []) {
+    const recebeu = leadReceivedMessage(lead, index);
+    const respondeu = leadRespondedToMessage(lead, index);
+    if (recebeu) receberam += 1;
+    if (respondeu) responderam += 1;
+    if (!recebeu || !respondeu) continue;
+    receberamEResponderam += 1;
+
+    const ultimaData = leadLastContactDate(lead, index);
+    if (!ultimaData || ultimaData >= cutoff) continue;
+
+    candidatos.push({
+      id: lead.id ?? null,
+      nome: lead.nome || null,
+      telefone: lead.telefone || null,
+      ultimaInteracao: ultimaData.toISOString(),
+    });
+  }
+
+  candidatos.sort((a, b) => new Date(a.ultimaInteracao) - new Date(b.ultimaInteracao));
+
+  return {
+    totalLeads: (leads || []).length,
+    receberam,
+    responderam,
+    receberamEResponderam,
+    resgate: candidatos.length,
+    thresholdDays,
+    cutoff: cutoff.toISOString(),
+    leads: candidatos,
+  };
+}
+
 export function buildDashboardPayload(client, leads, conversions = [], messages = []) {
   const now = new Date();
   const timeZone = "America/Sao_Paulo";
@@ -206,68 +328,26 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
   }
 
   // ── Calculate metrics: responseRate, noContact3d, contactedLeads ───────────
-  const outboundPhones = new Set();
-  const inboundPhones = new Set();
-  const outboundLeads = new Set();
-  const inboundLeads = new Set();
+  // buildContactIndex (abaixo, exportada) e a UNICA implementacao do join
+  // canonico lead<->mensagem — usada aqui e por computeRescueCandidates
+  // (criterio de resgate, 2.4). Nao ha segunda implementacao.
+  const { outboundPhones, inboundPhones, outboundLeads, inboundLeads, lastContactByLead, lastContactByPhone } =
+    buildContactIndex(leads, messages);
+  const canon = canonPhone;
 
-  // Telefone CRU nao casa: a mesma pessoa aparece como 5534997817660 no lead e
-  // como 553497817660 (sem o 9) na mensagem, ou com mascara. sanitizePhone e a
-  // funcao canonica do projeto, coberta por shared/phoneTestCases.json — a mesma
-  // tabela que o frontend usa. Nao existe segunda implementacao.
-  const canon = (valor) => sanitizePhone(valor) || null;
+  const totalMessaged = leads.filter((lead) => leadReceivedMessage(lead, { outboundPhones, outboundLeads })).length;
 
-  for (const m of messages) {
-    const phone = canon(m.phone);
-    const leadId = m.lead_id;
-    if (m.direction === "outbound") {
-      if (leadId) outboundLeads.add(leadId);
-      if (phone) outboundPhones.add(phone);
-    } else if (m.direction === "inbound") {
-      if (leadId) inboundLeads.add(leadId);
-      if (phone) inboundPhones.add(phone);
-    }
-  }
-
-  const totalMessaged = leads.filter((lead) => {
-    const tel = canon(lead.telefone);
-    return (lead.id && outboundLeads.has(lead.id)) || (tel && outboundPhones.has(tel));
-  }).length;
-
-  const totalResponded = leads.filter((lead) => {
-    const tel = canon(lead.telefone);
-    const sent = (lead.id && outboundLeads.has(lead.id)) || (tel && outboundPhones.has(tel));
-    const replied = (lead.id && inboundLeads.has(lead.id)) || (tel && inboundPhones.has(tel));
-    return sent && replied;
-  }).length;
+  const totalResponded = leads.filter(
+    (lead) =>
+      leadReceivedMessage(lead, { outboundPhones, outboundLeads }) &&
+      leadRespondedToMessage(lead, { inboundPhones, inboundLeads })
+  ).length;
 
   const responseRate = totalMessaged === 0 ? 0 : Math.round((totalResponded / totalMessaged) * 100);
 
   // Sem contato +3 dias
   const threeDaysAgo = new Date();
   threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-
-  const lastContactByLead = new Map();
-  const lastContactByPhone = new Map();
-
-  for (const m of messages) {
-    const msgDate = new Date(m.created_at || now);
-    if (Number.isNaN(msgDate.getTime())) continue;
-
-    if (m.lead_id) {
-      const current = lastContactByLead.get(m.lead_id);
-      if (!current || msgDate > current) {
-        lastContactByLead.set(m.lead_id, msgDate);
-      }
-    }
-    const telMsg = canon(m.phone);
-    if (telMsg) {
-      const current = lastContactByPhone.get(telMsg);
-      if (!current || msgDate > current) {
-        lastContactByPhone.set(telMsg, msgDate);
-      }
-    }
-  }
 
   // noContact3d (Fase 1, inalterado): usa a ULTIMA mensagem por lead_id ou
   // telefone canonico, com fallback pra data do lead. "Em Atendimento" NAO
@@ -282,13 +362,8 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
     if (isClosedOrQualified) continue;
 
     // Last contact calculation for noContact3d
-    const telLead = canon(lead.telefone);
-    let lastDate = null;
-    if (lead.id && lastContactByLead.has(lead.id)) {
-      lastDate = lastContactByLead.get(lead.id);
-    } else if (telLead && lastContactByPhone.has(telLead)) {
-      lastDate = lastContactByPhone.get(telLead);
-    } else {
+    let lastDate = leadLastContactDate(lead, { lastContactByLead, lastContactByPhone });
+    if (!lastDate) {
       lastDate = parseLeadReferenceDate(lead);
     }
 
