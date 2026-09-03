@@ -65,6 +65,7 @@ import {
   buildPresetDefaults,
   getAccessPresetLabel,
   getDefaultPresetForRole,
+  normalizeAccessPreset,
   INTERNAL_PAGE_ORDER,
   isFixedAdminAccount,
   USER_MANAGEMENT_PRESETS,
@@ -645,7 +646,7 @@ function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
       draft.allowedViews.length ? draft.allowedViews : DEFAULT_CLIENT_VIEWS,
       CLIENT_VIEW_ORDER
     );
-    const accessPreset = draft.accessPreset || getDefaultPresetForRole("client");
+    const accessPreset = normalizeAccessPreset(draft.accessPreset, "client");
     const defaults = buildPresetDefaults(accessPreset);
 
     return {
@@ -668,7 +669,7 @@ function applySimpleAccessModel<T extends AccessDraft>(draft: T): T {
     draft.internalPages.length ? draft.internalPages : DEFAULT_INTERNAL_PAGES,
     INTERNAL_PAGE_ORDER
   );
-  const accessPreset = draft.accessPreset || getDefaultPresetForRole("internal");
+  const accessPreset = normalizeAccessPreset(draft.accessPreset, "internal");
   const defaults = buildPresetDefaults(accessPreset);
 
   return {
@@ -711,7 +712,7 @@ function filterArray<T extends string>(items: T[], allowed: readonly T[]) {
 
 function normalizeDraft<T extends AccessDraft>(draft: T): T {
   const role = draft.role;
-  const accessPreset = draft.accessPreset?.trim() || getDefaultPresetForRole(role);
+  const accessPreset = normalizeAccessPreset(draft.accessPreset, role);
   const defaults = buildPresetDefaults(accessPreset);
   const clientIds = Array.from(new Set(draft.clientIds.map((value) => value.trim()).filter(Boolean)));
 
@@ -1505,8 +1506,10 @@ function UserPlanAndSecurityControls({
   onChange: (patch: Partial<AccessDraft>) => void;
 }) {
   const isAdvanced =
-    draft.accessPreset === "admin" ||
+    draft.accessPreset === "gestor" ||
     draft.accessPreset === "admin_vexo" ||
+    draft.accessPreset === "client_manager" ||
+    draft.accessPreset === "admin" ||
     (draft.accessPreset === "gestor" &&
       (draft.permissions.includes("users.manage") || draft.internalPages.includes("usuarios")));
 
@@ -1535,8 +1538,10 @@ function UserPlanAndSecurityControls({
         return true;
       });
 
+      const nextPreset: AccessPreset = draft.role === "client" ? "client_manager" : "gestor";
+
       onChange({
-        accessPreset: "admin",
+        accessPreset: nextPreset,
         permissions: advancedPerms,
         internalPages: advancedPages,
       });
@@ -1575,8 +1580,10 @@ function UserPlanAndSecurityControls({
         essentialPermissions.push("users.view", "users.manage");
       }
 
+      const nextPreset: AccessPreset = draft.role === "client" ? "client_operator" : "operador";
+
       onChange({
-        accessPreset: "commercial",
+        accessPreset: nextPreset,
         permissions: essentialPermissions,
         internalPages: essentialPages,
       });
@@ -2775,54 +2782,64 @@ export default function UserAccessManagement() {
                               O usuário herda estritamente as ferramentas avulsas contratadas por esta empresa.
                             </p>
                           </div>
-                        ) : (
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              disabled={!isAdminUser}
-                              onClick={() => {
-                                if (!isAdminUser) return;
-                                updateCreateDraft({
-                                  accessPreset: "commercial",
-                                });
-                              }}
-                              className={cn(
-                                "rounded-xl border p-3 text-left transition-colors",
-                                createDraft.accessPreset !== "admin"
-                                  ? "border-emerald-500 bg-emerald-500/10 shadow-sm"
-                                  : "border-border/60 bg-muted/5 hover:bg-muted/10",
-                                !isAdminUser && "opacity-80 cursor-not-allowed"
-                              )}
-                            >
-                              <p className="font-bold text-xs text-foreground">🟢 Plano Essencial — Base</p>
-                              <p className="text-[10px] text-muted-foreground leading-3 mt-1">
-                                Dashboard, Leads, Conversas, Disparos, IA Inbound, Follow-up
-                              </p>
-                            </button>
-                            <button
-                              type="button"
-                              disabled={!isAdminUser}
-                              onClick={() => {
-                                if (!isAdminUser) return;
-                                updateCreateDraft({
-                                  accessPreset: "admin",
-                                });
-                              }}
-                              className={cn(
-                                "rounded-xl border p-3 text-left transition-colors",
-                                createDraft.accessPreset === "admin"
-                                  ? "border-purple-500 bg-purple-500/10 shadow-sm"
-                                  : "border-border/60 bg-muted/5 hover:bg-muted/10",
-                                !isAdminUser && "opacity-80 cursor-not-allowed"
-                              )}
-                            >
-                              <p className="font-bold text-xs text-foreground">🟣 Plano Avançado — Completo</p>
-                              <p className="text-[10px] text-muted-foreground leading-3 mt-1">
-                                Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips
-                              </p>
-                            </button>
-                          </div>
-                        )}
+                        ) : (() => {
+                          const isCreateAdvanced =
+                            createDraft.accessPreset === "gestor" ||
+                            createDraft.accessPreset === "admin_vexo" ||
+                            createDraft.accessPreset === "client_manager" ||
+                            createDraft.accessPreset === "admin";
+
+                          return (
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                disabled={!isAdminUser}
+                                onClick={() => {
+                                  if (!isAdminUser) return;
+                                  const nextPreset = createDraft.role === "client" ? "client_operator" : "operador";
+                                  updateCreateDraft({
+                                    accessPreset: nextPreset,
+                                  });
+                                }}
+                                className={cn(
+                                  "rounded-xl border p-3 text-left transition-colors",
+                                  !isCreateAdvanced
+                                    ? "border-emerald-500 bg-emerald-500/10 shadow-sm"
+                                    : "border-border/60 bg-muted/5 hover:bg-muted/10",
+                                  !isAdminUser && "opacity-80 cursor-not-allowed"
+                                )}
+                              >
+                                <p className="font-bold text-xs text-foreground">🟢 Plano Essencial — Base</p>
+                                <p className="text-[10px] text-muted-foreground leading-3 mt-1">
+                                  Dashboard, Leads, Conversas, Disparos, IA Inbound, Follow-up
+                                </p>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!isAdminUser}
+                                onClick={() => {
+                                  if (!isAdminUser) return;
+                                  const nextPreset = createDraft.role === "client" ? "client_manager" : "gestor";
+                                  updateCreateDraft({
+                                    accessPreset: nextPreset,
+                                  });
+                                }}
+                                className={cn(
+                                  "rounded-xl border p-3 text-left transition-colors",
+                                  isCreateAdvanced
+                                    ? "border-purple-500 bg-purple-500/10 shadow-sm"
+                                    : "border-border/60 bg-muted/5 hover:bg-muted/10",
+                                  !isAdminUser && "opacity-80 cursor-not-allowed"
+                                )}
+                              >
+                                <p className="font-bold text-xs text-foreground">🟣 Plano Avançado — Completo</p>
+                                <p className="text-[10px] text-muted-foreground leading-3 mt-1">
+                                  Base RAG, Automações Follow-up, SDR Broadcast, Múltiplos Chips
+                                </p>
+                              </button>
+                            </div>
+                          );
+                        })()}
                         {!isAdminUser && resolvedCreateTenantPlan !== "modular" && (
                           <p className="text-[11px] text-muted-foreground italic">
                             O plano de recursos é herdado da empresa contratante. Apenas o Master Admin pode alterar o plano.

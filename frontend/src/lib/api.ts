@@ -98,12 +98,30 @@ export async function readApiErrorMessage(res: Response, fallback: string) {
     const data = await res.json().catch(() => null);
     if (data) {
       const errorStr = typeof data.error === "string" ? data.error : data.error?.message;
-      const reasonStr = data.reason || data.error?.details;
+      const rawReason = data.reason || data.error?.details;
+      const reasonStr =
+        typeof rawReason === "string"
+          ? rawReason.trim()
+          : rawReason && typeof rawReason === "object"
+            ? typeof (rawReason as any).message === "string"
+              ? (rawReason as any).message.trim()
+              : typeof (rawReason as any).reason === "string"
+                ? (rawReason as any).reason.trim()
+                : null
+            : null;
+
       if (errorStr && reasonStr && errorStr !== reasonStr) {
         return `${errorStr} (${reasonStr})`;
       }
       if (errorStr) return errorStr;
-      if (reasonStr) return String(reasonStr);
+      if (reasonStr) return reasonStr;
+      if (rawReason && typeof rawReason === "object") {
+        try {
+          return JSON.stringify(rawReason);
+        } catch {
+          return `${fallback}: ${res.status}`;
+        }
+      }
       if (data.message) return data.message;
     }
     return `${fallback}: ${res.status}`;

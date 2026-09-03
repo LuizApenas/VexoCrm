@@ -83,4 +83,40 @@ describe("a tela mostra o motivo do backend, não um genérico", () => {
     const msg = await readApiErrorMessage(respostaJson(502, {}), "Falha ao gerar resumo");
     expect(msg).toBe("Falha ao gerar resumo: 502");
   });
+
+  it("quando details é um objeto de metadados (ex: INVALID_ACCESS_PRESET), mostra a mensagem real sem [object Object]", async () => {
+    const msg = await readApiErrorMessage(
+      respostaJson(400, {
+        error: {
+          code: "INVALID_ACCESS_PRESET",
+          message: 'Perfil de acesso "admin" não existe. Aceitos: admin_vexo, gestor, operador, parceiro, client_manager, client_operator, client_viewer, pending.',
+          details: {
+            recebido: "admin",
+            aceitos: ["admin_vexo", "gestor", "operador"],
+          },
+        },
+      }),
+      "Falha ao criar usuário"
+    );
+    expect(msg).not.toContain("[object Object]");
+    expect(msg).toContain('Perfil de acesso "admin" não existe');
+    expect(msg).toBe(
+      'Perfil de acesso "admin" não existe. Aceitos: admin_vexo, gestor, operador, parceiro, client_manager, client_operator, client_viewer, pending.'
+    );
+  });
+
+  it("quando details é objeto com message, extrai a mensagem interna", async () => {
+    const msg = await readApiErrorMessage(
+      respostaJson(400, {
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "Dados inválidos",
+          details: { message: "O e-mail informado já está em uso" },
+        },
+      }),
+      "Falha"
+    );
+    expect(msg).not.toContain("[object Object]");
+    expect(msg).toContain("Dados inválidos (O e-mail informado já está em uso)");
+  });
 });

@@ -29,4 +29,11 @@ describe("access model helpers", () => {
       buildPresetDefaults("client_viewer").permissions
     );
   });
+
+  it("normaliza strings invalidas como admin e commercial para presets validos", () => {
+    expect(normalizeAccessPreset("admin", "internal")).toBe("operador");
+    expect(normalizeAccessPreset("commercial", "internal")).toBe("operador");
+    expect(normalizeAccessPreset("admin", "client")).toBe("client_operator");
+    expect(normalizeAccessPreset("commercial", "client")).toBe("client_operator");
+  });
 });
