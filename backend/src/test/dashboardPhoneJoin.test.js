@@ -15,6 +15,15 @@
 //      a mensagem chega como 553497817660 (sem o 9) ou com mascara.
 //
 // Sobrava so o casamento por lead_id, que nem sempre e gravado.
+//
+// ATUALIZACAO (Fase 2, 2.1): `contactedLeads` MUDOU DE FONTE — agora e
+// pipelineAtendimento (stage='inquiry'), nao mais o casamento de telefone. O
+// bloco abaixo, que provava a canonicalizacao atraves de `contactedLeads`, foi
+// reescrito para provar a MESMA coisa atraves de `noContact3d` e
+// `responseRate` — os dois campos que ainda dependem do join canonico de
+// telefone hoje. Nao e enfraquecer o teste: e seguir o campo que carrega a
+// garantia depois que o significado de `contactedLeads` mudou por decisao
+// aprovada do dono.
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "fs";
@@ -22,11 +31,12 @@ import { resolve } from "path";
 import { buildDashboardPayload } from "../services/analytics.js";
 
 const cliente = { id: "t", name: "T" };
+const ANTIGO = "2026-01-01T00:00:00Z";
 
 function lead(id, telefone, extra = {}) {
-  return { id, telefone, nome: "L" + id, status: "aguardando_resposta", created_at: "2026-01-01T00:00:00Z", ...extra };
+  return { id, telefone, nome: "L" + id, status: "aguardando_resposta", created_at: ANTIGO, ...extra };
 }
-function msg(phone, direction, quando = "2026-09-02T12:00:00Z", lead_id = null) {
+function msg(phone, direction, quando = new Date().toISOString(), lead_id = null) {
   return { lead_id, phone, direction, created_at: quando };
 }
 
@@ -36,35 +46,48 @@ describe("o lead casa com a mensagem mesmo com o telefone em formatos diferentes
     const messages = [msg("553497817660", "outbound"), msg("553497817660", "inbound")];
 
     const p = buildDashboardPayload(cliente, leads, [], messages);
-    expect(p.summary.contactedLeads, "lead com conversa contado como sem contato").toBe(1);
-    expect(p.summary.responseRate).toBe(100);
+    expect(p.summary.responseRate, "lead com conversa contado como sem resposta").toBe(100);
+    // A mensagem RECENTE (canonicalizada) vira o ultimo contato: nao fica parado.
+    expect(p.summary.noContact3d).toBe(0);
   });
 
-  it("telefone com mascara casa", () => {
+  it("telefone com mascara casa (outbound recente evita 'parado')", () => {
+    // Lead criado ha muito tempo (ANTIGO); se a mensagem NAO casar, a data de
+    // criacao e o unico fallback e o lead conta como parado (+3 dias).
     const p = buildDashboardPayload(cliente, [lead("a", "(34) 99781-7660")], [], [msg("5534997817660", "outbound")]);
-    expect(p.summary.contactedLeads).toBe(1);
+    expect(p.summary.noContact3d, "mascara nao canonicalizou — caiu no fallback da data de criacao").toBe(0);
   });
 
-  it("telefone local sem DDI casa", () => {
+  it("telefone local sem DDI casa (outbound recente evita 'parado')", () => {
     const p = buildDashboardPayload(cliente, [lead("a", "34997817660")], [], [msg("+55 34 99781-7660", "outbound")]);
-    expect(p.summary.contactedLeads).toBe(1);
+    expect(p.summary.noContact3d).toBe(0);
   });
 
   it("ANTI-COLISAO: DDDs diferentes com os mesmos 8 digitos finais NAO casam", () => {
-    // Uberlandia (34) e Sao Paulo (11). Se casassem, o Dashboard contaria
-    // conversa de um lead como sendo de outro.
+    // Uberlandia (34) e Sao Paulo (11). Se casassem, a mensagem RECENTE do
+    // numero de Uberlandia seria tomada como ultimo contato do lead de Sao
+    // Paulo, e ele deixaria de aparecer como parado — o que seria o Dashboard
+    // atribuindo conversa de um lead a outro.
     const p = buildDashboardPayload(cliente, [lead("sp", "11997817660")], [], [msg("5534997817660", "outbound")]);
-    expect(p.summary.contactedLeads).toBe(0);
+    expect(p.summary.noContact3d, "colidiu: mensagem de outro DDD contou como contato deste lead").toBe(1);
   });
 
-  it("lead sem telefone e sem lead_id nao e contado", () => {
+  it("lead sem telefone e sem lead_id nao e afetado por mensagem alheia", () => {
     const p = buildDashboardPayload(cliente, [lead("a", null)], [], [msg("5534997817660", "outbound")]);
-    expect(p.summary.contactedLeads).toBe(0);
+    // Sem telefone e sem lead_id, a mensagem nao pode ser atribuida: o lead
+    // (criado ha muito tempo) permanece parado.
+    expect(p.summary.noContact3d).toBe(1);
   });
 
   it("casamento por lead_id continua funcionando (nao regrediu)", () => {
-    const p = buildDashboardPayload(cliente, [lead("a", null)], [], [msg(null, "outbound", "2026-09-02T12:00:00Z", "a")]);
-    expect(p.summary.contactedLeads).toBe(1);
+    const p = buildDashboardPayload(
+      cliente,
+      [lead("a", null)],
+      [],
+      [msg(null, "outbound", new Date().toISOString(), "a"), msg(null, "inbound", new Date().toISOString(), "a")]
+    );
+    expect(p.summary.responseRate, "casamento por lead_id parou de funcionar").toBe(100);
+    expect(p.summary.noContact3d).toBe(0);
   });
 });
 

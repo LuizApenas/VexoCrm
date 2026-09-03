@@ -81,6 +81,12 @@ export function detectTemperature(lead) {
   }
 }
 
+// Valores validos da coluna `temperature` (escrita por classifyChatContent,
+// domains/leads/routes.js, junto com `stage`). Usado so por buildDashboardPayload
+// — detectTemperature acima continua servindo revenue-ops/commercial-intelligence
+// via `qualificacao`, fora do escopo desta Fase 2 do Dashboard.
+const VALID_TEMPERATURES = new Set(["hot", "warm", "cold"]);
+
 /** Safe date for bucketing; invalid spreadsheet values must not crash Intl formatting. */
 export function parseLeadReferenceDate(lead) {
   const tryParse = (v) => {
@@ -119,13 +125,34 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
   };
 
   let leadsToday = 0;
-  let qualifiedLeads = 0;
+  // Pipeline (Fase 2, 2.1): `stage` e o funil, escrito por classifyChatContent
+  // (domains/leads/routes.js) sobre o texto da conversa — 'cold' (default/nao
+  // classificado), 'inquiry' (tirou duvida), 'open_budget' (pediu orcamento),
+  // 'buyer' (comprou), 'lost' (saiu). `status` deixou de alimentar o pipeline:
+  // e estado de conversa (aguardando_usuario, etc.), outra dimensao.
+  // Medido em producao 2026-09-03T12:11:04Z, populacao completa via /api/leads:
+  //   geracao-digital: stage {cold:2125, open_budget:1}
+  //   sonhare:         stage {cold:782,  open_budget:1}
+  // Nenhum 'inquiry' nem 'buyer' em nenhum tenant hoje — os cards mostram esse
+  // numero pequeno e real; nao e bug, e falta de volume qualificado ainda.
+  let pipelineAtendimento = 0;
+  let pipelineQualificados = 0;
+  let pipelineFechados = 0;
   const cities = new Set();
 
   for (const lead of leads) {
     const statusKey = (normalizeString(lead.status) || "sem_status").toLowerCase();
     const typeKey = normalizeString(lead.tipo_cliente) || "nao_informado";
-    const temperatureKey = detectTemperature(lead);
+    // Temperatura passa a ler a COLUNA `temperature` ('hot'/'warm'/'cold',
+    // escrita junto com `stage` por classifyChatContent), nao mais `qualificacao`
+    // via detectTemperature — `qualificacao` esta vazia na base inteira dos dois
+    // tenants medidos. NAO mexi na funcao `detectTemperature` exportada: ela
+    // ainda serve outro relatorio (revenue-ops/commercial-intelligence), fora do
+    // escopo desta Fase 2 do Dashboard.
+    const temperatureKey = VALID_TEMPERATURES.has(normalizeString(lead.temperature)?.toLowerCase())
+      ? normalizeString(lead.temperature).toLowerCase()
+      : "unknown";
+    const stageKey = normalizeString(lead.stage)?.toLowerCase() || null;
     const cityKey = normalizeString(lead.cidade);
 
     const referenceDate = parseLeadReferenceDate(lead);
@@ -142,9 +169,9 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
       leadsToday += 1;
     }
 
-    if (isQualifiedStatus(statusKey)) {
-      qualifiedLeads += 1;
-    }
+    if (stageKey === "inquiry") pipelineAtendimento += 1;
+    else if (stageKey === "open_budget") pipelineQualificados += 1;
+    else if (stageKey === "buyer") pipelineFechados += 1;
 
     temperatureCounts[temperatureKey] += 1;
     statusCounts.set(statusKey, (statusCounts.get(statusKey) || 0) + 1);
@@ -156,7 +183,7 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
     const dayEntry = dateKey ? recentDaysMap.get(dateKey) : null;
     if (dayEntry) {
       dayEntry.leads += 1;
-      if (isQualifiedStatus(statusKey)) {
+      if (stageKey === "open_budget") {
         dayEntry.qualifiedLeads += 1;
       }
     }
@@ -242,8 +269,12 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
     }
   }
 
+  // noContact3d (Fase 1, inalterado): usa a ULTIMA mensagem por lead_id ou
+  // telefone canonico, com fallback pra data do lead. "Em Atendimento" NAO
+  // depende mais desta juncao — virou pipelineAtendimento (stage='inquiry')
+  // logo acima; o hasMessages/isExplicitlyEmContato que rodava aqui saiu, era
+  // a ("Em contato") do modelo antigo por status/mensagem.
   let noContact3d = 0;
-  let contactedLeads = 0;
 
   for (const lead of leads) {
     const statusKey = (normalizeString(lead.status) || "sem_status").toLowerCase();
@@ -264,24 +295,20 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
     if (lastDate && lastDate < threeDaysAgo) {
       noContact3d++;
     }
-
-    // ContactedLeads (Em contato) calculation
-    const hasMessages = (lead.id && (outboundLeads.has(lead.id) || inboundLeads.has(lead.id))) ||
-                        (telLead && (outboundPhones.has(telLead) || inboundPhones.has(telLead)));
-    const isExplicitlyEmContato = statusKey === "em_contato" || statusKey === "em contato" || statusKey === "conversando" || statusKey === "atendimento";
-
-    if (isExplicitlyEmContato || hasMessages) {
-      contactedLeads++;
-    }
   }
 
   const totalLeads = leads.length;
-  const qualificationRate = totalLeads === 0 ? 0 : Math.round((qualifiedLeads / totalLeads) * 100);
+  const qualificationRate = totalLeads === 0 ? 0 : Math.round((pipelineQualificados / totalLeads) * 100);
+  // closedConversions (tabela lead_conversions) alimenta SO o valor monetario
+  // (revenueGenerated/averageTicket) — nao ha coluna de valor associada a
+  // stage='buyer' ainda. conversionsCount, que o Pipeline mostra, e stage-based
+  // (pipelineFechados); a tabela esta vazia nos dois tenants hoje, entao
+  // revenueGenerated/averageTicket saem 0 — real, nao inventado.
   const closedConversions = (conversions || []).filter((conversion) => {
     const status = normalizeLooseText(conversion.conversion_status || conversion.status);
     return status.includes("won") || status.includes("ganho") || status.includes("fechado") || status.includes("convertido");
   });
-  const conversionsCount = closedConversions.length;
+  const conversionsCount = pipelineFechados;
   const revenueGenerated = Math.round(
     closedConversions.reduce((sum, conversion) => {
       const value = Number(conversion.revenue_amount ?? conversion.contract_value ?? 0);
@@ -295,14 +322,17 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
       (conversionRate * 0.45) +
       (totalLeads === 0 ? 0 : Math.min(100, Math.round((temperatureCounts.hot / totalLeads) * 100)) * 0.1)
   );
-  const funnelCoverage = totalLeads === 0 ? 0 : Math.round(((qualifiedLeads + conversionsCount) / Math.max(totalLeads * 2, 1)) * 100);
+  const funnelCoverage = totalLeads === 0 ? 0 : Math.round(((pipelineQualificados + conversionsCount) / Math.max(totalLeads * 2, 1)) * 100);
 
   return {
     client,
     summary: {
       totalLeads,
       leadsToday,
-      qualifiedLeads,
+      // qualifiedLeads/conversions/contactedLeads MANTEM o nome do campo (o
+      // frontend nao muda), mas a FONTE virou stage — nao status, nao
+      // lead_conversions. Ver comentario da Fase 2 no loop acima.
+      qualifiedLeads: pipelineQualificados,
       qualificationRate,
       activeCities: cities.size,
       hotLeads: temperatureCounts.hot,
@@ -317,7 +347,7 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
       funnelCoverage,
       responseRate,
       noContact3d,
-      contactedLeads,
+      contactedLeads: pipelineAtendimento,
     },
     leadsByDay: recentDays,
     temperatureBreakdown: [
@@ -348,7 +378,10 @@ export function buildDashboardPayload(client, leads, conversions = [], messages 
       tipo_cliente: lead.tipo_cliente,
       cidade: lead.cidade,
       status: humanizeStatus(lead.status),
-      temperature: detectTemperature(lead),
+      // Mesma fonte do resto desta funcao (coluna `temperature`), nao detectTemperature/qualificacao.
+      temperature: VALID_TEMPERATURES.has(normalizeString(lead.temperature)?.toLowerCase())
+        ? normalizeString(lead.temperature).toLowerCase()
+        : "unknown",
       data_hora: lead.data_hora || lead.created_at,
     })),
   };

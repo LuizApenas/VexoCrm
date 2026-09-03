@@ -238,7 +238,13 @@ export function registerInsightsRoutes(app, deps) {
           // totalMessaged casam lead com lead_messages por telefone, e a coluna
           // nunca vinha — metade de cada condicao era sempre falsa. Sobrava so o
           // casamento por lead_id, que o webhook do chatbot nao gravava.
-          .select("id, nome, telefone, tipo_cliente, status, qualificacao, data_hora, cidade, created_at")
+          //
+          // stage e temperature ENTRAM aqui pela decisao da Fase 2: `stage` e o
+          // funil (novo/inquiry/open_budget/buyer, escrito por classifyChatContent
+          // em domains/leads/routes.js), `status` e estado de conversa. `qualificacao`
+          // SAIU do SELECT — esta vazia na base inteira nos dois tenants medidos
+          // (2126/2126 e 783/783) e nao e mais lida por este endpoint.
+          .select("id, nome, telefone, tipo_cliente, status, stage, temperature, data_hora, cidade, created_at")
           .eq("client_id", clientId)
           .order("created_at", { ascending: false });
 

@@ -201,41 +201,35 @@ export default function Dashboard({
   );
 
   // Pipeline de vendas
+  // Fase 2, 2.1: pipeline le `stage` (funil), nao mais `status`/`lead_conversions`.
+  // Fase 2, 2.5: "Novos Leads" saiu — era o tamanho da base (summary.totalLeads),
+  // nao trabalho do dia; esse numero pertence ao cabecalho do Banco de Dados,
+  // nao ao painel diario. O pipeline agora tem 3 etapas, nao 4.
   const funnelSteps = useMemo(() => {
     return [
       {
-        id: "novos",
-        stage: "1. Novos Leads",
-        value: summary?.totalLeads,
-        icon: Inbox,
-        colorClass: "text-sky-600 dark:text-sky-400",
-        bgClass: "bg-sky-500/10 border-sky-500/20 hover:border-sky-500/40",
-        href: "/crm/banco-de-dados",
-        hint: "Base importada",
-      },
-      {
         id: "contato",
-        stage: "2. Em Atendimento",
+        stage: "1. Em Atendimento",
         value: summary?.contactedLeads,
         icon: MessageSquare,
         colorClass: "text-indigo-600 dark:text-indigo-400",
         bgClass: "bg-indigo-500/10 border-indigo-500/20 hover:border-indigo-500/40",
         href: "/crm/whatsapp",
-        hint: "Conversas ativas",
+        hint: "Engajado, tirando duvida",
       },
       {
         id: "qualificados",
-        stage: "3. Qualificados / Proposta",
+        stage: "2. Qualificados / Proposta",
         value: summary?.qualifiedLeads,
         icon: Star,
         colorClass: "text-amber-600 dark:text-amber-400",
         bgClass: "bg-amber-500/10 border-amber-500/20 hover:border-amber-500/40",
         href: "/crm/banco-de-dados?tab=open_budget",
-        hint: "Interesse confirmado",
+        hint: "Pediu orcamento",
       },
       {
         id: "fechados",
-        stage: "4. Vendas Fechadas",
+        stage: "3. Vendas Fechadas",
         value: summary?.conversions,
         icon: Trophy,
         colorClass: "text-emerald-600 dark:text-emerald-400",
@@ -416,7 +410,7 @@ export default function Dashboard({
               </h2>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 print:gap-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3 print:gap-3">
               {/* 1. Oportunidades Quentes */}
               <button
                 type="button"
@@ -446,36 +440,14 @@ export default function Dashboard({
                 </div>
               </button>
 
-              {/* 2. Atendimentos em Andamento */}
-              <button
-                type="button"
-                onClick={() => navigate("/crm/whatsapp")}
-                className="group flex flex-col justify-between rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.04] p-4 text-left transition-all hover:border-indigo-500/50 hover:bg-indigo-500/[0.08] hover:shadow-md print:border-slate-300 print:bg-white print:shadow-none"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform print:bg-slate-100 print:text-indigo-600">
-                      <MessageSquare className="h-4 w-4" />
-                    </span>
-                    <Badge variant="outline" className="border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-semibold print:border-slate-300 print:text-slate-800">
-                      {formatMetric(summary?.responseRate, "pct")} resposta
-                    </Badge>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground print:text-slate-600">Atendimentos em Andamento</p>
-                    <p className="text-2xl font-extrabold text-foreground tracking-tight print:text-slate-900">
-                      {formatMetric(sentCurrent)}
-                    </p>
-                  </div>
-                </div>
+              {/* "Atendimentos em Andamento" saiu daqui (Fase 2, 2.3): media volume
+                  de ENVIO no periodo (sentCurrent), nao atendimento em andamento —
+                  o rotulo mentia sobre o que media. Virou "Mensagens enviadas
+                  (periodo)", junto do grafico "Disparos vs Respostas por Dia",
+                  onde o mesmo dado (sentCurrent) ja era visualizado. Nao e card
+                  de radar. */}
 
-                <div className="print:hidden mt-3 flex items-center justify-between border-t border-indigo-500/15 pt-2.5 text-xs font-medium text-indigo-600 dark:text-indigo-400">
-                  <span>Abrir WhatsApp</span>
-                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-                </div>
-              </button>
-
-              {/* 3. Leads Parados (+3 dias) — com CTA de Resgate */}
+              {/* 2. Leads Parados (+3 dias) — com CTA de Resgate */}
               <div className="flex flex-col justify-between rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4 text-left transition-all hover:border-amber-500/60 hover:shadow-md print:border-slate-300 print:bg-white print:shadow-none">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -506,7 +478,7 @@ export default function Dashboard({
                 </div>
               </div>
 
-              {/* 4. Saúde dos Canais (WhatsApp) */}
+              {/* 3. Saúde dos Canais (WhatsApp) */}
               <button
                 type="button"
                 onClick={() => navigate("/crm/chips-whatsapp")}
@@ -551,7 +523,7 @@ export default function Dashboard({
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 print:gap-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3 print:gap-3">
               {funnelSteps.map((step, i) => {
                 const IconComponent = step.icon;
                 const prev = i > 0 ? funnelSteps[i - 1] : null;
@@ -603,12 +575,21 @@ export default function Dashboard({
             {/* Enviados vs Respostas por Dia */}
             <Card className="rounded-2xl border border-border/80 shadow-xs print:border-slate-300 print:bg-white print:shadow-none">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold flex items-center gap-2 print:text-slate-900">
-                  <TrendingUp className="h-4 w-4 text-indigo-500" />
-                  Disparos vs Respostas por Dia
-                </CardTitle>
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2 print:text-slate-900">
+                    <TrendingUp className="h-4 w-4 text-indigo-500" />
+                    Disparos vs Respostas por Dia
+                  </CardTitle>
+                  {/* Mensagens enviadas (período) — ex-card "Atendimentos em
+                      Andamento" do Radar (Fase 2, 2.3). Era volume de ENVIO, nao
+                      atendimento; o rotulo mentia. Mora aqui, junto do grafico
+                      que ja visualiza o mesmo dado (sentCurrent). */}
+                  <Badge variant="outline" className="border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-semibold shrink-0 print:border-slate-300 print:text-slate-800">
+                    {formatMetric(sentCurrent)} enviadas · {formatMetric(summary?.responseRate, "pct")} resposta
+                  </Badge>
+                </div>
                 <CardDescription className="text-xs print:text-slate-500">
-                  Volume diário de mensagens disparadas e respostas capturadas no período.
+                  Mensagens enviadas (período) e respostas capturadas, dia a dia.
                 </CardDescription>
               </CardHeader>
               <CardContent>
