@@ -236,6 +236,12 @@ export default function Dashboard({
         bgClass: "bg-emerald-500/10 border-emerald-500/20 hover:border-emerald-500/40",
         href: "/crm/banco-de-dados?tab=buyer",
         hint: "Clientes convertidos",
+        // A contagem e por etapa (stage='buyer'), correta e real. Mas nao ha
+        // coluna de VALOR ligada a essa etapa ainda — revenueGenerated/
+        // averageTicket (nao exibidos em card nenhum hoje) saem 0 no backend
+        // por isso. Sem esta nota, "0" ao lado de um numero de vendas fechadas
+        // pareceria bug silencioso pra quem usa o Dashboard no dia a dia.
+        note: "Aguardando vínculo entre etapa e valor de venda",
       },
     ];
   }, [summary]);
@@ -537,6 +543,7 @@ export default function Dashboard({
                     key={step.id}
                     type="button"
                     onClick={() => navigate(step.href)}
+                    title={step.note}
                     className={cn(
                       "group relative flex flex-col justify-between rounded-2xl border p-4 text-left transition-all hover:scale-[1.02] hover:shadow-md cursor-pointer print:border-slate-300 print:bg-white print:shadow-none",
                       step.bgClass
@@ -557,6 +564,14 @@ export default function Dashboard({
                         <p className="text-2xl font-extrabold text-foreground tracking-tight mt-0.5 print:text-slate-900">
                           {formatMetric(step.value)}
                         </p>
+                        {/* Nota curta pra "0" nao parecer bug silencioso — so a
+                            contagem por etapa esta pronta, o valor de venda por
+                            etapa ainda nao. Ver comentario no dado do step. */}
+                        {step.note && (
+                          <p className="text-[10px] text-muted-foreground/80 mt-0.5 print:text-slate-500">
+                            {step.note}
+                          </p>
+                        )}
                       </div>
                     </div>
 
