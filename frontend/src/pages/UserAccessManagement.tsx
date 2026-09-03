@@ -494,7 +494,7 @@ function buildFallbackAccessProfiles(): AccessProfileRecord[] {
 
 function buildUserDraft(user: AdminUserRecord): UserDraft {
   const role = user.access.role;
-  const accessPreset = user.access.accessPreset || getDefaultPresetForRole(role);
+  const accessPreset = normalizeAccessPreset(user.access.accessPreset, role);
   const defaults = buildPresetDefaults(accessPreset);
 
   return {

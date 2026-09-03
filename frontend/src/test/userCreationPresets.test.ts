@@ -73,4 +73,11 @@ describe("criação de usuário e perfis de acesso aceitos pelo backend", () => 
     expect(source).not.toMatch(/accessPreset:\s*["']admin["']/);
     expect(source).not.toMatch(/accessPreset:\s*["']commercial["']/);
   });
+
+  it("garante que usuário existente com accessPreset 'admin' no banco é normalizado ao ser carregado", () => {
+    const legacyAdminPreset = "admin";
+    const normalized = normalizeAccessPreset(legacyAdminPreset, "internal");
+    expect(ACCEPTED_BACKEND_PRESETS).toContain(normalized);
+    expect(normalized).toBe("operador");
+  });
 });
