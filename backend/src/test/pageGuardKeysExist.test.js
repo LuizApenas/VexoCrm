@@ -106,18 +106,93 @@ describe("os dois casos reais ficam fechados", () => {
   const insightsRoutes = readFileSync(resolve("src/domains/insights/routes.js"), "utf8");
   const aiExtractRoutes = readFileSync(resolve("src/domains/leads/aiExtractRoutes.js"), "utf8");
 
-  it("GET /api/leads usa banco-de-dados, não leads", () => {
+  it("GET /api/leads não usa mais 'leads' sozinho, e aceita banco-de-dados", () => {
     expect(leadsRoutes).not.toContain('ensureSharedRoutePageAccess(req, res, "leads")');
-    expect(leadsRoutes).toContain('ensureSharedRoutePageAccess(req, res, "banco-de-dados")');
+    expect(leadsRoutes).toContain('"banco-de-dados"');
   });
 
-  it("GET /api/reports/evolution-usage usa planilhas, não relatorios", () => {
+  it("GET /api/reports/evolution-usage não usa mais 'relatorios' sozinho, e aceita planilhas", () => {
     expect(insightsRoutes).not.toContain('requireInternalPageAccess("relatorios")');
-    expect(insightsRoutes).toContain('requireInternalPageAccess("planilhas")');
+    expect(insightsRoutes).toContain('"planilhas"');
   });
 
   it("POST /api/leads/ai-extract usa banco-de-dados, não leads", () => {
     expect(aiExtractRoutes).not.toContain('requireAppViewAccess("leads")');
     expect(aiExtractRoutes).toContain('requireAppViewAccess("banco-de-dados")');
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Rota COMPARTILHADA por N telas precisa aceitar as N chaves — nao so a de
+// quem reportou o defeito. GET /api/reports/evolution-usage foi consertada
+// para "planilhas" (a tela que motivou o commit) e quase quebrou Dashboard.tsx
+// e ChipsHealthReport.tsx, que consomem a MESMA rota sob paginas diferentes.
+// GET /api/leads tinha o mesmo risco: BancoDeDados, CommercialIntelligence,
+// WhatsAppInbox e SegmentacaoCatalog (via Relacionamento/LivPub) consomem a
+// mesma rota sob quatro paginas diferentes.
+//
+// Este bloco fixa o CONJUNTO MINIMO de chaves que cada rota compartilhada
+// precisa aceitar, levantado lendo cada consumidor no frontend e a pagina que
+// protege a tela dele (App.tsx). Se alguem estreitar o guard de volta para uma
+// chave so, um destes consumidores volta a tomar 403 — e o teste cai antes de
+// chegar em producao.
+describe("rotas compartilhadas aceitam TODAS as telas que as consomem", () => {
+  const insightsRoutes = readFileSync(resolve("src/domains/insights/routes.js"), "utf8");
+  const leadsRoutes = readFileSync(resolve("src/domains/leads/routes.js"), "utf8");
+
+  // Extrai so o ARGUMENTO da chamada do guard — nao um trecho cru de codigo.
+  // A primeira versao deste teste cortava uma janela de codigo e conferia
+  // `toContain`, e o proprio COMENTARIO explicativo acima do guard (que cita
+  // as quatro paginas em prosa) fazia o teste passar mesmo com o guard
+  // mutado de volta para uma chave so — o comentario "continha" as palavras.
+  function argumentoDoGuard(fonte, guardName, apartirDe) {
+    const marcador = `${guardName}(`;
+    const i = fonte.indexOf(marcador, apartirDe);
+    if (i === -1) return null;
+    const inicio = i + marcador.length;
+    const fim = fonte.indexOf(")", inicio);
+    return fonte.slice(inicio, fim);
+  }
+
+  const CASOS = [
+    {
+      rota: "GET /api/reports/evolution-usage",
+      fonte: insightsRoutes,
+      assinatura: '"/api/reports/evolution-usage"',
+      guard: "requireInternalPageAccess",
+      consumidores: [
+        ["Dashboard.tsx", "dashboard"],
+        ["Relatorios.tsx (aba de LeadImports.tsx)", "planilhas"],
+        ["ChipsHealthReport.tsx (aba Saude de ChipsWhatsapp.tsx)", "conexoes"],
+      ],
+    },
+    {
+      rota: "GET /api/leads",
+      fonte: leadsRoutes,
+      assinatura: '"/api/leads"',
+      guard: "ensureSharedRoutePageAccess",
+      consumidores: [
+        ["BancoDeDados.tsx", "banco-de-dados"],
+        ["CommercialIntelligenceContent.tsx", "dashboard"],
+        ["WhatsAppInbox.tsx (via hooks/useLeads.ts)", "whatsapp"],
+        ["SegmentacaoCatalog.tsx (via Relacionamento.tsx -> LivPub)", "livpub"],
+      ],
+    },
+  ];
+
+  for (const caso of CASOS) {
+    describe(caso.rota, () => {
+      const inicioRota = caso.fonte.indexOf(caso.assinatura);
+      const argumento = inicioRota === -1 ? null : argumentoDoGuard(caso.fonte, caso.guard, inicioRota);
+
+      it("a rota ainda existe e chama o guard esperado (guarda contra teste que passa a toa)", () => {
+        expect(inicioRota, `${caso.rota} sumiu do arquivo`).toBeGreaterThan(-1);
+        expect(argumento, `${caso.rota} nao chama mais ${caso.guard}(...)`).not.toBeNull();
+      });
+
+      it.each(caso.consumidores)("aceita %s (chave \"%s\")", (_tela, chave) => {
+        expect(argumento, `${caso.rota} nao aceita mais "${chave}"`).toContain(`"${chave}"`);
+      });
+    });
+  }
 });

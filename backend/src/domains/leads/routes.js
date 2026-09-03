@@ -776,13 +776,24 @@ export function registerLeadsRoutes(app, deps) {
   app.get("/api/leads", requireFirebaseAuth, async (req, res) => {
     if (!ensureDb(res)) return;
     // "leads" saiu de INTERNAL_PAGE_KEYS no refactor fc4f49e (modulo Leads
-    // removido de proposito). Esta rota sobrou como a listagem que serve o
-    // Banco de Dados (BancoDeDados.tsx:444) — e essa e a chave certa, ainda
-    // presente em INTERNAL_PAGE_KEYS. Sem este ajuste NINGUEM passava: nem
-    // usuario com "leads" concedido na claim (normalizeInternalPages filtra
-    // contra INTERNAL_PAGE_KEYS e descarta chave desconhecida), nem admin
-    // fora do bypass de hasInternalPageAccess.
-    if (!ensureSharedRoutePageAccess(req, res, "banco-de-dados")) return;
+    // removido de proposito). Esta rota (GET /api/leads) e consumida por MAIS
+    // de uma tela:
+    //   BancoDeDados.tsx:444              -> pagina "banco-de-dados"
+    //   CommercialIntelligenceContent.tsx -> rota inteligencia-comercial,
+    //                                        gateada por "dashboard" no frontend
+    //   useLeads.ts (hooks) usado por:
+    //     WhatsAppInbox.tsx -> pagina "whatsapp"
+    //     SegmentacaoCatalog.tsx (via Relacionamento.tsx, que redireciona para
+    //       /crm/livpub?tab=relacionamento) -> pagina "livpub"
+    //   (pages/Leads.tsx tambem importa useLeads, mas nao esta roteado em
+    //   lugar nenhum — /crm/leads redireciona para banco-de-dados. Nao entra
+    //   na lista: adicionar chave para consumidor morto so esconderia o
+    //   proximo "cadeado que nao cadeia nada".)
+    // Gatear so por uma dessas quebraria as outras tres — mesma familia do bug
+    // que acabou de ser consertado, na ponta contraria (rota compartilhada,
+    // N consumidores legitimos). hasInternalPageAccess e array-aware, entao
+    // ensureSharedRoutePageAccess aceita a lista sem mudanca de assinatura.
+    if (!ensureSharedRoutePageAccess(req, res, ["banco-de-dados", "dashboard", "whatsapp", "livpub"])) return;
 
     const requestedClientId = normalizeString(req.query.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);

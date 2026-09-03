@@ -1019,9 +1019,20 @@ export function registerInsightsRoutes(app, deps) {
   // Tenant scoping idêntico aos endpoints de dispatch (resolveAuthorizedClientId).
   // "relatorios" saiu de INTERNAL_PAGE_KEYS no mesmo refactor (fc4f49e). O
   // frontend ja redireciona /crm/relatorios -> /crm/planilhas?tab=relatorios
-  // (App.tsx) e a aba vive dentro de LeadImports.tsx, protegida por
-  // requiredInternalPage="planilhas". A chave certa aqui e "planilhas".
-  app.get("/api/reports/evolution-usage", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
+  // (App.tsx) e a aba vive dentro de LeadImports.tsx, sob
+  // requiredInternalPage="planilhas" — mas essa NAO e a unica tela que consome
+  // esta rota. useEvolutionUsageReport (hooks/useReports.ts) tambem alimenta:
+  //   Dashboard.tsx        -> card "Atendimentos em Andamento", pagina "dashboard"
+  //   ChipsHealthReport.tsx -> aba "Saude" de ChipsWhatsapp.tsx, atras de
+  //                            hasConexoes (canAccessInternalPage("conexoes"))
+  // Gatear so por "planilhas" quebraria as outras duas — mesma familia do bug
+  // que acabou de ser consertado, na ponta contraria (rota unica, N consumidores
+  // legitimos). requireInternalPageAccess aceita array (hasInternalPageAccess e
+  // accessHasPagePermission sao ambas array-aware) e preserva o fallback de
+  // permissao granular do PERMISSIONS_REGISTRY — por isso a escolha aqui e um
+  // array na mesma funcao, nao a troca para requireAnyInternalPageAccess, que
+  // nao tem esse fallback.
+  app.get("/api/reports/evolution-usage", requireFirebaseAuth, requireInternalPageAccess(["dashboard", "planilhas", "conexoes"]), async (req, res) => {
     if (!ensureDb(res)) return;
     if (!pgDatabasePool) return sendError(res, 503, "DB_UNAVAILABLE", "Database unavailable");
     const requestedClientId = normalizeString(req.query.clientId);
