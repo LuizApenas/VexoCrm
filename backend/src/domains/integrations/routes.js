@@ -527,7 +527,10 @@ export function registerIntegrationsRoutes(app, deps) {
   app.get(
     "/api/lead-clients/:tenantId/evolution-instances",
     requireFirebaseAuth,
-    requireAnyInternalPageAccess(["conexoes", "empresas", "banco-de-dados", "leads"]),
+    // "leads" saiu da lista (fc4f49e); nunca casa e ja nao bloqueava nada
+    // (e um OR, e as outras tres chaves sao validas) — mas e o mesmo tipo de
+    // referencia morta que a varredura desta rodada existe para fechar.
+    requireAnyInternalPageAccess(["conexoes", "empresas", "banco-de-dados"]),
     async (req, res) => {
       if (!ensureDb(res)) return;
 

@@ -13,7 +13,10 @@ export function registerAiExtractRoutes(app, deps) {
   app.post(
     "/api/leads/ai-extract",
     requireFirebaseAuth,
-    requireAppViewAccess("leads"),
+    // "leads" saiu de INTERNAL_PAGE_KEYS (fc4f49e). Unico chamador e
+    // BancoDeDados.tsx:783, rota interna gateada no frontend por
+    // requiredInternalPage="banco-de-dados" — mesma chave aqui.
+    requireAppViewAccess("banco-de-dados"),
     async (req, res) => {
       try {
         const { rawText, defaultOrigin, defaultContactName } = req.body || {};

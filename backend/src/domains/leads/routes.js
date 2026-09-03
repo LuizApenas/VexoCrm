@@ -775,7 +775,14 @@ export function registerLeadsRoutes(app, deps) {
 
   app.get("/api/leads", requireFirebaseAuth, async (req, res) => {
     if (!ensureDb(res)) return;
-    if (!ensureSharedRoutePageAccess(req, res, "leads")) return;
+    // "leads" saiu de INTERNAL_PAGE_KEYS no refactor fc4f49e (modulo Leads
+    // removido de proposito). Esta rota sobrou como a listagem que serve o
+    // Banco de Dados (BancoDeDados.tsx:444) — e essa e a chave certa, ainda
+    // presente em INTERNAL_PAGE_KEYS. Sem este ajuste NINGUEM passava: nem
+    // usuario com "leads" concedido na claim (normalizeInternalPages filtra
+    // contra INTERNAL_PAGE_KEYS e descarta chave desconhecida), nem admin
+    // fora do bypass de hasInternalPageAccess.
+    if (!ensureSharedRoutePageAccess(req, res, "banco-de-dados")) return;
 
     const requestedClientId = normalizeString(req.query.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);

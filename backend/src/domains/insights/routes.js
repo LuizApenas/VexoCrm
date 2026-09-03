@@ -1017,7 +1017,11 @@ export function registerInsightsRoutes(app, deps) {
   // Lê direto de evolution_instance_daily_usage (instance_id, date, sent_count),
   // agregação no SQL. JOIN com lead_client_evolution_instances p/ label humano.
   // Tenant scoping idêntico aos endpoints de dispatch (resolveAuthorizedClientId).
-  app.get("/api/reports/evolution-usage", requireFirebaseAuth, requireInternalPageAccess("relatorios"), async (req, res) => {
+  // "relatorios" saiu de INTERNAL_PAGE_KEYS no mesmo refactor (fc4f49e). O
+  // frontend ja redireciona /crm/relatorios -> /crm/planilhas?tab=relatorios
+  // (App.tsx) e a aba vive dentro de LeadImports.tsx, protegida por
+  // requiredInternalPage="planilhas". A chave certa aqui e "planilhas".
+  app.get("/api/reports/evolution-usage", requireFirebaseAuth, requireInternalPageAccess("planilhas"), async (req, res) => {
     if (!ensureDb(res)) return;
     if (!pgDatabasePool) return sendError(res, 503, "DB_UNAVAILABLE", "Database unavailable");
     const requestedClientId = normalizeString(req.query.clientId);
