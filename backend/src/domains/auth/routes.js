@@ -332,6 +332,17 @@ export function registerAuthRoutes(app, deps) {
       }
 
       const mergedClaims = mergeManagedClaims(user.customClaims || {}, managedClaims);
+      const claimsLength = JSON.stringify(mergedClaims).length;
+      if (claimsLength > 950) {
+        sendError(
+          res,
+          400,
+          "CLAIMS_TOO_LARGE",
+          "Este conjunto de permissões é grande demais para o perfil de autenticação. Fale com o suporte.",
+          { length: claimsLength, limit: 950 }
+        );
+        return;
+      }
 
       await auth.setCustomUserClaims(uid, mergedClaims);
 
@@ -455,6 +466,19 @@ export function registerAuthRoutes(app, deps) {
         return;
       }
 
+      const candidateClaims = mergeManagedClaims({}, { ...managedClaims, must_change_password: true });
+      const candidateLength = JSON.stringify(candidateClaims).length;
+      if (candidateLength > 950) {
+        sendError(
+          res,
+          400,
+          "CLAIMS_TOO_LARGE",
+          "Este conjunto de permissões é grande demais para o perfil de autenticação. Fale com o suporte.",
+          { length: candidateLength, limit: 950 }
+        );
+        return;
+      }
+
       const user = await auth.createUser({
         email,
         password,
@@ -465,7 +489,7 @@ export function registerAuthRoutes(app, deps) {
       // 1º login. O backend é a fonte de verdade — o frontend bloqueia e leva a /set-password.
       await auth.setCustomUserClaims(
         user.uid,
-        mergeManagedClaims({}, { ...managedClaims, must_change_password: true })
+        candidateClaims
       );
 
       let passwordResetLink = null;

@@ -812,8 +812,38 @@ function buildPayload(draft: AccessDraft, clientPlan?: string) {
   };
 }
 
+function estimateClaimsPayloadSize(draft: AccessDraft): number {
+  const normalized = normalizeDraft(draft);
+  const effectivePermissions =
+    draft.granularPermissions && draft.granularPermissions.length > 0
+      ? draft.granularPermissions
+      : normalized.permissions;
+
+  const simulatedClaims = {
+    role: normalized.role,
+    isAdmin: normalized.accessPreset === "admin_vexo",
+    accessPreset: normalized.accessPreset,
+    scopeMode: normalized.scopeMode,
+    approvalLevel: normalized.approvalLevel,
+    clientId: normalized.clientIds[0] || null,
+    clientIds: normalized.clientIds,
+    tenantId: normalized.clientIds[0] || null,
+    tenantIds: normalized.clientIds,
+    allowedViews: normalized.role === "client" ? normalized.allowedViews : [],
+    internalPages: normalized.role === "internal" ? normalized.internalPages : [],
+    permissions: effectivePermissions,
+    companyName: normalized.companyName ? normalized.companyName.trim() : null,
+  };
+
+  return JSON.stringify(simulatedClaims).length;
+}
+
 function validateDraft(draft: AccessDraft) {
   const normalized = normalizeDraft(draft);
+
+  if (estimateClaimsPayloadSize(draft) > 950) {
+    return "Este conjunto de permissões é grande demais para o perfil de autenticação. Fale com o suporte.";
+  }
 
   if (normalized.role === "client") {
     if (normalized.clientIds.length === 0) {

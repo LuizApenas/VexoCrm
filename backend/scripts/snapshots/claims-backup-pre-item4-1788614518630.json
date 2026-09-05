@@ -1,0 +1,664 @@
+[
+  {
+    "uid": "51IqjtcYTGXItJIPIk4lCELsZLo2",
+    "email": "tinturariadocarlos@gmail.com",
+    "displayName": "Carlos",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Thu, 03 Sep 2026 14:31:04 GMT",
+      "creationTime": "Thu, 03 Sep 2026 14:25:44 GMT",
+      "lastRefreshTime": "Sat, 05 Sep 2026 13:20:51 GMT"
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "gestor",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "none",
+      "clientId": "tinge-brasil",
+      "clientIds": [
+        "tinge-brasil"
+      ],
+      "tenantId": "tinge-brasil",
+      "tenantIds": [
+        "tinge-brasil"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "dashboard",
+        "banco-de-dados",
+        "whatsapp",
+        "followup",
+        "fila-de-followup",
+        "campanhas",
+        "planilhas",
+        "agente",
+        "conexoes",
+        "onboarding-wizard",
+        "inteligencia-comercial",
+        "usuarios"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "imports.manage",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.manage",
+        "agente.view",
+        "leads.export",
+        "users.view",
+        "users.manage",
+        "reports.commercial",
+        "reports.export_pdf"
+      ],
+      "companyName": "Tinge Brasil"
+    }
+  },
+  {
+    "uid": "FLPi0yQjJgO6FQIwrQKS2KCmVk13",
+    "email": "mrkgeracaodigital@gmail.com",
+    "displayName": "Caio",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Thu, 03 Sep 2026 15:51:54 GMT",
+      "creationTime": "Tue, 14 Jul 2026 17:57:37 GMT",
+      "lastRefreshTime": "Fri, 04 Sep 2026 18:56:08 GMT"
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "gestor",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "manager",
+      "clientId": "geracao-digital",
+      "clientIds": [
+        "geracao-digital"
+      ],
+      "tenantId": "geracao-digital",
+      "tenantIds": [
+        "geracao-digital"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "dashboard",
+        "leads",
+        "planilhas",
+        "whatsapp",
+        "agente",
+        "usuarios",
+        "campanhas",
+        "inteligencia-comercial",
+        "chatbot-kanban",
+        "chatbot-config",
+        "followup",
+        "fila-de-followup",
+        "followup-empresas",
+        "followup-campanhas",
+        "followup-analytics",
+        "followup-sugestoes",
+        "chatbot-docs",
+        "onboarding-wizard",
+        "onboarding-agent",
+        "conexoes",
+        "disparos",
+        "aquecimento",
+        "relatorios",
+        "apresentacao",
+        "apresentacao-gd",
+        "briefings-gd",
+        "integracoes",
+        "eventos",
+        "relacionamento",
+        "livpub"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "leads.export",
+        "imports.manage",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.manage",
+        "agente.view",
+        "users.view",
+        "users.manage"
+      ],
+      "companyName": "Geracao Digital"
+    }
+  },
+  {
+    "uid": "OIXF1tsHGDQCEpn0y7nFhph2sJ03",
+    "email": "comercial@hosterytech.com",
+    "displayName": "Anfitriao",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": null,
+      "creationTime": "Thu, 27 Aug 2026 20:08:41 GMT",
+      "lastRefreshTime": null
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "gestor",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "manager",
+      "clientId": "hostery-tech",
+      "clientIds": [
+        "hostery-tech"
+      ],
+      "tenantId": "hostery-tech",
+      "tenantIds": [
+        "hostery-tech"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "dashboard",
+        "leads",
+        "banco-de-dados",
+        "planilhas",
+        "whatsapp",
+        "agente",
+        "usuarios",
+        "campanhas",
+        "inteligencia-comercial",
+        "chatbot-kanban",
+        "chatbot-config",
+        "followup",
+        "fila-de-followup",
+        "followup-empresas",
+        "followup-campanhas",
+        "followup-analytics",
+        "followup-sugestoes",
+        "chatbot-docs",
+        "onboarding-wizard",
+        "onboarding-agent",
+        "conexoes",
+        "disparos",
+        "aquecimento",
+        "relatorios",
+        "apresentacao",
+        "apresentacao-gd",
+        "briefings-gd",
+        "propostas-gd",
+        "contratos-gd",
+        "pacotes-gd",
+        "condicoes-gd",
+        "integracoes",
+        "eventos",
+        "relacionamento",
+        "livpub"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "leads.export",
+        "imports.manage",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.manage",
+        "agente.view",
+        "users.view",
+        "users.manage"
+      ],
+      "companyName": "Hostery Tech"
+    }
+  },
+  {
+    "uid": "WgeiivI6nRfiIzpUXNXfcLp3Ih43",
+    "email": "conrado.cfl@gmail.com",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Tue, 25 Aug 2026 15:37:56 GMT",
+      "creationTime": "Sun, 16 Aug 2026 15:24:13 GMT",
+      "lastRefreshTime": "Tue, 25 Aug 2026 15:37:56 GMT"
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "gestor",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "manager",
+      "clientId": "teste-modular",
+      "clientIds": [
+        "teste-modular"
+      ],
+      "tenantId": "teste-modular",
+      "tenantIds": [
+        "teste-modular"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "dashboard",
+        "leads",
+        "banco-de-dados",
+        "planilhas",
+        "whatsapp",
+        "agente",
+        "usuarios",
+        "campanhas",
+        "inteligencia-comercial",
+        "chatbot-kanban",
+        "chatbot-config",
+        "followup",
+        "fila-de-followup",
+        "followup-empresas",
+        "followup-campanhas",
+        "followup-analytics",
+        "followup-sugestoes",
+        "chatbot-docs",
+        "onboarding-wizard",
+        "onboarding-agent",
+        "conexoes",
+        "disparos",
+        "aquecimento",
+        "relatorios",
+        "apresentacao",
+        "apresentacao-gd",
+        "briefings-gd",
+        "integracoes",
+        "eventos",
+        "relacionamento",
+        "livpub"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "leads.export",
+        "imports.manage",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.manage",
+        "agente.view",
+        "users.view",
+        "users.manage"
+      ],
+      "companyName": "Teste modular"
+    }
+  },
+  {
+    "uid": "XBkP0DsTL2TvGnLHGEie99CshEf1",
+    "email": "gabrieloli.comercial@gmail.com",
+    "displayName": "Gabriel",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Thu, 03 Sep 2026 15:02:52 GMT",
+      "creationTime": "Thu, 30 Jul 2026 21:23:08 GMT",
+      "lastRefreshTime": "Sat, 05 Sep 2026 13:20:51 GMT"
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "gestor",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "manager",
+      "clientId": "geracao-digital",
+      "clientIds": [
+        "geracao-digital"
+      ],
+      "tenantId": "geracao-digital",
+      "tenantIds": [
+        "geracao-digital"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "dashboard",
+        "leads",
+        "planilhas",
+        "whatsapp",
+        "campanhas",
+        "disparos",
+        "relatorios",
+        "agente",
+        "conexoes",
+        "inteligencia-comercial"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "leads.export",
+        "banco_dados.import",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.view",
+        "campaigns.create",
+        "campaigns.delete",
+        "dispatches.execute",
+        "dispatches.pause",
+        "dispatches.export_failed",
+        "agente.view",
+        "banco_dados.view",
+        "banco_dados.extract_wa",
+        "banco_dados.delete",
+        "whatsapp.chips_add",
+        "whatsapp.chips_delete",
+        "agente.toggle",
+        "agente.edit_prompt",
+        "agente.change_llm",
+        "agente.change_identity",
+        "reports.commercial",
+        "reports.dispatches",
+        "reports.export_pdf"
+      ],
+      "companyName": "Geracao Digital"
+    }
+  },
+  {
+    "uid": "bM2603rX8DhAQUu1XNpJ8LMdr1L2",
+    "email": "priscilakarina1001@gmail.com",
+    "displayName": "Prisicla",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Thu, 03 Sep 2026 15:02:04 GMT",
+      "creationTime": "Thu, 16 Jul 2026 18:29:33 GMT",
+      "lastRefreshTime": "Thu, 03 Sep 2026 15:02:05 GMT"
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "gestor",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "manager",
+      "clientId": "geracao-digital",
+      "clientIds": [
+        "geracao-digital"
+      ],
+      "tenantId": "geracao-digital",
+      "tenantIds": [
+        "geracao-digital"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "leads",
+        "planilhas",
+        "whatsapp",
+        "agente",
+        "usuarios",
+        "campanhas",
+        "chatbot-kanban",
+        "chatbot-config",
+        "followup",
+        "fila-de-followup",
+        "followup-empresas",
+        "followup-campanhas",
+        "followup-analytics",
+        "followup-sugestoes",
+        "chatbot-docs",
+        "onboarding-wizard",
+        "onboarding-agent",
+        "conexoes",
+        "disparos",
+        "aquecimento",
+        "relatorios",
+        "apresentacao-gd",
+        "briefings-gd",
+        "integracoes"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "leads.export",
+        "imports.manage",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.manage",
+        "agente.view",
+        "users.view",
+        "users.manage"
+      ],
+      "companyName": "Geracao Digital"
+    }
+  },
+  {
+    "uid": "oIPTdDnSO0U3MZ0EOOmCZ5ctAfV2",
+    "email": "sonhareviagens.udi@gmail.com",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Mon, 31 Aug 2026 15:09:53 GMT",
+      "creationTime": "Wed, 12 Aug 2026 19:46:39 GMT",
+      "lastRefreshTime": "Thu, 03 Sep 2026 15:33:48 GMT"
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "operador",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "none",
+      "clientId": "sonhare",
+      "clientIds": [
+        "sonhare"
+      ],
+      "tenantId": "sonhare",
+      "tenantIds": [
+        "sonhare"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "dashboard",
+        "leads",
+        "planilhas",
+        "whatsapp",
+        "conexoes",
+        "campanhas",
+        "disparos",
+        "relatorios",
+        "agente",
+        "inteligencia-comercial",
+        "usuarios"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "banco_dados.import",
+        "leads.export",
+        "banco_dados.delete",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "whatsapp.chips_add",
+        "campaigns.view",
+        "campaigns.delete",
+        "campaigns.create",
+        "whatsapp.chips_delete",
+        "whatsapp.chips_view",
+        "dispatches.execute",
+        "dispatches.export_failed",
+        "dispatches.pause",
+        "agente.view",
+        "agente.edit_prompt",
+        "agente.change_identity",
+        "agente.toggle",
+        "reports.commercial",
+        "reports.export_pdf",
+        "reports.dispatches",
+        "users.view",
+        "banco_dados.extract_wa",
+        "users.manage",
+        "banco_dados.view",
+        "agente.change_llm"
+      ],
+      "companyName": "Arthur"
+    }
+  },
+  {
+    "uid": "oak1l53kZCfC2PMUOQvzDMmA3Yg1",
+    "email": "raquelborgesaugusto@gmail.com",
+    "displayName": "Raquel",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Fri, 24 Jul 2026 14:03:39 GMT",
+      "creationTime": "Fri, 24 Jul 2026 13:22:18 GMT",
+      "lastRefreshTime": "Mon, 17 Aug 2026 19:26:47 GMT"
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "gestor",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "manager",
+      "clientId": "geracao-digital",
+      "clientIds": [
+        "geracao-digital"
+      ],
+      "tenantId": "geracao-digital",
+      "tenantIds": [
+        "geracao-digital"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "dashboard",
+        "leads",
+        "planilhas",
+        "whatsapp",
+        "usuarios",
+        "campanhas",
+        "chatbot-docs",
+        "onboarding-wizard",
+        "conexoes",
+        "disparos",
+        "aquecimento",
+        "relatorios",
+        "apresentacao-gd",
+        "briefings-gd",
+        "integracoes"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "leads.export",
+        "imports.manage",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.manage",
+        "agente.view",
+        "users.view",
+        "users.manage"
+      ],
+      "companyName": "Geracao Digital"
+    }
+  },
+  {
+    "uid": "rFfbiTEZB1Ok7xn3UjHfDpCf9Hw2",
+    "email": "beatrizsignorelli@outlook.com",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Thu, 27 Aug 2026 14:23:41 GMT",
+      "creationTime": "Thu, 27 Aug 2026 14:01:47 GMT",
+      "lastRefreshTime": "Fri, 04 Sep 2026 17:27:02 GMT"
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "gestor",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "manager",
+      "clientId": "bia-do-spazio",
+      "clientIds": [
+        "bia-do-spazio"
+      ],
+      "tenantId": "bia-do-spazio",
+      "tenantIds": [
+        "bia-do-spazio"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "dashboard",
+        "leads",
+        "banco-de-dados",
+        "planilhas",
+        "whatsapp",
+        "agente",
+        "usuarios",
+        "campanhas",
+        "inteligencia-comercial",
+        "chatbot-kanban",
+        "chatbot-config",
+        "followup",
+        "fila-de-followup",
+        "followup-empresas",
+        "followup-campanhas",
+        "followup-analytics",
+        "followup-sugestoes",
+        "chatbot-docs",
+        "onboarding-wizard",
+        "onboarding-agent",
+        "conexoes",
+        "disparos",
+        "aquecimento",
+        "relatorios",
+        "apresentacao",
+        "apresentacao-gd",
+        "briefings-gd",
+        "propostas-gd",
+        "contratos-gd",
+        "pacotes-gd",
+        "condicoes-gd",
+        "integracoes",
+        "eventos",
+        "relacionamento",
+        "livpub"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "leads.export",
+        "imports.manage",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.manage",
+        "agente.view",
+        "users.view",
+        "users.manage"
+      ],
+      "companyName": "Bia do Spazio"
+    }
+  },
+  {
+    "uid": "sL8d9hr2mXZ5QHeT2ORMQsDEyAi1",
+    "email": "conradofl@gmail.com",
+    "displayName": "Conrado",
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Thu, 03 Sep 2026 15:52:20 GMT",
+      "creationTime": "Sun, 07 Jun 2026 01:48:09 GMT",
+      "lastRefreshTime": "Sat, 05 Sep 2026 13:20:51 GMT"
+    },
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "internal_admin",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "director",
+      "clientId": "vexo-adm",
+      "clientIds": [
+        "vexo-adm"
+      ],
+      "tenantId": "vexo-adm",
+      "tenantIds": [
+        "vexo-adm"
+      ],
+      "allowedViews": [],
+      "internalPages": [
+        "dashboard",
+        "leads",
+        "planilhas",
+        "whatsapp",
+        "agente",
+        "usuarios",
+        "campanhas"
+      ],
+      "permissions": [
+        "dashboard.view",
+        "leads.view",
+        "leads.export",
+        "imports.manage",
+        "whatsapp.view",
+        "whatsapp.reply",
+        "campaigns.manage",
+        "agente.view",
+        "users.view",
+        "users.manage"
+      ],
+      "companyName": "Vexo Adm"
+    }
+  }
+]

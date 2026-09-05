@@ -80,4 +80,10 @@ describe("criação de usuário e perfis de acesso aceitos pelo backend", () => 
     expect(ACCEPTED_BACKEND_PRESETS).toContain(normalized);
     expect(normalized).toBe("operador");
   });
+
+  it("UserAccessManagement.tsx possui trava de segurança de 950 caracteres para evitar erro de claim do Firebase", () => {
+    const source = readFileSync(resolve(__dirname, "../pages/UserAccessManagement.tsx"), "utf8");
+    expect(source).toContain("Este conjunto de permissões é grande demais para o perfil de autenticação. Fale com o suporte.");
+    expect(source).toContain("estimateClaimsPayloadSize(draft) > 950");
+  });
 });

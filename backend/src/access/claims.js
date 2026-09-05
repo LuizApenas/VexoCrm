@@ -8,6 +8,7 @@ import {
   PERMISSION_KEYS,
   MODULAR_BASE_PAGES,
   pagesForContractedModules,
+  isValidPermissionKey,
 } from "./permissionsRegistry.js";
 
 export const MANAGED_CLAIM_KEYS = [
@@ -35,6 +36,8 @@ export const MANAGED_CLAIM_KEYS = [
   "companyName",
   "internalPages",
   "must_change_password",
+  "grant",
+  "revoke",
 ];
 export const CLIENT_VIEW_KEYS = ["dashboard", "leads", "planilhas", "whatsapp"];
 export const DEFAULT_CLIENT_VIEWS = ["dashboard", "leads"];
@@ -748,6 +751,40 @@ export function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
     ? [...buildPresetDefaults("admin_vexo").permissions]
     : normalizePermissions(rawClaims.permissions, role, normalizedPreset);
 
+  const grantList = normalizeStringArray(rawClaims.grant);
+  const revokeSet = new Set(normalizeStringArray(rawClaims.revoke));
+
+  let resolvedPermissions = permissions;
+  let resolvedInternalPages = internalPages;
+  let resolvedAllowedViews = allowedViews;
+
+  if (grantList.length > 0 || revokeSet.size > 0) {
+    const permGrants = grantList.filter((k) => isValidPermissionKey(k));
+    const permRevokes = new Set([...revokeSet].filter((k) => isValidPermissionKey(k)));
+
+    resolvedPermissions = Array.from(
+      new Set([...resolvedPermissions.filter((k) => !permRevokes.has(k)), ...permGrants])
+    );
+
+    const pageGrants = grantList.filter((k) => INTERNAL_PAGE_KEYS.includes(k));
+    const pageRevokes = new Set([...revokeSet].filter((k) => INTERNAL_PAGE_KEYS.includes(k)));
+
+    if (role === "internal" && !isAdmin) {
+      resolvedInternalPages = Array.from(
+        new Set([...resolvedInternalPages.filter((k) => !pageRevokes.has(k)), ...pageGrants])
+      );
+    }
+
+    const viewGrants = grantList.filter((k) => CLIENT_VIEW_KEYS.includes(k));
+    const viewRevokes = new Set([...revokeSet].filter((k) => CLIENT_VIEW_KEYS.includes(k)));
+
+    if (role === "client") {
+      resolvedAllowedViews = Array.from(
+        new Set([...resolvedAllowedViews.filter((k) => !viewRevokes.has(k)), ...viewGrants])
+      );
+    }
+  }
+
   // Migração transparente (objetivo 2): o conjunto EFETIVO de permissões granulares que os
   // guards consultam. Deriva do que o usuário já tinha (permissões antigas + páginas/views
   // legadas) sem reduzir acesso. Usuário antigo passa a operar pelo novo modelo no 1º login,
@@ -756,12 +793,15 @@ export function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
     isAdmin,
     role,
     storedPermissions: [
-      ...permissions,
+      ...resolvedPermissions,
       ...(Array.isArray(rawClaims.permissions) ? rawClaims.permissions : []),
     ],
-    internalPages,
-    allowedViews,
+    internalPages: resolvedInternalPages,
+    allowedViews: resolvedAllowedViews,
   });
+
+  const permRevokes = new Set([...revokeSet].filter((k) => isValidPermissionKey(k)));
+  const finalEffectivePermissions = effectivePermissions.filter((p) => !permRevokes.has(p));
 
   return {
     role,
@@ -773,9 +813,9 @@ export function extractManagedAccessClaims(rawClaims = {}, identity = {}) {
     clientIds: preserveClientAssignments || scopeMode !== "no_client_access" ? clientIds : [],
     tenantId: clientId,
     tenantIds: preserveClientAssignments || scopeMode !== "no_client_access" ? clientIds : [],
-    allowedViews,
-    internalPages,
-    permissions: effectivePermissions,
+    allowedViews: resolvedAllowedViews,
+    internalPages: resolvedInternalPages,
+    permissions: finalEffectivePermissions,
     companyName: normalizeString(rawClaims.companyName),
     mustChangePassword: rawClaims.must_change_password === true,
   };
