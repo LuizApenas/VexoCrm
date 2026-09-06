@@ -812,6 +812,21 @@ export function registerLeadsRoutes(app, deps) {
     const page = Math.max(1, parseInt(req.query.page || "1", 10));
     const limit = Math.min(2000, Math.max(1, parseInt(req.query.limit || "2000", 10)));
 
+    const isInternalOperator =
+      req.authAccess?.role === "internal" &&
+      req.authAccess?.accessPreset === "operador";
+
+    let targetAssignedTo = null;
+    let operatorIdentifiers = null;
+
+    if (isInternalOperator) {
+      const uid = req.authAccess?.uid || req.authUser?.uid;
+      const email = req.authAccess?.email || req.authUser?.email;
+      operatorIdentifiers = [uid, email].filter(Boolean);
+    } else if (req.authAccess?.role !== "client") {
+      targetAssignedTo = normalizeString(req.query.assigned_to || req.query.assignedTo || req.query.userId);
+    }
+
     try {
       let data = [];
       let totalCount = 0;
@@ -822,6 +837,16 @@ export function registerLeadsRoutes(app, deps) {
           .from('leads')
           .select("*", { count: "exact" })
           .eq("client_id", clientId);
+
+        if (operatorIdentifiers && operatorIdentifiers.length > 0) {
+          const orClauses = operatorIdentifiers
+            .map((id) => `assigned_to.eq.${id}`)
+            .concat("assigned_to.is.null")
+            .join(",");
+          query = query.or(orClauses);
+        } else if (targetAssignedTo) {
+          query = query.eq("assigned_to", targetAssignedTo);
+        }
 
         if (stage && stage !== "all") {
           query = query.eq("stage", stage);
@@ -857,12 +882,23 @@ export function registerLeadsRoutes(app, deps) {
       } catch (advancedErr) {
         console.warn("[leads] Advanced query failed, using base query fallback:", advancedErr?.message || advancedErr);
         // Fallback para query básica garantida que nunca falha
-        const fallbackRes = await supabase
+        let fallbackQ = supabase
           .from('leads')
           .select("*")
-          .eq("client_id", clientId)
-          .order("created_at", { ascending: false })
-          .limit(2000);
+          .eq("client_id", clientId);
+
+        if (operatorIdentifiers && operatorIdentifiers.length > 0) {
+          const orClauses = operatorIdentifiers
+            .map((id) => `assigned_to.eq.${id}`)
+            .concat("assigned_to.is.null")
+            .join(",");
+          fallbackQ = fallbackQ.or(orClauses);
+        } else if (targetAssignedTo) {
+          fallbackQ = fallbackQ.eq("assigned_to", targetAssignedTo);
+        }
+
+        fallbackQ = fallbackQ.order("created_at", { ascending: false }).limit(2000);
+        const fallbackRes = await fallbackQ;
 
         data = fallbackRes.data || [];
         totalCount = data.length;
@@ -871,10 +907,22 @@ export function registerLeadsRoutes(app, deps) {
       // 2. Calcular agregações para métricas da base do tenant (com fallback)
       let allItems = [];
       try {
-        const { data: allLeadsData } = await supabase
+        let allLeadsQ = supabase
           .from('leads')
           .select("*")
           .eq("client_id", clientId);
+
+        if (operatorIdentifiers && operatorIdentifiers.length > 0) {
+          const orClauses = operatorIdentifiers
+            .map((id) => `assigned_to.eq.${id}`)
+            .concat("assigned_to.is.null")
+            .join(",");
+          allLeadsQ = allLeadsQ.or(orClauses);
+        } else if (targetAssignedTo) {
+          allLeadsQ = allLeadsQ.eq("assigned_to", targetAssignedTo);
+        }
+
+        const { data: allLeadsData } = await allLeadsQ;
         allItems = allLeadsData || [];
       } catch {
         allItems = data || [];

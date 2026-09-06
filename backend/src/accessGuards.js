@@ -22,6 +22,11 @@ export function hasInternalPageAccess(access, page) {
 
   const isGdPage = pagesToCheck.some((p) => gdPages.includes(p));
   if (isGdPage) {
+    const clientId = access.clientId || access.clientIds?.[0] || null;
+    const isGdTenant = clientId === "geracao-digital" || access.clientIds?.includes("geracao-digital");
+    if (!isGdTenant) {
+      return false;
+    }
     const hasGdAccess = access.internalPages?.some((p) => gdPages.includes(p));
     if (hasGdAccess || !access.internalPages || access.internalPages.length === 0) {
       return true;

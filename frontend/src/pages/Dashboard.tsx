@@ -18,6 +18,7 @@ import {
   Trophy,
   TrendingUp,
   AlertCircle,
+  User,
 } from "lucide-react";
 import {
   Bar,
@@ -45,6 +46,7 @@ import { useOptionalCrmClient } from "@/hooks/useCrmClient";
 import { useDashboard } from "@/hooks/useDashboard";
 import { useEvolutionUsageReport } from "@/hooks/useReports";
 import { useCampanhas } from "@/hooks/useCampanhas";
+import { useAdminUsers } from "@/hooks/useAdminUsers";
 
 interface DashboardProps {
   fixedClientId?: string;
@@ -143,7 +145,21 @@ export default function Dashboard({
     return { periodDays: 30, periodLabel: "Últimos 30 dias" };
   }, [periodPreset, customStartDate, customEndDate]);
 
-  const { data, isLoading, error } = useDashboard(effectiveClientId);
+  const [selectedOperator, setSelectedOperator] = useState<string>("all");
+  const { data, isLoading, error } = useDashboard(effectiveClientId, selectedOperator);
+  const adminUsersQuery = useAdminUsers();
+
+  const operatorOptions = useMemo(() => {
+    if (!adminUsersQuery.data) return [];
+    return adminUsersQuery.data.filter(
+      (u) =>
+        u.access?.role === "internal" &&
+        (effectiveClientId
+          ? u.access.clientId === effectiveClientId || u.access.clientIds?.includes(effectiveClientId)
+          : true)
+    );
+  }, [adminUsersQuery.data, effectiveClientId]);
+
   const usage = useEvolutionUsageReport(effectiveClientId || null, periodDays * 2);
   const { data: campaigns = [] } = useCampanhas(effectiveClientId || undefined);
 
@@ -368,8 +384,27 @@ export default function Dashboard({
               </Button>
             </div>
 
-            {/* Seletor de Período com Intervalo Customizado */}
+            {/* Seletor de Período e Operador */}
             <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+              {operatorOptions.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <Select value={selectedOperator} onValueChange={setSelectedOperator}>
+                    <SelectTrigger className="h-8 w-[160px] text-xs rounded-xl border-border bg-background">
+                      <SelectValue placeholder="Todos operadores" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos operadores</SelectItem>
+                      {operatorOptions.map((op) => (
+                        <SelectItem key={op.uid} value={op.uid}>
+                          {op.displayName || op.email || op.uid}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <Select value={periodPreset} onValueChange={setPeriodPreset}>
                 <SelectTrigger className="h-8 w-[150px] text-xs rounded-xl border-border bg-background">

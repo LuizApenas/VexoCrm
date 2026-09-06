@@ -156,6 +156,29 @@ describe("PARIDADE: as listas de preset do backend e do frontend", () => {
     copia.push("nao_deveria_vazar");
     expect(ACCESS_PRESET_KEYS).not.toContain("nao_deveria_vazar");
   });
+
+  it("paridade estrita do preset operador: frontend access.ts x backend claims.js (páginas e permissões)", () => {
+    const src = readFileSync(resolve("../frontend/src/lib/access.ts"), "utf8");
+    const idx = src.indexOf("operador: {");
+    const bloco = src.slice(idx, src.indexOf("parceiro: {", idx));
+
+    const permBlock = bloco.slice(
+      bloco.indexOf("permissions: ["),
+      bloco.indexOf("],", bloco.indexOf("permissions: ["))
+    );
+    const frontPermissions = (permBlock.match(/"([^"]+)"/g) || []).map((s) => s.replace(/"/g, ""));
+
+    const pagesBlock = bloco.slice(
+      bloco.indexOf("internalPages: ["),
+      bloco.indexOf("],", bloco.indexOf("internalPages: ["))
+    );
+    const frontPages = (pagesBlock.match(/"([^"]+)"/g) || []).map((s) => s.replace(/"/g, ""));
+
+    const backOperador = ACCESS_PRESET_DEFAULTS.operador;
+
+    expect([...frontPages].sort()).toEqual([...backOperador.internalPages].sort());
+    expect([...frontPermissions].sort()).toEqual([...backOperador.permissions].sort());
+  });
 });
 
 describe("o erro do validador diz o que foi rejeitado", () => {

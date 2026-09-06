@@ -698,8 +698,29 @@ export function registerCampaignsRoutes(app, deps) {
         .is("archived_at", null)
         .order("created_at", { ascending: false });
 
+      const isInternalOperator =
+        req.authAccess?.role === "internal" &&
+        req.authAccess?.accessPreset === "operador";
+
+      let campaignOrClause = null;
+      if (isInternalOperator) {
+        const uid = req.authAccess?.uid || req.authUser?.uid;
+        const email = req.authAccess?.email || req.authUser?.email;
+        const operatorIdentifiers = [uid, email].filter(Boolean);
+        if (operatorIdentifiers.length > 0) {
+          campaignOrClause = operatorIdentifiers
+            .map((id) => `created_by_uid.eq.${id}`)
+            .concat("created_by_uid.is.null")
+            .join(",");
+        }
+      }
+
       if (clientId) {
         query = query.eq("client_id", clientId);
+      }
+
+      if (campaignOrClause) {
+        query = query.or(campaignOrClause);
       }
 
       let { data, error } = await query;
@@ -712,6 +733,9 @@ export function registerCampaignsRoutes(app, deps) {
           .order("created_at", { ascending: false });
         if (clientId) {
           fallbackQuery = fallbackQuery.eq("client_id", clientId);
+        }
+        if (campaignOrClause) {
+          fallbackQuery = fallbackQuery.or(campaignOrClause);
         }
         const fallback = await fallbackQuery;
         data = fallback.data;

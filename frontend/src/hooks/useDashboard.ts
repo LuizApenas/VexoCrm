@@ -64,11 +64,11 @@ export interface DashboardPayload {
   recentLeads: DashboardRecentLead[];
 }
 
-export function useDashboard(clientId: string) {
+export function useDashboard(clientId: string, assignedTo?: string) {
   const { isAuthenticated, getIdToken } = useAuth();
 
   return useQuery({
-    queryKey: ["dashboard", clientId],
+    queryKey: ["dashboard", clientId, assignedTo || "all"],
     enabled: isAuthenticated && !!clientId,
     queryFn: async (): Promise<DashboardPayload> => {
       const token = await getIdToken();
@@ -76,7 +76,8 @@ export function useDashboard(clientId: string) {
         throw new Error("Usuario nao autenticado.");
       }
 
-      const res = await fetchApi(`/api/dashboard?clientId=${encodeURIComponent(clientId)}`, {
+      const queryParam = assignedTo && assignedTo !== "all" ? `&assigned_to=${encodeURIComponent(assignedTo)}` : "";
+      const res = await fetchApi(`/api/dashboard?clientId=${encodeURIComponent(clientId)}${queryParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {

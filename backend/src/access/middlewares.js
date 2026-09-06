@@ -137,6 +137,28 @@ export function requireInternalPageAccess(page) {
       return;
     }
 
+    const pagesToCheck = Array.isArray(page) ? page : [page];
+    const gdPages = [
+      "geracao-digital",
+      "implantacao-gd",
+      "propostas-gd",
+      "briefings-gd",
+      "apresentacao-gd",
+      "dashboard-gd",
+      "contratos-gd",
+      "pacotes-gd",
+      "condicoes-gd",
+    ];
+    const isGdPage = pagesToCheck.some((p) => gdPages.includes(p));
+    if (isGdPage && !access.isAdmin && access.role !== "superadmin") {
+      const clientId = access.clientId || access.clientIds?.[0] || null;
+      const isGdTenant = clientId === "geracao-digital" || access.clientIds?.includes("geracao-digital");
+      if (!isGdTenant) {
+        sendError(res, 403, "FORBIDDEN", "Módulo Geração Digital restrito ao tenant contratante");
+        return;
+      }
+    }
+
     // Caminho legado: usuário interno com a página liberada (compat total).
     if (hasInternalPageAccess(access, page)) {
       next();

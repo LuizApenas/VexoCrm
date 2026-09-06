@@ -778,8 +778,9 @@ function transitionDraft<T extends AccessDraft>(draft: T): T {
         ? normalized.approvalLevel
         : defaults.approvalLevel,
       allowedViews: [],
-      internalPages: normalized.internalPages.length ? normalized.internalPages : [...defaults.internalPages],
-      permissions: normalized.permissions.length ? normalized.permissions : [...defaults.permissions],
+      internalPages: [...defaults.internalPages],
+      permissions: [...defaults.permissions],
+      granularPermissions: [],
     };
   }
 
@@ -789,10 +790,8 @@ function transitionDraft<T extends AccessDraft>(draft: T): T {
 function buildPayload(draft: AccessDraft, clientPlan?: string) {
   const normalized = normalizeDraft(draft);
 
-  // Objetivo 1b: a matriz granular é a fonte de verdade quando preenchida. As páginas/views
-  // já foram reconciliadas a partir dela no editor, então enviam-se juntas para o backend
-  // (que faz union permissões + páginas) refletir exatamente a matriz.
-  const granular = draft.granularPermissions;
+  // Para usuarios internos, o preset e absoluto e nao envia matriz granular nem revogacoes acidentais
+  const granular = normalized.role === "internal" ? undefined : draft.granularPermissions;
   const permissions =
     granular && granular.length > 0 ? granular : normalized.permissions;
 
@@ -2703,9 +2702,11 @@ export default function UserAccessManagement() {
                   <TabsTrigger value="cadastro" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 h-full font-bold text-sm">
                     Cadastro & Dados
                   </TabsTrigger>
-                  <TabsTrigger value="permissoes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 h-full font-bold text-sm">
-                    Permissões Iniciais
-                  </TabsTrigger>
+                  {createDraft.role !== "internal" && (
+                    <TabsTrigger value="permissoes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 h-full font-bold text-sm">
+                      Permissões Iniciais
+                    </TabsTrigger>
+                  )}
                 </TabsList>
               </div>
             )}
@@ -2779,7 +2780,71 @@ export default function UserAccessManagement() {
                       ))}
                     </div>
                   </div>
-                  {(() => {
+                  {createDraft.role === "internal" ? (
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                        Perfil Interno (Papel na Operação)
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const defaults = buildPresetDefaults("gestor");
+                            updateCreateDraft({
+                              accessPreset: "gestor",
+                              internalPages: [...defaults.internalPages],
+                              permissions: [...defaults.permissions],
+                              granularPermissions: [],
+                            });
+                          }}
+                          className={cn(
+                            "rounded-xl border p-3 text-left transition-colors relative",
+                            createDraft.accessPreset === "gestor" || createDraft.accessPreset === "admin_vexo"
+                              ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/40"
+                              : "border-border/60 bg-muted/5 hover:bg-muted/10 opacity-70"
+                          )}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="font-bold text-xs text-foreground">Gestor</p>
+                            {(createDraft.accessPreset === "gestor" || createDraft.accessPreset === "admin_vexo") && (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground leading-3">
+                            Operação completa + Inteligência comercial, relatórios e gestão de usuários.
+                          </p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const defaults = buildPresetDefaults("operador");
+                            updateCreateDraft({
+                              accessPreset: "operador",
+                              internalPages: [...defaults.internalPages],
+                              permissions: [...defaults.permissions],
+                              granularPermissions: [],
+                            });
+                          }}
+                          className={cn(
+                            "rounded-xl border p-3 text-left transition-colors relative",
+                            createDraft.accessPreset === "operador"
+                              ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/40"
+                              : "border-border/60 bg-muted/5 hover:bg-muted/10 opacity-70"
+                          )}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="font-bold text-xs text-foreground">Operador</p>
+                            {createDraft.accessPreset === "operador" && (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground leading-3">
+                            Operação comercial (chips, conexões, disparos e campanhas).
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (() => {
                     const selectedCreateClient =
                       clients.find((c) => c.id === createDraft.clientIds[0]) ||
                       (selectedClientId ? clients.find((c) => c.id === selectedClientId) : undefined);
@@ -2930,7 +2995,7 @@ export default function UserAccessManagement() {
                 )}
               </TabsContent>
 
-              {createDraft.role !== "pending" && (
+              {createDraft.role !== "pending" && createDraft.role !== "internal" && (
                 <TabsContent value="permissoes" className="space-y-4 mt-0 outline-none">
                   <UserPlanAndSecurityControls
                     draft={createDraft}
@@ -3274,9 +3339,11 @@ export default function UserAccessManagement() {
                                   <TabsTrigger value="geral" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 h-full font-bold text-sm">
                                     Geral
                                   </TabsTrigger>
-                                  <TabsTrigger value="permissoes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 h-full font-bold text-sm">
-                                    Permissões & Módulos
-                                  </TabsTrigger>
+                                  {selectedDraft.role !== "internal" && (
+                                    <TabsTrigger value="permissoes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 h-full font-bold text-sm">
+                                      Permissões & Módulos
+                                    </TabsTrigger>
+                                  )}
                                   <TabsTrigger value="acoes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 h-full font-bold text-sm text-destructive data-[state=active]:border-destructive">
                                     Zona de Perigo
                                   </TabsTrigger>
@@ -3344,6 +3411,80 @@ export default function UserAccessManagement() {
                                         </div>
                                       </div>
 
+                                      {selectedDraft.role === "internal" && (
+                                        <div className="space-y-2 md:col-span-2">
+                                          <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                            Perfil Interno (Papel na Operação)
+                                          </label>
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <button
+                                              type="button"
+                                              disabled={!selectedEditable || isFixedAdminAccount(selectedUser.uid, selectedUser.email)}
+                                              onClick={() => {
+                                                const defaults = buildPresetDefaults("gestor");
+                                                updateDraft(selectedUser.uid, {
+                                                  accessPreset: "gestor",
+                                                  internalPages: [...defaults.internalPages],
+                                                  permissions: [...defaults.permissions],
+                                                  granularPermissions: [],
+                                                });
+                                              }}
+                                              className={cn(
+                                                "rounded-xl border p-4 text-left transition-all relative",
+                                                selectedDraft.accessPreset === "gestor" || selectedDraft.accessPreset === "admin_vexo"
+                                                  ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/40"
+                                                  : "border-border/60 bg-muted/5 hover:bg-muted/10 opacity-70"
+                                              )}
+                                            >
+                                              <div className="flex items-center justify-between mb-1">
+                                                <p className="font-bold text-sm text-foreground flex items-center gap-2">
+                                                  <span>Gestor</span>
+                                                  {selectedDraft.accessPreset === "admin_vexo" && (
+                                                    <Badge variant="outline" className="text-[10px] py-0">Admin</Badge>
+                                                  )}
+                                                </p>
+                                                {(selectedDraft.accessPreset === "gestor" || selectedDraft.accessPreset === "admin_vexo") && (
+                                                  <CheckCircle2 className="w-4 h-4 text-primary" />
+                                                )}
+                                              </div>
+                                              <p className="text-xs text-muted-foreground leading-relaxed">
+                                                Operação completa + Inteligência comercial, relatórios e gestão de usuários da equipe.
+                                              </p>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              disabled={!selectedEditable || isFixedAdminAccount(selectedUser.uid, selectedUser.email)}
+                                              onClick={() => {
+                                                const defaults = buildPresetDefaults("operador");
+                                                updateDraft(selectedUser.uid, {
+                                                  accessPreset: "operador",
+                                                  internalPages: [...defaults.internalPages],
+                                                  permissions: [...defaults.permissions],
+                                                  granularPermissions: [],
+                                                });
+                                              }}
+                                              className={cn(
+                                                "rounded-xl border p-4 text-left transition-all relative",
+                                                selectedDraft.accessPreset === "operador"
+                                                  ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/40"
+                                                  : "border-border/60 bg-muted/5 hover:bg-muted/10 opacity-70"
+                                              )}
+                                            >
+                                              <div className="flex items-center justify-between mb-1">
+                                                <p className="font-bold text-sm text-foreground">Operador</p>
+                                                {selectedDraft.accessPreset === "operador" && (
+                                                  <CheckCircle2 className="w-4 h-4 text-primary" />
+                                                )}
+                                              </div>
+                                              <p className="text-xs text-muted-foreground leading-relaxed">
+                                                Operação comercial completa (inbox, chips, conexões, disparos e campanhas). Sem gestão de usuários ou inteligência comercial.
+                                              </p>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+
                                       <div className="space-y-2">
                                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Empresa / Tenant Vinculado</label>
                                         <Select
@@ -3408,24 +3549,26 @@ export default function UserAccessManagement() {
                                     </div>
                                   </TabsContent>
 
-                                  <TabsContent value="permissoes" className="space-y-6 mt-0 outline-none">
-                                    {selectedProtectedAccount && (
-                                      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary font-medium flex items-center gap-2">
-                                        <LockKeyhole className="h-4 w-4 shrink-0" />
-                                        Esta é uma conta de Administrador. As permissões e atalhos são fixos do sistema para garantir o acesso.
-                                      </div>
-                                    )}
-                                    <UserPlanAndSecurityControls
-                                      draft={selectedDraft}
-                                      disabled={!selectedEditable}
-                                      isAdminUser={isAdminUser}
-                                      tenantPlan={resolveTenantPlan(
-                                        clients.find((c) => c.id === selectedDraft.clientIds[0]) ||
-                                          (selectedClientId ? clients.find((c) => c.id === selectedClientId) : undefined)
+                                  {selectedDraft.role !== "internal" && (
+                                    <TabsContent value="permissoes" className="space-y-6 mt-0 outline-none">
+                                      {selectedProtectedAccount && (
+                                        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary font-medium flex items-center gap-2">
+                                          <LockKeyhole className="h-4 w-4 shrink-0" />
+                                          Esta é uma conta de Administrador. As permissões e atalhos são fixos do sistema para garantir o acesso.
+                                        </div>
                                       )}
-                                      onChange={(patch) => updateDraft(selectedUser.uid, patch)}
-                                    />
-                                  </TabsContent>
+                                      <UserPlanAndSecurityControls
+                                        draft={selectedDraft}
+                                        disabled={!selectedEditable}
+                                        isAdminUser={isAdminUser}
+                                        tenantPlan={resolveTenantPlan(
+                                          clients.find((c) => c.id === selectedDraft.clientIds[0]) ||
+                                            (selectedClientId ? clients.find((c) => c.id === selectedClientId) : undefined)
+                                        )}
+                                        onChange={(patch) => updateDraft(selectedUser.uid, patch)}
+                                      />
+                                    </TabsContent>
+                                  )}
 
                                   <TabsContent value="acoes" className="space-y-6 mt-0 outline-none">
                                     <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-5 space-y-5">

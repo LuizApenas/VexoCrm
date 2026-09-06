@@ -215,6 +215,21 @@ export function registerInsightsRoutes(app, deps) {
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
     if (!clientId) return;
 
+    const isInternalOperator =
+      req.authAccess?.role === "internal" &&
+      req.authAccess?.accessPreset === "operador";
+
+    let targetAssignedTo = null;
+    let operatorIdentifiers = null;
+
+    if (isInternalOperator) {
+      const uid = req.authAccess?.uid || req.authUser?.uid;
+      const email = req.authAccess?.email || req.authUser?.email;
+      operatorIdentifiers = [uid, email].filter(Boolean);
+    } else if (req.authAccess?.role !== "client") {
+      targetAssignedTo = normalizeString(req.query.assigned_to || req.query.assignedTo || req.query.userId);
+    }
+
     try {
       let client = { id: clientId, name: clientId };
       try {
@@ -235,30 +250,43 @@ export function registerInsightsRoutes(app, deps) {
       try {
         let q = supabase
           .from(leadsTableName(clientId))
-          // telefone ENTRA aqui: contactedLeads, noContact3d, responseRate e
-          // totalMessaged casam lead com lead_messages por telefone, e a coluna
-          // nunca vinha — metade de cada condicao era sempre falsa. Sobrava so o
-          // casamento por lead_id, que o webhook do chatbot nao gravava.
-          //
-          // stage e temperature ENTRAM aqui pela decisao da Fase 2: `stage` e o
-          // funil (novo/inquiry/open_budget/buyer, escrito por classifyChatContent
-          // em domains/leads/routes.js), `status` e estado de conversa. `qualificacao`
-          // SAIU do SELECT — esta vazia na base inteira nos dois tenants medidos
-          // (2126/2126 e 783/783) e nao e mais lida por este endpoint.
-          .select("id, nome, telefone, tipo_cliente, status, stage, temperature, data_hora, cidade, created_at")
-          .eq("client_id", clientId)
-          .order("created_at", { ascending: false });
+          .select("id, nome, telefone, tipo_cliente, status, stage, temperature, data_hora, cidade, created_at, assigned_to")
+          .eq("client_id", clientId);
+
+        if (operatorIdentifiers && operatorIdentifiers.length > 0) {
+          const orClauses = operatorIdentifiers
+            .map((id) => `assigned_to.eq.${id}`)
+            .concat("assigned_to.is.null")
+            .join(",");
+          q = q.or(orClauses);
+        } else if (targetAssignedTo) {
+          q = q.eq("assigned_to", targetAssignedTo);
+        }
+
+        q = q.order("created_at", { ascending: false });
 
         const resLeads = await q;
         if (!resLeads.error) {
           leads = resLeads.data || [];
         } else {
           // Fallback sem data_hora se der erro de coluna
-          const fallbackRes = await supabase
+          let fallbackQ = supabase
             .from("leads")
-            .select("id, nome, telefone, status, created_at")
-            .eq("client_id", clientId)
-            .order("created_at", { ascending: false });
+            .select("id, nome, telefone, status, created_at, assigned_to")
+            .eq("client_id", clientId);
+
+          if (operatorIdentifiers && operatorIdentifiers.length > 0) {
+            const orClauses = operatorIdentifiers
+              .map((id) => `assigned_to.eq.${id}`)
+              .concat("assigned_to.is.null")
+              .join(",");
+            fallbackQ = fallbackQ.or(orClauses);
+          } else if (targetAssignedTo) {
+            fallbackQ = fallbackQ.eq("assigned_to", targetAssignedTo);
+          }
+
+          fallbackQ = fallbackQ.order("created_at", { ascending: false });
+          const fallbackRes = await fallbackQ;
           leads = fallbackRes.data || [];
         }
       } catch (lErr) {
@@ -339,13 +367,40 @@ export function registerInsightsRoutes(app, deps) {
     const rawDays = Number.parseInt(String(req.query.days || "3"), 10);
     const thresholdDays = Number.isFinite(rawDays) && rawDays > 0 ? Math.min(rawDays, 90) : 3;
 
+    const isInternalOperator =
+      req.authAccess?.role === "internal" &&
+      req.authAccess?.accessPreset === "operador";
+
+    let targetAssignedTo = null;
+    let operatorIdentifiers = null;
+
+    if (isInternalOperator) {
+      const uid = req.authAccess?.uid || req.authUser?.uid;
+      const email = req.authAccess?.email || req.authUser?.email;
+      operatorIdentifiers = [uid, email].filter(Boolean);
+    } else if (req.authAccess?.role !== "client") {
+      targetAssignedTo = normalizeString(req.query.assigned_to || req.query.assignedTo || req.query.userId);
+    }
+
     try {
       let leads = [];
       try {
-        const { data: leadRows, error: leadsError } = await supabase
+        let q = supabase
           .from(leadsTableName(clientId))
-          .select("id, nome, telefone")
+          .select("id, nome, telefone, assigned_to")
           .eq("client_id", clientId);
+
+        if (operatorIdentifiers && operatorIdentifiers.length > 0) {
+          const orClauses = operatorIdentifiers
+            .map((id) => `assigned_to.eq.${id}`)
+            .concat("assigned_to.is.null")
+            .join(",");
+          q = q.or(orClauses);
+        } else if (targetAssignedTo) {
+          q = q.eq("assigned_to", targetAssignedTo);
+        }
+
+        const { data: leadRows, error: leadsError } = await q;
 
         if (!leadsError) leads = leadRows || [];
       } catch (lErr) {
@@ -401,12 +456,41 @@ export function registerInsightsRoutes(app, deps) {
         console.warn("revenue-ops client query failed:", cErr?.message || cErr);
       }
 
-      const { data: leads, error: leadsError } = await supabase
+      const isInternalOperator =
+        req.authAccess?.role === "internal" &&
+        req.authAccess?.accessPreset === "operador";
+
+      let targetAssignedTo = null;
+      let operatorIdentifiers = null;
+
+      if (isInternalOperator) {
+        const uid = req.authAccess?.uid || req.authUser?.uid;
+        const email = req.authAccess?.email || req.authUser?.email;
+        operatorIdentifiers = [uid, email].filter(Boolean);
+      } else if (req.authAccess?.role !== "client") {
+        targetAssignedTo = normalizeString(req.query.assigned_to || req.query.assignedTo || req.query.userId);
+      }
+
+      let leadsQuery = supabase
         .from(leadsTableName(clientId))
-        .select("id, client_id, telefone, nome, tipo_cliente, faixa_consumo, cidade, estado, status, bot_ativo, historico, data_hora, qualificacao, created_at, updated_at")
-        .eq("client_id", clientId)
+        .select("id, client_id, telefone, nome, tipo_cliente, faixa_consumo, cidade, estado, status, bot_ativo, historico, data_hora, qualificacao, created_at, updated_at, assigned_to")
+        .eq("client_id", clientId);
+
+      if (operatorIdentifiers && operatorIdentifiers.length > 0) {
+        const orClauses = operatorIdentifiers
+          .map((id) => `assigned_to.eq.${id}`)
+          .concat("assigned_to.is.null")
+          .join(",");
+        leadsQuery = leadsQuery.or(orClauses);
+      } else if (targetAssignedTo) {
+        leadsQuery = leadsQuery.eq("assigned_to", targetAssignedTo);
+      }
+
+      leadsQuery = leadsQuery
         .order("data_hora", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false });
+
+      const { data: leads, error: leadsError } = await leadsQuery;
 
       if (leadsError) {
         throw leadsError;
@@ -510,7 +594,7 @@ export function registerInsightsRoutes(app, deps) {
 
   app.get("/api/commercial-intelligence", requireFirebaseAuth, async (req, res) => {
     if (!ensureDb(res)) return;
-    if (!ensureSharedRoutePageAccess(req, res, "dashboard")) return;
+    if (!ensureSharedRoutePageAccess(req, res, "inteligencia-comercial")) return;
 
     const requestedClientId = normalizeString(req.query.clientId);
     const clientId = resolveAuthorizedClientId(req, res, requestedClientId);
@@ -651,7 +735,7 @@ export function registerInsightsRoutes(app, deps) {
     }
   });
 
-  app.post("/api/commercial-intelligence/consultants", requireFirebaseAuth, requireInternalPageAccess("dashboard"), async (req, res) => {
+  app.post("/api/commercial-intelligence/consultants", requireFirebaseAuth, requireInternalPageAccess("inteligencia-comercial"), async (req, res) => {
     if (!ensureDb(res)) return;
 
     const authorizedClientId = resolveAuthorizedClientId(req, res, normalizeString(req.body?.clientId));
@@ -709,7 +793,7 @@ export function registerInsightsRoutes(app, deps) {
     }
   });
 
-  app.patch("/api/commercial-intelligence/consultants/:id", requireFirebaseAuth, requireInternalPageAccess("dashboard"), async (req, res) => {
+  app.patch("/api/commercial-intelligence/consultants/:id", requireFirebaseAuth, requireInternalPageAccess("inteligencia-comercial"), async (req, res) => {
     if (!ensureDb(res)) return;
 
     const id = normalizeString(req.params?.id);
@@ -781,7 +865,7 @@ export function registerInsightsRoutes(app, deps) {
     }
   });
 
-  app.delete("/api/commercial-intelligence/consultants/:id", requireFirebaseAuth, requireInternalPageAccess("dashboard"), async (req, res) => {
+  app.delete("/api/commercial-intelligence/consultants/:id", requireFirebaseAuth, requireInternalPageAccess("inteligencia-comercial"), async (req, res) => {
     if (!ensureDb(res)) return;
 
     const id = normalizeString(req.params?.id);
@@ -823,7 +907,7 @@ export function registerInsightsRoutes(app, deps) {
     }
   });
 
-  app.post("/api/commercial-intelligence/distribution-rules", requireFirebaseAuth, requireInternalPageAccess("dashboard"), async (req, res) => {
+  app.post("/api/commercial-intelligence/distribution-rules", requireFirebaseAuth, requireInternalPageAccess("inteligencia-comercial"), async (req, res) => {
     if (!ensureDb(res)) return;
 
     const authorizedClientId = resolveAuthorizedClientId(req, res, normalizeString(req.body?.clientId));
@@ -866,7 +950,7 @@ export function registerInsightsRoutes(app, deps) {
     }
   });
 
-  app.patch("/api/commercial-intelligence/distribution-rules/:id", requireFirebaseAuth, requireInternalPageAccess("dashboard"), async (req, res) => {
+  app.patch("/api/commercial-intelligence/distribution-rules/:id", requireFirebaseAuth, requireInternalPageAccess("inteligencia-comercial"), async (req, res) => {
     if (!ensureDb(res)) return;
 
     const id = normalizeString(req.params?.id);
@@ -925,7 +1009,7 @@ export function registerInsightsRoutes(app, deps) {
     }
   });
 
-  app.patch("/api/commercial-intelligence/assignments/:id/action", requireFirebaseAuth, requireInternalPageAccess("dashboard"), async (req, res) => {
+  app.patch("/api/commercial-intelligence/assignments/:id/action", requireFirebaseAuth, requireInternalPageAccess("inteligencia-comercial"), async (req, res) => {
     if (!ensureDb(res)) return;
 
     const id = normalizeString(req.params?.id);
@@ -1002,7 +1086,7 @@ export function registerInsightsRoutes(app, deps) {
     }
   });
 
-  app.put("/api/commercial-intelligence/settings", requireFirebaseAuth, requireInternalPageAccess("dashboard"), async (req, res) => {
+  app.put("/api/commercial-intelligence/settings", requireFirebaseAuth, requireInternalPageAccess("inteligencia-comercial"), async (req, res) => {
     if (!ensureDb(res)) return;
 
     const authorizedClientId = resolveAuthorizedClientId(req, res, normalizeString(req.body?.clientId));
@@ -1040,7 +1124,7 @@ export function registerInsightsRoutes(app, deps) {
     }
   });
 
-  app.patch("/api/commercial-intelligence/insights/:id/status", requireFirebaseAuth, requireInternalPageAccess("dashboard"), async (req, res) => {
+  app.patch("/api/commercial-intelligence/insights/:id/status", requireFirebaseAuth, requireInternalPageAccess("inteligencia-comercial"), async (req, res) => {
     if (!ensureDb(res)) return;
 
     const id = normalizeString(req.params?.id);

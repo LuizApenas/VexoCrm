@@ -154,7 +154,11 @@ export async function ensureLeadIntelligenceColumns(pgClientOrPool) {
         ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT ARRAY[]::text[],
         ADD COLUMN IF NOT EXISTS last_interaction_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS extracted_from_wa BOOLEAN DEFAULT false,
-        ADD COLUMN IF NOT EXISTS raw_chat_summary TEXT;
+        ADD COLUMN IF NOT EXISTS raw_chat_summary TEXT,
+        ADD COLUMN IF NOT EXISTS assigned_to TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_leads_assigned_to
+        ON public.leads (client_id, assigned_to);
     `);
   } catch (err) {
     console.warn("[lead-tables] Could not add lead intelligence columns:", err?.message || err);

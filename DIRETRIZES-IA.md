@@ -41,7 +41,7 @@ olhando o backend/instância errado. Pare e ache o certo antes de continuar.
 **Estado atual correto** (confirme sempre em INFRA.md, pode mudar):
 - Backend prod: `https://vexo-backend.xdvm8y.easypanel.host` (porta interna 3001).
 - Banco: `vexo_db-vexo:5432/vexo` (host interno, servidor 72.61.37.181).
-- Servidor velho `187.77.52.167` (projetos `bks`, `apps`) está sendo desativado. Não use.
+- Servidor velho `187.77.52.167` (projetos `bks`, `apps`) está **TOTALMENTE DESATIVADO** — não tente conectar nele nunca mais. O acesso de fora/scripts à base de produção é exclusivamente através da API do backend em `https://vexo-backend.xdvm8y.easypanel.host`.
 
 ---
 
@@ -143,6 +143,23 @@ outras rotas quebravam por schema). O sintoma sumiu do console, a causa continuo
 
 ---
 
+## 7. Auditoria, métricas e relatórios (Regra permanente: número medido ou não existe)
+
+**Incidente:** Em auditorias da fila de mensagens (aba Espera), um script sofreu timeout de rede ao tentar conectar ao banco e o agente preencheu números fictícios/estimados no relatório ("3 recentes, 143 antigas"); em outra execução, um erro HTTP 403 Forbidden foi convertido silenciosamente em lista vazia (`Array.isArray(x) ? x : []`), reportando falsamente "100% sem lead". Números falsos chegaram até o usuário como fatos e quase foram repassados a clientes em reuniões de decisão.
+
+**Regras permanentes a partir de agora, sem exceção:**
+
+1. **Número em relatório vem de execução real:** Se a consulta falhou ou a ferramenta deu erro, o relatório deve dizer expressamente *"não consegui medir, motivo X"*. **NUNCA** estime, **NUNCA** preencha por dedução, **NUNCA** escreva um valor que não veio diretamente do banco/API.
+2. **Erro é REPORTADO, não convertido em lista vazia, zero ou valor padrão:** Erro de conexão, timeout, 401, 403 ou 500 é **REPORTADO**, não convertido em lista vazia, zero ou fallback. Script que faz `Array.isArray(x) ? x : []` sobre resposta de API está escondendo erro — scripts de auditoria devem checar `res.ok` e o corpo do erro explicitamente (`throw new Error(...)` se o status não for 200/204 ou se o payload contiver `{ error }`).
+3. **Query e timestamp da execução obrigatórios:** Toda medição ou contagem vem com a query exata executada e o timestamp ISO da execução colados no relatório.
+4. **Topologia do banco e proibição do IP legado:**
+   - O banco de produção é `vexo_db-vexo:5432`, database `vexo`, no servidor `72.61.37.181`.
+   - O acesso de fora/scripts à base de produção é exclusivamente através da API do backend em `https://vexo-backend.xdvm8y.easypanel.host`.
+   - O IP `187.77.52.167` está **TOTALMENTE DESATIVADO** — não tente conectar nele nunca mais (porta 5432 ou qualquer outra).
+5. **Divergência entre relatórios bloqueia implementação:** Se um relatório contradisser outro relatório anterior (contagens diferentes, faixas temporais em conflito), isso é assunto prioritário obrigatório antes de qualquer implementação. Não siga em frente com dois números.
+
+---
+
 ## 8. CHECK constraints: verificar SEMPRE antes de gravar valor novo
 
 **Incidente:** Múltiplas violações consecutivas de `CHECK constraint` derrubaram operações em produção e o boot-recovery de lotes órfãos (ex: `trigger_type = 'auto_resume'`, `origin_type = 'manual'`, `followup_jobs_content`, `access preset`, `lead_source`).
@@ -161,9 +178,10 @@ outras rotas quebravam por schema). O sintoma sumiu do console, a causa continuo
 - [ ] `tsc` no frontend sem erro novo.
 - [ ] Zero credencial literal no diff (`grep` por senha/token).
 - [ ] Não adicionei tabela/seed/rotina de migração desnecessária.
-- [ ] Não escondi erro com catch vazio.
+- [ ] Não escondi erro com catch vazio nem converti erro em lista vazia.
 - [ ] Se mexi em schema: confirmei coluna/índice no catálogo (não confiei no "OK" do `IF NOT EXISTS`).
 - [ ] Se gravei valor em coluna com CHECK: confirmei a constraint e inclui migration no mesmo commit.
+- [ ] Se apresentei métricas/contagens: reproduzi medição real, colei query e timestamp, zero dedução.
 - [ ] Testei a rota/tela afetada de verdade e tenho o resultado.
 - [ ] `git add` só dos arquivos certos; branch e remote conferidos.
 - [ ] Avisei o usuário se precisa **Deploy** no Easypanel (backend não sobe no push).

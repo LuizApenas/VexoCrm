@@ -51,7 +51,18 @@ export type AccessPermission =
   | "agente.view"
   | "tenants.manage"
   | "users.view"
-  | "users.manage";
+  | "users.manage"
+  | "banco_dados.view"
+  | "banco_dados.import"
+  | "banco_dados.extract_wa"
+  | "whatsapp.chips_view"
+  | "whatsapp.chips_add"
+  | "campaigns.view"
+  | "campaigns.create"
+  | "campaigns.delete"
+  | "dispatches.execute"
+  | "dispatches.pause"
+  | "dispatches.export_failed";
 export type SystemAccessPreset =
   | "admin_vexo"
   | "gestor"
@@ -184,6 +195,50 @@ export const ACCESS_PERMISSION_DEFINITIONS: Record<
     label: "Gerenciar usuarios",
     description: "Pode criar, editar e reconfigurar acessos.",
   },
+  "banco_dados.view": {
+    label: "Banco de dados (Visualizar)",
+    description: "Pode consultar contatos e bases no banco de dados.",
+  },
+  "banco_dados.import": {
+    label: "Banco de dados (Importar)",
+    description: "Pode importar contatos para o banco de dados.",
+  },
+  "banco_dados.extract_wa": {
+    label: "Banco de dados (Extrair WhatsApp)",
+    description: "Pode sincronizar contatos de instâncias de WhatsApp para o banco.",
+  },
+  "whatsapp.chips_view": {
+    label: "Chips WhatsApp (Visualizar)",
+    description: "Pode listar chips e verificar status de conexão.",
+  },
+  "whatsapp.chips_add": {
+    label: "Chips WhatsApp (Conectar)",
+    description: "Pode ler QR code e conectar novas instâncias de WhatsApp.",
+  },
+  "campaigns.view": {
+    label: "Campanhas (Visualizar)",
+    description: "Pode consultar a lista e detalhes de campanhas.",
+  },
+  "campaigns.create": {
+    label: "Campanhas (Criar)",
+    description: "Pode criar e configurar novas campanhas.",
+  },
+  "campaigns.delete": {
+    label: "Campanhas (Excluir)",
+    description: "Pode remover campanhas.",
+  },
+  "dispatches.execute": {
+    label: "Disparos (Executar)",
+    description: "Pode iniciar e rodar lotes de disparos de campanhas.",
+  },
+  "dispatches.pause": {
+    label: "Disparos (Pausar)",
+    description: "Pode pausar lotes de disparos em andamento.",
+  },
+  "dispatches.export_failed": {
+    label: "Disparos (Exportar falhas)",
+    description: "Pode exportar relatórios de disparos com erro.",
+  },
 };
 
 type PresetDefaults = {
@@ -248,23 +303,32 @@ const PRESET_DEFAULTS: Record<SystemAccessPreset, PresetDefaults> = {
     permissions: [
       "dashboard.view",
       "leads.view",
+      "banco_dados.view",
+      "banco_dados.import",
+      "banco_dados.extract_wa",
       "imports.manage",
       "whatsapp.view",
       "whatsapp.reply",
+      "whatsapp.chips_view",
+      "whatsapp.chips_add",
+      "campaigns.view",
+      "campaigns.create",
+      "campaigns.delete",
       "campaigns.manage",
+      "dispatches.execute",
+      "dispatches.pause",
+      "dispatches.export_failed",
       "agente.view",
     ],
     internalPages: [
       "dashboard",
       "banco-de-dados",
       "whatsapp",
-      "followup",
-      "fila-de-followup",
+      "conexoes",
       "campanhas",
+      "disparos",
       "planilhas",
       "agente",
-      "conexoes",
-      "onboarding-wizard",
     ],
     allowedViews: [],
   },
