@@ -1,0 +1,42 @@
+[
+  {
+    "uid": "XBkP0DsTL2TvGnLHGEie99CshEf1",
+    "email": "gabrieloli.comercial@gmail.com",
+    "displayName": "Gabriel",
+    "disabled": false,
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "operador",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "operator",
+      "clientId": "geracao-digital",
+      "clientIds": [
+        "geracao-digital"
+      ],
+      "companyName": "Geracao Digital",
+      "grant": [],
+      "revoke": []
+    }
+  },
+  {
+    "uid": "bM2603rX8DhAQUu1XNpJ8LMdr1L2",
+    "email": "priscilakarina1001@gmail.com",
+    "displayName": "Prisicla",
+    "disabled": false,
+    "rawCustomClaims": {
+      "role": "internal",
+      "isAdmin": false,
+      "accessPreset": "operador",
+      "scopeMode": "assigned_clients",
+      "approvalLevel": "operator",
+      "clientId": "geracao-digital",
+      "clientIds": [
+        "geracao-digital"
+      ],
+      "companyName": "Geracao Digital",
+      "grant": [],
+      "revoke": []
+    }
+  }
+]

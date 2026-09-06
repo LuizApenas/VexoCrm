@@ -294,6 +294,16 @@ async function runStep5() {
         clientId: "geracao-digital",
         mode: "disparo",
         status: "draft",
+        analyticsMeta: {
+          sequence: [
+            {
+              order: 1,
+              type: "text",
+              text: "Validação operacional passo 5",
+              enabled: true,
+            },
+          ],
+        },
       }),
     });
     if (createCampRes.status !== 200 && createCampRes.status !== 201) {
